@@ -29,7 +29,6 @@ In order, on every fresh session:
 8. The relevant **contract(s)** in `docs/*_CONTRACT.md` for your task (the architecture doc indexes these).
 9. Any task-specific docs the user points you at in the kickoff prompt.
 
-`ARCHIVE_dune_research.md` is a superseded prior project. Ignore unless explicitly asked.
 
 ## What you own vs. what you do not
 
@@ -42,7 +41,7 @@ In order, on every fresh session:
 - `00_SHAHNAMEH_RESEARCH.md`
 - `01_CORE_MECHANICS.md` (and any future `0X_*.md` design docs)
 - `DECISIONS.md`
-- `CLAUDE.md` (this file) and `CLAUDE_CODE_KICKOFF.md`
+- `CLAUDE.md` (this file)
 - The memory files in the design chat (you don't have access to them anyway)
 
 If you believe a design doc is wrong or incomplete, raise it in `QUESTIONS_FOR_DESIGN.md` — don't edit the doc directly.

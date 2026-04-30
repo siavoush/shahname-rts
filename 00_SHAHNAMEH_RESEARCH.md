@@ -7,7 +7,7 @@
 
 ## 0. Context
 
-This is a pivot from an earlier Dune RTS concept. The Dune research is preserved alongside this file as `ARCHIVE_dune_research.md` — its technical conclusions (Godot 4 engine, Claude Code workflow, stylized visuals, solo/no-budget framing) carry over verbatim to this project and are not re-litigated here. Read §10 of this document for the carry-over summary.
+This is a pivot from an earlier Dune RTS concept. Its technical conclusions (Godot 4 engine, Claude Code workflow, stylized visuals, solo/no-budget framing) carry over verbatim to this project and are committed in `DECISIONS.md` and applied across `02_IMPLEMENTATION_PLAN.md` and `docs/ARCHITECTURE.md`. Read §10 of this document for the carry-over summary.
 
 **What changed:** the setting. The material is now Ferdowsi's *Shahnameh* (*شاهنامه*), the Persian *Book of Kings*.
 
@@ -343,7 +343,7 @@ These were worked out in the previous (archived) Dune research doc. They transfe
 - **Scope framing**: Solo dev, no asset budget, first game. Tier 0 technical prototype → Tier 1 vertical slice → Tier 2 demo → Tier 3 full release. Realistic solo timeline: 2.5–6 years.
 - **Licensing**: Godot MIT; no engine royalties. Setting is public domain.
 
-See `ARCHIVE_dune_research.md` §2 for the full engine analysis and §4 for the tier structure.
+The engine commitment is in `DECISIONS.md`; the tier structure is built into `02_IMPLEMENTATION_PLAN.md`'s phased plan and `docs/ARCHITECTURE.md`'s subsystem build state.
 
 ---
 

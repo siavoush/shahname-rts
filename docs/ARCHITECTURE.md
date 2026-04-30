@@ -133,28 +133,11 @@ The game is a deterministic real-time simulation with seven phases per tick at 3
 
 ## 3. The Tick Pipeline
 
-The simulation runs at 30 Hz. Every tick walks through seven phases in fixed order:
+30 Hz fixed tick, seven phases per tick, in this order:
 
-```
-TICK N
-  │
-  ├─ input        → InputSystem drains queued commands from UI/AI for this tick
-  ├─ ai           → AIControllerHost ticks every AI controller; controllers issue
-  │                 commands into unit command queues (no direct unit mutation)
-  ├─ movement     → MovementSystem ticks every MovementComponent; positions update,
-  │                 path requests resolved (results land tick+1)
-  ├─ spatial_rebuild → SpatialIndex rebuilds the uniform grid from current positions;
-  │                    queries below this point see fresh state
-  ├─ combat       → CombatSystem ticks every CombatComponent; damage applied,
-  │                 deaths emit unit_died, AoE queries hit fresh SpatialIndex
-  ├─ farr         → FarrSystem ticks; Atashkadeh/Dadgah/Barghah/Yadgar contributions
-  │                 accrue, drain events from this tick applied via apply_farr_change,
-  │                 Kaveh threshold checked
-  └─ cleanup      → CleanupSystem ticks; deferred signals emit (resource_node_depleted,
-                    farm_destroyed), dead units removed, transient flags reset
-```
+`input → ai → movement → spatial_rebuild → combat → farr → cleanup`
 
-**Why this order:** AI sees previous-tick positions (acceptable heuristic), movement applies before spatial rebuild, combat queries see fresh positions, Farr applies after combat (so kill-driven drains see correct kills), cleanup runs last so deferred signals don't race in-tick state changes.
+Full canonical specification — what each phase does, why it's in this order, the registration shape for phase coordinators, the `advance_ticks` test path — lives in [`SIMULATION_CONTRACT.md`](SIMULATION_CONTRACT.md) §1.2 and §2. Read that for any work that touches the pipeline.
 
 ---
 

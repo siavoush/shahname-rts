@@ -11,7 +11,6 @@ This document specifies the mechanical systems for the MVP (Tier 1 vertical slic
 
 Companion documents:
 - `00_SHAHNAMEH_RESEARCH.md` — research, lore, and overall scoping (read first if new to the project)
-- `ARCHIVE_dune_research.md` — superseded prior project, retained for reference only
 
 This document deliberately avoids over-specification. RTS design at this stage is most usefully expressed as **rules and intent**, not numbers — the numbers will emerge from prototyping. Where numbers appear here, they are starting points to be tuned, not contracts.
 

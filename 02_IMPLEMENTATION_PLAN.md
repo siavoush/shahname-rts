@@ -20,89 +20,29 @@ This plan covers **Tier 0 (technical prototype)** and **Tier 1 (vertical slice)*
 
 ## 1. Agent Team — The Virtual Studio
 
-We are simulating a 7-person indie studio using specialized Claude Code agents. Siavoush operates as **Creative Director + Producer** — the human who owns the vision, the schedule, and the design authority (via the Cowork design chat).
+A 7-person virtual indie studio. Siavoush is **Creative Director + Producer** (vision, schedule, design authority via Cowork design chat). Each specialist has a canonical definition file:
 
-### Team Roster
+| Agent | Role | Definition |
+|-------|------|-----------|
+| `engine-architect` | Engine Architect | [`.claude/agents/engine-architect.md`](.claude/agents/engine-architect.md) |
+| `ai-engineer` | AI & Pathfinding | [`.claude/agents/ai-engineer.md`](.claude/agents/ai-engineer.md) |
+| `gameplay-systems` | Gameplay Programmer | [`.claude/agents/gameplay-systems.md`](.claude/agents/gameplay-systems.md) |
+| `ui-developer` | UI/UX Developer | [`.claude/agents/ui-developer.md`](.claude/agents/ui-developer.md) |
+| `world-builder` | Map & World | [`.claude/agents/world-builder.md`](.claude/agents/world-builder.md) |
+| `balance-engineer` | Balance & Data | [`.claude/agents/balance-engineer.md`](.claude/agents/balance-engineer.md) |
+| `qa-engineer` | QA & Testing | [`.claude/agents/qa-engineer.md`](.claude/agents/qa-engineer.md) |
 
-| Agent | Role | Domain | Model | Key Files Owned |
-|-------|------|--------|-------|----------------|
-| **engine-architect** | Engine Architect | Scene structure, signal bus, managers, components, performance, determinism | Opus | `autoload/`, `core/`, `managers/`, `project.godot` |
-| **ai-engineer** | AI & Pathfinding | Navigation, unit state machines, Turan AI, formations, group movement | Opus | `ai/`, `units/states/`, `navigation/` |
-| **gameplay-systems** | Gameplay Programmer | Resources, buildings, combat, Farr, tech tiers, Kaveh Event, heroes, win/loss | Opus | `systems/`, `units/`, `buildings/`, `constants.gd` |
-| **ui-developer** | UI/UX Developer | Camera, selection, HUD, minimap, menus, hotkeys, debug overlays | Opus | `ui/`, `camera/`, `input/`, `scenes/ui/` |
-| **world-builder** | Map & World | Terrain, resource nodes, fog of war, nav mesh, map layout | Sonnet | `world/`, `scenes/maps/`, `assets/terrain/` |
-| **balance-engineer** | Balance & Data | Economy modeling, unit stats, Farr tuning, AI-vs-AI simulations | Sonnet | `constants.gd` (tuning), `tests/balance/` |
-| **qa-engineer** | QA & Testing | GUT tests, integration tests, automated simulations, build verification | Sonnet | `tests/` |
+The agent definition files are the **single source of truth** for each role's domain, owned files, model assignment, and key constraints. Don't restate that information here — read the definition.
 
-### Working Modes
-
-**Isolation Mode** — For independent work on owned files. Most productive for parallel progress. Use when agents work on non-overlapping systems.
-
-**Synthesis Mode** — Agents produce analysis, proposals, or code fragments. Siavoush (or the lead session) reviews, integrates, and decides. Use for cross-cutting decisions.
-
-**Discussion Mode** — Claude Code agent teams. Multiple agents in a shared context discussing architecture, reviewing integration points, or debugging cross-system issues. Use sparingly — coordination overhead is real.
-
-### File Ownership Rules
-
-Every file has one owner. No two agents modify the same file in the same session. If a change requires cross-agent coordination:
-1. The agent who needs the change raises it via `SendMessage` to the owning agent
-2. The owning agent makes the change (or approves the requester to do it)
-3. For `constants.gd`: Gameplay Systems creates entries, Balance Engineer tunes values
+Operating modes (design-mode syncs, implementation-mode TDD, mode switches) are documented in [`docs/STUDIO_PROCESS.md`](docs/STUDIO_PROCESS.md) §12.
 
 ---
 
 ## 2. Project Directory Structure
 
-```
-game/
-├── project.godot                 # Godot project config
-├── scenes/
-│   ├── main.tscn                 # Top-level scene (menu → match)
-│   ├── match.tscn                # Match scene (the actual game)
-│   ├── ui/                       # UI scenes (HUD, menus, overlays)
-│   ├── units/                    # Unit scenes (kargar, piyade, etc.)
-│   ├── buildings/                # Building scenes (throne, khaneh, etc.)
-│   ├── maps/                     # Map scenes
-│   ├── camera/                   # Camera rig scene
-│   └── ai/                       # AI controller scenes
-├── scripts/
-│   ├── autoload/                 # Singletons: Constants, EventBus, GameState, SimClock,
-│   │                             #   SpatialIndex, FarrSystem, TimeProvider, Telemetry
-│   ├── core/                     # Base classes: StateMachine, State, Component, UnitState
-│   ├── managers/                 # GameManager, SelectionManager, CommandManager
-│   ├── systems/                  # ResourceSystem, CombatSystem, FarrSystem, TechSystem
-│   ├── units/                    # Unit scripts + states/ + components/
-│   ├── buildings/                # Building scripts
-│   ├── ai/                       # AI opponent scripts (DummyAI in Phase 3, full AI in Phase 6)
-│   ├── ui/                       # UI scripts
-│   ├── camera/                   # Camera controller
-│   ├── input/                    # Input handling, selection, hotkeys
-│   ├── world/                    # Terrain, fog of war (data layer), resource nodes
-│   ├── navigation/               # Custom pathfinding, GroupMoveController, path scheduler
-│   └── constants.gd              # Structural constants and keys (rarely changes)
-├── data/
-│   ├── balance.tres              # BalanceData Resource — all tunable numbers
-│   └── telemetry/                # Match logs (JSON, gitignored)
-├── assets/
-│   ├── ui/                       # Fonts, UI textures
-│   ├── terrain/                  # Terrain textures (placeholder)
-│   └── audio/                    # Placeholder sounds (post-MVP)
-├── shaders/                      # Fog of war shader, selection highlight
-├── translations/                 # Godot CSV-import translation files
-├── docs/
-│   ├── SIMULATION_CONTRACT.md    # SimClock, SpatialIndex, MovementComponent contracts
-│   ├── STATE_MACHINE_CONTRACT.md # UnitState base class, command queue, interrupts
-│   └── TESTING_CONTRACT.md       # TimeProvider, seeded RNG, telemetry format
-└── tests/
-    ├── unit/                     # GUT unit tests
-    ├── integration/              # Integration tests
-    ├── simulation/               # AI-vs-AI automated tests (lands Phase 6)
-    └── balance/                  # Balance analysis scripts
-```
+The directory layout, the rationale for each folder, and the build state of every subsystem live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §4 (directory map) and §2 (subsystem state). That document is the orientation layer; this plan describes *what to build by phase*, not *where things live*.
 
-**Constants split (per engine-architect + balance-engineer):**
-- `constants.gd` — structural constants and keys: enum-like definitions, signal name constants, file paths, layer indices. Owned by engine-architect + gameplay-systems. Rarely changes.
-- `data/balance.tres` — every tunable number: HP, damage, build times, Farr deltas, costs, ranges. Custom `BalanceData` Resource with named fields. Owned by balance-engineer. Edited freely without code review. Hot-reloadable later.
+The constants split (`constants.gd` for structural keys vs `data/balance.tres` for tunable numbers) is documented in `docs/TESTING_CONTRACT.md` §1.
 
 ---
 
