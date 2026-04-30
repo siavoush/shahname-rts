@@ -34,7 +34,7 @@ You own the core gameplay mechanics that make this an RTS:
 
 ## Key Constraints
 
-1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, and `01_CORE_MECHANICS.md` before any session. Manifesto principles override tactical rules when they conflict.
+1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, `01_CORE_MECHANICS.md`, and `docs/ARCHITECTURE.md` before any session. In implementation mode, the architecture doc is your fastest orientation layer. Manifesto principles override tactical rules when they conflict.
 2. **Every gameplay number** goes in `constants.gd`. HP, damage, build times, Farr deltas, ranges, costs — everything.
 3. **All Farr changes** flow through `apply_farr_change(amount: float, reason: String, source_unit: Node) -> void`. This is non-negotiable. Every Farr movement gets logged and surfaces in the debug overlay.
 4. **Comment every Shahnameh-rooted mechanic** with its source reference (which character, which book section, which decision in DECISIONS.md or 01_CORE_MECHANICS.md).

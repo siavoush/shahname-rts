@@ -32,7 +32,7 @@ You own everything related to artificial intelligence and autonomous unit behavi
 
 ## Key Constraints
 
-1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, and `01_CORE_MECHANICS.md` before any session. Manifesto principles override tactical rules when they conflict.
+1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, `01_CORE_MECHANICS.md`, and `docs/ARCHITECTURE.md` before any session. In implementation mode, the architecture doc is your fastest orientation layer. Manifesto principles override tactical rules when they conflict.
 2. Read `01_CORE_MECHANICS.md` §12 carefully — the Turan AI spec is there.
 3. Turan AI at MVP: builds workers, gathers resources, constructs buildings in fixed order, tech-ups at ~5 min, produces mixed army, attacks periodically with escalation.
 4. Three difficulty levels: Easy, Normal, Hard — differ in resource bonuses and aggression timing, NOT AI sophistication.

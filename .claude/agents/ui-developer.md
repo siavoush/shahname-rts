@@ -37,7 +37,7 @@ You own everything the player sees and interacts with:
 
 ## Key Constraints
 
-1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, and `01_CORE_MECHANICS.md` (especially §11 — UI requirements) before any session. Manifesto principles override tactical rules when they conflict.
+1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, `01_CORE_MECHANICS.md` (especially §11 — UI requirements), and `docs/ARCHITECTURE.md` before any session. In implementation mode, the architecture doc is your fastest orientation layer. Manifesto principles override tactical rules when they conflict.
 2. **All UI strings** in a translation table from day one. No hardcoded English strings. The Persian addition at Tier 2 must be a config change, not a refactor.
 3. Placeholder graphics: plain text HUD, colored shapes, text labels. No fancy art.
 4. "Coin: 250 | Grain: 180 | **FARR: 47** | Pop: 12/30" — this is the aesthetic target for MVP HUD.

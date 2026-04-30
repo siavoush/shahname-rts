@@ -317,7 +317,7 @@ Author + Reviewers with 3 participants worked well when one reviewer (balance-en
 
 *Changed in this doc:*
 - §9 rule added: **Lead must read the actual file diff against the latest design decisions before ratifying.** Agents can sincerely sign off on a stale state. Verify, don't assume. Cited Manifesto Principle 1 (Truth-Seeking).
-- New §12 added: **SemVer policy for all contracts and the game project itself.**
+- New §13 added: **SemVer policy for all contracts and the game project itself** (was §12 before §12 Operating Modes was inserted).
 
 *Pattern validation:*
 Constraint Negotiation continues to deliver — ~14 turns for a well-architected 430-line contract with two design escalations cleanly logged. Better cost than Author + Reviewers for 2-agent decisions.
@@ -398,7 +398,68 @@ Open Consultation is the right pattern for parameter-tuning where multiple agent
 
 ---
 
-## 12. Versioning — Strict SemVer 2.0.0
+## 12. Operating Modes — Design vs. Implementation
+
+The studio process documented above (syncs, OST patterns, Convergence Review, retros) is **heavyweight by design**. It earns its cost during *design and planning*, where a single wrong contract decision compounds across phases. It becomes *friction* during *implementation*, where the contracts are set and execution is the bottleneck.
+
+We explicitly run in two modes.
+
+### 12.1 Design / Planning Mode
+
+**When:** before a phase begins. At tier transitions. When a cross-cutting decision arises that no single agent can make alone. When implementation reveals an architectural gap that a contract revision (not just a code patch) needs to address.
+
+**Activities:**
+- Studio syncs (Author + Reviewers, Constraint Negotiation, Devil's Advocate, Open Consultation)
+- Convergence Review (Pattern E) before each tier transition or end of major decision-cluster
+- Retro practice — every sync produces process updates in this doc
+
+**Output:** ratified contracts + retro entries. No code.
+
+**The lead's role:** servant-leader facilitator (per §6).
+
+### 12.2 Implementation Mode
+
+**When:** after the contracts for a phase are ratified. The default operating mode during a phase.
+
+**Activities:**
+- Specialists work independently in their owned files (per `02_IMPLEMENTATION_PLAN.md` agent table)
+- TDD discipline: tests first, code second, refactor third (per Testing Contract conventions)
+- Async coordination via the architecture document and PR comments — not via syncs
+- Commits land on feature branches, merge to main via PR
+
+**Output:** working code with passing tests. The architecture document gets updated as subsystems land.
+
+**The lead's role:** silent unless something escalates. Verifies branch hygiene, version bumps, and architecture doc updates at PR review. Does not facilitate during implementation — the agents are working.
+
+### 12.3 The TDD Discipline (Implementation Mode)
+
+Implementation tasks follow Test-Driven Development per Manifesto Principle 1 (Truth-Seeking — every conclusion rests on evidence) and Principle 9 (Automated Enforcement). Specifically:
+
+1. **Read the orientation layer first:** `MANIFESTO.md` → `CLAUDE.md` → `docs/ARCHITECTURE.md` → relevant contract(s). Don't skip the architecture doc — it tells you where the work fits and what's already built.
+2. **Write failing tests** that capture the expected behavior. For a state transition: a test that asserts the unit ends up in the right state after a tick. For a Farr drain: a test that asserts the value decreased by the right amount. Use `MatchHarness` and `advance_ticks(n)` per Testing Contract §3.
+3. **Implement the minimum to pass.** Resist gold-plating. The contract specifies the surface; the test specifies the behavior; everything else is implementation.
+4. **Refactor with confidence.** Tests catch regressions. The CI lint rule catches off-tick mutation. The determinism regression test catches simulation drift.
+5. **Update the architecture document.** Move the subsystem from 📋 Planned to 🟡 In progress when you start, to ✅ Built when tests pass and it's wired in. Add a line to §6 (Plan-vs-Reality Delta) if the implementation diverged from the spec — Truth-Seeking.
+6. **Commit on a feature branch, PR to main.** Pre-commit hook runs the lint + test suite. Blocked commits indicate a real problem; don't bypass.
+
+If implementation reveals a contract gap (something that needs a decision, not just an implementation choice), **stop and escalate**:
+- Design/feel/balance question → append to `QUESTIONS_FOR_DESIGN.md`
+- Cross-system architectural gap → flag for a sync (often a brief Constraint Negotiation between two agents)
+
+Do not silently invent contract changes during implementation. The contract is the agreement; if reality requires changing it, that's a decision, not a fix.
+
+### 12.4 Mode Switches — Explicit Markers
+
+We don't drift between modes. We switch deliberately:
+
+- **Entering implementation mode** — after a Convergence Review ratifies (or after a phase plan is locked), the lead announces the switch and the agents stand down from the team channel. They work async until invited back.
+- **Returning to design mode** — when an architectural gap surfaces, when a phase ends and a retro is needed, or when a tier transition approaches, the lead reactivates the team and convenes a sync. Implementation work pauses on affected files.
+
+The architecture doc is the bridge — the artifact that carries the design across the mode boundary into implementation, so individual agents don't need the full studio process baggage to orient.
+
+---
+
+## 13. Versioning — Strict SemVer 2.0.0
 
 Every artifact in this project (contracts, the game itself, any release) follows [SemVer 2.0.0](https://semver.org). The lead is the keeper of versions — meaning the lead is responsible for ensuring agents bump versions correctly, recording release tags, and preventing drift.
 

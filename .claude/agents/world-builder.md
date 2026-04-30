@@ -31,7 +31,7 @@ You own the game world — everything that isn't a unit, building, or UI element
 
 ## Key Constraints
 
-1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, and `01_CORE_MECHANICS.md` before any session. Manifesto principles override tactical rules when they conflict.
+1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, `01_CORE_MECHANICS.md`, and `docs/ARCHITECTURE.md` before any session. In implementation mode, the architecture doc is your fastest orientation layer. Manifesto principles override tactical rules when they conflict.
 2. MVP: ONE map. Medium-sized, mixed terrain. Target match length: 15-25 minutes.
 3. Placeholder terrain: flat colored plane, optionally with a checkerboard reference texture.
 4. Resources: colored dots or simple geometry on the ground.

@@ -31,7 +31,7 @@ You own testing and quality assurance:
 
 ## Key Constraints
 
-1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, and `01_CORE_MECHANICS.md` before any session. Manifesto principles override tactical rules when they conflict.
+1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, `01_CORE_MECHANICS.md`, and `docs/ARCHITECTURE.md` before any session. In implementation mode, the architecture doc is your fastest orientation layer. Manifesto principles override tactical rules when they conflict.
 2. Use GUT (Godot Unit Test) or GdUnit4 as the test framework.
 3. Every function in `constants.gd` that returns a gameplay value should have a test.
 4. `apply_farr_change()` is the most critical function to test — verify every Farr generator and drain scenario per §4.3.

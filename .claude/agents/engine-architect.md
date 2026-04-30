@@ -33,7 +33,7 @@ You own the foundational architecture that every other system builds on:
 
 ## Key Constraints
 
-1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, and `01_CORE_MECHANICS.md` before any session. Manifesto principles override tactical rules when they conflict.
+1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, `01_CORE_MECHANICS.md`, and `docs/ARCHITECTURE.md` before any session. In implementation mode, the architecture doc is your fastest orientation layer. Manifesto principles override tactical rules when they conflict.
 2. **Externalize ALL gameplay constants** in `game/scripts/constants.gd`. No magic numbers.
 3. **All Farr changes** flow through `apply_farr_change(amount, reason, source_unit)`.
 4. **All UI strings** go in a translation table from day one.

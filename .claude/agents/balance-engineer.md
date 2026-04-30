@@ -29,7 +29,7 @@ You own the numbers and their consequences:
 
 ## Key Constraints
 
-1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, and `01_CORE_MECHANICS.md` before any session. Manifesto principles override tactical rules when they conflict.
+1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, `01_CORE_MECHANICS.md`, and `docs/ARCHITECTURE.md` before any session. In implementation mode, the architecture doc is your fastest orientation layer. Manifesto principles override tactical rules when they conflict.
 2. The numbers in `01_CORE_MECHANICS.md` are "starting points to be tuned, not contracts" (§0).
 3. You propose changes; you don't unilaterally alter balance without discussion.
 4. If a balance question is really a design question (e.g., "should the Kaveh Event threshold be different?"), append to `QUESTIONS_FOR_DESIGN.md`.
