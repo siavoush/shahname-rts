@@ -2,6 +2,10 @@
 
 A real-time strategy game based on Ferdowsi's *Shahnameh* (Book of Kings), set in the Kayanian / Heroic Age. Iran vs. Turan, with Divs as a future antagonist faction. Inspired by StarCraft 2, Command & Conquer, and Age of Empires 2 — with cultural authenticity and the Persian epic's themes treated as load-bearing design constraints, not flavor.
 
+## Foundational principles
+
+**Before anything else, read [`MANIFESTO.md`](MANIFESTO.md).** It is the philosophical foundation this project operates under — ten principles that shape *how* we build, not just what. Tactical rules in this document and the specs flow from those principles. When a tactical rule and a principle conflict, the principle wins.
+
 ## You are a Claude Code session. Read this carefully.
 
 This project uses a **deliberate split between design and implementation**:
@@ -15,10 +19,13 @@ Mixing roles dilutes both. Stay in your lane and we move fast.
 
 In order, on every fresh session:
 
-1. **`DECISIONS.md`** — the chronological log of every committed design decision. Read this first to know what is settled.
-2. **`01_CORE_MECHANICS.md`** — the MVP specification. This is what you build against.
-3. **`00_SHAHNAMEH_RESEARCH.md`** — research and lore context. Skim if you're unfamiliar with the source material; deep-read if you're working on units, buildings, or anything with a Shahnameh referent.
-4. Any task-specific docs the user points you at in the kickoff prompt.
+1. **`MANIFESTO.md`** — the foundational principles. The constants behind every other rule.
+2. **`DECISIONS.md`** — the chronological log of every committed design decision. What is settled.
+3. **`01_CORE_MECHANICS.md`** — the MVP specification. This is what you build against.
+4. **`00_SHAHNAMEH_RESEARCH.md`** — research and lore context. Skim if you're unfamiliar with the source material; deep-read if you're working on units, buildings, or anything with a Shahnameh referent.
+5. **`02_IMPLEMENTATION_PLAN.md`** — the phased build plan. The hypothesis we're executing against.
+6. **`docs/STUDIO_PROCESS.md`** — how multi-agent syncs are run, the facilitator role, the retro practice.
+7. Any task-specific docs the user points you at in the kickoff prompt.
 
 `ARCHIVE_dune_research.md` is a superseded prior project. Ignore unless explicitly asked.
 
