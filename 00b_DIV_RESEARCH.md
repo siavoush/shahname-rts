@@ -1,8 +1,24 @@
-# Divs — Lore Research and Economic Mechanic Proposals
+---
+title: Divs — Lore Research and Economic Mechanic Proposals
+type: research
+status: experimental
+owner: design-chat
+summary: Post-MVP research on Shahnameh's depiction of Divs and four proposed economic mechanics that fit them as parasitic anti-creators rather than gathering workers.
+audience: all
+read_when: working-on-divs-faction
+prerequisites: [00_SHAHNAMEH_RESEARCH.md, 01_CORE_MECHANICS.md]
+ssot_for:
+  - Divs lore research (Zoroastrian theology, named demons, Mazandaran cosmology, Az/Akvan/Div-e Sepid/Aulad)
+  - four proposed Div economic mechanic options (Tributary Gulag, Devouring Hunger, Shadow-Spread, Brain-Tax)
+  - recommended hybrid economic design (A spine + C passive layer)
+references: [00_SHAHNAMEH_RESEARCH.md, 01_CORE_MECHANICS.md, MANIFESTO.md]
+tags: [research, divs, economics, post-mvp, lore, zoroastrian]
+created: 2026-04-30
+last_updated: 2026-04-30
+provenance: Authored by general-purpose research agent. Not blocking current MVP.
+---
 
-*Research deliverable for the future Divs faction. Not blocking the current MVP.*
-*Authored: 2026-04-30. Author: Claude Code (research agent).*
-*Companion to `00_SHAHNAMEH_RESEARCH.md` §2 (Kayanian) and §4 (Divs unit table).*
+# Divs — Lore Research and Economic Mechanic Proposals
 
 ---
 

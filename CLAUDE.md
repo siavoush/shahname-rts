@@ -1,3 +1,25 @@
+---
+title: Project Instructions for Claude Code Sessions
+type: process
+status: living
+owner: design-chat
+summary: Operating instructions for any Claude Code session — read order, file ownership rules, escalation rules, code conventions, working with multiple sessions.
+audience: all
+read_when: every-session
+prerequisites: [MANIFESTO.md]
+ssot_for:
+  - read order at session start
+  - file ownership rules (what Claude Code owns vs read-only)
+  - escalation rules (design questions vs implementation choices)
+  - code conventions (constants externalization, apply_farr_change chokepoint, Shahnameh source comments)
+  - placeholder graphics policy
+  - branch and commit conventions
+references: [MANIFESTO.md, docs/STUDIO_PROCESS.md, docs/ARCHITECTURE.md, DECISIONS.md, 01_CORE_MECHANICS.md, 02_IMPLEMENTATION_PLAN.md]
+tags: [process, session-start, instructions, conventions, file-ownership]
+created: 2026-04-22
+last_updated: 2026-05-01
+---
+
 # Project: Shahnameh RTS
 
 A real-time strategy game based on Ferdowsi's *Shahnameh* (Book of Kings), set in the Kayanian / Heroic Age. Iran vs. Turan, with Divs as a future antagonist faction. Inspired by StarCraft 2, Command & Conquer, and Age of Empires 2 — with cultural authenticity and the Persian epic's themes treated as load-bearing design constraints, not flavor.

@@ -1,3 +1,21 @@
+---
+title: Questions for Design Chat
+type: log
+status: append-only
+owner: team
+summary: Upward channel from Claude Code (implementation) to the design chat. Open questions that affect gameplay/feel/balance/narrative and exceed implementation authority. Resolved questions move to the archive section.
+audience: all
+read_when: every-session
+prerequisites: []
+ssot_for:
+  - open design questions awaiting design-chat resolution
+  - resolved design questions (archive)
+references: [01_CORE_MECHANICS.md, DECISIONS.md]
+tags: [log, questions, design-chat, escalations]
+created: 2026-04-23
+last_updated: 2026-05-01
+---
+
 # Questions for Design
 
 This file is the upward channel from Claude Code (implementation) to the design chat (Siavoush + design Cowork session).

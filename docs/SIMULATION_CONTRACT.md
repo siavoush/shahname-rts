@@ -1,8 +1,30 @@
-# Simulation Architecture Contract
+---
+title: Simulation Architecture Contract
+type: contract
+status: ratified
+version: 1.2.0
+owner: engine-architect
+summary: When gameplay state mutates and how systems observe changes. The engine layer everything else sits on.
+audience: all
+read_when: working-on-anything-that-mutates-gameplay-state
+prerequisites: [MANIFESTO.md, CLAUDE.md]
+ssot_for:
+  - SimClock 30Hz fixed tick discipline
+  - SimNode base class and _set_sim assertion
+  - tick pipeline phase order (input → ai → movement → spatial_rebuild → combat → farr → cleanup)
+  - SpatialIndex API (uniform 8m grid, three query shapes)
+  - GameRNG domain-keyed seeding
+  - IPathScheduler interface (real + mock)
+  - Numeric Representation principle (integer arithmetic for accumulating state)
+  - CI lint rules (5 ripgrep patterns)
+references: [STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md]
+tags: [tick, sim, determinism, spatial, rng, lint, foundation]
+created: 2026-04-30
+last_updated: 2026-05-01
+provenance: Outcome of Sync 1 (engine-architect, ai-engineer, qa-engineer). Convergence Review revision pass 2026-05-01.
+---
 
-*Outcome of Sync 1 between engine-architect, ai-engineer, qa-engineer.*
-*Status: **1.2.0** ratified 2026-04-30 (Convergence Review revision pass).*
-*Created: 2026-04-30*
+# Simulation Architecture Contract
 
 ---
 

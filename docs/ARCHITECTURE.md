@@ -1,8 +1,26 @@
-# Architecture — Target Shape and Build State
+---
+title: Architecture — Target Shape and Build State
+type: architecture
+status: living
+version: 0.1.0
+owner: engine-architect
+summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
+audience: all
+read_when: implementation-mode
+prerequisites: [MANIFESTO.md, CLAUDE.md]
+ssot_for:
+  - subsystem build state table (planned/in-progress/built)
+  - directory layout with rationale
+  - contract index (which doc to read for which domain)
+  - plan-vs-reality delta record
+  - high-level system map (UI / simulation / event bus / foundation layers)
+references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md, RESOURCE_NODE_CONTRACT.md, AI_DIFFICULTY.md, ../02_IMPLEMENTATION_PLAN.md, STUDIO_PROCESS.md]
+tags: [orientation, architecture, build-state, directory, system-map]
+created: 2026-05-01
+last_updated: 2026-05-01
+---
 
-*Status: **0.1.0** initial — pre-implementation. Updated continuously as systems land.*
-*Owner: engine-architect. Updated at phase milestones and significant subsystem landings.*
-*Created: 2026-05-01.*
+# Architecture — Target Shape and Build State
 
 > This document is the **orientation layer** for the project. After `MANIFESTO.md` and `CLAUDE.md`, this is the first thing anyone (agent or human) reads when picking up work — especially after a context boundary (compaction, time off, fresh session). It exists so you don't have to re-read every contract and every commit just to know where you are.
 >

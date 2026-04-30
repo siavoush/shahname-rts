@@ -1,8 +1,32 @@
-# Resource Node Schema Contract
+---
+title: Resource Node Schema Contract
+type: contract
+status: ratified
+version: 1.1.1
+owner: world-builder
+summary: Resource gathering — ResourceNode hierarchy (MineNode, Mazra'eh), three-call extract API, IDropoffTarget protocol, fertile-zone placement, EventBus signals, BalanceData keys.
+audience: all
+read_when: working-on-resources-mines-farms-gather-or-worker-ai
+prerequisites: [MANIFESTO.md, SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md]
+ssot_for:
+  - ResourceNode abstract base + MineNode + Mazra'eh subclass hierarchy
+  - three-call extract API (begin_extract / tick_extract / release_extract)
+  - ExtractResult enum (GATHERING, YIELD_READY, NODE_DEPLETED, NODE_FULL, INVALID)
+  - IDropoffTarget duck-typed protocol
+  - fertile-zone placement (Array[Vector2i] map metadata, WorldGrid.is_fertile)
+  - NavigationObstacle3D ownership (mine scenes carry it; farms don't)
+  - depletion lifecycle (deferred-emit via cleanup phase)
+  - four resource-node EventBus signals
+  - resource_node_depleted dual-mode payload (API ref + telemetry destructure)
+  - ResourceNodeConfig keys (mine + farm yield/stock/workers)
+references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md]
+tags: [resources, mines, farms, gather, navigation, fertile-tiles, signals]
+created: 2026-04-30
+last_updated: 2026-04-30
+provenance: Outcome of Sync 4 — joint Constraint Negotiation between world-builder and gameplay-systems. Path 2 (workers gather grain) ratified by design chat 2026-04-30. Convergence Review revisions 2026-05-01.
+---
 
-*Outcome of Sync 4 between world-builder and gameplay-systems.*
-*Status: **1.1.1** ratified 2026-04-30. Path 2 (workers gather grain) ratified by design chat 2026-04-30.*
-*Created: 2026-04-30*
+# Resource Node Schema Contract
 
 > Foundation: this contract sits on top of `SIMULATION_CONTRACT.md` and `STATE_MACHINE_CONTRACT.md`. All node state mutation happens inside `_sim_tick`. All cross-component writes go through method calls, never reaching in. No exceptions.
 

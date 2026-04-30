@@ -1,8 +1,31 @@
-# State Machine Contract
+---
+title: State Machine Contract
+type: contract
+status: ratified
+version: 1.0.0
+owner: engine-architect
+summary: Flat FSM design for both unit-level state machines and AI controllers. Command queue, interrupt priority, death-from-any-state, AI-controller / unit-FSM relationship.
+audience: all
+read_when: working-on-unit-behavior-or-ai-controllers
+prerequisites: [MANIFESTO.md, SIMULATION_CONTRACT.md]
+ssot_for:
+  - flat FSM decision (vs HSM, vs behavior-tree-lite)
+  - UnitState base class (enter/exit/sim_tick hooks, id, priority, interrupt_level)
+  - StateMachine API and lifecycle
+  - command queue ownership and consumption pattern
+  - death preemption mechanism (via EventBus.unit_health_zero)
+  - INTERRUPT_NEVER semantics (blocks damage, allows player commands)
+  - state allocation contract (RefCounted, instantiated once per unit, no .new() per transition)
+  - AI controller / unit FSM relationship (separate StateMachine instances, command-queue boundary)
+  - debug introspection (current_state_name + transition_history ring buffer)
+references: [SIMULATION_CONTRACT.md]
+tags: [fsm, state-machine, units, ai, command-queue, interrupts]
+created: 2026-04-30
+last_updated: 2026-04-30
+provenance: Outcome of Sync 2 — joint Constraint Negotiation between engine-architect and ai-engineer.
+---
 
-*Outcome of Sync 2 between engine-architect and ai-engineer.*
-*Status: **1.0.0** ratified 2026-04-30.*
-*Created: 2026-04-30*
+# State Machine Contract
 
 > Foundation: this contract sits on top of `SIMULATION_CONTRACT.md`. Every transition, command-queue mutation, timer read, and `_sim_tick` happens inside the simulation tick discipline defined there. No exceptions.
 

@@ -1,8 +1,27 @@
-# AI Difficulty Values
+---
+title: AI Difficulty Values
+type: contract
+status: ratified
+version: 1.1.0
+owner: balance-engineer
+summary: Easy/Normal/Hard parameter values for Turan AI — wave cadence, gather multiplier, tech-up timing, attack army threshold. Also the gather-multiplier application-point addendum.
+audience: all
+read_when: working-on-ai-difficulty-or-balance-tuning
+prerequisites: [01_CORE_MECHANICS.md, TESTING_CONTRACT.md]
+ssot_for:
+  - Easy/Normal/Hard difficulty values (4 dials × 3 difficulties)
+  - rationale for each dial (gather multiplier mechanism, tech-up timing, attack army threshold)
+  - difficulty success criteria (human playtest + AI-vs-AI sim)
+  - tuning escape hatches when criteria miss
+  - AI gather multiplier application point (dual-factor in TuranController.EconomyState)
+references: [TESTING_CONTRACT.md, RESOURCE_NODE_CONTRACT.md, SIMULATION_CONTRACT.md, ../01_CORE_MECHANICS.md]
+tags: [ai, difficulty, balance, tuning, turan]
+created: 2026-04-30
+last_updated: 2026-05-01
+provenance: Outcome of Sync 5 — Open Consultation (ai-engineer + balance-engineer). Lead synthesis decision. Gather-multiplier addendum (§5) jointly authored by ai-engineer + gameplay-systems during Convergence Review.
+---
 
-*Status: **1.1.0** ratified 2026-05-01.*
-*Outcome of Sync 5 (Open Consultation, ai-engineer + balance-engineer).*
-*Foundation: `01_CORE_MECHANICS.md` §12, `docs/TESTING_CONTRACT.md` §1.2 (AIConfig sub-resource).*
+# AI Difficulty Values
 
 > Per `01_CORE_MECHANICS.md` §12: difficulty differs by **resource asymmetries + aggression timing**, not AI sophistication. Same FSM, same logic, different numbers.
 

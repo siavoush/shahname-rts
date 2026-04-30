@@ -1,7 +1,30 @@
-# Studio Process — How the Virtual Studio Operates
+---
+title: Studio Process — How the Virtual Studio Operates
+type: process
+status: living
+version: 1.0.0
+owner: team
+summary: Operating contract for multi-agent collaboration — discussion patterns, facilitator role, retro practice, SemVer policy, mode separation, sync log.
+audience: all
+read_when: every-session
+prerequisites: [MANIFESTO.md]
+ssot_for:
+  - five discussion patterns (Author+Reviewers, Constraint Negotiation, Devil's Advocate, Open Consultation, Convergence Review)
+  - servant-leader facilitator role
+  - design-mode vs implementation-mode separation
+  - TDD discipline for implementation mode
+  - retro practice (must update this doc, not just debrief)
+  - SemVer 2.0.0 versioning policy
+  - active format rules (§9, accumulating from retros)
+  - frontmatter schema for project documentation
+  - sync log (chronological record of every sync run)
+references: [MANIFESTO.md, ARCHITECTURE.md]
+tags: [process, syncs, retros, ssot, modes, semver, frontmatter]
+created: 2026-04-30
+last_updated: 2026-05-01
+---
 
-*Living document. Updated after every sync retro.*
-*Created: 2026-04-30*
+# Studio Process — How the Virtual Studio Operates
 
 > This process operates under the principles in [`MANIFESTO.md`](../MANIFESTO.md). When the principles and the rules below conflict, the principles win.
 
@@ -210,6 +233,46 @@ This section accumulates rules added/modified through retros. Each entry is date
 - *(2026-05-01, post-Convergence-Review)* **Joint addenda (peer-negotiated cross-contract additions) have a round limit.** If a peer-to-peer negotiation bounces between options for more than 3 rounds, the lead intervenes with a tie-breaker proposal. **Why added:** the Convergence Review's joint addendum (AI gather multiplier application point) bounced between (a)/(b)/(a-modified)/(b-with-tweak)/(dual-factor) across ~7 messages before landing. The final design (dual-factor) was good — genuine design ambiguity, peer negotiation found a creative solution neither agent had pre-staged — but ~2 of those rounds were avoidable with earlier facilitator intervention. ([Convergence Review retro](#convergence-review--phase-0-foundation-ratification))
 
 - *(2026-05-01, post-cleanup-audit)* **SSOT discipline: each fact lives in exactly one file. Other files reference, never restate.** When writing or editing markdown, ask: *"if this fact changes, how many files would I need to update?"* If the answer is more than one, refactor: pick a single owner, replace the duplicate with a link or a one-line summary that points at the owner. Indexes and orientation summaries are allowed only if (a) they're clearly framed as "see X for full content" and (b) they cannot drift independently — i.e., a change to X cannot leave the summary stale. **Why added:** LLMs (this agent included) tend to over-explicate, restating canonical content across multiple docs. In a project this size, that produces silent contradictions within a few revision cycles. Caught and refactored after creating ARCHITECTURE.md by duplicating the directory map and agent table from 02_IMPLEMENTATION_PLAN.md. Cites Manifesto Principle 7 (Single Source of Truth) — "reference the source rather than copying it. When you need information in a second place, point to the original."
+
+- *(2026-05-01, frontmatter-rollout)* **Every project markdown doc carries YAML frontmatter per the schema below.** New docs ship with frontmatter from creation. Existing docs without frontmatter are added on first edit. The frontmatter is the doc's machine-readable contract; the body is the human-readable content. The frontmatter is the SSOT for: title, type, status, version, owner, audience, read_when, prerequisites, references, ssot_for, tags. Any of those facts appearing in the body without a frontmatter source is a SSOT violation. **Why added:** without frontmatter, an agent scanning N docs has to ingest each one to decide if it's relevant, drifting attention and filling context with noise. The schema lets an agent make a read/skip decision in <30 lines. The `ssot_for` field directly operationalizes the SSOT discipline rule above — facts become machine-greppable to their canonical owner.
+
+  **The schema:**
+
+  ```yaml
+  ---
+  # REQUIRED — every doc
+  title: Human-readable title
+  type: contract | process | spec | plan | log | research | architecture | manifesto | exploration
+  status: draft | ratified | living | stable | append-only | superseded | experimental
+  summary: One-sentence elevator pitch — what this is and why it exists.
+  audience: all | <comma-separated agent names>
+  read_when: every-session | implementation-mode | design-mode | phase-<N> | working-on-<topic>
+
+  # REQUIRED for versioned docs (contracts, plans, process docs)
+  version: 1.2.0           # SemVer per §13
+  owner: <agent-name> | "design-chat" | "team" | "siavoush"
+
+  # RECOMMENDED — fills the orientation gap
+  ssot_for:                # facts THIS doc canonically owns
+    - <facts>
+  prerequisites:           # read these first
+    - <other docs>
+  references:              # other docs this points at
+    - <other docs>
+
+  # LIFECYCLE
+  created: YYYY-MM-DD
+  last_updated: YYYY-MM-DD
+
+  # OPTIONAL
+  tags: [topic, topic, topic]
+  superseded_by: null      # path to replacement if deprecated
+  phase: [0, 1]            # which phase(s) this concerns
+  provenance: <free text>  # how/when/where this came from, if useful
+  ---
+  ```
+
+  **`read_when` taxonomy is intentionally loose for now.** Constrain it later if values proliferate inconsistently. **`.claude/agents/*.md`** files keep their existing Claude Code agent schema (name, description, model, tools) and do *not* take this frontmatter — different consumer (the CC harness), different schema, no dual-frontmatter mess. **A lint validator for the schema is deferred** per Manifesto Principle 4 (Lean Iteration) — we'll build it after a few revision cycles produce real signal on which fields drift and need automated checks.
 
 ---
 

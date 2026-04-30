@@ -1,3 +1,31 @@
+---
+title: Core Mechanics — MVP Specification
+type: spec
+status: stable
+owner: design-chat
+summary: Mechanical-systems specification for the MVP (Tier 1 vertical slice). The spec Claude Code builds against. Decisions here are committed unless marked TBD.
+audience: all
+read_when: every-session
+prerequisites: [MANIFESTO.md, 00_SHAHNAMEH_RESEARCH.md]
+ssot_for:
+  - MVP scope (in/out)
+  - core match loop
+  - resource definitions (Coin, Grain, Farr)
+  - Farr meter full specification (range, generators, drains, snowball protection, visualization, thresholds)
+  - building list (Tier 1 + Tier 2)
+  - unit list (Iran MVP)
+  - Rostam hero specification
+  - tech tier requirements
+  - Kaveh Event mechanic (trigger, execution, resolution)
+  - win/loss conditions
+  - UI requirements (§11)
+  - Turan AI requirements (MVP)
+references: [00_SHAHNAMEH_RESEARCH.md, DECISIONS.md, 02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md]
+tags: [spec, mechanics, mvp, farr, kaveh, units, buildings, tech-tiers, win-conditions]
+created: 2026-04-22
+last_updated: 2026-05-01
+---
+
 # Core Mechanics — MVP Specification
 
 *The mechanical heart of the Shahnameh RTS, scoped for what we can actually build.*

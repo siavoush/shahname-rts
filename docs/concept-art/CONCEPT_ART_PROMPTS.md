@@ -1,3 +1,21 @@
+---
+title: Concept Art Prompts
+type: exploration
+status: experimental
+owner: team
+summary: Image-generator prompts for testing the Persian-miniature-RTS aesthetic. Concept exploration only — no shipped art lives here.
+audience: all
+read_when: working-on-art-direction-or-visual-exploration
+prerequisites: [00_SHAHNAMEH_RESEARCH.md]
+ssot_for:
+  - concept-art prompts log (cinematic/menu vs gameplay-camera tests)
+  - validated visual approach (Persian miniature aesthetic at both cinematic and gameplay scales)
+references: [../../00_SHAHNAMEH_RESEARCH.md, ../../DECISIONS.md]
+tags: [art, concept, visual-direction, persian-miniature, prompts]
+created: 2026-04-23
+last_updated: 2026-04-23
+---
+
 # Concept Art Prompts
 
 A growing collection of prompts for image generators (OpenAI gpt-image / Midjourney / Flux / Stable Diffusion) to test visual direction. These are concept exploration only — none of this art will ship in the game. The goal is to iterate quickly on what the Persian-miniature-RTS aesthetic *feels* like before committing to a real pipeline.

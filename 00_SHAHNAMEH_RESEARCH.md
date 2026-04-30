@@ -1,3 +1,27 @@
+---
+title: Shahnameh RTS — Research and Scoping
+type: research
+status: stable
+owner: design-chat
+summary: Research on Ferdowsi's Shahnameh as RTS source material — three ages, faction design space, unit archetypes, mechanics, art direction, market positioning, scope tiers.
+audience: all
+read_when: working-on-units-buildings-or-narrative-grounding
+prerequisites: []
+ssot_for:
+  - Shahnameh source material context (Ferdowsi, three ages, key figures)
+  - rationale for choosing the Kayanian/Heroic Age
+  - faction design space (Iran, Turan, Divs)
+  - unit archetype tables grounded in source material
+  - art-direction grounding (Persian miniature tradition)
+  - cultural-authenticity rules
+  - market positioning and competitive landscape
+  - scope tier structure (Tier 0 prototype → Tier 3 full release)
+references: [DECISIONS.md, 01_CORE_MECHANICS.md, 02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, 00b_DIV_RESEARCH.md]
+tags: [research, lore, shahnameh, source-material, art-direction, market]
+created: 2026-04-22
+last_updated: 2026-05-01
+---
+
 # Shahnameh RTS — Research & Scoping Document
 
 *A real-time strategy game drawn from Ferdowsi's Book of Kings.*

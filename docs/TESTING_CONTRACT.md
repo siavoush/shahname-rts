@@ -1,9 +1,32 @@
-# Testing Contract
+---
+title: Testing Contract
+type: contract
+status: ratified
+version: 1.4.0
+owner: qa-engineer
+summary: Testing infrastructure beyond what the Simulation Contract covers — BalanceData.tres structure, telemetry NDJSON event schema, MatchHarness API, AI-vs-AI sim harness output, coverage guidance.
+audience: all
+read_when: working-on-tests-or-balance-data-or-telemetry
+prerequisites: [MANIFESTO.md, SIMULATION_CONTRACT.md]
+ssot_for:
+  - BalanceData.tres top-level shape and sub-resources (UnitStats, BuildingStats, FarrConfig, CombatMatrix, EconomyConfig, AIConfig)
+  - validate_hard / validate_soft methods
+  - hot-reload phasing (FarrConfig Phase 5, all sub-resources Phase 8)
+  - balance diff tool spec
+  - telemetry NDJSON envelope and event catalog (14 typed events)
+  - MatchHarness API and conventions
+  - _test_set_farr semantics (synthesizes farr_changed)
+  - snapshot() primitive-only constraint
+  - AI-vs-AI sim harness CLI and output format
+  - test categories and coverage guidance per phase
+references: [SIMULATION_CONTRACT.md, RESOURCE_NODE_CONTRACT.md, AI_DIFFICULTY.md]
+tags: [tests, gut, telemetry, balance-data, mocks, sims, coverage]
+created: 2026-04-30
+last_updated: 2026-04-30
+provenance: Outcome of Sync 3 (qa-engineer author; engine-architect, balance-engineer reviewers). Convergence Review revisions 2026-05-01.
+---
 
-*Outcome of Sync 3. Companion to `docs/SIMULATION_CONTRACT.md` (Sync 1).*
-*Authors: qa-engineer. Reviewers: engine-architect, balance-engineer.*
-*Status: **1.4.0** ratified 2026-04-30.*
-*Created: 2026-04-30*
+# Testing Contract
 
 ---
 

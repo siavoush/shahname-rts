@@ -1,3 +1,22 @@
+---
+title: Manifesto — Foundational Principles
+type: manifesto
+status: stable
+owner: team
+summary: References Peiman Khorramshahi's manifesto as the project's foundational principles. Each principle is mapped to a specific application in this project. Principles override tactical rules.
+audience: all
+read_when: every-session
+prerequisites: []
+ssot_for:
+  - the ten foundational principles (named) and their application to this project
+  - the principle-over-tactical-rule precedence rule
+references: []
+tags: [principles, manifesto, foundation]
+created: 2026-04-30
+last_updated: 2026-04-30
+provenance: References https://github.com/peiman/manifesto by Peiman Khorramshahi as the canonical source.
+---
+
 # Manifesto — Foundational Principles
 
 **پندارِ نیک، گفتارِ نیک، کردارِ نیک**

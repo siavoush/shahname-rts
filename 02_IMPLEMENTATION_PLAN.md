@@ -1,7 +1,30 @@
+---
+title: Implementation Plan — Shahnameh RTS MVP
+type: plan
+status: living
+version: 1.2.0
+owner: team
+summary: Phased build plan from Phase 0 foundation through Phase 8 vertical slice. Phase task lists, agent assignments, milestones, parallelism guide, risk register, sync history.
+audience: all
+read_when: every-session
+prerequisites: [MANIFESTO.md, 01_CORE_MECHANICS.md]
+ssot_for:
+  - 8-phase build plan (Phase 0 through Phase 8)
+  - per-phase task lists, milestones, and "done means" criteria
+  - phase parallelism guide
+  - risk register
+  - milestone calendar (~21 weeks to Tier 1)
+  - sync history table (§9)
+  - open design questions index (§10)
+references: [docs/ARCHITECTURE.md, docs/STUDIO_PROCESS.md, docs/SIMULATION_CONTRACT.md, docs/STATE_MACHINE_CONTRACT.md, docs/TESTING_CONTRACT.md, docs/RESOURCE_NODE_CONTRACT.md, docs/AI_DIFFICULTY.md, 01_CORE_MECHANICS.md]
+tags: [plan, phases, milestones, risks, agent-assignments]
+created: 2026-04-30
+last_updated: 2026-05-01
+---
+
 # Implementation Plan — Shahnameh RTS MVP
 
 *Living document. Updated as we learn from prototyping.*
-*Created: 2026-04-30*
 *Revised: 2026-04-30 — incorporating studio review feedback from all 7 specialist agents*
 
 > This plan operates under the principles in [`MANIFESTO.md`](MANIFESTO.md). When a tactical decision in this document conflicts with a principle, the principle wins. The plan is the hypothesis; the principles are the constants.
