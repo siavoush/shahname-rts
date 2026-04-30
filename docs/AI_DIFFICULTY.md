@@ -1,6 +1,6 @@
 # AI Difficulty Values
 
-*Status: **1.0.0** ratified 2026-05-01.*
+*Status: **1.1.0** ratified 2026-05-01.*
 *Outcome of Sync 5 (Open Consultation, ai-engineer + balance-engineer).*
 *Foundation: `01_CORE_MECHANICS.md` §12, `docs/TESTING_CONTRACT.md` §1.2 (AIConfig sub-resource).*
 
@@ -12,7 +12,7 @@
 
 | Difficulty | Wave cadence | AI gather multiplier | Turan tech-up time | AI attack army threshold |
 |------------|--------------|----------------------|--------------------|--------------------------|
-| **Easy**   | 180s (5400 ticks) | 0.75× | 8 min (14400 ticks) | 8 units |
+| **Easy**   | 180s (5400 ticks) | 0.75× | 6 min (10800 ticks) | 8 units |
 | **Normal** | 120s (3600 ticks) | 1.00× | 5 min (9000 ticks)  | 12 units |
 | **Hard**   | 90s (2700 ticks)  | 1.25× | 4 min (7200 ticks)  | 16 units |
 
@@ -24,7 +24,7 @@ Tick rate: 30Hz per Sim Contract. All values are starting points for Phase 6 AI-
 
 **AI gather multiplier (asymmetric economy):** chosen over an alternate "player bonus" approach. Slowing AI economy directly delays AI army composition, which is what makes Easy *learnable* (the player can out-tech and out-produce the AI), not just *forgiving*. A player bonus would help the player but leave AI's wave timing intact, and the early-wave-arrival problem is the actual pain point on Easy.
 
-**Tech-up timing:** more impactful than wave frequency for midgame feel (per balance-engineer). Easy stays Tier 1 longer (no Savar cavalry) — the player can confidently tech to cavalry and use them against Tier 1 Turan infantry. Hard tech-ups before player can comfortably reach Tier 2 — putting Turan cavalry on the field while player is still in piyade-and-archer.
+**Tech-up timing:** more impactful than wave frequency for midgame feel (per balance-engineer). Normal is pinned at 5 minutes per `01_CORE_MECHANICS.md` §12. Easy is set to 6 minutes (±1 from Normal) rather than the originally proposed 8 — 8 minutes would keep Turan in Tier 1 for over half a 15-minute match, producing a boring matchup with no cavalry pressure for the player to face. 6 minutes gives the player a meaningful tech-up window without making the AI toothless. Hard at 4 minutes puts Turan cavalry on the field while the player is still in piyade-and-archer, creating genuine pressure.
 
 **Attack army threshold (per ai-engineer):** prevents Hard's faster wave cadence from sending thinly-populated armies that die at the player's wall. Each wave is *bigger* on Hard, not just *more frequent*. The combination produces real pressure rather than spam-feel.
 
@@ -40,7 +40,9 @@ Two framings — one for human playtest, one for headless AI-vs-AI simulation. B
 - **Hard:** same experienced player wins <30%, losing to economic pressure rather than single-wave wipe.
 
 ### AI-vs-AI simulation (Phase 6 deliverable, runs nightly per Testing Contract §4)
-- **Median match length** for Normal-difficulty matches: 17-22 minutes (centered in the 15-25 min spec target).
+- **Easy: median match length 20-28 minutes.** Slight overshoot of the 15-25 minute spec ceiling is acceptable — Easy is for novice players who need time to learn the loop. Shortening it requires increasing AI aggression, which defeats the purpose.
+- **Normal: median match length 17-22 minutes** (centered in the 15-25 min spec target).
+- **Hard: median match length 13-18 minutes, weighted toward Iran losses.** Hard should feel like economic pressure mounting until the player's position becomes untenable, not a single unstoppable wave.
 - **Iran win-rate vs Normal AI:** 45-65% across 50 matches (genuinely contested, neither side dominant).
 - **Kaveh Event trigger rate:** 20-40% of matches (Farr is meaningful but not deterministic).
 - **Turan tier-advance tick (Normal):** 8000-10000 ticks (4.4-5.6 min, matches the 5-min spec).
@@ -64,7 +66,7 @@ class_name AIConfig extends Resource
 
 @export var easy_wave_cadence_ticks: int = 5400
 @export var easy_ai_gather_mult: float = 0.75
-@export var easy_techup_ticks: int = 14400
+@export var easy_techup_ticks: int = 10800
 @export var easy_attack_army_threshold: int = 8
 
 @export var normal_wave_cadence_ticks: int = 3600
@@ -79,6 +81,17 @@ class_name AIConfig extends Resource
 ```
 
 All values are exported so `BalanceData.tres` can edit them without code changes — supports Phase 5 hot-reload (per Testing Contract §1.4).
+
+**Where the multiplier is applied.** `ai_gather_mult` is realized in `TuranController.EconomyState` as a dual-factor knob: a *target worker count* (primary dial) scales the AI's workforce directly; a *per-trip yield multiplier* is the residual fallback when worker count is capped by available mine slots. `ResourceNode.tick_extract` and `ResourceSystem.add` remain team-blind — only `TuranController` is difficulty-aware. The yield multiplier is `1.0` in the unsaturated case and only activates when `target_workers` exceeds `total_available_mine_slots`, preventing double-multiplication.
+
+```gdscript
+var target_workers := int(NORMAL_WORKER_COUNT * ai_gather_mult)
+var actual_workers := mini(target_workers, total_available_mine_slots)
+var yield_mult := 1.0 if actual_workers >= target_workers \
+    else float(target_workers) / float(actual_workers)
+```
+
+The yield multiplier is applied at `TuranController`'s deposit handler before calling `dropoff.deposit(...)`. The player team always sees `worker_count = NORMAL_WORKER_COUNT` and `yield_mult = 1.0` regardless of difficulty. `NORMAL_WORKER_COUNT` is a code-side `const` in `TuranController` — it is the multiplier base, not a per-difficulty tunable, so it does not live in `AIConfig`.
 
 ---
 

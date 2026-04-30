@@ -2,7 +2,7 @@
 
 *Outcome of Sync 3. Companion to `docs/SIMULATION_CONTRACT.md` (Sync 1).*
 *Authors: qa-engineer. Reviewers: engine-architect, balance-engineer.*
-*Status: **1.3.0** ratified 2026-04-30.*
+*Status: **1.4.0** ratified 2026-04-30.*
 *Created: 2026-04-30*
 
 ---
@@ -81,17 +81,27 @@ class_name CombatMatrix extends Resource
 @export var effectiveness: Dictionary = {}
 
 class_name EconomyConfig extends Resource
-@export var mine_gather_rate_coin_per_tick: float   # per worker per tick
-@export var worker_carry_capacity_coin: int
-@export var farm_grain_rate_per_tick: float          # per farm per tick
-@export var mine_depletion_total_coin: int           # coin until exhausted
 @export var starting_coin: int = 150
 @export var starting_grain: int = 50
+@export var resource_nodes: ResourceNodeConfig = ResourceNodeConfig.new()
+# ResourceNodeConfig schema is canonical in RESOURCE_NODE_CONTRACT.md §7.
+# Fields: mine_initial_stock, mine_max_workers, coin_yield_per_trip, coin_yield_per_tick,
+#         grain_yield_per_trip, grain_yield_per_tick, farm_max_workers, trip_full_load_ticks.
 
 class_name AIConfig extends Resource
-# Difficulty multipliers keyed by difficulty level ("easy", "normal", "hard")
-@export var resource_bonus: Dictionary = {}          # StringName -> float multiplier
-@export var aggression_timer_offset_ticks: Dictionary = {}  # StringName -> int (negative = earlier attacks)
+# Flat fields per AI_DIFFICULTY.md §5 — Godot's Resource editor doesn't edit nested Dicts cleanly.
+@export var easy_wave_cadence_ticks: int = 5400
+@export var easy_ai_gather_mult: float = 0.75
+@export var easy_techup_ticks: int = 10800
+@export var easy_attack_army_threshold: int = 8
+@export var normal_wave_cadence_ticks: int = 3600
+@export var normal_ai_gather_mult: float = 1.00
+@export var normal_techup_ticks: int = 9000
+@export var normal_attack_army_threshold: int = 12
+@export var hard_wave_cadence_ticks: int = 2700
+@export var hard_ai_gather_mult: float = 1.25
+@export var hard_techup_ticks: int = 7200
+@export var hard_attack_army_threshold: int = 16
 ```
 
 ### 1.3 Validation
@@ -161,6 +171,12 @@ All events carry `type`, `tick`, and `sim_time`. Additional fields are event-spe
 | `hero_died` | `hero_id`, `hero_type`, `team`, `killer_id`, `fleeing` | Hero death |
 | `hero_respawned` | `hero_id`, `hero_type`, `respawn_site_id` | Hero respawn completes |
 | `ability_cast` | `unit_id`, `ability_name` | Already in Sim Contract §7; included in sink |
+| `extract_started` | `worker_id`, `node_id` | Worker begins gather cycle at a resource node |
+| `extract_completed` | `worker_id`, `node_id`, `yield_amount` | Worker completes a full load |
+| `resources_deposited` | `worker_id`, `resource_kind`, `amount` | Worker deposits at Throne |
+| `resource_node_depleted` | `node_id`, `resource_kind` | Mine exhausted or farm destroyed (node_id not Node ref — serializable) |
+
+Schemas for the four resource signals are canonical in `RESOURCE_NODE_CONTRACT.md` §6. The `resource_node_depleted` payload uses `node_id: int` (not the Node ref) for NDJSON serializability — engine-architect coordinates with world-builder on the id-vs-ref split.
 
 `constants_version` is `hash(FileAccess.get_file_as_string("res://resources/balance_data.tres"))` — lets post-hoc analysis confirm which tuning version produced each log. Use this field to group or filter batch runs when correlating outcomes to specific tuning states.
 
@@ -181,12 +197,18 @@ static func new(seed: int, scenario: StringName) -> MatchHarness: ...
 func advance_ticks(n: int) -> void: ...   # See Sim Contract §6.1
 
 func snapshot() -> Dictionary:
-    # { farr, coin, grain, unit_counts: {type: count}, tick }
+    # Returns a FLAT Dictionary of primitive values only (int, float, String, PackedArray).
+    # No nested Dicts, no Node refs. GDScript's == operator compares nested Dicts by
+    # reference, not value — nested Dicts break the determinism regression test silently.
+    # Shape: { farr: float, coin_iran: int, grain_iran: int, coin_turan: int,
+    #          grain_turan: int, unit_count_iran: int, unit_count_turan: int, tick: int }
 
 func spawn_unit(type: StringName, team: int, position: Vector3) -> Node: ...
 func spawn_building(type: StringName, team: int, position: Vector3) -> Node: ...
-func _test_set_farr(value: float) -> void: ...    # test-only: bypasses apply_farr_change;
-                                                   # must be called inside advance_ticks so _is_ticking is set
+func _test_set_farr(value: float) -> void: ...    # test-only: bypasses apply_farr_change but MUST
+                                                   # emit EventBus.farr_changed(delta, &"test_set", -1,
+                                                   # new_value, SimClock.tick) so F2 overlay stays consistent.
+                                                   # Must be called inside advance_ticks so _is_ticking is set.
 func set_resources(team: int, coin: int, grain: int) -> void: ...
 
 func get_farr() -> float: ...
@@ -343,4 +365,4 @@ These are guidance, not mandates. A function that's trivially a pass-through doe
 
 ---
 
-*End of v1. Pending sign-off from engine-architect and balance-engineer. Changes after sign-off require a Sync 4.*
+*v1.4.0 — Convergence Review revision pass. EconomyConfig nests ResourceNodeConfig; farm_grain_rate_per_tick removed (Path 2 cleanup); AIConfig adopts flat-field shape per AI_DIFFICULTY.md §5; snapshot() constrained to primitive-only Dict; _test_set_farr emits farr_changed; four resource-node signals added to event catalog.*

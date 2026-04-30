@@ -545,7 +545,7 @@ The team review revealed several "gray zone" decisions that span multiple specia
 | 3 | **Before Phase 0** | Testing Contract | qa-engineer + engine-architect + balance-engineer | Author + Reviewers | ✅ Ratified 2026-04-30 | [`docs/TESTING_CONTRACT.md`](docs/TESTING_CONTRACT.md) |
 | 4 | **Before Phase 3** | Resource Node Schema | world-builder + gameplay-systems | Constraint Negotiation | ✅ Ratified 2026-04-30 (v1.1) | [`docs/RESOURCE_NODE_CONTRACT.md`](docs/RESOURCE_NODE_CONTRACT.md) |
 | 5 | **Before Phase 6** | Difficulty Tuning | ai-engineer + balance-engineer | Open Consultation | ✅ Ratified 2026-05-01 | [`docs/AI_DIFFICULTY.md`](docs/AI_DIFFICULTY.md) (1.0.0) |
-| **C** | **Before Phase 0 implementation** | **Convergence Review** | **All 7 agents** | **Convergence Review (Pattern E)** | **Pending** | **Ratification of full decision stack — every prior contract reviewed by every agent for cross-sync inconsistencies and domain blind spots** |
+| **C** | **Before Phase 0 implementation** | **Convergence Review** | **All 7 agents** | **Convergence Review (Pattern E)** | ✅ **Ratified 2026-05-01** | **12 P0 items resolved across 5 revision passes. Sim 1.2.0, Testing 1.4.0, RNC 1.1.1, AI Difficulty 1.1.0. State Machine 1.0.0 unchanged.** |
 
 The full sync log with retros lives in `STUDIO_PROCESS.md` §10.
 

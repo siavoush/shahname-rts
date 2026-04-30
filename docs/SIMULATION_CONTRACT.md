@@ -1,7 +1,7 @@
 # Simulation Architecture Contract
 
 *Outcome of Sync 1 between engine-architect, ai-engineer, qa-engineer.*
-*Status: **1.1.0** ratified 2026-04-30.*
+*Status: **1.2.0** ratified 2026-04-30 (Convergence Review revision pass).*
 *Created: 2026-04-30*
 
 ---
@@ -107,6 +107,52 @@ Implementation: `tools/lint_simulation.sh` shell script runs the five `rg` comma
 
 Lint complements `SimNode`. Lint catches "didn't extend SimNode at all" cases; `SimNode` catches "extended it but mutated off-tick anyway." Both are required.
 
+### 1.5 UI consumers of write-shaped EventBus signals
+
+§1.1 says rendering and UI may *read* simulation state freely. The companion rule for *writes*:
+
+> **UI consumers of write-shaped EventBus signals must defer all visual state changes to the next `_process` frame. UI never reaches into sim state during a sink callback, and never starts a Tween or AnimationPlayer in the callback's synchronous body.**
+
+Pattern: the UI handler appends the event to a per-frame queue; `_process` drains the queue and applies visual changes (Tween starts, label updates, particle bursts). This keeps render side-effects decoupled from sim phases — a `unit_died` signal firing in the `combat` phase doesn't synchronously start a death animation that races a queued cleanup, and a `farr_changed` signal doesn't pause the sim to lerp the gauge mid-tick.
+
+```gdscript
+# ui/farr_gauge.gd
+var _pending_changes: Array[Dictionary] = []
+
+func _ready() -> void:
+    EventBus.farr_changed.connect(_on_farr_changed)
+
+func _on_farr_changed(amount, reason, source_unit_id, farr_after, tick) -> void:
+    _pending_changes.append({"amount": amount, "after": farr_after})
+
+func _process(_dt: float) -> void:
+    while not _pending_changes.is_empty():
+        var change := _pending_changes.pop_front()
+        _spawn_floating_number(change.amount)
+        _tween_gauge_to(change.after)
+```
+
+The queue-then-drain pattern is enforced by convention; lint rule L2 (§1.4) catches the worst offenders (`EventBus.*.emit` from `_process`), but the UI-side discipline of *not synchronously mutating Tweens in a callback* is reviewed at code-review.
+
+### 1.6 Numeric Representation: Determinism via Integer Arithmetic
+
+State that accumulates over the course of a match — Farr first, Zur and Shar later, possibly economy ledgers if drift becomes visible — is stored as **fixed-point integer**, formatted to float only at boundaries (HUD readout, telemetry NDJSON, balance tooling).
+
+**The problem.** IEEE-754 floats are platform-dependent in subtle ways: identical sequences of additions on x86-64 vs ARM64 can diverge at the 1e-15 level, and that drift accumulates. A 25-minute match at 30 Hz is 45,000 ticks; multiple Farr generators each contributing fractional values per tick produce outcomes that cross the Kaveh threshold (15.0) on different machines despite identical seeds and identical inputs. Same problem hits any AI-vs-AI sim suite that compares end-state across runs.
+
+**The rule.**
+- Every accumulating gameplay scalar uses an **integer backing store** scaled by a domain-specific factor (e.g., `farr_x100: int` where 50.0 Farr = 5000 stored). Domain factor lives in `BalanceData` or a per-domain constant.
+- All arithmetic — adds, subtracts, multiplications by integer factors — happens on the integer.
+- Float conversion happens **only** at:
+  - HUD/UI display (`farr_for_display() -> float` returns `farr_x100 / 100.0`)
+  - Telemetry NDJSON output (`MatchLogger` formats the float)
+  - Balance tooling (diff scripts, dashboards)
+- Multiplication by float multipliers (e.g., AI difficulty `gather_mult`) is allowed *if* it converts back to int via `roundi()` or `int()` before storage. The rounding rule is part of the domain spec and must be deterministic across platforms.
+
+**Farr is the first concrete case.** The `FarrSystem` stores `farr_x100: int`; `apply_farr_change(amount: float, reason, source)` converts `amount` to `int(roundi(amount * 100.0))` at the boundary, then adds. `BalanceData.FarrConfig` exposes float-typed fields for tuning ergonomics, but the runtime store is integer. The Kaveh threshold (15.0) compares as `farr_x100 < 1500`, exact. Tier-2 threshold (40.0) compares as `farr_x100 >= 4000`, exact.
+
+**What this is not.** Not a fixed-point math library, not a pervasive replacement for floats. Position (`Node3D.global_position`), velocity, and other per-frame physics state stay float — they don't accumulate over the match in a way that matters, and Godot's transform math is float-internal regardless. The rule is for *long-lived gameplay scalars that cross thresholds*. If a future system needs a similar guarantee, it follows this pattern.
+
 ---
 
 ## 2. Tick Order
@@ -150,6 +196,10 @@ func _on_phase(phase: StringName, _tick: int) -> void:
 
 Every phase that ticks components has a coordinator with this shape. Iteration order is `unit_id` ascending, locked. Insertions resort; deletions filter. Coordinators that don't tick components (e.g., `spatial_rebuild` calls `SpatialIndex._rebuild()` once, no per-component iteration) follow the same signal-listening shape with their own body.
 
+**Any `SimNode` may register with any phase coordinator.** The phase a node registers with is a property of *the node*, not its class — a `MineNode` registers with the `cleanup` coordinator (to flush its deferred-depletion emit), a `HealthComponent` registers with `combat`, a `MovementComponent` registers with `movement`. A node that needs work in two phases registers twice (with two coordinators). The `cleanup` coordinator is no different from the others — its phase semantics are "things that happen after combat/farr resolved this tick" and it accepts arbitrary `SimNode` registrations, not just dying-unit reaping. World-builder's `MineNode` deferred-depletion pattern (Resource Node Contract §3.3) is the canonical example.
+
+Coordinators that drive non-component singletons (`spatial_rebuild` → `SpatialIndex._rebuild()`, `input` → input drainer) keep that work inline in the coordinator body and do *not* expose a `register()` API for arbitrary nodes. Phases that *do* tick a node list (`movement`, `ai`, `combat`, `farr`, `cleanup`) all expose the same `register()`/`unregister()` shape.
+
 **Implication for `advance_ticks`:** the test harness drives the simulation by emitting the same `EventBus.sim_phase` signals in order — never by calling `_sim_tick` directly. This closes the divergence risk between live and headless paths: any change to the live tick flow automatically applies to tests, and vice versa. See §6.1.
 
 ---
@@ -187,6 +237,14 @@ Any node with a `SpatialAgentComponent` child auto-registers on `_ready`, deregi
 - `query_radius_team`: same as `query_radius` with a team filter applied during cell scan.
 
 `team_filter = -1` means any team. `query_nearest_n` excludes the source if the source is a registered agent (caller may pass its own node and not get itself).
+
+### 3.4 Read-safety from `_input` and `_process`
+
+`SpatialIndex` is **read-safe from `_input` and `_process` between tick boundaries.** UI consumers (selection raycast in `_input`, F4 attack-range overlay in `_process`, hover tooltips, etc.) may call `query_radius` and friends from these contexts and get a coherent answer reflecting the world state as of the most recent `tick_ended`.
+
+The one exception: queries issued *during* the `spatial_rebuild` phase return undefined results. The rebuild is not interruptible, but it is also not atomic from a reader's perspective. UI should treat the index as quiescent only between ticks (after `EventBus.tick_ended` fires for tick N, until `EventBus.sim_phase(&"spatial_rebuild", N+1)` fires for the next tick). In practice this is automatic: `_input` and `_process` run on Godot's main loop, and `_physics_process` (where `spatial_rebuild` runs) is a separate loop — they don't reentrantly interleave. The rule is documented for discipline, not as a runtime hazard.
+
+UI never *writes* to `SpatialIndex`. Registration and rebuild are sim-side only. A UI consumer reading a stale index for one frame is acceptable (the next render frame catches up); a UI consumer writing to the index would corrupt simulation state and break determinism.
 
 ---
 

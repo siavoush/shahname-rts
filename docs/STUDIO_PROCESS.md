@@ -207,6 +207,8 @@ This section accumulates rules added/modified through retros. Each entry is date
 
 - *(2026-05-01, post-foundation-work)* **Always work on a feature branch. Never commit directly to main.** Every session begins by creating a `feat/<short>` or `proto/<short>` branch (per `CLAUDE.md`). Work lands as logical commits on the branch. Merge to main happens via PR with review. **Why added:** the entire studio-foundation work (manifesto, contracts, syncs, retros) was done on `main` without a branch, requiring retroactive cleanup. The rule was already in CLAUDE.md but wasn't enforced as session-zero behavior. Lead must verify branch state before doing any work that produces an artifact. Cites Manifesto Principle 9 (Automated Enforcement): rules that aren't enforced erode.
 
+- *(2026-05-01, post-Convergence-Review)* **Joint addenda (peer-negotiated cross-contract additions) have a round limit.** If a peer-to-peer negotiation bounces between options for more than 3 rounds, the lead intervenes with a tie-breaker proposal. **Why added:** the Convergence Review's joint addendum (AI gather multiplier application point) bounced between (a)/(b)/(a-modified)/(b-with-tweak)/(dual-factor) across ~7 messages before landing. The final design (dual-factor) was good — genuine design ambiguity, peer negotiation found a creative solution neither agent had pre-staged — but ~2 of those rounds were avoidable with earlier facilitator intervention. ([Convergence Review retro](#convergence-review--phase-0-foundation-ratification))
+
 ---
 
 ## 10. Sync Log
@@ -348,9 +350,47 @@ Open Consultation is the right pattern for parameter-tuning where multiple agent
 
 ---
 
+### Convergence Review — Phase 0 Foundation Ratification
+**Date:** 2026-04-30 — 2026-05-01
+**Pattern:** Convergence Review (Pattern E) — first run
+**Participants:** All 7 agents (engine-architect, ai-engineer, gameplay-systems, ui-developer, world-builder, balance-engineer, qa-engineer)
+**Question:** Does the consolidated decision stack (5 contracts + studio process + plan + manifesto) hold up to cross-domain scrutiny? What seams have been missed?
+**Outcome:** Ratified. 12 P0 items found and resolved across 5 revision passes. Contract version bumps:
+- Sim Contract 1.1.0 → 1.2.0 (UI off-tick rule, SpatialIndex read-safety, cleanup-phase coordinator note, Numeric Representation §1.6 — fixed-point integer arithmetic for Farr)
+- Testing Contract 1.3.0 → 1.4.0 (EconomyConfig nests ResourceNodeConfig, AIConfig flat-fields, snapshot() primitive-only, _test_set_farr emits farr_changed, 4 resource signals in NDJSON catalog)
+- Resource Node Contract 1.1.0 → 1.1.1 (dual-mode signal payload — API ref / telemetry destructures into serializable fields)
+- AI Difficulty 1.0.0 → 1.1.0 (tech-up 6/5/4, match-length targets all difficulties, gather-multiplier dual-factor addendum §5)
+
+**Cost:** ~25 agent turns total (one round of 7 reviews + 5 parallel revision passes + 1 joint addendum + ratifications). Approximately the cost of two regular syncs, with the value of catching issues that all five regular syncs could not.
+
+**Retro:**
+
+*What the format caught that the original syncs didn't:*
+- Cross-sync schema drift: Testing Contract was authored before RNC and AI_DIFFICULTY ratified, so its EconomyConfig and AIConfig had become stale. **Six P0 patches in one contract** — five separate agents flagged variations of this. Pattern E surfaces "this contract aged out of date because later contracts moved" — a class of bug that single-sync review can't see.
+- Implicit rules that nobody wrote down: Sim Contract had two implicit rules (UI off-tick discipline, SpatialIndex read-safety) that never got written because they felt obvious to the author. ui-developer (who wasn't in Sync 1) caught both in the Convergence by asking "from my domain, where does this break?"
+- Convergent insight: gameplay-systems and balance-engineer independently flagged that Farr should be stored as fixed-point integer to avoid IEEE-754 platform divergence. Two specialists from different domains arriving at the same engine-implementation insight is a strong signal — this got promoted from a Farr-specific note to a general Numeric Representation principle in Sim Contract §1.6.
+- Cross-system handshakes that weren't specified: AI gather multiplier application point was unspecified across all 5 contracts. balance-engineer caught it; ai-engineer + gameplay-systems then negotiated a peer-to-peer solution (dual-factor) that lands cleanly without modifying contracts they don't own.
+
+*What worked:*
+- **OST framing was load-bearing.** Treating the Convergence as a "harvest gathering" of all parallel rooms — not a final review session — gave agents permission to raise concerns from their domain without seeming to second-guess the original sync participants. ui-developer's three P0 finds came from an agent who'd been on standby through five syncs.
+- **Skeptical prompt anchored the review.** The "ask yourself what would break if I'm wrong about my no-objection" line in the convergence prompt prevented bystander mode. Six of seven agents found at least one issue.
+- **Bundled revision passes scaled cleanly.** Five parallel revision passes ran simultaneously, with peer DMs handling cross-contract coordination (qa-engineer ↔ world-builder on field naming, ai-engineer ↔ gameplay-systems on the addendum). No central routing bottleneck.
+
+*What broke or felt wrong:*
+- The joint addendum (ai-engineer + gameplay-systems on gather multiplier) bounced between options three times before landing on a stable dual-factor design. Took ~7 messages of negotiation. Probably acceptable for genuine design ambiguity, but the lead could have stepped in around message 5 with a tie-breaker proposal. Lesson: facilitator should set a "round limit" for joint addenda too, not just for syncs proper.
+- One agent (engine-architect) committed their revision but didn't send a "v1.x.x committed" notification. Lead caught it via file inspection. **The "trust but verify" rule from Sync 4 retro held perfectly here** — verification doesn't depend on agents remembering to notify.
+
+*Changed in this doc:*
+- §9 rule added: **Joint addenda (peer-negotiated cross-contract additions) should also have a round limit.** Three options bouncing more than 3 rounds = lead intervenes with a tie-breaker proposal. Otherwise the negotiation can spin.
+
+*Pattern validation:*
+**Pattern E (Convergence Review) is essential for any project with 4+ ratified contracts.** The cost (~2 syncs' worth of turns) is worth it for the issue density caught. Recommend running Convergence Review whenever a logically-grouped set of contracts ships — not just at end-of-foundation. Could be re-run before Tier 1 vertical slice (after Phase 5-6 systems contracts ship), and again before Tier 2 demo.
+
+---
+
 ## 11. Future Sync Templates (To Be Filled)
 
-- **Convergence Review (Pattern E):** All 7 agents review the full decision stack before Phase 0 implementation begins. Replaces the originally proposed standalone Engine Constraints sync — engine concerns surface naturally when all agents look across the whole stack.
+- *(no syncs queued — Phase 0 implementation is the next planned activity)*
 
 ---
 

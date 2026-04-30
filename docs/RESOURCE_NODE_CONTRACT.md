@@ -1,7 +1,7 @@
 # Resource Node Schema Contract
 
 *Outcome of Sync 4 between world-builder and gameplay-systems.*
-*Status: **1.1.0** ratified 2026-04-30. Path 2 (workers gather grain) ratified by design chat 2026-04-30.*
+*Status: **1.1.1** ratified 2026-04-30. Path 2 (workers gather grain) ratified by design chat 2026-04-30.*
 *Created: 2026-04-30*
 
 > Foundation: this contract sits on top of `SIMULATION_CONTRACT.md` and `STATE_MACHINE_CONTRACT.md`. All node state mutation happens inside `_sim_tick`. All cross-component writes go through method calls, never reaching in. No exceptions.
@@ -330,16 +330,31 @@ For MVP, both `MineNode` and `Mazra'eh` return the Throne from `get_dropoff_targ
 
 ## 6. EventBus Signals
 
-| Signal | Emitter | Tick phase | Payload |
-|---|---|---|---|
-| `extract_started` | `MineNode` or `Mazra'eh` from `begin_extract` | called within worker's `_sim_tick` ⇒ `combat` phase | `(worker_id: int, node_id: int, tick: int)` |
-| `extract_completed` | `ResourceNode._sim_tick` when worker hits YIELD_READY | `combat` phase | `(worker_id: int, node_id: int, yield_amount: int, tick: int)` |
-| `resources_deposited` | `IDropoffTarget.deposit` | `combat` phase | `(worker_id: int, resource_kind: StringName, amount: int, tick: int)` |
-| `resource_node_depleted` | `ResourceNode._sim_tick` (deferred via flag, see §3.3) | `cleanup` phase | `(node: ResourceNode)` |
+| Signal | Emitter | Tick phase | API payload | NDJSON telemetry payload |
+|---|---|---|---|---|
+| `extract_started` | `MineNode` or `Mazra'eh` from `begin_extract` | called within worker's `_sim_tick` ⇒ `combat` phase | `(worker_id: int, node_id: int, tick: int)` | same — all fields serializable |
+| `extract_completed` | `ResourceNode._sim_tick` when worker hits YIELD_READY | `combat` phase | `(worker_id: int, node_id: int, yield_amount: int, tick: int)` | same |
+| `resources_deposited` | `IDropoffTarget.deposit` | `combat` phase | `(worker_id: int, resource_kind: StringName, amount: int, tick: int)` | same |
+| `resource_node_depleted` | `ResourceNode._sim_tick` (deferred via flag, see §3.3) | `cleanup` phase | `(node: ResourceNode)` | MatchLogger sink reads `node.node_id`, `node.resource_kind`, `node.global_position` from the ref — see note below |
 
 All four are write-shaped. They are added to `EventBus._SINK_SIGNALS` per Simulation Contract §7 so `MatchLogger` (Phase 6) sinks them automatically — flagging this as a one-line follow-up patch on `event_bus.gd` for engine-architect at sign-off.
 
-The `resource_node_depleted` payload is the node ref itself rather than an id because consumers (UI, AI threat assessment, balance telemetry) typically need to query the node's `resource_kind` and position immediately. World-builder owns this signal; payload shape locked by world-builder in §3.
+**`resource_node_depleted` dual-mode payload (v1.1.1):** the signal passes the `ResourceNode` ref directly (not an id). In-game consumers (AI re-tasking, world-builder depletion visual handler, threat assessment) benefit from immediate ref access with no `ResourceSystem.get_node_by_id()` lookup required. NDJSON serialization (Testing Contract §2.3) does not receive the ref — `MatchLogger`'s sink handler destructures the ref into serializable fields at point of logging:
+
+```gdscript
+# In MatchLogger's sink handler for resource_node_depleted:
+func _on_resource_node_depleted(node: ResourceNode) -> void:
+    _write({
+        "type": "resource_node_depleted",
+        "tick": SimClock.tick,
+        "sim_time": SimClock.sim_time,
+        "node_id": node.node_id,
+        "resource_kind": node.resource_kind,
+        "position": { "x": node.global_position.x, "z": node.global_position.z },
+    })
+```
+
+This separation is intentional: the API payload optimizes for in-game consumers; the telemetry payload optimizes for NDJSON serialization. World-builder owns this signal; payload shape locked by world-builder in §3.
 
 ---
 
@@ -427,4 +442,4 @@ tick T75    Arrival at Throne. Moving completes, transition_to_next() pops
 
 ---
 
-*Status: v1.1 ratified. §1–§3 by world-builder; §4–§7 by gameplay-systems; §8 by gameplay-systems; §9 shared. v1 signed off by both authors 2026-04-30. v1.1 patch applied 2026-04-30 in response to design chat resolving §9 #4 to Path 2 (workers gather grain). v1.1 patch is mechanical per §1.4's documented escape hatch — no fresh review round needed per `STUDIO_PROCESS.md` §5 conditional sign-off rule.*
+*Status: v1.1.1 ratified. §1–§3 by world-builder; §4–§7 by gameplay-systems; §8 by gameplay-systems; §9 shared. v1 signed off by both authors 2026-04-30. v1.1 patch applied 2026-04-30 in response to design chat resolving §9 #4 to Path 2 (workers gather grain). v1.1.1 patch applied 2026-04-30: §6 `resource_node_depleted` updated from single-payload to dual-mode — Node ref for in-game consumers, MatchLogger sink destructures to serializable fields for NDJSON telemetry. Option (a) chosen per engine-architect's Convergence Review finding. No second review round needed.*
