@@ -1,3 +1,20 @@
+---
+title: Project Decisions Log
+type: log
+status: append-only
+owner: design-chat
+summary: Chronological log of every committed design decision. One line per entry, append-only.
+audience: all
+read_when: every-session
+prerequisites: []
+ssot_for:
+  - committed design decisions (chronological)
+references: [00_SHAHNAMEH_RESEARCH.md, 01_CORE_MECHANICS.md]
+tags: [decisions, history, design-chat]
+created: 2026-04-22
+last_updated: 2026-04-23
+---
+
 # Project Decisions Log
 
 One line per committed design decision. Append-only — never rewrite history. Each entry: date, the decision, and the doc that owns the rationale.

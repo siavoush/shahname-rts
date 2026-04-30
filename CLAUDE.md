@@ -1,6 +1,32 @@
+---
+title: Project Instructions for Claude Code Sessions
+type: process
+status: living
+owner: design-chat
+summary: Operating instructions for any Claude Code session — read order, file ownership rules, escalation rules, code conventions, working with multiple sessions.
+audience: all
+read_when: every-session
+prerequisites: [MANIFESTO.md]
+ssot_for:
+  - read order at session start
+  - file ownership rules (what Claude Code owns vs read-only)
+  - escalation rules (design questions vs implementation choices)
+  - code conventions (constants externalization, apply_farr_change chokepoint, Shahnameh source comments)
+  - placeholder graphics policy
+  - branch and commit conventions
+references: [MANIFESTO.md, docs/STUDIO_PROCESS.md, docs/ARCHITECTURE.md, DECISIONS.md, 01_CORE_MECHANICS.md, 02_IMPLEMENTATION_PLAN.md]
+tags: [process, session-start, instructions, conventions, file-ownership]
+created: 2026-04-22
+last_updated: 2026-05-01
+---
+
 # Project: Shahnameh RTS
 
 A real-time strategy game based on Ferdowsi's *Shahnameh* (Book of Kings), set in the Kayanian / Heroic Age. Iran vs. Turan, with Divs as a future antagonist faction. Inspired by StarCraft 2, Command & Conquer, and Age of Empires 2 — with cultural authenticity and the Persian epic's themes treated as load-bearing design constraints, not flavor.
+
+## Foundational principles
+
+**Before anything else, read [`MANIFESTO.md`](MANIFESTO.md).** It is the philosophical foundation this project operates under — ten principles that shape *how* we build, not just what. Tactical rules in this document and the specs flow from those principles. When a tactical rule and a principle conflict, the principle wins.
 
 ## You are a Claude Code session. Read this carefully.
 
@@ -15,12 +41,16 @@ Mixing roles dilutes both. Stay in your lane and we move fast.
 
 In order, on every fresh session:
 
-1. **`DECISIONS.md`** — the chronological log of every committed design decision. Read this first to know what is settled.
-2. **`01_CORE_MECHANICS.md`** — the MVP specification. This is what you build against.
-3. **`00_SHAHNAMEH_RESEARCH.md`** — research and lore context. Skim if you're unfamiliar with the source material; deep-read if you're working on units, buildings, or anything with a Shahnameh referent.
-4. Any task-specific docs the user points you at in the kickoff prompt.
+1. **`MANIFESTO.md`** — the foundational principles. The constants behind every other rule.
+2. **`DECISIONS.md`** — the chronological log of every committed design decision. What is settled.
+3. **`docs/ARCHITECTURE.md`** — the orientation layer. Where things live, what's built, what's planned. **Read this first if you're in implementation mode** — it's the fastest way to find your footing after a context boundary.
+4. **`01_CORE_MECHANICS.md`** — the MVP specification. This is what you build against.
+5. **`00_SHAHNAMEH_RESEARCH.md`** — research and lore context. Skim if you're unfamiliar with the source material; deep-read if you're working on units, buildings, or anything with a Shahnameh referent.
+6. **`02_IMPLEMENTATION_PLAN.md`** — the phased build plan. The hypothesis we're executing against.
+7. **`docs/STUDIO_PROCESS.md`** — how multi-agent syncs are run, the facilitator role, the retro practice. §12 distinguishes design/planning mode from implementation mode — read it once to know which mode you're in.
+8. The relevant **contract(s)** in `docs/*_CONTRACT.md` for your task (the architecture doc indexes these).
+9. Any task-specific docs the user points you at in the kickoff prompt.
 
-`ARCHIVE_dune_research.md` is a superseded prior project. Ignore unless explicitly asked.
 
 ## What you own vs. what you do not
 
@@ -33,7 +63,7 @@ In order, on every fresh session:
 - `00_SHAHNAMEH_RESEARCH.md`
 - `01_CORE_MECHANICS.md` (and any future `0X_*.md` design docs)
 - `DECISIONS.md`
-- `CLAUDE.md` (this file) and `CLAUDE_CODE_KICKOFF.md`
+- `CLAUDE.md` (this file)
 - The memory files in the design chat (you don't have access to them anyway)
 
 If you believe a design doc is wrong or incomplete, raise it in `QUESTIONS_FOR_DESIGN.md` — don't edit the doc directly.

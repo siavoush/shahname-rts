@@ -13,6 +13,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Claude Code — local user settings (env vars, permission allowlists)
+.claude/settings.local.json
+
 # Build artifacts
 *.o
 *.obj
