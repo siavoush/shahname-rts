@@ -1,0 +1,23 @@
+[gd_scene load_steps=2 format=3 uid="uid://b8shahcamerarig01"]
+
+[ext_resource type="Script" path="res://scripts/camera/camera_controller.gd" id="1_ctrl"]
+
+; CameraRig — fixed isometric. The rig's rotation is set ONCE here in the
+; scene file and never modified by code. controller (id 1_ctrl) only mutates
+; target_position (XZ pan) and zoom_distance (Z offset of the Camera3D child).
+;
+; Yaw of -45° on Y + camera-child pitch of -55° on X gives the classic RTS
+; "two-thirds top-down" feel, in line with 00_SHAHNAMEH_RESEARCH.md's
+; Persian-miniature aesthetic note (high vantage, fixed angle, no rotation).
+;
+; Session 4 (engine-architect) wires this scene into main.tscn.
+
+[node name="CameraRig" type="Node3D"]
+transform = Transform3D(0.707107, 0, -0.707107, 0, 1, 0, 0.707107, 0, 0.707107, 0, 0, 0)
+script = ExtResource("1_ctrl")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.573576, 0.819152, 0, -0.819152, 0.573576, 0, 0, 40)
+fov = 55.0
+near = 0.5
+far = 500.0
