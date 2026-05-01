@@ -1,0 +1,62 @@
+[gd_scene load_steps=5 format=3 uid="uid://shahnameh_kargar_unit"]
+
+; kargar.tscn — Kargar (Iran worker) scene.
+;
+; Source: 01_CORE_MECHANICS.md §6 — "Kargar (worker) — gathers resources,
+; constructs buildings, repairs. Combat: minimal. Fragile."
+;
+; Pattern: scene inheritance via instance=ExtResource("path_to_unit.tscn").
+; This is the standard Godot pattern for "concrete unit type that is
+; structurally the same as Unit but visually distinct" — the inherited
+; scene shares the Unit composition (HealthComponent, MovementComponent,
+; SelectableComponent, SpatialAgentComponent, CollisionShape3D) and only
+; overrides the MeshInstance3D's mesh + material plus the root's script.
+;
+; If a future Kargar-specific change needs a new component (e.g., a
+; GatheringComponent in Phase 3), we'll either:
+;   (a) add it to the base Unit if other units could share it, or
+;   (b) override at the kargar.tscn level if it is truly unique.
+;
+; Visual placeholder per CLAUDE.md "colored shapes only" policy:
+;   - Squat cylinder, ~0.7 wide × ~0.7 tall (suggests a hunched worker
+;     silhouette; visually distinct from the future taller/narrower
+;     piyade cube and broader savar cylinder).
+;   - Sandy/brown color (Color(0.65, 0.5, 0.3) — earthy tone, evokes
+;     "tools, dust, the soil"). Distinct from the unit.tscn default
+;     blue-grey, so when you spawn a Kargar you immediately see "this is
+;     not the generic test unit."
+
+[ext_resource type="PackedScene" uid="uid://shahnameh_unit_base" path="res://scenes/units/unit.tscn" id="1_unit_template"]
+[ext_resource type="Script" path="res://scripts/units/kargar.gd" id="2_kargar"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_kargar"]
+; Squat worker silhouette. Top and bottom radius equal (true cylinder, not
+; cone) — a peasant in a smock, not a soldier in a helmet. Height 0.7,
+; radius 0.35 (so 0.7-wide). Concrete numbers chosen to read clearly at
+; the default isometric camera distance; tunable later if proportions
+; clash with other unit types as they ship.
+top_radius = 0.35
+bottom_radius = 0.35
+height = 0.7
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_kargar"]
+; Sandy / earthy brown. Evokes the worker-of-the-soil profile (
+; 01_CORE_MECHANICS.md §6 + Shahnameh's recurring "the people of the land"
+; framing). Distinct from the unit.tscn default blue-grey so a Kargar is
+; visually identifiable on sight without needing labels.
+albedo_color = Color(0.65, 0.5, 0.3, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — same simple lit pipeline as
+                  ; the base unit material; consistency over fanciness for placeholders.
+
+
+; Inherit the Unit scene template; override only what differs.
+[node name="Kargar" instance=ExtResource("1_unit_template")]
+script = ExtResource("2_kargar")
+
+[node name="MeshInstance3D" parent="." index="0"]
+; Override the base Unit's BoxMesh with the Kargar cylinder. Y-offset
+; matches half-height (0.35) so the cylinder's base sits ON the terrain
+; plane (consistent with the unit.tscn convention of mesh-bottom == y=0).
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, 0)
+mesh = SubResource("CylinderMesh_kargar")
+material_override = SubResource("StandardMaterial3D_kargar")
