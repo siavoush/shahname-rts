@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.1.0
+version: 0.2.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -14,6 +14,7 @@ ssot_for:
   - contract index (which doc to read for which domain)
   - plan-vs-reality delta record
   - high-level system map (UI / simulation / event bus / foundation layers)
+  - pinned Godot engine version
 references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md, RESOURCE_NODE_CONTRACT.md, AI_DIFFICULTY.md, ../02_IMPLEMENTATION_PLAN.md, STUDIO_PROCESS.md]
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
@@ -97,18 +98,22 @@ The game is a deterministic real-time simulation with seven phases per tick at 3
 
 ## 2. State of the Build
 
+**Pinned engine version:** Godot **4.6.2 stable** (official build `71f334935`), recorded in `game/project.godot` `application/config/godot_version`. Bumping the MAJOR (e.g., 5.x) requires a new `DECISIONS.md` entry per the 2026-05-01 decision; patch updates do not.
+
 | Subsystem | Target spec | Status | Version | Owner | Notes |
 |-----------|-------------|--------|---------|-------|-------|
-| **SimClock autoload** | [SIM 1.2.0 §1.2](SIMULATION_CONTRACT.md) | 📋 Planned | — | engine-architect | Phase 0 task |
-| **SimNode base class** | [SIM 1.2.0 §1.3](SIMULATION_CONTRACT.md) | 📋 Planned | — | engine-architect | Phase 0 task |
-| **EventBus autoload** | [SIM 1.2.0 §7](SIMULATION_CONTRACT.md) | 📋 Planned | — | engine-architect | Phase 0; telemetry sink shipped here too |
-| **GameRNG autoload** | [SIM 1.2.0 §5](SIMULATION_CONTRACT.md) | 📋 Planned | — | engine-architect | Phase 0; 4 domains |
-| **TimeProvider autoload** | [SIM 1.2.0 §1](SIMULATION_CONTRACT.md) | 📋 Planned | — | engine-architect | Phase 0 |
+| **Godot engine** | `DECISIONS.md` 2026-05-01 | ✅ Built | 4.6.2-stable | engine-architect | Installed via Homebrew cask `godot`; binary at `/opt/homebrew/bin/godot`. |
+| **Godot project init** | [02_IMPLEMENTATION_PLAN.md Phase 0](../02_IMPLEMENTATION_PLAN.md) | ✅ Built | — | engine-architect | `game/project.godot` exists; main scene boots; placeholder `Main` scene confirms SimClock ticks. |
+| **SimClock autoload** | [SIM 1.2.0 §1.2](SIMULATION_CONTRACT.md) | ✅ Built | — | engine-architect | 30Hz fixed-tick driver, accumulator pattern in `_physics_process`, emits `tick_started` / `sim_phase × 7` / `tick_ended`. `is_ticking()` and the `_test_run_tick` / `_test_advance` / `reset` test hooks ship session 1. Unit tests in `tests/unit/test_sim_clock.gd`. |
+| **SimNode base class** | [SIM 1.2.0 §1.3](SIMULATION_CONTRACT.md) | ✅ Built | — | engine-architect | `_sim_tick(_dt)` virtual + `_set_sim(prop, value)` with on-tick assert. Self-only mutation discipline documented in source. Unit tests in `tests/unit/test_sim_node.gd`. |
+| **EventBus autoload** | [SIM 1.2.0 §7](SIMULATION_CONTRACT.md) | ✅ Built | — | engine-architect | Session 1 declares `tick_started`, `tick_ended`, `sim_phase`. `connect_sink` / `disconnect_sink` API shipped; no consumer yet (MatchLogger is Phase 6). Unit tests in `tests/unit/test_event_bus.gd`. |
+| **GameRNG autoload** | [SIM 1.2.0 §5](SIMULATION_CONTRACT.md) | 📋 Planned | — | engine-architect | Phase 0 session 2; 4 domains |
+| **TimeProvider autoload** | [SIM 1.2.0 §1](SIMULATION_CONTRACT.md) | ✅ Built | — | engine-architect | Wraps `Time.get_ticks_msec()`; `set_mock` / `clear_mock` / `is_mocked` for deterministic tests. Unit tests in `tests/unit/test_time_provider.gd`. |
 | **SpatialIndex autoload** | [SIM 1.2.0 §3](SIMULATION_CONTRACT.md) | 📋 Planned | — | engine-architect | Phase 1; 8m uniform grid |
 | **IPathScheduler** | [SIM 1.2.0 §4](SIMULATION_CONTRACT.md) | 📋 Planned | — | engine-architect | Real impl Phase 1; mock Phase 0 (qa-engineer) |
 | **CI lint script** | [SIM 1.2.0 §1.4](SIMULATION_CONTRACT.md) | 📋 Planned | — | qa-engineer | `tools/lint_simulation.sh`, Phase 0 |
 | **Pre-commit hook** | [TEST 1.4.0](TESTING_CONTRACT.md) | 📋 Planned | — | qa-engineer | Phase 0; runs lint + GUT |
-| **GUT framework** | [TEST 1.4.0](TESTING_CONTRACT.md) | 📋 Planned | — | qa-engineer | Phase 0 |
+| **GUT framework** | [TEST 1.4.0](TESTING_CONTRACT.md) | ✅ Built | 9.4.0 | qa-engineer | Installed at `game/addons/gut`. Headless runner: `game/run_tests.sh` (`godot --headless ... -s addons/gut/gut_cmdln.gd -gconfig=res://.gutconfig.json`). 28 tests across 4 unit-test scripts pass at session 1 close. Pre-commit hook + lint script land session 2. |
 | **MatchHarness** | [TEST 1.4.0 §3](TESTING_CONTRACT.md) | 📋 Planned | — | qa-engineer | Phase 0 |
 | **MockPathScheduler** | [TEST 1.4.0 §3](TESTING_CONTRACT.md) | 📋 Planned | — | qa-engineer | Phase 0 |
 | **Determinism regression test** | [TEST 1.4.0 §6.2](TESTING_CONTRACT.md) | 📋 Planned | — | qa-engineer | Phase 0 stub; live in Phase 1 |
@@ -246,7 +251,15 @@ game/
 - Subsystem A took Phase N+1 (slipped one phase), reason: ...
 - Contract V was bumped from 1.x.0 to 1.y.0 during implementation; key change: ...
 
-Empty for now. First entry expected during Phase 0 implementation.
+### v0.2.0 — Phase 0 Session 1 (2026-05-01)
+
+- **EventBus.connect_sink — implementation diverged from the contract sketch.** Sim Contract §7 sketches `func connect_sink(callable): for sig in _SINK_SIGNALS: get(sig).connect(func(...args): callable.call(sig, args))`. GDScript does **not** support varargs lambdas (`func(...args)` is not valid syntax), so the actual implementation registers one hand-rolled per-signal forwarder Callable per `(sink, signal)` pair, dispatching to `sink.call(signal_name, args_array)`. The public API (`connect_sink(sink: Callable)` / `disconnect_sink(sink: Callable)` taking a sink that receives `(StringName, Array)`) is unchanged from the contract; only the internal forwarder construction differs. Adding a new signal to `_SINK_SIGNALS` now requires adding a `match` arm in `EventBus._make_forwarder` for that signal's exact arity. This is captured in the source comments. No contract revision needed; the contract sketch was pseudocode for shape, not literal GDScript.
+
+- **SimClock test hooks added in addition to the contract surface.** `_test_run_tick()`, `_test_advance(delta)`, and `reset()` are present on the autoload to let GUT (and the future MatchHarness) drive the clock manually without running `_physics_process`. They share the exact `_run_tick()` body the live driver uses, satisfying Sim Contract §6.1's "no divergence between live and headless paths." The contract didn't enumerate these but their existence is implied by §6.1 — flagged here for visibility.
+
+- **SimNode `_set_sim` off-tick assertion is exercised manually, not in GUT.** GDScript `assert()` halts the script in debug builds and compiles out in release; GUT cannot trap a fired assert in-process. The on-tick happy path is covered by `test_sim_node.gd`; the off-tick path is covered by the lint rule (Sim Contract §1.4) at the call sites that would trigger it, plus the runtime crash-with-stack-trace when a developer breaches the contract in debug. This matches contract intent — the assert is a tripwire, not something to trap.
+
+- **What did not ship in session 1 (deferred to session 2+ per `02a_PHASE_0_KICKOFF.md` §2):** `GameRNG`, `SpatialIndex`, `Constants` autoload, `BalanceData.tres`, `GameState`, `IPathScheduler` + `MockPathScheduler`, `MatchHarness`, `FarrSystem` skeleton, `DebugOverlayManager`, camera controller, terrain plane, translation infrastructure, HUD readouts, lint script, pre-commit hook. None of these are blocked; all sit on top of the foundations shipped here.
 
 ---
 
