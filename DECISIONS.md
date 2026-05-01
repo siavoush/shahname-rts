@@ -43,6 +43,10 @@ This file is maintained by the **design chat** (the Cowork chat with Siavoush). 
 - Project folder structure: design docs at `<project_root>/`, Godot project at `<project_root>/game/`. → `CLAUDE.md`
 - **Prototype graphics policy**: placeholder shapes only (colored rectangles for buildings, colored triangles for units, text labels for IDs, plain text HUD). No real art until the MVP loop is *fun* as boxes. Free to use Kenney.nl CC0 placeholders or Claude-generated SVG icons if pure shapes start to grate. → `CLAUDE.md`
 
+## 2026-05-01
+
+- **Godot version pinned**: Godot 4 stable line. Specific patch version recorded in `project.godot` and `docs/ARCHITECTURE.md` build-state table at the moment of project initialization (Phase 0). Any future major-version bump (e.g., 4 → 5, or breaking 4.x → 4.y change) is itself a design decision that lands here. Day-to-day patch updates (4.x.0 → 4.x.1) do not require new entries. → `02_IMPLEMENTATION_PLAN.md` Phase 0, `02a_PHASE_0_KICKOFF.md`. Authorized inline 2026-05-01 by Siavoush during the Phase 0 kickoff session.
+
 ---
 
 *Format reminder: when adding a new entry, keep it to one or two sentences. The doc the decision points to carries the depth; this log is just the index.*

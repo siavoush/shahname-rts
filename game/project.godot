@@ -1,0 +1,64 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Shahnameh RTS"
+config/description="A real-time strategy game based on Ferdowsi's Shahnameh.
+Iran vs. Turan, Kayanian/Heroic Age. Pre-MVP — placeholder graphics only."
+config/version="0.0.0-phase0"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.6", "GL Compatibility")
+config/icon="res://icon.svg"
+config/godot_version="4.6.2.stable.official.71f334935"
+
+[autoload]
+
+TimeProvider="*res://scripts/autoload/time_provider.gd"
+EventBus="*res://scripts/autoload/event_bus.gd"
+Constants="*res://scripts/autoload/constants.gd"
+SimClock="*res://scripts/autoload/sim_clock.gd"
+GameState="*res://scripts/autoload/game_state.gd"
+SpatialIndex="*res://scripts/autoload/spatial_index.gd"
+PathSchedulerService="*res://scripts/autoload/path_scheduler_service.gd"
+CommandPool="*res://scripts/autoload/command_pool.gd"
+DebugOverlayManager="*res://scripts/autoload/debug_overlay_manager.gd"
+FarrSystem="*res://scripts/autoload/farr_system.gd"
+
+[debug]
+
+gdscript/warnings/untyped_declaration=1
+gdscript/warnings/unsafe_property_access=1
+gdscript/warnings/unsafe_method_access=1
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/gut/plugin.cfg")
+
+[internationalization]
+
+; Locale registry. Phase 0 ships English-only; Persian column exists in
+; translations/strings.csv but is intentionally empty until Tier 2 (per
+; 01_CORE_MECHANICS.md §1 "OUT for MVP" + CLAUDE.md "Persian addition at
+; Tier 2 must be a config change, not a refactor"). When fa content lands,
+; add "res://translations/strings.fa.translation" to this list — no code
+; changes needed.
+locale/translations=PackedStringArray("res://translations/strings.en.translation")
+locale/fallback="en"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

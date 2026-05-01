@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# pre-commit — simulation lint + GUT test gate.
+#
+# Blocks commits that violate the Simulation Architecture Contract (§1.4 lint
+# rules) or break any passing test. Both checks must pass; either failure is a
+# hard block. The commit message "pre-commit hook: ..." in BUILD_LOG.md session 2
+# records when this gate was first installed.
+#
+# Installation: run tools/install-hooks.sh from the repo root. That script
+# copies or symlinks this file to .git/hooks/pre-commit.
+#
+# Requirements:
+#   - ripgrep (rg) on PATH: brew install ripgrep
+#   - Godot 4 on PATH as 'godot' (or set GODOT env var to binary path):
+#       brew install --cask godot
+#
+# Owner: qa-engineer (Manifesto Principle 9 — Automated Enforcement)
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Locate the repo root from this hook's location. The hook lives at:
+#   .git/hooks/pre-commit (the runtime location after install)
+# and the committed copy lives at:
+#   tools/git-hooks/pre-commit (version-controlled)
+# Either way, the repo root is two levels up from the real hook, or we can
+# use git rev-parse to find it reliably.
+# ---------------------------------------------------------------------------
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+echo "--- Pre-commit gate ---"
+
+# ---------------------------------------------------------------------------
+# Step 1: Simulation lint (Sim Contract §1.4 — 5 ripgrep rules)
+# ---------------------------------------------------------------------------
+echo "[1/2] Running simulation lint..."
+if ! bash "${REPO_ROOT}/tools/lint_simulation.sh"; then
+  echo ""
+  echo "COMMIT BLOCKED: Fix lint violations before committing."
+  echo "  Run:  bash tools/lint_simulation.sh"
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Step 2: GUT unit tests (headless)
+# ---------------------------------------------------------------------------
+echo "[2/2] Running GUT tests..."
+GAME_DIR="${REPO_ROOT}/game"
+GODOT_BIN="${GODOT:-godot}"
+
+if ! command -v "${GODOT_BIN}" >/dev/null 2>&1; then
+  echo "ERROR: '${GODOT_BIN}' not found. Install: brew install --cask godot" >&2
+  echo "  Or set GODOT=/path/to/godot before git commit." >&2
+  exit 127
+fi
+
+if ! bash "${GAME_DIR}/run_tests.sh"; then
+  echo ""
+  echo "COMMIT BLOCKED: Fix failing tests before committing."
+  echo "  Run:  cd game && ./run_tests.sh"
+  exit 1
+fi
+
+echo ""
+echo "--- Pre-commit gate: OK ---"
+exit 0
