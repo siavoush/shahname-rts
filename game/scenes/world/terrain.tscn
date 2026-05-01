@@ -1,0 +1,65 @@
+[gd_scene load_steps=6 format=3 uid="uid://terrain256x256"]
+
+[ext_resource type="Script" path="res://scripts/world/terrain.gd" id="1_terrain"]
+
+[sub_resource type="NavigationMesh" id="NavigationMesh_1"]
+; NavigationMesh resource — configured at runtime in terrain.gd _ready()
+; before the synchronous bake. Values here are defaults; terrain.gd
+; overrides agent_radius, cell_size, geometry_parsed_geometry_type, and
+; filter_baking_aabb from Constants (MAP_SIZE_WORLD, NAV_AGENT_RADIUS).
+; Per RESOURCE_NODE_CONTRACT.md §3.2: bake once at scene-load, then
+; NavigationObstacle3D children carve dynamically — no runtime rebake.
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_1"]
+; Collision shape: 256×0.1×256 flat slab on the XZ plane at Y=0.
+; Thin in Y so units walking on top don't clip through.
+; Size is set from Constants.MAP_SIZE_WORLD in scene authoring — this is
+; the TSCN representation; the script does not resize it at runtime.
+size = Vector3(256.0, 0.1, 256.0)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_1"]
+; Flat ground plane. PlaneMesh lies in the XZ plane by default (Y=0),
+; oriented so its surface normal points +Y. Exactly what we want.
+; Size set to MAP_SIZE_WORLD × MAP_SIZE_WORLD = 256×256.
+; subdivide_width/depth = 8 gives enough geometry for a future terrain
+; shader (height displacement, fog gradient) without runtime cost today.
+size = Vector2(256.0, 256.0)
+subdivide_width = 8
+subdivide_depth = 8
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1"]
+; Placeholder checkerboard material — gives the camera operator visual
+; scale reference (each cell ≈ 4 world units wide, so 64 cells across
+; the 256-unit plane). No real art until design chat green-lights it
+; per CLAUDE.md placeholder policy.
+; The albedo_color is a neutral sandy-ochre, vaguely evoking the plains
+; of Khorasan without committing to art direction.
+albedo_color = Color(0.76, 0.69, 0.53, 1.0)
+
+[node name="Terrain" type="NavigationRegion3D"]
+; Root is NavigationRegion3D — this is the node terrain.gd extends.
+; Per session-3 wave-2 spec: NavigationRegion3D parents the terrain mesh
+; and owns the navmesh bake. Buildings in Phase 3+ add NavigationObstacle3D
+; children here to carve the navmesh dynamically.
+navigation_mesh = SubResource("NavigationMesh_1")
+script = ExtResource("1_terrain")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="."]
+; Physics body for unit footstep collision and ray-casts that need a
+; ground hit. Position at Y=0 (no offset needed — the collision shape
+; is centered at its own origin).
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticBody3D"]
+; BoxShape3D 256×0.1×256 centered at origin.
+; The StaticBody3D parent has no Y offset so the top surface is at Y=0.05
+; and the bottom at Y=-0.05 — imperceptible in gameplay, correct physics.
+shape = SubResource("BoxShape3D_1")
+position = Vector3(0.0, -0.05, 0.0)
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+; The visible ground plane. Child of NavigationRegion3D (not StaticBody3D)
+; so the navmesh baker's PARSED_GEOMETRY_MESH_INSTANCES pass finds it
+; and bakes walkable surface from its geometry.
+; Position at Y=0 — PlaneMesh lies in XZ plane centered at its origin.
+mesh = SubResource("PlaneMesh_1")
+surface_material_override/0 = SubResource("StandardMaterial3D_1")

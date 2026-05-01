@@ -160,6 +160,25 @@ const PATH_TELEMETRY_DIR: String = "res://data/telemetry/"
 const PATH_TRANSLATIONS_DIR: String = "res://translations/"
 
 
+# === MAP CONFIGURATION =======================================================
+# Single source of truth for map dimensions. Structural constant — changing
+# this would require nav mesh rebake, camera bound recalculation, and spawn
+# position repositioning. Lives here, not in BalanceData, because it is
+# structural (code shape changes), not a balance knob.
+#
+# MAP_SIZE_WORLD: the MVP map is a 256×256 world-unit square on the XZ plane
+# (Y=0). Matches docs/02_IMPLEMENTATION_PLAN.md Phase 0 convergence checkpoint.
+# Target match length: 15-25 minutes per 01_CORE_MECHANICS.md §6.
+#
+# NAV_AGENT_RADIUS: minimum clearance around obstacles the NavigationServer3D
+# bakes into the navmesh. 0.5 world units — wide enough for infantry (smallest
+# mobile unit). Per docs/RESOURCE_NODE_CONTRACT.md §3.2: buildings add their
+# own NavigationObstacle3D; no runtime navmesh rebake after initial bake.
+
+const MAP_SIZE_WORLD: float = 256.0
+const NAV_AGENT_RADIUS: float = 0.5
+
+
 # === DEBUG OVERLAY KEYS ======================================================
 # F1-F4 binding registry. ui-developer's DebugOverlayManager (parallel session)
 # reads these to wire toggles to the right registered overlays. Kept here so

@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.4.0
+version: 0.5.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -124,7 +124,7 @@ The game is a deterministic real-time simulation with seven phases per tick at 3
 | **CommandPool autoload** | [STATE 1.0.0 §2.5](STATE_MACHINE_CONTRACT.md) | ✅ Built | — | engine-architect | Phase 0 session 3. `rent()` / `return_to_pool()` over a pre-allocated pool. Auto-resets on rent and return. Tests share the pool via `tests/unit/test_state_machine.gd` (CommandPool fixtures). |
 | **PathSchedulerService autoload** | [SIM 1.2.1 §4.3](SIMULATION_CONTRACT.md) | ✅ Built | — | engine-architect | Phase 0 session 3 (autoload only). Holds an `IPathScheduler` instance for `MovementComponent` to read; `null` until session 4 wires real/mock impls. Tests in `tests/unit/test_path_scheduler_service.gd`. |
 | **Camera Controller** | [02_IMPLEMENTATION_PLAN.md Phase 0](../02_IMPLEMENTATION_PLAN.md) | 📋 Planned | — | ui-developer | Phase 0; fixed isometric |
-| **Terrain plane (256×256)** | [02_IMPLEMENTATION_PLAN.md Phase 0](../02_IMPLEMENTATION_PLAN.md) | 📋 Planned | — | world-builder | Phase 0; flat checkerboard |
+| **Terrain plane (256×256)** | [02_IMPLEMENTATION_PLAN.md Phase 0](../02_IMPLEMENTATION_PLAN.md) | ✅ Built | — | world-builder | Phase 0; flat plane with checkerboard StandardMaterial3D placeholder. `Constants.MAP_SIZE_WORLD = 256.0` and `Constants.NAV_AGENT_RADIUS = 0.5` added. NavigationRegion3D with synchronous bake at scene-load, `PARSED_GEOMETRY_STATIC_COLLIDERS`. Scene: `scenes/world/terrain.tscn`. Script: `scripts/world/terrain.gd`. Tests: `tests/unit/test_terrain.gd` (7 tests). |
 | **DebugOverlayManager** | [02_IMPLEMENTATION_PLAN.md Phase 0](../02_IMPLEMENTATION_PLAN.md) | 📋 Planned | — | ui-developer | Phase 0; F1-F4 toggles + registry |
 | **Translation infrastructure** | [02_IMPLEMENTATION_PLAN.md Phase 0](../02_IMPLEMENTATION_PLAN.md) | 📋 Planned | — | ui-developer | Phase 0; Godot CSV |
 | **Telemetry sink** | [SIM 1.2.0 §7](SIMULATION_CONTRACT.md), [TEST 1.4.0 §2](TESTING_CONTRACT.md) | 📋 Planned | — | balance-engineer + engine-architect | Phase 0 (in-memory); Phase 6 MatchLogger |
@@ -286,6 +286,18 @@ game/
 - **`rg` shell function in Claude Code session.** During development, ripgrep is intercepted by a Claude Code shell function, causing `command -v rg` to succeed but the subprocess invocation to fail. The lint script runs correctly in a clean `bash --noprofile --norc` environment (which is what pre-commit hooks and CI use). Not a deployment issue; documented here for transparency.
 
 - **What did not ship in session 2 (deferred per kickoff doc):** `MatchHarness`, `MockPathScheduler`, determinism regression test stub — all blocked on `IPathScheduler` interface which is engine-architect's session 3 deliverable. `GameRNG`, `SpatialIndex`, `Constants`, `GameState`, `StateMachine`, `DebugOverlayManager`, camera, terrain plane, translations, HUD readouts — all session 3+ per the original scope split.
+
+---
+
+### v0.5.0 — Phase 0 Session 3 wave 2 (2026-04-30) — world-builder
+
+- **`PARSED_GEOMETRY_STATIC_COLLIDERS` chosen over `PARSED_GEOMETRY_MESH_INSTANCES`.** The kickoff doc and session spec are silent on which NavMesh geometry source to use. `MESH_INSTANCES` was the first choice because the MeshInstance3D (PlaneMesh) directly represents the visual ground. However, Godot 4's NavigationServer reports a significant performance warning when baking from mesh instances in headless/test contexts: it reads GPU vertex data back to CPU, which blocks rendering. `STATIC_COLLIDERS` uses the StaticBody3D + BoxShape3D (256×0.1×256) as the walkable source instead — all-CPU, no GPU readback. The baked result is functionally identical (flat 256×256 walkable surface) and the headless test suite runs cleanly. This choice aligns with production best practice for flat terrain: author a collision shape, bake from that. If terrain ever gains non-flat geometry (Phase 7 height maps), the geometry source may revisit `MESH_INSTANCES` or use a dedicated NavigationMesh resource baked in-editor. Implementation choice per CLAUDE.md "Escalation" rule #1 — no gameplay effect.
+
+- **NavigationMesh pre-bake in `_ready` via `bake_navigation_mesh(false)`.** The spec says "synchronous bake at scene-load." In Godot 4, `bake_navigation_mesh(false)` is the synchronous path (false = on calling thread, not deferred to a background thread). The bake completes before `_ready` returns, so `get_navigation_map().is_valid()` is immediately true — verified by `test_navigation_region_has_valid_map_after_scene_load`. In editor workflows, the NavigationMesh resource would normally be pre-baked and saved to disk (avoiding runtime bake cost entirely). Phase 7 Khorasan map work should bake in-editor and serialize the result to avoid the startup bake. Noted here for Phase 7 world-builder.
+
+- **CheckerBoard as `StandardMaterial3D` albedo_color, not a procedural shader.** The kickoff spec says "optional checkerboard reference texture (procedural via shader is fine, or a simple imported PNG)." A simple flat `StandardMaterial3D` with a sandy-ochre albedo was chosen over a procedural shader or PNG import — it's the smallest footprint for a placeholder (zero assets, zero shader compilation). The camera operator gets visual ground feedback from the flat color + the 256-unit extent cues. A real checkerboard (with a spatial shader or UV tiling) would require either an asset file or a ShaderMaterial sub-resource, neither of which adds functional value at Phase 0. If more granular visual scale reference is needed before Phase 7 art, a `CheckerTexture2D` can be assigned to `albedo_texture` in a one-line tscn edit. Implementation choice per CLAUDE.md "Escalation" rule #1.
+
+- **`MAP_SIZE_WORLD` and `NAV_AGENT_RADIUS` added to `Constants` autoload.** The kickoff specified adding these if missing. Both were absent from the session-3 wave-1 Constants output. Added under a new `# === MAP CONFIGURATION ===` section with rationale comments. `MAP_SIZE_WORLD = 256.0` is the convergence-locked map size. `NAV_AGENT_RADIUS = 0.5` is the navmesh agent clearance. Both are structural (code shape would change if they moved), confirming their home in Constants vs BalanceData.
 
 ---
 

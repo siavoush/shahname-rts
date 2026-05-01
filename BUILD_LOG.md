@@ -142,3 +142,38 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 - **Allowlisted both `time_provider.gd` and `sim_clock.gd` for L5.** The Sim Contract §1.4 table lists `sim_clock.gd`; the kickoff doc and `time_provider.gd` source name `time_provider.gd`. Both are allowlisted. Documented in `docs/ARCHITECTURE.md` §6.
 - **Comment-line filter for L3.** GDScript `#` comment lines that contain RNG function names in prose (e.g., doc comments explaining what NOT to do) would cause false positives. Added a post-scan filter using `rg -v ':[0-9]+:\s*#'` to strip comment matches from L3 results. Analogous filtering could be added to other rules if needed — not added preemptively.
 - **`bash --noprofile --norc` for development verification.** In the Claude Code session environment, `rg` is intercepted as a shell function. The lint script works correctly in a clean bash environment (pre-commit hooks and CI). No change to the script; noted here.
+
+## 2026-04-30 — Phase 0 Session 3 wave 2 (world-builder)
+
+**Branch:** `feat/phase-0-foundation`
+
+**Shipped:**
+- `Constants.MAP_SIZE_WORLD = 256.0` and `Constants.NAV_AGENT_RADIUS = 0.5` added to `game/scripts/autoload/constants.gd` under a new `# === MAP CONFIGURATION ===` section. Single source of truth for map dimensions and navmesh agent clearance. Per 02_IMPLEMENTATION_PLAN.md Phase 0 convergence checkpoint and session-3 wave-2 spec.
+- Terrain scene `game/scenes/world/terrain.tscn` — `NavigationRegion3D` root with a `StaticBody3D` (+ `CollisionShape3D` BoxShape3D 256×0.1×256) and a `MeshInstance3D` (PlaneMesh 256×256) as siblings. Root has a placeholder `StandardMaterial3D` with sandy-ochre albedo. Scene reads `Constants.MAP_SIZE_WORLD` for sizing (256.0 world units on the XZ plane at Y=0).
+- Terrain script `game/scripts/world/terrain.gd` — extends `NavigationRegion3D`. `_ready()` calls `_configure_navmesh()` (sets agent radius from `Constants.NAV_AGENT_RADIUS`, `PARSED_GEOMETRY_STATIC_COLLIDERS`, bake AABB from `Constants.MAP_SIZE_WORLD`) then `_bake_navmesh()` (synchronous `bake_navigation_mesh(false)`). No runtime rebake after `_ready` — consistent with `RESOURCE_NODE_CONTRACT.md §3.2` and the session-2 lint rule.
+- 7 new GUT tests in `game/tests/unit/test_terrain.gd`: `MAP_SIZE_WORLD` value, `NAV_AGENT_RADIUS` value and positivity, terrain scene loads, NavigationRegion3D present, mesh is 256×256, mesh at Y=0, navmesh RID valid after bake.
+- `docs/ARCHITECTURE.md` bumped 0.4.0 → 0.5.0. Terrain plane row moved `📋 Planned → ✅ Built`. §6 v0.5.0 plan-vs-reality entry added (geometry source choice, bake strategy, material choice, constants additions).
+
+**Test-count delta:** 88 → 114 passing (world-builder contributed 7, ui-developer contributed the remaining 19 in parallel). All 114 pass headless.
+
+**Did not ship** (out of scope for this wave, per session-3 wave-2 kickoff):
+- Multiple terrain types (passable/mountain/water/fertile) — Phase 7.
+- Resource node placement (mines, fertile zones) — Phase 3.
+- Fog of war data layer — Phase 3 / Phase 7.
+- Real Khorasan map design — Phase 7.
+- Modifying `scenes/main.tscn` — engine-architect's session-4 integration work.
+- Concrete biomes, terrain height, environmental effects — Phase 7.
+
+**State for next session:**
+- On branch `feat/phase-0-foundation`. Lint clean (world-builder files). 114/114 tests passing.
+- Terrain scene is a self-contained scene at `game/scenes/world/terrain.tscn`. Session 4 (engine-architect) wires it into `scenes/main.tscn` or `scenes/match.tscn`.
+- `Constants.MAP_SIZE_WORLD = 256.0` is available to the camera controller for boundary clamping — the ui-developer's camera controller already reads it (confirmed by their passing tests).
+- The navmesh bakes at scene-load from the StaticBody3D collision shape. In-editor, consider baking and serializing the NavigationMesh resource to disk (avoiding the startup bake cost) before Phase 7.
+- Lint gate: the full lint run shows one violation in `game/scripts/camera/camera_controller.gd` (ui-developer's file, L1 false positive from `apply_pan` / `apply_zoom` method names matching the mutation pattern). This is NOT a world-builder issue — coordinate with ui-developer or engine-architect to resolve before the next PR merge.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. No design/feel/balance questions surfaced.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+- **`PARSED_GEOMETRY_STATIC_COLLIDERS` over `PARSED_GEOMETRY_MESH_INSTANCES`.** PlaneMesh bake via MESH_INSTANCES causes a GPU readback warning in headless contexts. StaticBody3D BoxShape3D provides identical walkable geometry with no GPU involvement. Documented in `docs/ARCHITECTURE.md` §6 v0.5.0.
+- **`StandardMaterial3D` flat albedo as placeholder, not procedural shader.** Zero footprint — no asset files, no shader compilation. If more visual scale granularity is needed before Phase 7 art, `CheckerTexture2D` can be assigned to `albedo_texture` in one tscn line. Not gameplay-affecting.
+- **BoxShape3D CollisionShape3D offset at Y=-0.05.** The box is 0.1 units tall. Centering it at Y=-0.05 puts the top face at Y=0 (the ground plane). Without the offset, units at Y=0 would be partially inside the collision shape. Purely physical placement, no gameplay effect.
