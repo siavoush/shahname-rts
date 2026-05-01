@@ -1,9 +1,32 @@
-[gd_scene load_steps=2 format=3 uid="uid://b0g3dxshahmain"]
+[gd_scene load_steps=5 format=3 uid="uid://b0g3dxshahmain"]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="PackedScene" uid="uid://terrain256x256" path="res://scenes/world/terrain.tscn" id="2_terrain"]
+[ext_resource type="PackedScene" uid="uid://b8shahcamerarig01" path="res://scenes/camera/camera_rig.tscn" id="3_camera"]
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 1
+background_color = Color(0.45, 0.55, 0.7, 1.0)
+ambient_light_source = 2
+ambient_light_color = Color(0.7, 0.7, 0.7, 1.0)
+ambient_light_energy = 0.4
 
 [node name="Main" type="Node"]
 script = ExtResource("1_main")
+
+[node name="World" type="Node3D" parent="."]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="World"]
+environment = SubResource("Environment_1")
+
+[node name="Sun" type="DirectionalLight3D" parent="World"]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 80, 0)
+light_energy = 0.9
+shadow_enabled = true
+
+[node name="Terrain" parent="World" instance=ExtResource("2_terrain")]
+
+[node name="CameraRig" parent="World" instance=ExtResource("3_camera")]
 
 [node name="StatusLabel" type="Label" parent="."]
 offset_left = 16.0
