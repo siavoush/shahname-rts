@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.13.0
+version: 0.13.1
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -19,6 +19,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
 last_updated: 2026-05-01
+# bumped to v0.13.1 — Phase 1 Session 1 live-game fixes (FSM tick wiring, edge-pan, HUD mouse_filter)
 ---
 
 # Architecture — Target Shape and Build State
@@ -420,6 +421,24 @@ game/
 - **LATER items surfaced in wave 2:**
   1. **MovementSystem phase coordinator.** Currently Moving's `_sim_tick` drives `MovementComponent._sim_tick`. When 50+ units move simultaneously this becomes "every Moving state's _sim_tick calls a MovementComponent's _sim_tick" — fine for MVP but a phase coordinator that subscribes to `EventBus.sim_phase(&"movement", ...)` and iterates registered MovementComponents in one batch is the long-term shape (cache-friendlier, removes the per-state-instance drive call). Estimated 1 small wave; not blocking.
   2. **Per-unit current_command lifetime.** `Unit.current_command` is a Dictionary written by StateMachine and read by states. It outlives the dispatched Command (which is returned to the pool). When Phase 2's Attacking state lands, it'll need `current_command.payload.target_unit: Node` — a reference to a Node, which can become invalid mid-state. Either Attacking handles the validity check itself (preferred — same pattern as `is_instance_valid` checks elsewhere) or the dispatcher converts Node refs to unit_ids. Not a wave-2 problem; flagged for Phase 2 ai-engineer.
+
+---
+
+### v0.13.1 — Phase 1 Session 1 live-game fixes (2026-05-01) — lead
+
+User-visible Definition of Done (kickoff §73, items 1–8) was confirmed green by the lead in the editor: 5 kargars spawn on the terrain plane; left-click selects (gold ring); right-click on terrain commands a move; the kargar walks the path; arrival returns to Idle pulse; click on empty terrain deselects. Three bugs blocked items 4–5 in the live game even though all 371 unit tests passed. Fixed in commit `c583d48`.
+
+- **Unit FSM was never ticked in the live game.** `UnitState_Moving._sim_tick` polls the path scheduler and steps the position, but nothing in the live scene called `fsm.tick()` — tests called it directly, and the live game was waiting on the "MovementSystem phase coordinator" LATER item from v0.13.0. Fix: each `Unit` now subscribes to `EventBus.sim_phase` in `_ready` and calls `fsm.tick(SimClock.SIM_DT)` when `phase == &"movement"`. Symmetric `_exit_tree` disconnect. This is the same pattern `SpatialIndex` uses for `&"spatial_rebuild"`. **This is the single most important behavior to lock in via integration test (qa-engineer wave 3) — every unit-level test passed while the live game was silently broken.** When the proper MovementSystem coordinator ships, this is a 3-line removal: drop `_on_sim_phase`, drop the connect/disconnect, register the unit with the coordinator instead. See LATER item below.
+
+- **Edge-pan moved opposite to camera-look.** Two issues stacked in `camera_controller.gd`. (a) `pan_by` did not rotate the screen-axis vector through the rig's basis; with the camera_rig.tscn yaw of +45°, screen-up did not follow camera-forward. Fixed by `world_pan = global_transform.basis * local_pan` (`is_inside_tree()`-guarded so headless test fixtures stay identity). (b) `compute_edge_pan_axis` used the opposite Y-sign convention from WASD: mouse-near-top produced `ax.y = -1` while pressing W produced `ax.y = +1`. The two paths cancelled into world directions opposite each other. Fixed by flipping edge-pan signs so mouse-near-top → `ax.y = +1` (matches WASD W). The original wave-1 tests asserted only the sign of `ax.y`, not the resulting world direction, so the bug slipped through. Tests updated; new comment documents the convention.
+
+- **HUD labels swallowed clicks.** `Label` and `MarginContainer` default `mouse_filter` is `MOUSE_FILTER_STOP`, which silently absorbs mouse events that fall in the Control's rect. The `StatusLabel` (y=56–88), the HUD `MarginContainer` (top 48px), the `HBox`, and the four resource Labels were all eating clicks in their rects. Fix: `mouse_filter = 2` (IGNORE) on each. Defensive but correct — these Controls are decorative readouts, not interactive.
+
+- **`DEBUG_LOG_CLICKS` flag added** in `click_handler.gd`. Default ON. Prints every left/right press, what the raycast hit, and what command (if any) was issued. This was the diagnostic that made bug #1 visible. Left ON for now so the next interactive testing session has the same visibility. Will be flipped off (or gated by `DebugOverlayManager`) once the path is trusted.
+
+- **LATER items surfaced in v0.13.1:**
+  1. **MovementSystem phase coordinator** — promoted in priority. The transitional `Unit._on_sim_phase` works for the 5-unit Phase 1 case; at MVP scale (50–100 units) the per-unit signal-handler dispatch is fine, but the coordinator's deterministic `unit_id`-sorted iteration is the long-term shape. The Sim Contract §2 example for `MovementSystem` is the target signature. Estimated 1 small wave; not blocking.
+  2. **Visual smoke test** — Phase 0 retro added a §9 rule about scene-level smoke tests; this set of bugs is the canonical "headless tests passed; live game broken" case the rule was written to catch. qa-engineer wave 3 is implementing the integration tests now. The lasting fix is a CI-runnable test that loads `main.tscn`, spawns a unit, drives ticks via `SimClock._test_advance`, and asserts the unit's `global_position` advances toward a commanded target. If that test had existed at the start of session 1, bug #1 would have been caught the moment Idle/Moving + Kargar shipped.
 
 ---
 

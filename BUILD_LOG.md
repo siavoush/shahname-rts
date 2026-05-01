@@ -34,6 +34,63 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-01 — Phase 1 session 1 live-game fixes (lead, post-wave-2)
+
+**Branch:** `feat/phase-1-units`
+
+**Context:** All wave-2 agents reported lint-clean + tests-passing. Lead booted the actual game in the editor for the first interactive test of the click-and-move flow. Three bugs were live even though the 371 unit tests all passed — the canonical "headless tests green, live game broken" gap that Phase 0 retro flagged in `STUDIO_PROCESS.md` §9.
+
+**Shipped (commit `c583d48`):**
+
+1. **Unit FSM tick wiring** (`game/scripts/units/unit.gd`). `UnitState_Moving._sim_tick` polls the path scheduler and steps the position, but nothing in the live scene called `fsm.tick()` — tests called it directly, and the live game was waiting on the "MovementSystem phase coordinator" LATER item from v0.13.0. Added `Unit._on_sim_phase(phase, _tick)` that drives `fsm.tick(SimClock.SIM_DT)` when `phase == &"movement"`. Connect on `_ready`, disconnect on `_exit_tree`. Same pattern `SpatialIndex` uses for `&"spatial_rebuild"`. **This was the bug that made right-click do nothing in the live game.** When the proper MovementSystem coordinator ships, this is a 3-line removal.
+
+2. **Edge-pan direction** (`game/scripts/camera/camera_controller.gd`). Two issues stacked: (a) `pan_by` did not rotate the screen-axis through the rig's basis — with the camera_rig.tscn yaw of +45°, screen-up did not follow camera-forward; (b) `compute_edge_pan_axis` used the opposite Y-sign convention from WASD (mouse-top → -1 vs W → +1). Fixed `pan_by` to multiply by `global_transform.basis` (`is_inside_tree()`-guarded so headless test fixtures stay identity); flipped edge-pan signs so mouse-near-top → `ax.y = +1` (matches WASD W). The original wave-1 tests asserted the sign of `ax.y`, not the resulting world direction, so the bug slipped through. Tests updated.
+
+3. **HUD labels swallowed clicks** (`game/scenes/main.tscn`, `game/scenes/ui/resource_hud.tscn`). `Label` and `MarginContainer` default `mouse_filter` is `MOUSE_FILTER_STOP`, which silently absorbed mouse events in their rects. Set `mouse_filter = 2` (IGNORE) on `StatusLabel`, the HUD `MarginContainer`, `HBox`, and the four resource Labels. These are decorative readouts, not interactive — ignoring mouse is correct.
+
+4. **`DEBUG_LOG_CLICKS` flag** in `click_handler.gd`. Default ON. Prints every left/right press, what the raycast hit, and what command (if any) was issued. This was the diagnostic that made bug #1 visible. Left ON for the next interactive testing pass.
+
+5. **`docs/ARCHITECTURE.md` 0.13.0 → 0.13.1.** New §6 v0.13.1 entry documents the three fixes and surfaces the LATER items (now-promoted MovementSystem coordinator, scene-level visual smoke test).
+
+**Test-count delta:** 371 → 371 (no new tests; integration tests covering this fix are qa-engineer wave 3, queued separately).
+
+**Lint:** `tools/lint_simulation.sh` reports OK (0 violations across L1-L5). Pre-commit gate green.
+
+**User-visible Definition of Done (kickoff §73) — confirmed by lead in editor after fix:**
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Launch game (F5) | ✅ |
+| 2 | See 5 workers on terrain | ✅ |
+| 3 | Left-click → ring appears | ✅ |
+| 4 | Right-click on terrain → worker walks there | ✅ (fixed by FSM tick wiring) |
+| 5 | Worker arrives → idle pulse resumes | ✅ (subtle ±5% scale at 1Hz) |
+| 6 | Click empty terrain → deselect | ✅ |
+| 7 | Tests + lint + pre-commit green | ✅ |
+| 8 | `docs/ARCHITECTURE.md` §2 reflects build state | ✅ (this entry + v0.13.1) |
+
+**Phase 1 session 1 is functionally done.** Wave 3 (qa-engineer) is in-flight: integration test for the full click-and-move flow + fix the flaky `test_request_without_navmap_resolves_failed` test.
+
+**State for next session (wave 3 / merge):**
+- Branch `feat/phase-1-units` is 1 commit ahead of `origin/feat/phase-1-units`, 7 commits ahead of `main`. Not pushed.
+- After qa-engineer wave 3 lands, branch is ready to PR → `main`.
+- Phase 1 session 2 picks up: box-select, control groups, double-click-select-type, GroupMoveController (formation movement), Farr gauge polish, selected-unit panel.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. All three bugs were implementation choices.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+- **`Unit` self-subscribes to `EventBus.sim_phase` rather than registering with a coordinator.** The MovementSystem coordinator is the long-term shape (LATER); a transitional self-subscribe unblocks live-game testing today and is a 3-line removal when the coordinator ships.
+- **`pan_by` rotates by `global_transform.basis`, NOT by a stored yaw angle.** The basis IS the yaw — multiplying by it costs the same as a hand-rolled rotation matrix and stays correct if the rig's transform ever changes (e.g., a future cinematic shot).
+- **`mouse_filter = 2` on every decorative HUD Control, not just the offending one.** Defensive but cheap; future HUD additions inherit the pattern.
+- **`DEBUG_LOG_CLICKS` left ON.** Will be flipped off (or routed through `DebugOverlayManager`) once interactive testing gives the click flow a few more passes.
+
+**LATER items surfaced in this fix pass:**
+1. **MovementSystem phase coordinator — promoted.** Was already a LATER item from v0.13.0; this fix elevates the priority because the transitional self-subscribe is mostly fine but the deterministic `unit_id`-sorted iteration is the formal target shape per Sim Contract §2.
+2. **Scene-level visual smoke test** — Phase 0 retro added a §9 rule about scene-level smoke tests; this set of bugs is the canonical case the rule was written to catch. qa-engineer wave 3 implements it: load `main.tscn`, spawn a unit through the real scene path, drive ticks via `SimClock._test_advance`, assert `global_position` advances toward target. Had this existed at session 1 start, bug #1 would have been caught the moment Idle/Moving + Kargar shipped.
+3. **`DEBUG_LOG_CLICKS` should route through `DebugOverlayManager`.** Currently a const flag; long-term it should be one of the F1–F4 toggles per CLAUDE.md "debug overlays as first-class" rule. Estimated 5-line refactor.
+
+---
+
 ## 2026-05-01 — Phase 1 session 1 wave 2 (ai-engineer): UnitState_Idle + UnitState_Moving
 
 **Branch:** `feat/phase-1-units`
