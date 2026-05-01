@@ -2,7 +2,7 @@
 title: Simulation Architecture Contract
 type: contract
 status: ratified
-version: 1.2.0
+version: 1.2.1
 owner: engine-architect
 summary: When gameplay state mutates and how systems observe changes. The engine layer everything else sits on.
 audience: all
@@ -21,7 +21,7 @@ references: [STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md]
 tags: [tick, sim, determinism, spatial, rng, lint, foundation]
 created: 2026-04-30
 last_updated: 2026-05-01
-provenance: Outcome of Sync 1 (engine-architect, ai-engineer, qa-engineer). Convergence Review revision pass 2026-05-01.
+provenance: Outcome of Sync 1 (engine-architect, ai-engineer, qa-engineer). Convergence Review revision pass 2026-05-01. PATCH 1.2.1 (2026-05-01) clarifies §1.3, §6.1, §7 to match Phase 0 session 1 implementation; no behavior change.
 ---
 
 # Simulation Architecture Contract
@@ -106,6 +106,8 @@ func _set_sim(prop: StringName, value: Variant) -> void:
 ```
 
 Components write through `_set_sim`. In debug builds, off-tick writes crash with a stack trace. In release, the assert compiles out — no perf cost.
+
+**Enforcement model.** The `_set_sim` assertion is **enforcement-via-crash-in-debug**, not enforcement-via-test. GDScript `assert()` halts the script in debug builds and compiles out in release; GUT cannot trap a fired assert in-process, so this rule is not directly unit-testable. The programmatic gate that catches violations *before* they reach a debug build is the lint rule (§1.4): L1 catches gameplay mutation called from `_process`, and the broader pattern catches "didn't extend SimNode at all." The assert is the runtime tripwire for code paths the lint can't statically see; the lint is the CI-enforceable safety net. Both are required; neither replaces the other.
 
 **Self-only mutation rule.** `_set_sim` is `_`-prefixed and intended to mutate `self` exclusively. A component never reaches into a sibling, parent, or unrelated node and calls `other._set_sim(&"prop", v)` — the assert would still pass (we are on-tick), but encapsulation breaks: ownership of "who can write this field" becomes diffuse and audits get hard. Pattern: if state X needs to change as a side effect of state Y, the *owner of X* exposes a method (`take_damage(amount)`, `apply_farr_change(...)`) which internally calls its own `_set_sim`. Cross-component writes go through method calls, never through reaching in.
 
@@ -398,6 +400,16 @@ The headless test harness calls `advance_ticks(n)` to drive the simulation deter
 
 The `MockPathScheduler` callback resolution and `SpatialIndex._rebuild` happen automatically because their phase coordinators are listening for `sim_phase` like everyone else — no special-case harness code.
 
+**SimClock test hooks (contract surface).** To let GUT and the future `MatchHarness` drive the clock without running `_physics_process`, `SimClock` exposes three test-prefixed entry points alongside the live driver:
+
+| Hook | Signature | Purpose |
+|---|---|---|
+| `_test_run_tick` | `func _test_run_tick() -> void` | Run exactly one fixed tick, ignoring the accumulator. The body of `MatchHarness.advance_ticks(n)` is a loop over this hook. |
+| `_test_advance` | `func _test_advance(delta: float) -> void` | Mirror the live `_physics_process` accumulator: feed a real-frame-shaped `delta`, run as many ticks as fit. Used to exercise accumulator semantics directly. |
+| `reset` | `func reset() -> void` | Restore pristine state (`tick = 0`, `sim_time = 0.0`, `_is_ticking = false`, `_accumulator = 0.0`). GUT `before_each` / `after_each` calls this so tests don't leak tick counts across cases. |
+
+These hooks are **part of the contract surface** — `MatchHarness` integration depends on their exact names and signatures. They share the same `_run_tick()` body the live `_physics_process` driver uses, which is what guarantees the live and headless paths can't diverge: any change to the canonical tick sequence (signal order, pre/post-tick state, phase emission) automatically applies to both. See `game/scripts/autoload/sim_clock.gd` for the canonical implementation.
+
 ### 6.2 Determinism regression test (qa-engineer authors)
 
 ```gdscript
@@ -444,16 +456,58 @@ const _SINK_SIGNALS: Array[StringName] = [
     # extend as new write-shaped signals are added
 ]
 
-func connect_sink(callable: Callable) -> void:
-    for sig in _SINK_SIGNALS:
-        get(sig).connect(func(...args): callable.call(sig, args))
+# sink_callable -> { signal_name: forwarder_callable }
+var _sink_forwarders: Dictionary = {}
 
-func disconnect_sink(callable: Callable) -> void:
-    # symmetric; iterate _SINK_SIGNALS and disconnect
-    ...
+func connect_sink(sink: Callable) -> void:
+    if _sink_forwarders.has(sink):
+        return
+    var forwarders: Dictionary = {}
+    for sig in _SINK_SIGNALS:
+        var forwarder: Callable = _make_forwarder(sig, sink)
+        forwarders[sig] = forwarder
+        var s: Signal = get(sig)
+        s.connect(forwarder)
+    _sink_forwarders[sink] = forwarders
+
+func disconnect_sink(sink: Callable) -> void:
+    if not _sink_forwarders.has(sink):
+        return
+    var forwarders: Dictionary = _sink_forwarders[sink]
+    for sig in forwarders.keys():
+        var s: Signal = get(sig)
+        s.disconnect(forwarders[sig])
+    _sink_forwarders.erase(sink)
+
+# Per-signal forwarder. GDScript does NOT support varargs lambdas
+# (`func(...args)` is not valid syntax), so each tracked signal gets a
+# hand-rolled Callable matching its exact arity. Adding a new signal to
+# _SINK_SIGNALS requires adding a match arm here for that signal's
+# arity. Reflective approaches (Object.connect with a bound array) lose
+# typed-arg checks, so explicit dispatch wins.
+func _make_forwarder(sig: StringName, sink: Callable) -> Callable:
+    match sig:
+        &"tick_started":
+            return func(tick: int) -> void: sink.call(sig, [tick])
+        &"tick_ended":
+            return func(tick: int) -> void: sink.call(sig, [tick])
+        &"sim_phase":
+            return func(phase: StringName, tick: int) -> void:
+                sink.call(sig, [phase, tick])
+        # ... add an arm per signal as _SINK_SIGNALS grows ...
+        _:
+            push_error("EventBus._make_forwarder: no arm for '%s'" % sig)
+            return Callable()
 ```
 
-Phase 6 `MatchLogger` calls `EventBus.connect_sink(_on_event)` once on match start, writes one NDJSON line per call. Adding a new sink-tracked signal in the future = adding it to `_SINK_SIGNALS`, no `MatchLogger` change. Phase 0 ships `connect_sink` even though no consumer uses it yet — locking the API now means Phase 6 is purely additive.
+Phase 6 `MatchLogger` calls `EventBus.connect_sink(_on_event)` once on match start; the sink Callable receives `(signal_name: StringName, args: Array)` per emit and writes one NDJSON line per call. Phase 0 ships `connect_sink` / `disconnect_sink` even though no consumer uses them yet — locking the API now means Phase 6 is purely additive.
+
+**Adding a new sink-tracked signal is a two-line change:**
+
+1. Append the signal name to `_SINK_SIGNALS`.
+2. Add a `match` arm in `_make_forwarder` matching the signal's exact arity, dispatching to `sink.call(sig, [arg1, arg2, ...])`.
+
+No `MatchLogger` change; no consumer change. The canonical implementation lives at `game/scripts/autoload/event_bus.gd` — refer to it for the current set of arms and the idempotent connect/disconnect semantics.
 
 ---
 
