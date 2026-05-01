@@ -79,6 +79,8 @@ The constants split (`constants.gd` for structural keys vs `data/balance.tres` f
 
 **Phase 0 expanded based on team review.** The reviews converged on a hard truth: ~10 architectural decisions are cheap to make now and weeks-expensive to retrofit later. We build them all in Phase 0.
 
+> **Starting Phase 0?** See [`02a_PHASE_0_KICKOFF.md`](02a_PHASE_0_KICKOFF.md) for the first-implementation-session recipe — read order, scoped session-1 slice, internal dependency order between Phase 0 tasks, TDD reminders, and the session ceremony.
+
 #### Pre-Phase 0 Coordination Sync (REQUIRED before tasks start)
 
 | Sync | Participants | Deliverable | Why |
