@@ -233,6 +233,37 @@ func _ready() -> void:
 	if not fsm._states.is_empty() and fsm.current == null:
 		fsm.init(&"idle")
 
+	# Wire the FSM into the simulation tick. Until the MovementSystem phase
+	# coordinator lands (LATER item per BUILD_LOG 2026-05-01 wave 2), each
+	# Unit subscribes to EventBus.sim_phase directly and ticks its own FSM
+	# during the &"movement" phase. This is what the coordinator will do
+	# later — iterate units and call fsm.tick — just without a central
+	# registry. Order across units is signal-handler order (engine-defined;
+	# stable per build, not formally deterministic across Godot versions).
+	# For Phase 1 visual testing that is good enough; the coordinator will
+	# take over deterministic ordering when it ships.
+	if not EventBus.sim_phase.is_connected(_on_sim_phase):
+		EventBus.sim_phase.connect(_on_sim_phase)
+
+
+# Disconnect on tree exit so a freed unit's FSM doesn't keep ticking after
+# queue_free. Symmetric with the connect in _ready.
+func _exit_tree() -> void:
+	if EventBus.sim_phase.is_connected(_on_sim_phase):
+		EventBus.sim_phase.disconnect(_on_sim_phase)
+
+
+# Phase-signal handler. Drives fsm.tick during the &"movement" phase only.
+# Uses SimClock.SIM_DT (the canonical fixed delta) so this path matches both
+# the live accumulator and the tests that call `fsm.tick(SimClock.SIM_DT)`
+# directly — same code, same numbers.
+func _on_sim_phase(phase: StringName, _tick: int) -> void:
+	if phase != &"movement":
+		return
+	if fsm == null or fsm.current == null:
+		return
+	fsm.tick(SimClock.SIM_DT)
+
 
 # Read this unit's UnitStats from BalanceData (loaded from
 # Constants.PATH_BALANCE_DATA) and apply defaults to the components.

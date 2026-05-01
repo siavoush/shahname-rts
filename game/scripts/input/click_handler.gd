@@ -68,6 +68,12 @@ const RAYCAST_DISTANCE: float = 1000.0
 ## post-Phase-2 optimization when the layer system actually matters.
 const RAYCAST_COLLISION_MASK: int = 0xFFFFFFFF
 
+## Verbose logging of every click and raycast result. Phase 1 wave 2
+## diagnostic — left ON until interactive testing confirms the click flow
+## is reliable on the live build, then can be flipped off (or gated by
+## DebugOverlayManager) once the path is trusted.
+const DEBUG_LOG_CLICKS: bool = true
+
 
 # ============================================================================
 # Lifecycle
@@ -99,9 +105,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	match mb.button_index:
 		MOUSE_BUTTON_LEFT:
+			if DEBUG_LOG_CLICKS:
+				print("[click] LEFT press at screen=", mb.position)
 			_handle_left_click(mb.position)
 			get_viewport().set_input_as_handled()
 		MOUSE_BUTTON_RIGHT:
+			if DEBUG_LOG_CLICKS:
+				print("[click] RIGHT press at screen=", mb.position)
 			_handle_right_click(mb.position)
 			get_viewport().set_input_as_handled()
 
@@ -128,13 +138,20 @@ func _handle_left_click(screen_pos: Vector2) -> void:
 func process_left_click_hit(hit: Dictionary) -> void:
 	if hit.is_empty():
 		# No collider hit — clicked into the void / off the terrain. Deselect.
+		if DEBUG_LOG_CLICKS:
+			print("[click] LEFT: no raycast hit → deselect_all")
 		SelectionManager.deselect_all()
 		return
 	var unit: Object = _resolve_unit_from_hit(hit)
 	if unit != null:
+		if DEBUG_LOG_CLICKS:
+			var uid_v: Variant = unit.get(&"unit_id")
+			print("[click] LEFT: hit unit id=", uid_v, " collider=", hit.get(&"collider"))
 		SelectionManager.select_only(unit)
 	else:
 		# Hit something that wasn't a unit (terrain, future props, etc.) — deselect.
+		if DEBUG_LOG_CLICKS:
+			print("[click] LEFT: hit non-unit collider=", hit.get(&"collider"), " → deselect_all")
 		SelectionManager.deselect_all()
 
 
@@ -164,9 +181,13 @@ func process_right_click_hit(hit: Dictionary) -> void:
 	var sel: Array = SelectionManager.selected_units
 	if sel.is_empty():
 		# Nothing selected — nothing to command.
+		if DEBUG_LOG_CLICKS:
+			print("[click] RIGHT: no selection → no-op")
 		return
 	if hit.is_empty():
 		# Right-clicked into the void / off the terrain — no actionable target.
+		if DEBUG_LOG_CLICKS:
+			print("[click] RIGHT: no raycast hit → no-op")
 		return
 	# If the hit is a unit, this is the attack-move case — Phase 2. For wave 2
 	# we ignore unit hits on right-click. (Right-clicking a friendly unit might
@@ -174,8 +195,12 @@ func process_right_click_hit(hit: Dictionary) -> void:
 	# attack target. Both are out of scope here.)
 	var hit_unit: Object = _resolve_unit_from_hit(hit)
 	if hit_unit != null:
+		if DEBUG_LOG_CLICKS:
+			print("[click] RIGHT: hit unit (attack-move is Phase 2) → no-op")
 		return
 	var target: Vector3 = hit.get(&"position", Vector3.ZERO)
+	if DEBUG_LOG_CLICKS:
+		print("[click] RIGHT: move command target=", target, " selected=", sel.size())
 	# Build the Move Command shape that ai-engineer's UnitState_Moving reads.
 	# Per State Machine Contract §2.4 + the kickoff doc coordination point,
 	# the contract is `kind = &"move"` and `payload = { &"target": Vector3 }`.
