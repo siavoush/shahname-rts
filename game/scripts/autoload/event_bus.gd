@@ -29,6 +29,19 @@ signal tick_ended(tick: int)
 signal sim_phase(phase: StringName, tick: int)
 
 
+# ---- State-machine and unit-lifecycle signals ------------------------------
+# Declared here to support StateMachine death-preempt (State Machine Contract
+# §4.2) and the unit_state_changed telemetry channel (§5.3 / §7.3). Producers
+# (HealthComponent, Unit) ship in Phase 1+; the framework subscribes from
+# Phase 0 so the wiring exists when consumers land.
+
+@warning_ignore("unused_signal")
+signal unit_health_zero(unit_id: int)
+
+@warning_ignore("unused_signal")
+signal unit_state_changed(unit_id: int, from_id: StringName, to_id: StringName, tick: int)
+
+
 # ---- Sink registry ----------------------------------------------------------
 # Sinks observe every signal in _SINK_SIGNALS. To support disconnect_sink, we
 # remember the per-signal forwarder Callables we created for each sink so we
@@ -42,6 +55,8 @@ const _SINK_SIGNALS: Array[StringName] = [
 	&"tick_started",
 	&"tick_ended",
 	&"sim_phase",
+	&"unit_health_zero",
+	&"unit_state_changed",
 	# Extend as new write-shaped signals are added. Order is not significant.
 ]
 
@@ -93,6 +108,11 @@ func _make_forwarder(sig: StringName, sink: Callable) -> Callable:
 		&"sim_phase":
 			return func(phase: StringName, tick: int) -> void:
 				sink.call(sig, [phase, tick])
+		&"unit_health_zero":
+			return func(unit_id: int) -> void: sink.call(sig, [unit_id])
+		&"unit_state_changed":
+			return func(unit_id: int, from_id: StringName, to_id: StringName, tick: int) -> void:
+				sink.call(sig, [unit_id, from_id, to_id, tick])
 		_:
 			push_error("EventBus._make_forwarder: signal '%s' has no forwarder arm" % sig)
 			return Callable()
