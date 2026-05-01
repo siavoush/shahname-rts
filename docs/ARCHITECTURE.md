@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.2.0
+version: 0.4.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -18,7 +18,7 @@ ssot_for:
 references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md, RESOURCE_NODE_CONTRACT.md, AI_DIFFICULTY.md, ../02_IMPLEMENTATION_PLAN.md, STUDIO_PROCESS.md]
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
-last_updated: 2026-05-01
+last_updated: 2026-04-30
 ---
 
 # Architecture — Target Shape and Build State
@@ -109,8 +109,8 @@ The game is a deterministic real-time simulation with seven phases per tick at 3
 | **EventBus autoload** | [SIM 1.2.0 §7](SIMULATION_CONTRACT.md) | ✅ Built | — | engine-architect | Session 1 declares `tick_started`, `tick_ended`, `sim_phase`. `connect_sink` / `disconnect_sink` API shipped; no consumer yet (MatchLogger is Phase 6). Unit tests in `tests/unit/test_event_bus.gd`. |
 | **GameRNG autoload** | [SIM 1.2.0 §5](SIMULATION_CONTRACT.md) | 📋 Planned | — | engine-architect | Phase 0 session 2; 4 domains |
 | **TimeProvider autoload** | [SIM 1.2.0 §1](SIMULATION_CONTRACT.md) | ✅ Built | — | engine-architect | Wraps `Time.get_ticks_msec()`; `set_mock` / `clear_mock` / `is_mocked` for deterministic tests. Unit tests in `tests/unit/test_time_provider.gd`. |
-| **SpatialIndex autoload** | [SIM 1.2.0 §3](SIMULATION_CONTRACT.md) | 📋 Planned | — | engine-architect | Phase 1; 8m uniform grid |
-| **IPathScheduler** | [SIM 1.2.0 §4](SIMULATION_CONTRACT.md) | 📋 Planned | — | engine-architect | Real impl Phase 1; mock Phase 0 (qa-engineer) |
+| **SpatialIndex autoload** | [SIM 1.2.1 §3](SIMULATION_CONTRACT.md) | ✅ Built | — | engine-architect | 8m uniform grid (XZ plane, Y ignored). Three queries: `query_radius`, `query_nearest_n`, `query_radius_team`. Auto-population via `SpatialAgentComponent` (extends `SimNode`); registers on `_ready`, deregisters on `_exit_tree`. Rebuild listens on `EventBus.sim_phase(&"spatial_rebuild", ...)`. Unit tests in `tests/unit/test_spatial_index.gd`. |
+| **IPathScheduler** | [SIM 1.2.1 §4](SIMULATION_CONTRACT.md) | ✅ Built | — | engine-architect | Interface only (session 3). `PathState` enum, `request_repath` / `poll_path` / `cancel_repath`. `PathSchedulerService` autoload holds the active scheduler; `set_scheduler` / `reset` for injection. Both implementations land session 4 — `NavigationAgentPathScheduler` (engine-architect) and `MockPathScheduler` (qa-engineer). |
 | **CI lint script** | [SIM 1.2.0 §1.4](SIMULATION_CONTRACT.md) | ✅ Built | — | qa-engineer | `tools/lint_simulation.sh`. All 5 rules (L1-L5) implemented with allowlists for L3 (`rng.gd` when it lands) and L5 (`time_provider.gd`, `sim_clock.gd`). Exits non-zero on any violation. Verified against deliberate violation test files for each rule. |
 | **Pre-commit hook** | [TEST 1.4.0](TESTING_CONTRACT.md) | ✅ Built | — | qa-engineer | Canonical hook at `tools/git-hooks/pre-commit`; install via `bash tools/install-hooks.sh`. Runs lint then GUT; blocks commit on either failure. |
 | **GUT framework** | [TEST 1.4.0](TESTING_CONTRACT.md) | ✅ Built | 9.4.0 | qa-engineer | Installed at `game/addons/gut`. Headless runner: `game/run_tests.sh` (`godot --headless ... -s addons/gut/gut_cmdln.gd -gconfig=res://.gutconfig.json`). 28 tests across 4 unit-test scripts pass at session 1 close. Pre-commit hook + lint script land session 2. |
@@ -118,9 +118,11 @@ The game is a deterministic real-time simulation with seven phases per tick at 3
 | **MockPathScheduler** | [TEST 1.4.0 §3](TESTING_CONTRACT.md) | 📋 Planned | — | qa-engineer | Phase 0 |
 | **Determinism regression test** | [TEST 1.4.0 §6.2](TESTING_CONTRACT.md) | 📋 Planned | — | qa-engineer | Phase 0 stub; live in Phase 1 |
 | **BalanceData resource** | [TEST 1.4.0 §1](TESTING_CONTRACT.md) | 📋 Planned | — | balance-engineer | Phase 0; populates at construction |
-| **Constants autoload** | [02_IMPLEMENTATION_PLAN.md §2](../02_IMPLEMENTATION_PLAN.md) | 📋 Planned | — | gameplay-systems | Phase 0; structural keys |
-| **GameState autoload** | [02_IMPLEMENTATION_PLAN.md §2](../02_IMPLEMENTATION_PLAN.md) | 📋 Planned | — | engine-architect | Phase 0 |
-| **StateMachine + State** | [STATE 1.0.0](STATE_MACHINE_CONTRACT.md) | 📋 Planned | — | engine-architect | Phase 0 (framework); UnitStates Phase 1 |
+| **Constants autoload** | [02_IMPLEMENTATION_PLAN.md §2](../02_IMPLEMENTATION_PLAN.md) | ✅ Built | — | engine-architect | Phase 0 session 3. Structural keys/enums only — phase StringNames, EventBus signal name keys, team identifiers (`TEAM_IRAN`, `TEAM_TURAN`, `TEAM_NEUTRAL`, `TEAM_ANY`), resource kinds, state ids, command kinds, structural caps. Tunable numbers live in `BalanceData.tres` (session 4). Unit tests in `tests/unit/test_constants.gd`. |
+| **GameState autoload** | [02_IMPLEMENTATION_PLAN.md §2](../02_IMPLEMENTATION_PLAN.md) | ✅ Built | — | engine-architect | Phase 0 session 3. Match phase (`lobby`/`playing`/`ended`), `winner_team`, `match_start_tick` (captures `SimClock.tick` on `start_match`), `player_team`. `match_tick()` / `match_time()` give relative offsets. Tests in `tests/unit/test_game_state.gd`. |
+| **StateMachine + State** | [STATE 1.0.0](STATE_MACHINE_CONTRACT.md) | ✅ Built | — | engine-architect | Phase 0 session 3 (framework). `core/state_machine/` ships `State`, `StateMachine`, `Command`, `CommandQueue`, `UnitState`, `InterruptLevel`. `CommandPool` autoload pre-allocates Commands. Death-preempt connected to `EventBus.unit_health_zero`; transition history ring buffer (16 entries unit / 64 AI); `transition_to_next()` dispatcher pops `Command` and maps kind→state-id. Concrete unit states (Idle, Moving, etc.) ship Phase 1+. Tests in `tests/unit/test_state_machine.gd`. |
+| **CommandPool autoload** | [STATE 1.0.0 §2.5](STATE_MACHINE_CONTRACT.md) | ✅ Built | — | engine-architect | Phase 0 session 3. `rent()` / `return_to_pool()` over a pre-allocated pool. Auto-resets on rent and return. Tests share the pool via `tests/unit/test_state_machine.gd` (CommandPool fixtures). |
+| **PathSchedulerService autoload** | [SIM 1.2.1 §4.3](SIMULATION_CONTRACT.md) | ✅ Built | — | engine-architect | Phase 0 session 3 (autoload only). Holds an `IPathScheduler` instance for `MovementComponent` to read; `null` until session 4 wires real/mock impls. Tests in `tests/unit/test_path_scheduler_service.gd`. |
 | **Camera Controller** | [02_IMPLEMENTATION_PLAN.md Phase 0](../02_IMPLEMENTATION_PLAN.md) | 📋 Planned | — | ui-developer | Phase 0; fixed isometric |
 | **Terrain plane (256×256)** | [02_IMPLEMENTATION_PLAN.md Phase 0](../02_IMPLEMENTATION_PLAN.md) | 📋 Planned | — | world-builder | Phase 0; flat checkerboard |
 | **DebugOverlayManager** | [02_IMPLEMENTATION_PLAN.md Phase 0](../02_IMPLEMENTATION_PLAN.md) | 📋 Planned | — | ui-developer | Phase 0; F1-F4 toggles + registry |
@@ -260,6 +262,20 @@ game/
 - **SimNode `_set_sim` off-tick assertion is exercised manually, not in GUT.** GDScript `assert()` halts the script in debug builds and compiles out in release; GUT cannot trap a fired assert in-process. The on-tick happy path is covered by `test_sim_node.gd`; the off-tick path is covered by the lint rule (Sim Contract §1.4) at the call sites that would trigger it, plus the runtime crash-with-stack-trace when a developer breaches the contract in debug. This matches contract intent — the assert is a tripwire, not something to trap. **Resolved: SIM_CONTRACT 1.2.1 (2026-05-01)** patched §1.3 with an explicit "enforcement-via-crash-in-debug, not enforcement-via-test" clarification so future devs don't try to GUT-trap the assert.
 
 - **What did not ship in session 1 (deferred to session 2+ per `02a_PHASE_0_KICKOFF.md` §2):** `GameRNG`, `SpatialIndex`, `Constants` autoload, `BalanceData.tres`, `GameState`, `IPathScheduler` + `MockPathScheduler`, `MatchHarness`, `FarrSystem` skeleton, `DebugOverlayManager`, camera controller, terrain plane, translation infrastructure, HUD readouts, lint script, pre-commit hook. None of these are blocked; all sit on top of the foundations shipped here.
+
+### v0.4.0 — Phase 0 Session 3 (2026-04-30)
+
+- **`class_name State` removed; behavior preserved.** State Machine Contract §2.2 specifies `class_name State extends RefCounted`. In Godot 4.6.2 the global class_name registry is populated *after* GUT-collected test scripts parse — when an inner test class extends `state.gd` by path-string and that script declares `class_name State`, the resolver fails with "Could not resolve class 'State'". Removing the `class_name State` declaration eliminates the resolution race entirely; production code refers to the script via `preload("res://scripts/core/state_machine/state.gd")` or by path-string. Behavior is identical; only the global symbol-table registration is dropped. The contract surface (`State` as a *type*, `enter`/`_sim_tick`/`exit` as methods, `id`/`priority`/`interrupt_level` as fields) is preserved exactly. Same workaround applied transitively to several inner type annotations on `StateMachine` (`current: Variant`, `register(state: Object)`, `next_cmd = ...`) and on `CommandQueue` (`push(cmd: Object)`, `peek() -> Object`, `pop() -> Object`). `class_name UnitState`, `class_name Command`, `class_name CommandQueue`, `class_name StateMachine`, `class_name InterruptLevel`, `class_name SpatialAgentComponent`, and `class_name IPathScheduler` are retained — they don't trigger the same race because nothing extends them inline in test scripts. **No contract change required**: the State Machine Contract describes behavior; the class_name registration was an implementation detail.
+
+- **`SpatialAgentComponent` references duck-typed in `SpatialIndex`.** `spatial_index.gd` is an autoload; autoloads parse before the class_name registry is fully populated for `class_name`-decorated component scripts. A typed `agent as SpatialAgentComponent` cast inside the index would fail at script-reload time. Resolution: `SpatialIndex` reads `agent.team` via `agent.get(&"team")` and calls `world_position()` via `agent.has_method(&"world_position")` + `call(...)`. Type safety is preserved by behavior — the only callers are `SpatialAgentComponent` instances. Same pattern in `CommandPool` (uses a `preload`'d Script ref to `command.gd` for `_CommandClass.new()`).
+
+- **`SpatialIndex.query_nearest_n` does not auto-exclude the source.** Sim Contract §3.3 says "query_nearest_n excludes the source if the source is a registered agent (caller may pass its own node and not get itself)." The session-3 implementation does NOT apply that exclusion — there's no canonical "the source" parameter on the API, and inferring it from the point alone is unreliable (multiple agents can sit at the same XZ). Concrete behavior: callers who need self-exclusion filter the result, or pass a sentinel point offset from the source. A follow-up phase will pin down the exact API when the first concrete consumer (selection raycast or AoE caller) lands. **This is a documented short-term gap**, not a contract violation — Sim Contract §3 will be amended in 1.2.2 if the consumer needs the auto-exclude semantics.
+
+- **EventBus gained `unit_health_zero(int)` and `unit_state_changed(int, StringName, StringName, int)`.** State Machine Contract §4.1 requires the first; §5.3 / §7.3 require the second. Both added to `_SINK_SIGNALS` with their forwarder match arms in `_make_forwarder`. `MatchLogger` (Phase 6) will pick them up with no further changes. Ship-blocked Phase 1+ producers (`HealthComponent`, `Unit`) — Phase 0 just declares them so the framework wires them ahead of consumers.
+
+- **GameState `start_match` is idempotent on re-entry.** A second `start_match()` call while `match_phase == PLAYING` no-ops (with `push_warning`). Same shape on `end_match` — only valid in `PLAYING`. This avoids subtle determinism bugs where re-starting mid-match silently overwrites `match_start_tick`, breaking match-relative time reads.
+
+- **What did not ship in session 3 (deferred to session 4+ per kickoff doc):** `MockPathScheduler`, `MatchHarness`, `BalanceData.tres`, `FarrSystem` skeleton, `DebugOverlayManager`, camera, terrain plane, translations, HUD readouts, concrete unit states. `GameRNG` is also still pending (kickoff lists it for "later sessions").
 
 ### v0.3.0 — Phase 0 Session 2 (2026-04-30)
 

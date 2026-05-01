@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-01
+last_updated: 2026-04-30
 ---
 
 # Build Log
@@ -71,6 +71,47 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 - **Pre-commit hook NOT installed this session** — it's part of the qa-engineer's session 2 deliverable per the kickoff. Adding it now would step on their owned files (`tools/lint_simulation.sh` is theirs).
 - **GUT 9.4.0** chosen as the latest compatible release at session start. Sourced from the official `bitwes/Gut` GitHub release tarball, copied to `game/addons/gut`.
 - **Engine warnings tightened in `[debug]` block** of `project.godot` (`untyped_declaration`, `unsafe_property_access`, `unsafe_method_access`). Catches a class of bugs early without affecting gameplay.
+
+## 2026-04-30 — Phase 0 Session 3: Foundational Autoloads + State Machine Framework
+
+**Branch:** `feat/phase-0-foundation`
+
+**Shipped:**
+- `Constants` autoload (`game/scripts/autoload/constants.gd`) — structural keys/enums per Testing Contract §1.1. Phase StringNames, EventBus signal-name keys, team identifiers (`TEAM_NEUTRAL`, `TEAM_IRAN`, `TEAM_TURAN`, `TEAM_ANY`), resource kinds (`KIND_COIN`, `KIND_GRAIN`), match phase enum, state ids, command kinds, structural caps (`COMMAND_QUEUE_CAPACITY`, `STATE_MACHINE_TRANSITIONS_PER_TICK`, history sizes), `SPATIAL_CELL_SIZE`. No tunable numbers — those land in `BalanceData.tres` (session 4). Tests in `tests/unit/test_constants.gd`.
+- `GameState` autoload (`game/scripts/autoload/game_state.gd`) — match-level state. `match_phase` (`lobby`/`playing`/`ended`), `winner_team`, `match_start_tick`, `player_team`. `start_match(team)` captures `SimClock.tick`; `end_match(winner)` finalizes. `match_tick()` / `match_time()` give relative-to-start offsets. Idempotent re-entry guards (`start_match` while PLAYING is a no-op; `end_match` outside PLAYING is a no-op). Tests in `tests/unit/test_game_state.gd`.
+- `SpatialIndex` autoload + `SpatialAgentComponent` (`game/scripts/autoload/spatial_index.gd`, `game/scripts/core/spatial_agent_component.gd`) — uniform 8m grid (XZ plane, Y ignored). Three queries: `query_radius`, `query_nearest_n`, `query_radius_team`. `SpatialAgentComponent extends SimNode`; auto-registers on `_ready`, deregisters on `_exit_tree`. `SpatialIndex._rebuild()` listens on `EventBus.sim_phase(&"spatial_rebuild", _)`. Tests in `tests/unit/test_spatial_index.gd`.
+- `IPathScheduler` interface + `PathSchedulerService` autoload (`game/scripts/core/path_scheduler.gd`, `game/scripts/autoload/path_scheduler_service.gd`) — interface-only this session per Sim Contract §4.2. Defines `PathState` enum (PENDING/READY/FAILED/CANCELLED) and the three abstract methods. `PathSchedulerService` holds the active scheduler with `set_scheduler()` / `reset()` for injection; defaults to `null`. Real `NavigationAgentPathScheduler` and test `MockPathScheduler` ship session 4. Tests in `tests/unit/test_path_scheduler_service.gd` (uses an inline `_StubScheduler` to verify the service accepts injection).
+- `StateMachine` framework (`game/scripts/core/state_machine/`) — full framework per State Machine Contract 1.0.0. Files: `state.gd`, `state_machine.gd`, `command.gd`, `command_queue.gd`, `unit_state.gd`, `interrupt_level.gd`. Plus `CommandPool` autoload (`game/scripts/autoload/command_pool.gd`). Death-preempt connected via `EventBus.unit_health_zero`; transition history ring buffer (16 entries unit / `set_history_capacity(64)` for AI). `transition_to_next()` dispatcher pops `Command`, maps `kind→state-id`, transitions. Bounded chain of 4 transitions per tick. `EventBus.unit_state_changed` emits on every transition for telemetry. Tests in `tests/unit/test_state_machine.gd` — covers Command/CommandPool/CommandQueue, init+transitions, transition_to_next dispatch, history ring buffer, death-preempt (force-transition + cancels pending + filters by unit_id + idempotent).
+- `EventBus` extended with `unit_health_zero(int)` and `unit_state_changed(int, StringName, StringName, int)`. Both added to `_SINK_SIGNALS` with their `_make_forwarder` match arms.
+- `docs/ARCHITECTURE.md` bumped 0.2.0 → 0.4.0. Build-state table: Constants, GameState, SpatialIndex, IPathScheduler, StateMachine moved 📋 → ✅; `CommandPool` and `PathSchedulerService` rows added. New §6 entries (v0.4.0) document the `class_name State` removal, duck-typed SpatialIndex paths, query_nearest_n source-exclusion gap, two new EventBus signals, and GameState idempotency guards.
+
+**Test-count delta:** 28 → 88 tests passing headless across 9 scripts. Asserts 140 → 233. Total time ~0.1s.
+
+**Did not ship** (per kickoff doc scope — session 4+ or later):
+- `MockPathScheduler` (qa-engineer, session 4) — needs the IPathScheduler interface that landed this session.
+- `MatchHarness` (qa-engineer, session 4) — depends on Constants, GameState, BalanceData.
+- `BalanceData.tres` (balance-engineer, session 4).
+- `GameRNG` (engine-architect, future session) — kickoff doc moved it out of session 3 scope.
+- `FarrSystem` skeleton, `DebugOverlayManager`, camera controller, terrain plane, translations, HUD readouts — covered by `ui-developer` and `world-builder` running in parallel after this session, plus `gameplay-systems` later.
+- Concrete unit states (Idle, Moving, Attacking, etc.) — Phase 1.
+- Phase coordinators that actually tick component lists — Phase 1+ (the autoloads exist; coordinators wire them up later).
+
+**State for next session:**
+- On branch `feat/phase-0-foundation`. Lint clean. `cd game && GODOT=/opt/homebrew/bin/godot ./run_tests.sh` → 88/88 passing.
+- New autoloads in `project.godot` (in load order): `TimeProvider`, `EventBus`, `Constants`, `SimClock`, `GameState`, `SpatialIndex`, `PathSchedulerService`, `CommandPool`. The order matters — `Constants` must precede `SimClock` and `GameState` (both reference it); `EventBus` precedes `SpatialIndex` (which subscribes to `sim_phase` in `_ready`).
+- Pre-commit hook fires on commit; runs lint + GUT.
+- `ui-developer` and `world-builder` are now unblocked to run in parallel — camera controller, terrain plane, debug overlay manager. None of those touch the engine layer.
+- Session 4 picks up: `MockPathScheduler` + `MatchHarness` (qa-engineer), `BalanceData.tres` (balance-engineer), and the integration glue.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. All session work was infrastructure against ratified contracts.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+- **Removed `class_name State`** from `state.gd`. Godot 4.6.2's class_name registry has a resolution race when test scripts (collected by GUT) define inner classes that extend a script-with-class_name by path-string. The behavior is preserved exactly; only the global symbol-table registration was dropped. State Machine Contract surface (the `State` type via path or preload, the `enter`/`_sim_tick`/`exit` methods, the `id`/`priority`/`interrupt_level` fields) is unchanged. Same workaround applied to internal type annotations on `StateMachine` (`current: Variant`, `register(state: Object)`) and `CommandQueue` (`push(cmd: Object)`, `peek/pop -> Object`). Not a contract change — documented in `docs/ARCHITECTURE.md` §6 (v0.4.0).
+- **`SpatialIndex` reads agent fields duck-typed.** `agent.get(&"team")` and `agent.has_method(&"world_position")` instead of `agent as SpatialAgentComponent`. Same root cause: autoloads parse before `class_name` registration completes for child component scripts. Type safety preserved by behavior — only `SpatialAgentComponent` instances ever register.
+- **`SpatialIndex.query_nearest_n` does not auto-exclude the source.** Sim Contract §3.3 says it should; the API doesn't carry a "source" parameter, so we couldn't implement it in a clean general-case way. Documented in §6 — first concrete consumer in Phase 1 will dictate whether to extend the API or filter at the call site. Not a runtime hazard at this point — no consumer yet.
+- **`CommandPool` returns `Object` rather than `Command`.** Same class_name-resolve workaround. The pool is the only sanctioned way to get a Command; behavior is identical.
+- **Two new EventBus signals (`unit_health_zero`, `unit_state_changed`)** declared this session even though no producer ships yet. Required by State Machine Contract §4.1 / §5.3; declaring them now means the framework can be unit-tested end-to-end (death-preempt tests fire `unit_health_zero` directly).
+- **`GameState.start_match` / `end_match` idempotency.** Re-entering each is a `push_warning` no-op rather than a hard error. Determinism rationale: a silent overwrite of `match_start_tick` mid-match would corrupt every match-relative time read downstream. Failing loudly via assert was rejected because a `push_warning` is enough — the no-op preserves the right state.
 
 ## 2026-04-30 — Phase 0 Session 2: Lint Gate + Pre-commit Hook
 
