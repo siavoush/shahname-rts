@@ -54,8 +54,20 @@ var _next_id: int = 1
 
 # Cached reference to the navigation map RID. Resolved lazily on first
 # request from the SceneTree's main viewport's World3D.navigation_map.
-# Tests can override by writing _map_rid_override.
+# Tests can override via set_map_rid_override().
+#
+# Design note: we track whether an explicit override was set separately
+# from the RID value because RID() (invalid) is a valid test-intent —
+# "force the no-map / FAILED path" — but is indistinguishable from the
+# initial "no override, auto-detect" default if we only look at the RID
+# value. The _map_rid_override_set sentinel solves this:
+#   _map_rid_override_set = false → auto-detect from World3D (default)
+#   _map_rid_override_set = true, _map_rid_override invalid → no map, FAILED
+#   _map_rid_override_set = true, _map_rid_override valid   → use that RID
+# Fixes the flaky `test_request_without_navmap_resolves_failed` test where
+# set_map_rid_override(RID()) was being silently ignored.
 var _map_rid_override: RID = RID()
+var _map_rid_override_set: bool = false
 
 
 # === IPathScheduler implementation ==========================================
@@ -128,26 +140,48 @@ func cancel_repath(request_id: int) -> void:
 
 # === Test/diagnostic helpers ================================================
 
-## Override the navigation map RID for tests that don't have a live scene
-## tree. Pass an empty RID() to revert to auto-detection.
+## Override the navigation map RID for tests.
+##
+## Pass a valid RID to force the scheduler to use that specific navmap.
+## Pass an invalid RID() to force the "no map → FAILED" path (simulates a
+## headless context with no scene tree). This is distinct from the default
+## unset state — calling set_map_rid_override(RID()) means "I explicitly
+## want the no-map path", not "revert to auto-detection".
+##
+## Call clear_override() to revert to auto-detection from World3D.
 func set_map_rid_override(rid: RID) -> void:
 	_map_rid_override = rid
+	_map_rid_override_set = true
+
+
+## Revert to auto-detection from the World3D's navigation_map. This is the
+## explicit "undo" for set_map_rid_override. clear_log() also clears the
+## override.
+func clear_override() -> void:
+	_map_rid_override = RID()
+	_map_rid_override_set = false
 
 
 ## Reset internal state. Mirrors MockPathScheduler.clear_log so the two
 ## schedulers have a parallel teardown surface for harness reuse.
+## Also clears the map RID override (reverts to auto-detection).
 func clear_log() -> void:
 	_requests.clear()
 	_next_id = 1
+	_map_rid_override = RID()
+	_map_rid_override_set = false
 
 
 # === Internal ===============================================================
 
 func _resolve_map_rid() -> RID:
-	if _map_rid_override.is_valid():
+	# If set_map_rid_override was explicitly called, always honour it —
+	# even if the supplied RID is invalid (that's the "force FAILED" test path).
+	# See the _map_rid_override_set comment above for the design rationale.
+	if _map_rid_override_set:
 		return _map_rid_override
-	# Resolve the active navigation map from the main loop's scene tree.
-	# Engine.get_main_loop() returns SceneTree (or null in pure-script
+	# Auto-detect: resolve the active navigation map from the main loop's scene
+	# tree. Engine.get_main_loop() returns SceneTree (or null in pure-script
 	# headless contexts without a scene). Defensive against both.
 	var tree: SceneTree = Engine.get_main_loop() as SceneTree
 	if tree == null:

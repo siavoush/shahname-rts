@@ -34,6 +34,52 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-01 — Phase 1 session 1 wave 3 (qa-engineer): click-and-move integration tests + flaky navmesh fix
+
+**Branch:** `feat/phase-1-units`
+
+**Shipped:**
+
+1. **Integration test suite for the click-and-move flow** (`game/tests/integration/test_click_and_move.gd`, 9 tests). Covers all five deliverables from `02b_PHASE_1_KICKOFF.md §49 deliverable 10`:
+
+   - `test_full_click_and_move_and_arrive_cycle` — full end-to-end: spawn real Kargar via `kargar.tscn`, issue `replace_command(&"move", ...)`, advance real SimClock ticks via `SimClock._test_run_tick()` through the full `EventBus.sim_phase(&"movement") → Unit._on_sim_phase → fsm.tick` chain; asserts position within 0.5 units of target, FSM in `&"idle"`, and `EventBus.unit_state_changed` emitted for both `idle→moving` and `moving→idle` transitions.
+   - `test_on_sim_phase_drives_fsm_tick` — regression for the wave-3 fix (`c583d48`): confirms that two real EventBus ticks (not direct `fsm.tick()` calls) advance position. Position stays at 0.0 if `Unit._on_sim_phase` is not wired — the test that would have caught the live-game bug before the fix.
+   - `test_on_sim_phase_only_fires_on_movement_phase` — FSM must not tick during `&"input"`, `&"combat"`, or other non-movement phases; only `&"movement"` drives it.
+   - `test_right_click_on_unit_is_noop_integration` — right-clicking a real Kargar collider with a real Kargar selected must not issue a Move command (Phase 2 attack-move is out of scope). Uses actual Kargar instances rather than `FakeUnit` stubs.
+   - `test_left_click_empty_hit_deselects_real_unit` and `test_left_click_terrain_collider_deselects_real_unit` — deselect behavior confirmed with a real Kargar instance.
+   - `test_right_click_move_does_not_crash_when_selected_unit_freed` — graceful handling when a selected unit is freed between selection and right-click.
+   - `test_freed_unit_does_not_crash_on_subsequent_sim_phase` — confirms `Unit._exit_tree` disconnects `EventBus.sim_phase` so freed units are never ticked again.
+   - `test_right_click_fans_out_move_to_all_selected_kargars` — confirms right-click issues Move commands to ALL selected units; verified with two real Kargars.
+
+2. **Fix: `NavigationAgentPathScheduler.set_map_rid_override(RID())` no longer silently ignored** (`game/scripts/navigation/navigation_agent_path_scheduler.gd`). Root cause: `_resolve_map_rid` checked `if _map_rid_override.is_valid()` — an invalid `RID()` passed intentionally to force the "no map → FAILED" path fell through to auto-detection from `World3D`, making the test non-deterministic. Fix: added `_map_rid_override_set: bool = false` sentinel. `set_map_rid_override()` always sets the sentinel (even with an invalid RID). `_resolve_map_rid()` now checks `if _map_rid_override_set:` first and returns the override value unconditionally. `clear_override()` and `clear_log()` both reset the sentinel. The flaky test `test_request_without_navmap_resolves_failed` is now deterministically green.
+
+**Test-count delta:** 371 → 380 (+9 integration tests). All 380 pass. 3 pending are pre-existing (2 navmesh-bake headless runner gaps in `test_navigation_agent_path_scheduler.gd`, 1 FarrSystem defensive-default in `test_resource_hud.gd` — all unchanged). The previously flaky `test_request_without_navmap_resolves_failed` now passes deterministically.
+
+**Lint:** `tools/lint_simulation.sh` reports OK (0 violations across L1-L5). Pre-commit gate green.
+
+**Critical integration pattern documented in test file:** Integration tests use `SimClock._test_run_tick()` through the full EventBus chain (`EventBus.sim_phase(&"movement") → Unit._on_sim_phase → fsm.tick`). Unit tests call `fsm.tick()` directly. This distinction is why the Phase 1 live-game bug (`c583d48`) passed all unit tests while being silently broken in the live scene. These integration tests close that gap — any future unwiring of `Unit._on_sim_phase` will immediately fail `test_on_sim_phase_drives_fsm_tick`.
+
+**Typing pattern:** All local unit refs stored as `Variant` class-level fields (`var _kargar: Variant = null`) per the project-wide class_name registry-race dodge (`docs/ARCHITECTURE.md §6 v0.4.0`). No local `:=` inference on Kargar/Unit-shaped returns.
+
+**Did not ship** (out of scope per kickoff §49):
+- Performance profiling (unit count benchmarks) — Phase 2+.
+- AI-vs-AI simulation tests — Phase 3+.
+- Regression tests for other Phase 1 systems (resource HUD, edge-pan) — covered by existing unit tests.
+
+**State for next session:**
+- Branch `feat/phase-1-units` is 2 commits ahead of `origin/feat/phase-1-units`, 9 commits ahead of `main`. Wave 3 contributes the two new commits. Not pushed.
+- All 5 wave deliverables (`02b_PHASE_1_KICKOFF.md §49 items 1–5`) are now covered by integration tests. The branch is ready to PR → `main`.
+- Phase 1 session 2: box-select, control groups, double-click-select-type, `GroupMoveController` (formation movement), Farr gauge polish, selected-unit panel.
+
+**Open questions added to `QUESTIONS_FOR_DESIGN.md`:** none. All decisions were implementation choices.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+- **`_advance(n)` helper in integration tests calls `SimClock._test_run_tick()` n times rather than emitting `EventBus.sim_phase` directly.** `_test_run_tick` is the single authoritative tick driver per Sim Contract §1.1; emitting phases manually would skip SimClock's own bookkeeping and could produce clock-drift in multi-tick assertions.
+- **`_spawn_kargar` force-writes `u.get_movement()._scheduler = _mock` after `add_child_autofree`.** `PathSchedulerService.set_scheduler` is called in `before_each`, but Kargar's `_ready` fires when `add_child` attaches it to the tree — timing varies. The explicit post-attach write is the double-safety pattern from `test_unit_states.gd` ensuring the mock is always in place before any movement code runs.
+- **Sentinel field `_map_rid_override_set` rather than a nullable wrapper or a special sentinel RID.** An invalid `RID()` is itself a valid test intent (force FAILED), so the override-set state must be tracked separately. A nullable wrapper would add an allocation; a magic sentinel RID value would require Godot API guarantees about `RID()` equality. Boolean flag is the cheapest correct solution.
+
+---
+
 ## 2026-05-01 — Phase 1 session 1 live-game fixes (lead, post-wave-2)
 
 **Branch:** `feat/phase-1-units`
