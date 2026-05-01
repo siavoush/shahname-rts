@@ -217,3 +217,47 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 - **F-key dispatch via `_unhandled_input` + raw keycode match, not via Godot InputMap actions.** Phase 0 doesn't yet have an InputMap configured, and adding one for four debug keys would be premature. The dispatch is testable as `handle_function_key(KEY_F1)`. When InputMap arrives in Phase 1+ for selection / commands, F1-F4 can move to actions in a one-line search-and-replace inside `handle_function_key`. Documented in `docs/ARCHITECTURE.md` §6 v0.6.0.
 - **`DebugOverlayManager.process_mode = ALWAYS`.** Debug overlays must be toggleable while the game is paused (they're for inspection). Set in `_ready` so Godot keeps delivering input through pause.
 - **Zoom and pan tunables (`pan_speed`, `zoom_step`, `zoom_min`, `zoom_max`, `zoom_default`, `edge_pan_threshold_px`) live as `@export` on the controller.** They're camera-feel knobs, not balance numbers. If a "camera config" surfaces later, hoist to BalanceData; for now keep them where they're tuned.
+
+---
+
+## 2026-04-30 — Phase 0 session 4 wave 1 (qa-engineer)
+
+**Branch:** `feat/phase-0-foundation`
+
+**Shipped:**
+
+- `game/scripts/navigation/mock_path_scheduler.gd` — `MockPathScheduler` extends `IPathScheduler` per SIMULATION_CONTRACT.md §4.3 and TESTING_CONTRACT.md §3.4. Concrete behaviors:
+  - `request_repath(unit_id, from, to, priority)` returns monotonically-increasing positive request_ids and appends to a public `call_log: Array[Dictionary]`.
+  - `poll_path(request_id)` returns PENDING until `SimClock.tick >= requested_tick + 1`; transitions to READY with a straight-line `[from, to]` two-point PackedVector3Array.
+  - CANCELLED and FAILED states are sticky — do not flip back to READY even after the ready tick.
+  - `cancel_repath(request_id)` is idempotent; unknown ids are a no-op.
+  - `fail_next_request()` auto-clearing flag forces the next request to resolve FAILED; enables testing the "no path exists" branch without real navigation.
+  - `get_request_count_for_unit(unit_id: int) -> int` counts all requests (including cancelled).
+  - `clear_log()` resets `call_log`, `_requests`, `_next_id`, and `_fail_next`.
+  - Zero NavigationServer3D contact — headless tests cannot deadlock.
+
+- `game/tests/unit/test_mock_path_scheduler.gd` — 15 GUT unit tests covering: unique ids, log recording, multiple requests per unit logged separately, PENDING before ready tick, READY at tick+1 with correct waypoints, no flip-to-READY before tick elapses, cancel sets CANCELLED, cancel unknown id is no-op, CANCELLED sticky after ready tick passes, fail_next_request resolves FAILED, fail_next auto-clears after one use, `get_request_count_for_unit` correct counts, `clear_log` resets all state + id counter, unknown poll_path id returns FAILED.
+
+- `docs/ARCHITECTURE.md` §2 — `MockPathScheduler` row moved from 📋 Planned to ✅ Built (qa-engineer row only touched).
+
+**Test-count delta:** 130 → 145 passing headless across 13 test scripts (asserts 291 → 328). All 145 pass in ~0.96s. Lint clean (0 violations across L1-L5).
+
+**Did not ship** (out of scope per wave 1 kickoff):
+- `MatchHarness` — wave 2, blocked on `BalanceData.tres` (balance-engineer wave 1 deliverable) and `FarrSystem` (gameplay-systems wave 1). Returns in wave 2.
+- `NavigationAgentPathScheduler` (production wrapper around NavigationServer3D) — engine-architect's deliverable.
+- Determinism regression test stub — depends on MatchHarness.
+
+**Plan-vs-reality notes:**
+
+- **`get_request_log()` method removed; `call_log` is a public field.** The kickoff spec listed `get_request_log() -> Array[Dictionary]` as an inspection method. During implementation, SIMULATION_CONTRACT.md §4.3 was found to describe `call_log: Array[Dictionary]` as the public property directly. The linter trimmed `get_request_log()` (which was a thin wrapper over `call_log`) during its cleanup pass; the public field exposes the same data without a method call. Tests use `_mock.call_log` directly. No contract change required; the kickoff spec was describing the desired *data*, not mandating a specific accessor method shape.
+
+- **`_mock` field typed as `Variant` in tests.** The class_name registry race (documented in ARCHITECTURE.md §6 v0.4.0) affects any typed field reference to `MockPathScheduler` in a GUT test file. Applied the established project pattern: `var _mock: Variant` + `_mock = MockPathSchedulerScript.new()` via the preloaded script ref. All method calls on `Variant` require explicit `var rid: int = _mock.request_repath(...)` (no `:=` inference). This is the same pattern used in `test_path_scheduler_service.gd`.
+
+- **Other agents' test parse errors are benign.** GUT reports `SCRIPT ERROR: Identifier "FarrSystem" not declared` and `BalanceData` errors from other wave-1 agents' test files that are being written in parallel. GUT skips those scripts with a warning and counts them as 0 tests — it does not fail the overall run. The 145 tests that do run all pass. These will resolve when wave 1 completes and the missing autoloads/classes land.
+
+**State for wave 2:**
+- On branch `feat/phase-0-foundation`. Lint clean. 145/145 tests passing headless.
+- `MockPathScheduler` is ready for `MatchHarness.new()` to inject via `PathSchedulerService.set_scheduler(MockPathSchedulerScript.new())` or via direct component injection.
+- Wave 2 task: `MatchHarness` at `game/tests/harness/match_harness.gd` per TESTING_CONTRACT.md §3.1. Blocked on `BalanceData.tres` (balance-engineer) and `FarrSystem` skeleton (gameplay-systems) from wave 1. Determinism regression test stub follows MatchHarness.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none.
