@@ -126,15 +126,28 @@ func _unhandled_input(event: InputEvent) -> void:
 ## Move the rig along the XZ plane by `axis` (screen-space, +Y = forward) for
 ## `delta` seconds. Diagonal input is normalized: pure axis vs. (1, 1) move
 ## the same distance.
+##
+## Direction is camera-relative: "+Y forward" means "the direction the camera
+## is currently looking, projected onto the ground." We compute the pan in
+## the rig's local frame (rig-local -Z = camera-forward) and rotate it through
+## the rig's world basis. With the camera_rig.tscn yaw of +45°, this makes
+## screen-up follow where the camera actually points (NE in world terms),
+## not the world -Z axis. Without the basis multiply, edge-pan and WASD both
+## drift relative to the camera view.
 func pan_by(axis: Vector2, delta: float) -> void:
 	if axis == Vector2.ZERO:
 		return
 	# Normalize so diagonal movement isn't faster than pure-axis.
 	var dir: Vector2 = axis.normalized()
-	# Screen-space (+Y up) maps to world Z forward = -Z (camera looks roughly
-	# toward +Z, so panning "forward" decreases Z).
-	var delta_pos: Vector3 = Vector3(dir.x, 0.0, -dir.y) * pan_speed * delta
-	target_position = clamp_to_bounds(target_position + delta_pos)
+	# Build the pan in rig-local space: +X = camera-right, -Z = camera-forward.
+	# Screen-axis convention is +Y = forward, so +Y maps to local -Z.
+	var local_pan: Vector3 = Vector3(dir.x, 0.0, -dir.y) * pan_speed * delta
+	# Rotate through the rig's basis to get the world-space delta. If the rig
+	# isn't yet in the tree (test fixtures), basis is identity and this is a
+	# no-op — preserving the headless-test contract.
+	var world_pan: Vector3 = global_transform.basis * local_pan if is_inside_tree() \
+		else local_pan
+	target_position = clamp_to_bounds(target_position + world_pan)
 
 
 ## Zoom the camera in (negative scroll) or out (positive scroll). Clamped to
@@ -158,6 +171,12 @@ func clamp_to_bounds(p: Vector3) -> Vector3:
 ## Compute an edge-pan axis from the current mouse position and viewport size.
 ## Returns a Vector2 in screen-space convention (+Y = up/forward, +X = right).
 ## Each component is in [-1, 0, +1]: 0 if outside the threshold, signed otherwise.
+##
+## Convention matches WASD: ax.y = +1 means "pan forward" (screen-up), so
+## mouse-near-top produces ax.y = +1 — same as pressing W. Without that
+## alignment, edge-pan would move the camera in the opposite world direction
+## from WASD (the original wave-1 implementation had this inverted, with
+## edge-top producing ax.y = -1; that is the bug the user reported).
 func compute_edge_pan_axis(mouse_pos: Vector2, viewport_size: Vector2) -> Vector2:
 	var threshold: float = float(edge_pan_threshold_px)
 	var ax: Vector2 = Vector2.ZERO
@@ -166,9 +185,9 @@ func compute_edge_pan_axis(mouse_pos: Vector2, viewport_size: Vector2) -> Vector
 	elif mouse_pos.x > viewport_size.x - threshold:
 		ax.x = 1.0
 	if mouse_pos.y < threshold:
-		ax.y = -1.0  # near top edge → pan forward
+		ax.y = 1.0   # near top edge → pan forward (matches WASD W)
 	elif mouse_pos.y > viewport_size.y - threshold:
-		ax.y = 1.0   # near bottom edge → pan backward
+		ax.y = -1.0  # near bottom edge → pan backward (matches WASD S)
 	return ax
 
 

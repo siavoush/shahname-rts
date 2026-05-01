@@ -1,0 +1,89 @@
+[gd_scene load_steps=10 format=3 uid="uid://shahnameh_unit_base"]
+
+; unit.tscn — base Unit scene template per
+; docs/STATE_MACHINE_CONTRACT.md §5.1 + 02b_PHASE_1_KICKOFF.md §2 (1).
+;
+; Concrete unit types (Kargar, Piyade, etc. — wave 2 onward) inherit from
+; this scene and override the MeshInstance3D's mesh / material to give
+; each role a distinct silhouette per CLAUDE.md placeholder policy.
+;
+; Composition (per kickoff doc):
+;   - Root: CharacterBody3D (collision + movement) with Unit script
+;   - MeshInstance3D            placeholder colored cube ~0.6 units tall
+;   - CollisionShape3D          BoxShape3D matching the mesh
+;   - HealthComponent           hp tracking + death signal
+;   - MovementComponent         IPathScheduler integration
+;   - SelectableComponent       selection state + ring placeholder
+;   - SpatialAgentComponent     SpatialIndex registration + team filter
+;
+; The StateMachine is owned by the Unit script (RefCounted, not a Node)
+; per State Machine Contract §2.3 — keeps 100 units × 10 states from
+; bloating the scene tree.
+
+[ext_resource type="Script" path="res://scripts/units/unit.gd" id="1_unit"]
+[ext_resource type="Script" path="res://scripts/units/components/health_component.gd" id="2_health"]
+[ext_resource type="Script" path="res://scripts/units/components/movement_component.gd" id="3_movement"]
+[ext_resource type="Script" path="res://scripts/units/components/selectable_component.gd" id="4_selectable"]
+[ext_resource type="Script" path="res://scripts/core/spatial_agent_component.gd" id="5_spatial"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_1"]
+; Worker silhouette: small, cube-like. Scale at the MeshInstance3D level
+; rather than baking into the mesh size so concrete unit types can swap
+; this for a bigger cube / cylinder / cone without touching parameters.
+size = Vector3(0.5, 0.6, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1"]
+; Iran-faction placeholder color — neutral blue-grey "infantry" tone.
+; Concrete unit types swap to faction-specific colors. For session 1 we
+; just need to see SOMETHING on the terrain.
+albedo_color = Color(0.3, 0.5, 0.7, 1.0)
+shading_mode = 2  ; SHADING_MODE_PER_PIXEL — simple lit, no fancy shaders.
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_1"]
+; Collision shape roughly matches the visual mesh (slightly smaller so
+; selection raycasts hit the visual silhouette without false-pickups
+; from the collision pad). 0.4 × 0.55 × 0.4 — a smidge inside the box mesh.
+size = Vector3(0.4, 0.55, 0.4)
+
+
+[node name="Unit" type="CharacterBody3D"]
+script = ExtResource("1_unit")
+; The Unit script auto-assigns unit_id from a static counter on _ready;
+; team / unit_type are @exports set by spawn code or concrete subclass scenes.
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+; Placeholder visual. Centered at the unit's local origin; shifted up by
+; half the height so the mesh sits ON the ground plane rather than half-
+; buried. Y=0.30 ≈ half of the 0.6-tall cube.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)
+mesh = SubResource("BoxMesh_1")
+material_override = SubResource("StandardMaterial3D_1")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+; Same Y-offset as the visual so collisions match the silhouette.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.275, 0)
+shape = SubResource("BoxShape3D_1")
+
+[node name="HealthComponent" type="Node" parent="."]
+; HealthComponent extends SimNode (Node base). hp is initialized in
+; Unit._ready by reading BalanceData.units[unit_type].max_hp.
+script = ExtResource("2_health")
+
+[node name="MovementComponent" type="Node" parent="."]
+; MovementComponent extends SimNode. move_speed is initialized in
+; Unit._ready from BalanceData.units[unit_type].move_speed. The path
+; scheduler is pulled from PathSchedulerService.scheduler at _ready.
+script = ExtResource("3_movement")
+
+[node name="SelectableComponent" type="Node" parent="."]
+; SelectableComponent extends SimNode. The selection ring is auto-created
+; as a sibling MeshInstance3D in the component's _ready, so the scene
+; doesn't need to author it explicitly. Concrete unit types may override
+; via the ring_path export if they want a custom ring.
+script = ExtResource("4_selectable")
+
+[node name="SpatialAgentComponent" type="Node" parent="."]
+; SpatialAgentComponent extends SimNode. team is mirrored from the Unit's
+; team field in Unit._ready (so the SpatialIndex sees the correct team
+; for queries).
+script = ExtResource("5_spatial")

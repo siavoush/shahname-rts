@@ -31,6 +31,7 @@ PathSchedulerService="*res://scripts/autoload/path_scheduler_service.gd"
 CommandPool="*res://scripts/autoload/command_pool.gd"
 DebugOverlayManager="*res://scripts/autoload/debug_overlay_manager.gd"
 FarrSystem="*res://scripts/autoload/farr_system.gd"
+SelectionManager="*res://scripts/autoload/selection_manager.gd"
 
 [debug]
 

@@ -1,0 +1,260 @@
+; BalanceData.tres — canonical tunable gameplay numbers for Shahnameh RTS.
+;
+; Owned by: balance-engineer
+; Loaded at: match start via Constants.PATH_BALANCE_DATA ("res://data/balance.tres")
+; Schema: game/data/balance_data.gd + game/data/sub_resources/*.gd
+; Spec references: 01_CORE_MECHANICS.md §3 §4 §5 §6 §9 + docs/AI_DIFFICULTY.md §1
+;
+; All numbers are STARTING POINTS to be tuned through playtesting.
+; "Where numbers appear here, they are starting points to be tuned, not contracts."
+; — 01_CORE_MECHANICS.md §0
+;
+; Phase 0 skeleton: kargar, piyade, kamandar + core buildings populated.
+; Savar, asb_savar_kamandar, Rostam, and Tier-2 buildings ship when their
+; phases land (Phase 1+ per 02_IMPLEMENTATION_PLAN.md).
+;
+; constants_version: manual stamp for this session. qa-engineer will wire
+; file-hash auto-derivation in wave 2 (MatchHarness). See TESTING_CONTRACT.md §2.3.
+
+[gd_resource type="Resource" script_class="BalanceData" load_steps=22 format=3 uid="uid://balance_data_main"]
+
+[ext_resource type="Script" path="res://data/balance_data.gd" id="1_balancedata"]
+[ext_resource type="Script" path="res://data/sub_resources/unit_stats.gd" id="2_unitstats"]
+[ext_resource type="Script" path="res://data/sub_resources/building_stats.gd" id="3_bldgstats"]
+[ext_resource type="Script" path="res://data/sub_resources/farr_config.gd" id="4_farrconfig"]
+[ext_resource type="Script" path="res://data/sub_resources/combat_matrix.gd" id="5_combatmatrix"]
+[ext_resource type="Script" path="res://data/sub_resources/economy_config.gd" id="6_economyconfig"]
+[ext_resource type="Script" path="res://data/sub_resources/resource_node_config.gd" id="7_resnodeconfig"]
+[ext_resource type="Script" path="res://data/sub_resources/ai_config.gd" id="8_aiconfig"]
+
+; =========================================================================
+; Unit stats sub-resources
+; =========================================================================
+
+; Kargar (worker) — 01_CORE_MECHANICS.md §6
+; Fragile, minimal combat. Gathers resources, constructs buildings, repairs.
+; HP: low (easily killed — reinforces the -1 Farr penalty when idle workers die).
+; No attack in practical terms (damage 1 = can theoretically fight but won't win).
+[sub_resource type="Resource" id="unit_kargar"]
+script = ExtResource("2_unitstats")
+max_hp = 60.0
+damage = 2.0
+attack_speed_ticks = 60
+attack_range = 1.0
+move_speed = 3.5
+population_cost = 1
+coin_cost = 25
+grain_cost = 0
+production_ticks = 360
+
+; Piyade (foot infantry) — 01_CORE_MECHANICS.md §6
+; Cheap, slow, durable. Spear-and-shield. Strong vs cavalry (> savar in RPS).
+; "cheap, slow, durable" — starting values reflect this profile.
+[sub_resource type="Resource" id="unit_piyade"]
+script = ExtResource("2_unitstats")
+max_hp = 120.0
+damage = 12.0
+attack_speed_ticks = 45
+attack_range = 1.5
+move_speed = 2.5
+population_cost = 1
+coin_cost = 50
+grain_cost = 10
+production_ticks = 600
+
+; Kamandar (archer) — 01_CORE_MECHANICS.md §6
+; Ranged infantry. Strong vs piyade (kamandar > piyade in RPS triangle).
+; Weak in melee — lower HP than piyade; relies on range.
+[sub_resource type="Resource" id="unit_kamandar"]
+script = ExtResource("2_unitstats")
+max_hp = 80.0
+damage = 10.0
+attack_speed_ticks = 40
+attack_range = 8.0
+move_speed = 2.8
+population_cost = 1
+coin_cost = 60
+grain_cost = 15
+production_ticks = 720
+
+; =========================================================================
+; Building stats sub-resources
+; =========================================================================
+
+; Throne (تخت) — 01_CORE_MECHANICS.md §5
+; Capital building. Pre-placed. Loss = defeat. Spawns workers.
+; High HP — destroying it ends the match; must require sustained effort.
+; No farr_per_tick — Throne is not a Farr generator.
+[sub_resource type="Resource" id="bldg_throne"]
+script = ExtResource("3_bldgstats")
+max_hp = 2000.0
+coin_cost = 0
+grain_cost = 0
+construction_ticks = 0
+farr_per_tick = 0.0
+
+; Khaneh (house) — 01_CORE_MECHANICS.md §5
+; Population cap +5 per building. "50 coin" per spec.
+; Low HP — not a combat building.
+[sub_resource type="Resource" id="bldg_khaneh"]
+script = ExtResource("3_bldgstats")
+max_hp = 200.0
+coin_cost = 50
+grain_cost = 0
+construction_ticks = 450
+farr_per_tick = 0.0
+
+; Mazra'eh (farm) — 01_CORE_MECHANICS.md §5
+; Generates grain (via worker-gathered ResourceNode, per RESOURCE_NODE_CONTRACT.md).
+; "60 coin" per spec. Medium HP — farms should be raidable but not trivially destroyed.
+; farr_per_tick = 0 — farms don't generate Farr.
+[sub_resource type="Resource" id="bldg_mazraeh"]
+script = ExtResource("3_bldgstats")
+max_hp = 300.0
+coin_cost = 60
+grain_cost = 0
+construction_ticks = 600
+farr_per_tick = 0.0
+
+; Atashkadeh (fire temple) — 01_CORE_MECHANICS.md §5
+; +1 Farr/min passive = 1/1800 Farr/tick ≈ 0.000556 Farr/tick
+; Cost: "150 coin, 50 grain". Prerequisite for Tier 2 advance.
+; High HP — it is the sacred flame; losing it costs -5 Farr.
+[sub_resource type="Resource" id="bldg_atashkadeh"]
+script = ExtResource("3_bldgstats")
+max_hp = 600.0
+coin_cost = 150
+grain_cost = 50
+construction_ticks = 900
+farr_per_tick = 0.000556
+
+; =========================================================================
+; FarrConfig sub-resource
+; =========================================================================
+; Values from 01_CORE_MECHANICS.md §4 and §9.
+
+[sub_resource type="Resource" id="farr_cfg"]
+script = ExtResource("4_farrconfig")
+starting_value = 50.0
+tier2_threshold = 40.0
+kaveh_trigger_threshold = 15.0
+kaveh_grace_ticks = 900
+kaveh_farr_lock_ticks = 1800
+kaveh_resolve_threshold = 30.0
+kaveh_resolve_window_ticks = 2700
+drain_idle_worker_killed = -1.0
+drain_hero_attack_ally = -5.0
+drain_hero_killed_fleeing = -10.0
+drain_hero_killed_battle = -5.0
+drain_atashkadeh_lost = -5.0
+drain_snowball_per_kill = -0.5
+drain_snowball_worker = -1.0
+snowball_ratio = 3.0
+gain_hero_rescue = 3.0
+gain_hero_spares_enemy = 5.0
+
+; =========================================================================
+; CombatMatrix sub-resource
+; =========================================================================
+; Rock-paper-scissors triangle: piyade > savar > kamandar > piyade
+; 01_CORE_MECHANICS.md §6: "piyade > savar > kamandar > piyade"
+;
+; Multiplier key: attacker_type -> defender_type -> float
+; 1.0 = neutral, 1.5 = advantage, 0.67 ≈ disadvantage
+;
+; Phase 0 skeleton: only the three Tier-1 unit types populated.
+; Savar and asb_savar_kamandar filled in when Phase 1+ units ship.
+;
+; Edge pairs not listed default to 1.0 (neutral) in CombatSystem.
+;
+; Note: Godot .tres format stores nested Dictionaries. The outer key is
+; attacker StringName, inner dict maps defender StringName to float.
+
+[sub_resource type="Resource" id="combat_mtx"]
+script = ExtResource("5_combatmatrix")
+effectiveness = {
+&"piyade": {
+&"piyade": 1.0,
+&"kamandar": 0.75,
+&"kargar": 1.2
+},
+&"kamandar": {
+&"piyade": 1.5,
+&"kamandar": 1.0,
+&"kargar": 1.0
+},
+&"kargar": {
+&"piyade": 0.5,
+&"kamandar": 0.5,
+&"kargar": 1.0
+}
+}
+
+; =========================================================================
+; ResourceNodeConfig sub-resource
+; =========================================================================
+; Values from RESOURCE_NODE_CONTRACT.md §7.
+
+[sub_resource type="Resource" id="res_node_cfg"]
+script = ExtResource("7_resnodeconfig")
+mine_initial_stock = 1500
+mine_max_workers = 2
+coin_yield_per_trip = 10
+coin_yield_per_tick = 1
+grain_yield_per_trip = 8
+grain_yield_per_tick = 1
+farm_max_workers = 1
+trip_full_load_ticks = 60
+
+; =========================================================================
+; EconomyConfig sub-resource
+; =========================================================================
+
+[sub_resource type="Resource" id="economy_cfg"]
+script = ExtResource("6_economyconfig")
+starting_coin = 150
+starting_grain = 50
+resource_nodes = SubResource("res_node_cfg")
+
+; =========================================================================
+; AIConfig sub-resource
+; =========================================================================
+; Values from docs/AI_DIFFICULTY.md §1.
+
+[sub_resource type="Resource" id="ai_cfg"]
+script = ExtResource("8_aiconfig")
+easy_wave_cadence_ticks = 5400
+easy_ai_gather_mult = 0.75
+easy_techup_ticks = 10800
+easy_attack_army_threshold = 8
+normal_wave_cadence_ticks = 3600
+normal_ai_gather_mult = 1.0
+normal_techup_ticks = 9000
+normal_attack_army_threshold = 12
+hard_wave_cadence_ticks = 2700
+hard_ai_gather_mult = 1.25
+hard_techup_ticks = 7200
+hard_attack_army_threshold = 16
+
+; =========================================================================
+; Top-level BalanceData resource
+; =========================================================================
+
+[resource]
+script = ExtResource("1_balancedata")
+constants_version = "2026-05-01-phase-0-init"
+units = {
+&"kargar": SubResource("unit_kargar"),
+&"piyade": SubResource("unit_piyade"),
+&"kamandar": SubResource("unit_kamandar")
+}
+buildings = {
+&"throne": SubResource("bldg_throne"),
+&"khaneh": SubResource("bldg_khaneh"),
+&"mazraeh": SubResource("bldg_mazraeh"),
+&"atashkadeh": SubResource("bldg_atashkadeh")
+}
+farr = SubResource("farr_cfg")
+combat = SubResource("combat_mtx")
+economy = SubResource("economy_cfg")
+ai = SubResource("ai_cfg")

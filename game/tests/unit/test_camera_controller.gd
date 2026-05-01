@@ -190,16 +190,19 @@ func test_compute_edge_pan_axis_does_not_trigger_outside_threshold() -> void:
 	assert_eq(axis, Vector2.ZERO, "Mouse outside edge threshold must not trigger pan")
 
 
-func test_compute_edge_pan_axis_top_edge_triggers_negative_y() -> void:
+func test_compute_edge_pan_axis_top_edge_triggers_positive_y() -> void:
+	# Convention matches WASD: ax.y = +1 means "forward." Mouse-near-top fires
+	# the same axis as pressing W, so both input paths pan the camera in the
+	# same world direction.
 	var axis: Vector2 = ctrl.compute_edge_pan_axis(Vector2(640, 5), Vector2(1280, 720))
-	assert_true(axis.y < 0.0, "Mouse near top edge must produce -Y axis (forward/up)")
+	assert_true(axis.y > 0.0, "Mouse near top edge must produce +Y axis (forward, matches WASD W)")
 
 
 func test_compute_edge_pan_axis_bottom_right_corner() -> void:
-	# Both X and Y near max edge → +X and +Y axis.
+	# Right edge → +X (matches WASD D). Bottom edge → -Y (matches WASD S).
 	var axis: Vector2 = ctrl.compute_edge_pan_axis(Vector2(1275, 715), Vector2(1280, 720))
 	assert_true(axis.x > 0.0, "Mouse near right edge must produce +X axis")
-	assert_true(axis.y > 0.0, "Mouse near bottom edge must produce +Y axis")
+	assert_true(axis.y < 0.0, "Mouse near bottom edge must produce -Y axis (backward, matches WASD S)")
 
 
 # -- Edge-pan threshold matches contract -------------------------------------

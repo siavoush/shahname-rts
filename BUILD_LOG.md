@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-04-30
+last_updated: 2026-05-01
 ---
 
 # Build Log
@@ -33,6 +33,288 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 ```
 
 ## Entries
+
+## 2026-05-01 — Phase 1 session 1 wave 3 (qa-engineer): click-and-move integration tests + flaky navmesh fix
+
+**Branch:** `feat/phase-1-units`
+
+**Shipped:**
+
+1. **Integration test suite for the click-and-move flow** (`game/tests/integration/test_click_and_move.gd`, 9 tests). Covers all five deliverables from `02b_PHASE_1_KICKOFF.md §49 deliverable 10`:
+
+   - `test_full_click_and_move_and_arrive_cycle` — full end-to-end: spawn real Kargar via `kargar.tscn`, issue `replace_command(&"move", ...)`, advance real SimClock ticks via `SimClock._test_run_tick()` through the full `EventBus.sim_phase(&"movement") → Unit._on_sim_phase → fsm.tick` chain; asserts position within 0.5 units of target, FSM in `&"idle"`, and `EventBus.unit_state_changed` emitted for both `idle→moving` and `moving→idle` transitions.
+   - `test_on_sim_phase_drives_fsm_tick` — regression for the wave-3 fix (`c583d48`): confirms that two real EventBus ticks (not direct `fsm.tick()` calls) advance position. Position stays at 0.0 if `Unit._on_sim_phase` is not wired — the test that would have caught the live-game bug before the fix.
+   - `test_on_sim_phase_only_fires_on_movement_phase` — FSM must not tick during `&"input"`, `&"combat"`, or other non-movement phases; only `&"movement"` drives it.
+   - `test_right_click_on_unit_is_noop_integration` — right-clicking a real Kargar collider with a real Kargar selected must not issue a Move command (Phase 2 attack-move is out of scope). Uses actual Kargar instances rather than `FakeUnit` stubs.
+   - `test_left_click_empty_hit_deselects_real_unit` and `test_left_click_terrain_collider_deselects_real_unit` — deselect behavior confirmed with a real Kargar instance.
+   - `test_right_click_move_does_not_crash_when_selected_unit_freed` — graceful handling when a selected unit is freed between selection and right-click.
+   - `test_freed_unit_does_not_crash_on_subsequent_sim_phase` — confirms `Unit._exit_tree` disconnects `EventBus.sim_phase` so freed units are never ticked again.
+   - `test_right_click_fans_out_move_to_all_selected_kargars` — confirms right-click issues Move commands to ALL selected units; verified with two real Kargars.
+
+2. **Fix: `NavigationAgentPathScheduler.set_map_rid_override(RID())` no longer silently ignored** (`game/scripts/navigation/navigation_agent_path_scheduler.gd`). Root cause: `_resolve_map_rid` checked `if _map_rid_override.is_valid()` — an invalid `RID()` passed intentionally to force the "no map → FAILED" path fell through to auto-detection from `World3D`, making the test non-deterministic. Fix: added `_map_rid_override_set: bool = false` sentinel. `set_map_rid_override()` always sets the sentinel (even with an invalid RID). `_resolve_map_rid()` now checks `if _map_rid_override_set:` first and returns the override value unconditionally. `clear_override()` and `clear_log()` both reset the sentinel. The flaky test `test_request_without_navmap_resolves_failed` is now deterministically green.
+
+**Test-count delta:** 371 → 380 (+9 integration tests). All 380 pass. 3 pending are pre-existing (2 navmesh-bake headless runner gaps in `test_navigation_agent_path_scheduler.gd`, 1 FarrSystem defensive-default in `test_resource_hud.gd` — all unchanged). The previously flaky `test_request_without_navmap_resolves_failed` now passes deterministically.
+
+**Lint:** `tools/lint_simulation.sh` reports OK (0 violations across L1-L5). Pre-commit gate green.
+
+**Critical integration pattern documented in test file:** Integration tests use `SimClock._test_run_tick()` through the full EventBus chain (`EventBus.sim_phase(&"movement") → Unit._on_sim_phase → fsm.tick`). Unit tests call `fsm.tick()` directly. This distinction is why the Phase 1 live-game bug (`c583d48`) passed all unit tests while being silently broken in the live scene. These integration tests close that gap — any future unwiring of `Unit._on_sim_phase` will immediately fail `test_on_sim_phase_drives_fsm_tick`.
+
+**Typing pattern:** All local unit refs stored as `Variant` class-level fields (`var _kargar: Variant = null`) per the project-wide class_name registry-race dodge (`docs/ARCHITECTURE.md §6 v0.4.0`). No local `:=` inference on Kargar/Unit-shaped returns.
+
+**Did not ship** (out of scope per kickoff §49):
+- Performance profiling (unit count benchmarks) — Phase 2+.
+- AI-vs-AI simulation tests — Phase 3+.
+- Regression tests for other Phase 1 systems (resource HUD, edge-pan) — covered by existing unit tests.
+
+**State for next session:**
+- Branch `feat/phase-1-units` is 2 commits ahead of `origin/feat/phase-1-units`, 9 commits ahead of `main`. Wave 3 contributes the two new commits. Not pushed.
+- All 5 wave deliverables (`02b_PHASE_1_KICKOFF.md §49 items 1–5`) are now covered by integration tests. The branch is ready to PR → `main`.
+- Phase 1 session 2: box-select, control groups, double-click-select-type, `GroupMoveController` (formation movement), Farr gauge polish, selected-unit panel.
+
+**Open questions added to `QUESTIONS_FOR_DESIGN.md`:** none. All decisions were implementation choices.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+- **`_advance(n)` helper in integration tests calls `SimClock._test_run_tick()` n times rather than emitting `EventBus.sim_phase` directly.** `_test_run_tick` is the single authoritative tick driver per Sim Contract §1.1; emitting phases manually would skip SimClock's own bookkeeping and could produce clock-drift in multi-tick assertions.
+- **`_spawn_kargar` force-writes `u.get_movement()._scheduler = _mock` after `add_child_autofree`.** `PathSchedulerService.set_scheduler` is called in `before_each`, but Kargar's `_ready` fires when `add_child` attaches it to the tree — timing varies. The explicit post-attach write is the double-safety pattern from `test_unit_states.gd` ensuring the mock is always in place before any movement code runs.
+- **Sentinel field `_map_rid_override_set` rather than a nullable wrapper or a special sentinel RID.** An invalid `RID()` is itself a valid test intent (force FAILED), so the override-set state must be tracked separately. A nullable wrapper would add an allocation; a magic sentinel RID value would require Godot API guarantees about `RID()` equality. Boolean flag is the cheapest correct solution.
+
+---
+
+## 2026-05-01 — Phase 1 session 1 live-game fixes (lead, post-wave-2)
+
+**Branch:** `feat/phase-1-units`
+
+**Context:** All wave-2 agents reported lint-clean + tests-passing. Lead booted the actual game in the editor for the first interactive test of the click-and-move flow. Three bugs were live even though the 371 unit tests all passed — the canonical "headless tests green, live game broken" gap that Phase 0 retro flagged in `STUDIO_PROCESS.md` §9.
+
+**Shipped (commit `c583d48`):**
+
+1. **Unit FSM tick wiring** (`game/scripts/units/unit.gd`). `UnitState_Moving._sim_tick` polls the path scheduler and steps the position, but nothing in the live scene called `fsm.tick()` — tests called it directly, and the live game was waiting on the "MovementSystem phase coordinator" LATER item from v0.13.0. Added `Unit._on_sim_phase(phase, _tick)` that drives `fsm.tick(SimClock.SIM_DT)` when `phase == &"movement"`. Connect on `_ready`, disconnect on `_exit_tree`. Same pattern `SpatialIndex` uses for `&"spatial_rebuild"`. **This was the bug that made right-click do nothing in the live game.** When the proper MovementSystem coordinator ships, this is a 3-line removal.
+
+2. **Edge-pan direction** (`game/scripts/camera/camera_controller.gd`). Two issues stacked: (a) `pan_by` did not rotate the screen-axis through the rig's basis — with the camera_rig.tscn yaw of +45°, screen-up did not follow camera-forward; (b) `compute_edge_pan_axis` used the opposite Y-sign convention from WASD (mouse-top → -1 vs W → +1). Fixed `pan_by` to multiply by `global_transform.basis` (`is_inside_tree()`-guarded so headless test fixtures stay identity); flipped edge-pan signs so mouse-near-top → `ax.y = +1` (matches WASD W). The original wave-1 tests asserted the sign of `ax.y`, not the resulting world direction, so the bug slipped through. Tests updated.
+
+3. **HUD labels swallowed clicks** (`game/scenes/main.tscn`, `game/scenes/ui/resource_hud.tscn`). `Label` and `MarginContainer` default `mouse_filter` is `MOUSE_FILTER_STOP`, which silently absorbed mouse events in their rects. Set `mouse_filter = 2` (IGNORE) on `StatusLabel`, the HUD `MarginContainer`, `HBox`, and the four resource Labels. These are decorative readouts, not interactive — ignoring mouse is correct.
+
+4. **`DEBUG_LOG_CLICKS` flag** in `click_handler.gd`. Default ON. Prints every left/right press, what the raycast hit, and what command (if any) was issued. This was the diagnostic that made bug #1 visible. Left ON for the next interactive testing pass.
+
+5. **`docs/ARCHITECTURE.md` 0.13.0 → 0.13.1.** New §6 v0.13.1 entry documents the three fixes and surfaces the LATER items (now-promoted MovementSystem coordinator, scene-level visual smoke test).
+
+**Test-count delta:** 371 → 371 (no new tests; integration tests covering this fix are qa-engineer wave 3, queued separately).
+
+**Lint:** `tools/lint_simulation.sh` reports OK (0 violations across L1-L5). Pre-commit gate green.
+
+**User-visible Definition of Done (kickoff §73) — confirmed by lead in editor after fix:**
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Launch game (F5) | ✅ |
+| 2 | See 5 workers on terrain | ✅ |
+| 3 | Left-click → ring appears | ✅ |
+| 4 | Right-click on terrain → worker walks there | ✅ (fixed by FSM tick wiring) |
+| 5 | Worker arrives → idle pulse resumes | ✅ (subtle ±5% scale at 1Hz) |
+| 6 | Click empty terrain → deselect | ✅ |
+| 7 | Tests + lint + pre-commit green | ✅ |
+| 8 | `docs/ARCHITECTURE.md` §2 reflects build state | ✅ (this entry + v0.13.1) |
+
+**Phase 1 session 1 is functionally done.** Wave 3 (qa-engineer) is in-flight: integration test for the full click-and-move flow + fix the flaky `test_request_without_navmap_resolves_failed` test.
+
+**State for next session (wave 3 / merge):**
+- Branch `feat/phase-1-units` is 1 commit ahead of `origin/feat/phase-1-units`, 7 commits ahead of `main`. Not pushed.
+- After qa-engineer wave 3 lands, branch is ready to PR → `main`.
+- Phase 1 session 2 picks up: box-select, control groups, double-click-select-type, GroupMoveController (formation movement), Farr gauge polish, selected-unit panel.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. All three bugs were implementation choices.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+- **`Unit` self-subscribes to `EventBus.sim_phase` rather than registering with a coordinator.** The MovementSystem coordinator is the long-term shape (LATER); a transitional self-subscribe unblocks live-game testing today and is a 3-line removal when the coordinator ships.
+- **`pan_by` rotates by `global_transform.basis`, NOT by a stored yaw angle.** The basis IS the yaw — multiplying by it costs the same as a hand-rolled rotation matrix and stays correct if the rig's transform ever changes (e.g., a future cinematic shot).
+- **`mouse_filter = 2` on every decorative HUD Control, not just the offending one.** Defensive but cheap; future HUD additions inherit the pattern.
+- **`DEBUG_LOG_CLICKS` left ON.** Will be flipped off (or routed through `DebugOverlayManager`) once interactive testing gives the click flow a few more passes.
+
+**LATER items surfaced in this fix pass:**
+1. **MovementSystem phase coordinator — promoted.** Was already a LATER item from v0.13.0; this fix elevates the priority because the transitional self-subscribe is mostly fine but the deterministic `unit_id`-sorted iteration is the formal target shape per Sim Contract §2.
+2. **Scene-level visual smoke test** — Phase 0 retro added a §9 rule about scene-level smoke tests; this set of bugs is the canonical case the rule was written to catch. qa-engineer wave 3 implements it: load `main.tscn`, spawn a unit through the real scene path, drive ticks via `SimClock._test_advance`, assert `global_position` advances toward target. Had this existed at session 1 start, bug #1 would have been caught the moment Idle/Moving + Kargar shipped.
+3. **`DEBUG_LOG_CLICKS` should route through `DebugOverlayManager`.** Currently a const flag; long-term it should be one of the F1–F4 toggles per CLAUDE.md "debug overlays as first-class" rule. Estimated 5-line refactor.
+
+---
+
+## 2026-05-01 — Phase 1 session 1 wave 2 (ai-engineer): UnitState_Idle + UnitState_Moving
+
+**Branch:** `feat/phase-1-units`
+
+**Shipped:**
+- `UnitState_Idle` (`game/scripts/units/states/unit_state_idle.gd`). `class_name UnitState_Idle extends "res://scripts/core/state_machine/unit_state.gd"` (path-string base for the class_name registry race per ARCHITECTURE.md §6 v0.4.0). id=`&"idle"`, priority=0, interrupt_level=NONE. `enter()` caches the parent unit's MeshInstance3D and resets scale to neutral; `_sim_tick` writes a deterministic ±5%/1Hz sin-pulse driven off `SimClock.tick * SIM_DT` (replay-safe; "the unit is alive but uncommitted" cue per CLAUDE.md placeholder visuals); `exit()` restores neutral scale. State is otherwise a true no-op — Contract §3.4 specifies command-queue dispatch flows through `Unit.replace_command` / `append_command` calling `transition_to_next`, not Idle's own polling.
+- `UnitState_Moving` (`game/scripts/units/states/unit_state_moving.gd`). Same path-string base + class_name pattern. id=`&"moving"`, priority=10, interrupt_level=COMBAT. `enter()` reads target Vector3 from `ctx.current_command.payload.target` (populated by `StateMachine.transition_to_next`) and calls `unit.get_movement().request_repath(target)`; defensive bail to Idle on missing current_command or missing target. `_sim_tick` drives `MovementComponent._sim_tick(dt)` (the per-tick driver until the MovementSystem phase coordinator lands — flagged as a LATER item); flips `_arrival_pending` latch on first READY observation; transitions via `transition_to_next` when path was loaded and waypoints consumed. On FAILED/CANCELLED resolution, push_warning then transition_to_next. `exit()` cancels in-flight repath via `_scheduler.cancel_repath(_request_id)` and resets the request id so MovementComponent doesn't poll a cancelled request.
+- Wired Idle and Moving into the `Unit` base class `_ready` (`game/scripts/units/unit.gd`). Idempotent registration (only registers if `&"idle"`/`&"moving"` aren't already in the FSM's state set, so concrete subclasses can pre-register their role-specific states before `super._ready()`). `init(&"idle")` only fires if `current` is still null. Path-string preload of the state scripts (`const _UnitStateIdleScript: Script = preload(...)`) instead of class_name references — the registry race bites unit.gd's own `class_name Unit` registration when test scripts parse before the registry settles. Without the path-string preload, `test_unit.gd` failed with "unit_type is not a property of CharacterBody3D" because `class_name Unit` never registered.
+- Added `Unit.current_command: Dictionary = {}` slot. State Machine Contract §3.4 explicitly left this open ("ctx.current_command — to be defined when concrete states ship"). Wave 2 ships the definition. Shape: `{ "kind": StringName, "payload": Dictionary }`. Populated by `StateMachine.transition_to_next` before the dispatched Command is returned to the pool (defensive `payload.duplicate()` so pool re-rent doesn't race). Cleared on the empty-queue → Idle path. UnitState_Moving's `enter()` reads `ctx.current_command.payload.target`. Update to `state_machine.gd::transition_to_next` adds two helpers `_set_current_command(kind, payload)` and `_clear_current_command()`; the state-id mapping logic is unchanged.
+- 13 new GUT tests in `tests/unit/test_unit_states.gd`: 4 Idle-shape tests (id/priority/interrupt_level; enter caches mesh; pulse moves scale; exit restores scale), 8 Moving tests (id/priority/interrupt_level; enter reads target & calls request_repath; defensive bail when no current_command; defensive bail when no target in payload; sim_tick advances position; transitions to Idle on arrival; FAILED path → Idle with warning; exit cancels in-flight repath), and 1 integration `test_full_idle_moving_idle_cycle` exercising the full click-and-move-and-arrive flow (with subscribed EventBus.unit_state_changed assertions).
+- `docs/ARCHITECTURE.md` 0.12.0 → 0.13.0. Two new ✅ Built rows in §2 (`UnitState_Idle`, `UnitState_Moving`). New §6 v0.13.0 entry covers the eight divergences from spec sketches and the two LATER items (MovementSystem phase coordinator wiring + per-unit current_command lifetime when Phase 2 Attacking lands).
+
+**Test-count delta:** wave-1 baseline 312 → wave-2 close ~371 across all agents (counts depend on which agents have landed). My contribution: +13 tests, all passing. The 4 remaining failures in the test run are in other agents' files: 3 in `tests/unit/test_kargar.gd` (gameplay-systems' file — Kargar.unit_type not initialized yet at the time I last saw it; their concurrent fix may already be in) and 1 in `tests/unit/test_navigation_agent_path_scheduler.gd::test_request_without_navmap_resolves_failed` (engine-architect's pre-existing wave-1 file).
+
+**Lint:** `tools/lint_simulation.sh` reports OK (0 violations across L1-L5). Initial run flagged a comment-line in `unit_state_idle.gd` mentioning `Time.get_ticks_msec()` (gameplay-systems' wave-2 entry called this out as flagged-for-me); reworded the comment to drop the wall-clock API name. The pulse driver is `SimClock.tick`, never `Time.*`.
+
+**Did not ship** (intentionally out of scope per the wave-2 brief and `02b_PHASE_1_KICKOFF.md`):
+- Concrete additional unit states (Attacking, Gathering, Constructing, Casting, Dying) — Phase 2+ when their owning systems exist.
+- GroupMoveController / formation movement — Phase 1 session 2 (planned row in §2 unchanged).
+- MovementSystem phase coordinator (decoupling Moving._sim_tick from MovementComponent._sim_tick) — LATER item, see below.
+- F3 state-machine debug overlay — concrete overlays land WITH their owning systems per kickoff doc rule.
+- The `Kargar` worker class — gameplay-systems wave 2 (separately shipped this same wave).
+- SelectionManager + ClickHandler input wiring — ui-developer wave 2 (separately shipped this same wave).
+- Full integration test of click-and-move flow — qa-engineer wave 3.
+
+**State for next session (wave 3 / future):**
+- On branch `feat/phase-1-units`. Lint clean. My contribution: +13 tests (test_unit_states.gd), all passing.
+- The Unit base class now registers Idle and Moving on `_ready` and lands in Idle. Concrete unit types (Kargar etc.) inherit this for free; nothing changes for gameplay-systems' Kargar shipping in parallel.
+- ui-developer's right-click-to-move flow plugs in cleanly: their `replace_command(&"move", {target: world_pos})` triggers `transition_to_next` → Moving picks up the target via `ctx.current_command.payload.target`. The convention they used (`payload[&"target"]` as a Vector3) matches what Moving expects.
+- The `_arrival_pending` latch handles both the multi-tick arrival and the single-tick arrival case (huge move_speed, tiny distance). Tests pin both shapes.
+- MovementSystem phase coordinator is the most prominent LATER item — when it lands, Moving's `_sim_tick` drops the `_movement._sim_tick(dt)` line and just polls `path_state` / `is_moving`. One-line refactor; not blocking MVP scale.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. No design/feel/balance questions surfaced — wave-2's ai-engineer work was pure infrastructure against the ratified State Machine Contract.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+- **Idle/Moving registered by Unit base class, not by concrete subclasses.** Minimizes boilerplate every concrete unit type has to repeat. Subclasses retain the option to register additional role-specific states before chaining to super._ready. Documented in §6 v0.13.0.
+- **Path-string base for state scripts; path-string preload for state script refs in unit.gd.** Same registry-race pattern as elsewhere in the project. Without it, `class_name Unit` failed to register, cascading into "unit_type not a property of CharacterBody3D" test failures.
+- **`Unit.current_command` shape: `{ "kind": StringName, "payload": Dictionary }`.** Defensive `payload.duplicate()` copy at dispatch time so pool re-rent doesn't race. Phase 2 Attacking will need `current_command.payload.target_unit: Node` validity checks (LATER item flagged).
+- **Arrival-detection latch flipped on `path_state == READY`, not on `is_moving == true`.** Single-tick arrival cases (huge move_speed) never observe `is_moving == true`; READY-as-latch handles single- and multi-tick uniformly.
+- **Moving._sim_tick drives MovementComponent._sim_tick directly.** Until MovementSystem phase coordinator lands. One-line refactor when it does.
+- **Idle pulse uses SimClock.tick * SIM_DT, not wall-clock time.** Sim Contract §1.1 forbids gameplay code reading wall time; pulse is render-only but using SimClock.tick is determinism-friendly and lint-friendly. Pulse amplitude ±5% / 1 Hz — subtle "alive" cue per CLAUDE.md placeholder visuals.
+- **Moving.exit cancels the in-flight repath explicitly.** Contract §3.5 mandates states own their teardown; the next state may not be another Moving and won't re-issue request_repath that would shadow ours.
+- **Moving.interrupt_level = COMBAT, not NEVER.** Damage interrupts non-combat movement per Contract §2.1's own examples. Phase 2 combat balance can flip to NONE for "casual" hero-traveling movement if needed.
+
+**LATER items** (flagged for future waves):
+1. **MovementSystem phase coordinator.** Long-term shape — subscribe to `EventBus.sim_phase(&"movement", ...)` and iterate registered MovementComponents in one batch instead of every Moving state's `_sim_tick` calling `_movement._sim_tick`. Cache-friendlier; removes per-state-instance drive call. Estimated 1 small wave; not blocking.
+2. **Per-unit current_command lifetime.** Phase 2 Attacking will need `current_command.payload.target_unit: Node` validity checks (Node refs can become invalid mid-state). Either Attacking handles via `is_instance_valid`, or the dispatcher converts Node refs to unit_ids. Flagged for Phase 2 ai-engineer.
+
+---
+
+## 2026-05-01 — Phase 1 session 1 wave 2 (gameplay-systems): Kargar + match start spawn
+
+**Branch:** `feat/phase-1-units`
+
+**Shipped:**
+- `Kargar` worker class (`game/scripts/units/kargar.gd`). `class_name Kargar` extending `unit.gd` via path-string base (registry-race dodge per ARCHITECTURE.md §6 v0.4.0). Sets `unit_type = &"kargar"` in `_init` AND in `_ready` before `super._ready()` — required because Godot's scene-instantiation order overwrites @export defaults (including `unit_type`) between `_init` and `_ready`, clobbering _init's write back to the parent's empty default. `_ready` override fires before `Unit._apply_balance_data_defaults` reads unit_type to look up `BalanceData.units[&"kargar"]` (max_hp 60.0 → hp_x100=6000, move_speed 3.5).
+- `kargar.tscn` (`game/scenes/units/kargar.tscn`). Inherits `scenes/units/unit.tscn` via `instance=ExtResource(...)`, overrides root script to `kargar.gd`, overrides MeshInstance3D mesh from BoxMesh → CylinderMesh (top_radius=bottom_radius=0.35, height=0.7 — squat worker silhouette) and material albedo from Color(0.3, 0.5, 0.7) (blue-grey infantry) → Color(0.65, 0.5, 0.3) (sandy-brown worker). All other unit composition (HealthComponent / MovementComponent / SelectableComponent / SpatialAgentComponent / CollisionShape3D) inherits unchanged.
+- 5-Kargar match start spawn in `game/scripts/main.gd`. New `_spawn_starting_kargars()` called from `_ready` after the boot print. Resets the static `Unit._next_unit_id` counter (via path-string-preloaded `_UnitScript` ref — same registry-race dodge) so unit_ids deterministically run 1..5 across runs (replay-diff cleanliness). Spawns 5 Kargars at known positions: origin + 4 cardinal offsets at distance 3 (Y=0.5 to clear the terrain plane). All team Iran. Parented under the existing `World` Node3D in main.tscn — camera + lighting + terrain + units share the same world transform.
+- 16 new tests across 2 files: `tests/unit/test_kargar.gd` (10 tests — scene smoke, class identity, BalanceData hookup for max_hp + move_speed, mesh override is CylinderMesh not BoxMesh, material is brown not blue-grey, team plumbing, bare construction via `Kargar.new()`) and `tests/unit/test_match_start_spawn.gd` (6 tests — main.tscn loads, 5 Kargars exist under World, all team Iran, all direct children of World, unit_ids are 1..5, no two Kargars share a position).
+- `docs/ARCHITECTURE.md` 0.11.0 → 0.12.0. Two new ✅ Built rows in §2: "Kargar (worker) unit type" + "Match start spawn (5 Kargar)". New §6 v0.12.0 entry covers the seven divergences from spec sketches (most notably the dual-init/ready unit_type override pattern, the path-string base for kargar.gd, and the 5-vs-3 starting workforce ergonomics choice).
+
+**Test-count delta:** wave-1 baseline 312 tests → ~371 tests at wave-2 close (precise count depends on which tests other parallel agents land). My contribution: +16 tests across 2 new files. All my new tests pass. Pre-existing failure in `tests/unit/test_navigation_agent_path_scheduler.gd::test_request_without_navmap_resolves_failed` (1 failure) is in the engine-architect's wave-1 file and not caused by my changes — flagged for whoever lands next.
+
+**Lint:** my files (kargar.gd, kargar.tscn, main.gd, test_kargar.gd, test_match_start_spawn.gd) are all clean against `tools/lint_simulation.sh`. The single L5 violation reported by the lint is in `game/scripts/units/states/unit_state_idle.gd` — ai-engineer's wave-2 file, comment-line false positive. Out of my scope.
+
+**Did not ship** (intentionally out of scope per the wave-2 brief and `02b_PHASE_1_KICKOFF.md` §2):
+- Other unit types (Piyade, Kamandar, Savar, Asb-savar, Rostam) — Phase 1 session 2 onward.
+- Production buildings, costs spent on spawn — Phase 3 (resource economy).
+- Combat behavior, attack range, damage — Phase 2.
+- Worker gathering / construction / repair behaviors — Phase 3 (resource node interactions).
+- Dying state visuals — Phase 2 with combat.
+- `UnitState_Idle` / `UnitState_Moving` — ai-engineer's wave 2 (separately shipped this same wave).
+- Click-to-select / right-click-to-move input — ui-developer's wave 2 (separately shipped this same wave).
+- Full integration test of click-and-move flow — qa-engineer's wave 3.
+
+**State for next session (wave 3 / future):**
+- On branch `feat/phase-1-units`. Wave 2 has multiple agents in flight; coordinate with the test totals once everyone lands. My files (kargar.gd, kargar.tscn, main.gd, test_kargar.gd, test_match_start_spawn.gd) are all green.
+- Five Kargars spawn at game start under `Main/World` in main.tscn, team Iran, unit_ids 1..5. ui-developer's SelectionManager + ClickHandler should pick them up automatically (no special wiring required — the SelectableComponent on each Kargar inherits from unit.tscn).
+- The Kargar visual silhouette (squat sandy-brown cylinder) is deliberately distinct from the unit.tscn base placeholder (blue-grey cube). When future unit types ship (Piyade, Kamandar, etc.), follow the same pattern: inherit unit.tscn, override mesh + material in the .tscn, override script with a `class_name X extends "res://scripts/units/unit.gd"` subclass that sets `unit_type` in both `_init` and `_ready`-before-super.
+- The 5-vs-3 starting workforce is a wave-2-ergonomics knob, not a balance value — drop to 3 in Phase 3 when the resource economy makes the count load-bearing.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. No design/feel/balance questions surfaced — wave 2's gameplay-systems work was pure infrastructure against the wave-1 unit foundations + ratified spec.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+- **Kargar uses path-string extends + class_name retained.** Same registry-race pattern as the components in `scripts/units/components/`. Documented in source.
+- **Kargar sets unit_type in both _init AND _ready.** Discovered via TDD that scene instantiation overwrites @export-backed unit_type between the two. The dual-write is the smallest change that makes both code-only construction (`Kargar.new()`) and scene instantiation (`KargarScene.instantiate()`) report the correct unit_type. Documented in source comments + ARCHITECTURE.md §6 v0.12.0.
+- **5 starting Kargars, not the canonical 3.** Wave-2 ergonomics for SelectionManager testing. Drops to 3 in Phase 3. Documented in main.gd, kargar.gd, and ARCHITECTURE.md §6 v0.12.0.
+- **Spawn lives in main.gd, no MatchSetup script.** Spawn logic is ~30 lines; extracting helps only if it grows past ~50. Ready to extract in Phase 3 when multiple unit types and AI starting armies arrive.
+- **Tests use script-path-walk for inheritance checks**, not `is Kargar` / `is Unit`. Same registry-race avoidance — test files parse before the runtime registry has settled. Helper function `_is_kargar(node)` walks the script chain looking for kargar.gd's resource_path.
+
+---
+
+## 2026-05-01 — Phase 1 session 1 wave 2 (ui-developer): Selection + click-to-move
+
+**Branch:** `feat/phase-1-units`
+
+**Shipped:**
+- `SelectionManager` autoload (`game/scripts/autoload/selection_manager.gd`) registered in `project.godot` after `FarrSystem`. Public API: `select(unit)` (idempotent, no signal re-emission on duplicates) / `select_only(unit)` / `add_to_selection(unit)` (Phase-1-session-2 hook; functionally identical to `select` today) / `deselect_all()` / `is_selected(unit)` / `selection_size()` / `selected_units` accessor (returns fresh shallow copy, prunes freed units defensively) / `reset()` (no-emit test/teardown helper). Single-broadcast contract: every state-mutating call emits `EventBus.selection_changed(selected_unit_ids: Array)` exactly once. `select_only` preserves the target's ring instead of flickering through deselect→select when the target is already selected.
+- `ClickHandler` (`game/scripts/input/click_handler.gd`, plain Node attached as `ClickHandler` child of `Main` in `main.tscn`). `_unhandled_input` raycasts via `Camera3D.project_ray_origin/normal` + `direct_space_state.intersect_ray` then routes through `process_left_click_hit(hit)` / `process_right_click_hit(hit)`. Left-click on Unit-shaped collider → `SelectionManager.select_only(unit)`; left-click on terrain or empty space → `deselect_all()`. Right-click on terrain with units selected → `Unit.replace_command(Constants.COMMAND_MOVE, { &"target": Vector3 })` for every selected unit (this is the coordination shape with ai-engineer's `UnitState_Moving`). Right-click on a unit is a no-op in wave 2 (Phase 2 routes that to attack-move). `set_test_mode(on)` disables `_unhandled_input` so tests drive the routing seams directly.
+- 29 new tests (`tests/unit/test_selection_manager.gd` — 16; `tests/unit/test_click_handler.gd` — 13). All pass. Cover: select/select_only/deselect_all/add_to_selection state mutations, signal emission counts and payloads, idempotency, empty-set deselect_all still emits, freed-unit filtering, reset semantics, the routing decisions in click_handler (left-click selects unit / left-click terrain deselects / left-click empty deselects / right-click terrain pushes Move command with correct kind+target / right-click no-selection no-op / right-click unit no-op / right-click empty no-op / multi-unit fan-out / nested-collider ancestor walk-up / terrain duck-type rejection).
+- `docs/ARCHITECTURE.md` 0.9.0 → 0.10.0. Selection-system row moved 📋 Planned → ✅ Built. New §6 v0.10.0 entry covers 8 wave-2 implementation choices (idempotent select, no-emit reset, select_only preservation, untyped Array, testable seam, right-click-on-unit no-op, duck-type unit detection, autoload order).
+- `main.tscn` updated to instance `ClickHandler` under `Main` (load_steps 6 → 7, new ext_resource for the script, new node entry). Single `[node name="ClickHandler" type="Node" parent="."]` block with `script = ExtResource("5_click")`.
+
+**Test-count delta:** 312 → 355 tests (43 new across the wave). Wave 2's contribution from ui-developer: 29 (16 SelectionManager + 13 ClickHandler). The remaining 14 land from ai-engineer (Idle/Moving) and gameplay-systems (Kargar/spawn). At session-close run: 355 total / 350 actually-passing / 3 pending (pre-existing) / 2 failing in ai-engineer's wave-2 files (UnitState_Idle's pulse test and UnitState_Moving's transition-to-Idle test — neither in my owned files; flagged to ai-engineer below). 0 failures in ui-developer's owned files. ~1.7s run time.
+
+**Did not ship** (out of scope per the wave-2 brief):
+- Box/drag selection (Phase 1 session 2).
+- Shift+click add-to-selection input wiring (`add_to_selection` API exists, no input listens for Shift modifier yet) — Phase 1 session 2.
+- Ctrl+1-9 control groups — Phase 1 session 2.
+- Double-click select-all-of-type — Phase 1 session 2.
+- Selected unit panel (bottom-left detail view) — Phase 1 session 2.
+- Attack-move (A + click) — Phase 2.
+- Hover info / cursor changes per context — later.
+
+**State for next session:**
+- Branch `feat/phase-1-units`. Lint clean for ui-developer's owned files (the L5 violation surfacing in `unit_state_idle.gd:17` is a comment-line false positive in ai-engineer's file — flagged below).
+- The Move Command shape `{ kind: &"move", payload: { &"target": Vector3 } }` is the contract between ui-developer's right-click handler and ai-engineer's `UnitState_Moving.enter()`. Tests `test_right_click_move_command_has_correct_kind` and `test_right_click_move_command_has_correct_target_payload` are the regression tripwire if either side drifts.
+- `SelectionManager.add_to_selection` is the API hook for Phase 1 session 2's Shift+click. It currently delegates to `select(unit)` — when the input handler for Shift+click lands, it calls this instead of `select_only`.
+- `ClickHandler.process_left_click_hit` / `process_right_click_hit` are public so qa-engineer's wave-3 integration test can drive the click flow without a real `Camera3D` + physics world. The end-to-end raycast wiring (camera → ray query → ClickHandler routing) is the smoke-test layer above.
+- The lint script's L3 has a comment-line filter (lines starting with `#` are dropped from match results); L5 currently does NOT have that filter, so a comment that mentions `Time.get_ticks_msec()` triggers a false positive. ai-engineer's wave-2 `unit_state_idle.gd:17` hits this. Either: (a) qa-engineer extends the L3 filter to L5 in `tools/lint_simulation.sh`, or (b) ai-engineer rewords the comment to avoid the literal call shape. ui-developer (this session) did not touch the lint script — out of file-ownership scope.
+
+**Open questions added to `QUESTIONS_FOR_DESIGN.md`:** none. No design/feel/balance questions surfaced — the work was input-routing and state-management infrastructure against the kickoff brief.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **`SelectionManager.select` is signal-idempotent (no re-emit on duplicate).** Discussed in v0.10.0 §6 entry. The kickoff brief said "select(unit) adds unit to selection, calls unit.get_selectable().select(), emits EventBus.selection_changed." Strict reading would re-emit on every call. Chose idempotency for HUD/overlay/telemetry consumer health (rapid clicks on same unit shouldn't flood listeners). Test `test_select_is_idempotent` pins both list-state and signal-emit invariants.
+- **`SelectionManager.deselect_all` always emits, even on empty set.** Inverse of the above — the empty broadcast is cheap (no listener mutates state) and defends against missed prior emissions. Test `test_deselect_all_on_empty_set_still_emits`.
+- **`SelectionManager.reset` does NOT emit.** Reset is the test-fixture seam, not a production deselect path. Mirrors `SimClock.reset` / `FarrSystem.reset`. `deselect_all` is the production-path empty-broadcast call. Test `test_reset_clears_selection_without_emitting` pins.
+- **`select_only` preserves the target's ring on already-selected click.** Avoids visual flicker (deselect→select on the same component would flash the placeholder ring). Cheap to handle correctly.
+- **Right-click on a unit collider is a no-op (NOT a position-move).** The eventual attack-move command targets a unit, not a Vector3. Generating a Move(target=unit.global_position) now would teach players a misleading model. Test `test_right_click_on_unit_is_noop_in_wave2` pins.
+- **Duck-typed Unit detection in `ClickHandler._is_unit_shaped`.** `replace_command` method + `command_queue` field. Same class_name registry workaround pattern documented in §6 v0.4.0 / v0.9.0. Concrete Unit subclasses (Kargar, etc.) inherit both, so the check is forward-compatible.
+- **Split `ClickHandler` into `_unhandled_input` shell + `process_*_click_hit(hit)` public seams.** Production path raycasts then calls the seam; tests inject synthetic hit dicts directly. Same pattern `CameraController` uses for `pan_by` / `zoom_by` / `clamp_to_bounds`. Sidesteps the GUT-can't-easily-stand-up-a-real-Camera3D-and-physics-world testability gap.
+- **`SelectionManager` autoload registered AFTER `FarrSystem`** (last in the autoload list). No autoload-time dependencies beyond EventBus, which was already booted; lazy registration pattern means no `_ready` ordering risk.
+
+---
+
+## 2026-05-01 — Phase 1 Session 1 wave 1: Unit infrastructure foundation
+
+**Branch:** `feat/phase-1-units`
+
+**Shipped:**
+- `Unit` base class + scene template. `class_name Unit extends CharacterBody3D` at `game/scripts/units/unit.gd`. Scene at `game/scenes/units/unit.tscn` composes a placeholder MeshInstance3D (0.5×0.6×0.5 cube), CollisionShape3D, and the four sim components. Static `unit_id` counter with `reset_id_counter()` for match-start. Reads `BalanceData.units[unit_type]` for `max_hp` and `move_speed`. Constructs `command_queue` and `fsm` in `_init` (so external code can call `replace_command` against a freshly-spawned unit before its `_ready`). Legibility helpers (`is_idle`, `is_engaged`, `is_dying`, `is_busy`) defensively handle a not-yet-initialized FSM.
+- `HealthComponent` (`game/scripts/units/components/health_component.gd`, `class_name HealthComponent` extending SimNode by path-string). Fixed-point `hp_x100` storage per Sim Contract §1.6. `init_max_hp` boundary-converts. `take_damage` and `heal` route through `_set_sim`. Latched `EventBus.unit_health_zero` emit at hp=0 (over-kill doesn't re-emit) — feeds the StateMachine death-preempt path.
+- `MovementComponent` (`game/scripts/units/components/movement_component.gd`, `class_name MovementComponent` extending SimNode by path-string). `request_repath(target)` cancels prior in-flight request, issues a new one. `_sim_tick(dt)` polls scheduler, advances the parent Node3D's `global_position` toward the current waypoint at `move_speed * dt` per Sim Contract §4.1's position-write carve-out. `path_state` and `is_moving` are computed properties. Pulls scheduler from `PathSchedulerService.scheduler` at `_ready`.
+- `SelectableComponent` (`game/scripts/units/components/selectable_component.gd`, `class_name SelectableComponent` extending SimNode by path-string). `select` / `deselect` toggle a placeholder MeshInstance3D ring (CylinderMesh, gold). Auto-creates the ring under the parent unit via `call_deferred` (avoids "parent busy setting up children"). Subscribes to `EventBus.selection_changed`; selects when its `unit_id` is in the broadcast list.
+- `NavigationAgentPathScheduler` — production IPathScheduler at `game/scripts/navigation/navigation_agent_path_scheduler.gd`. Wraps `NavigationServer3D.map_get_path(map_rid, from, to, true)` synchronously. Resolves the active navigation map from `Engine.get_main_loop().root.world_3d.navigation_map`. `cancel_repath` flips READY → CANCELLED; FAILED is sticky. Wired as the default in `PathSchedulerService` via the autoload's `_ready`.
+- `EventBus.selection_changed(selected_unit_ids: Array)` — read-shaped UI signal; not in `_SINK_SIGNALS` (telemetry tracks gameplay state, not UI state). Already L2-allowlisted in `tools/lint_simulation.sh` from Phase 0 forward-reference.
+- `PathSchedulerService.reset()` semantics: now reverts to a fresh production scheduler instance, not null. `set_scheduler(null)` is the explicit opt-in for the null-scheduler defensive path.
+- `docs/ARCHITECTURE.md` 0.8.0 → 0.9.0. Five new ✅ Built rows (Unit, three components, NavigationAgentPathScheduler). One Phase 1 ⛓️ wiring update on PathSchedulerService. New §6 v0.9.0 entry covers the seven divergences from spec sketches (most notably Unit-extends-CharacterBody3D-not-SimNode and SelectableComponent's call_deferred pattern).
+
+**Test-count delta:** 250 → 312 tests (62 new tests, 17 health + 11 movement + 11 selectable + 8 nav scheduler + 15 unit). 309 passing, 3 pending (intentional fallbacks: 2 in `test_navigation_agent_path_scheduler.gd` for headless runners without a baked navmesh, 1 pre-existing in `test_resource_hud.gd` for the FarrSystem defensive-default path). 0 failing. Lint clean. ~1.8s run time.
+
+**Did not ship** (intentionally out of scope per `02b_PHASE_1_KICKOFF.md` and the wave-1 task brief):
+- Concrete `Kargar` unit type — gameplay-systems wave 2.
+- Spawning workers in main.gd or a MatchSetup script — gameplay-systems wave 2.
+- `UnitState_Idle` / `UnitState_Moving` concrete states — ai-engineer wave 2.
+- SelectionManager + click-to-select raycast — ui-developer wave 2.
+- Right-click-to-move command-building UI — ui-developer + ai-engineer wave 2.
+- Full integration test of the click-and-move flow — qa-engineer wave 3.
+- Box-select, control groups, multi-select — Phase 1 session 2.
+- Combat, attack-move — Phase 2.
+
+**State for next session (wave 2):**
+- On branch `feat/phase-1-units`. Lint clean. `cd game && GODOT=/opt/homebrew/bin/godot ./run_tests.sh` → 312 tests, 309/309 actually-passing/3 pending.
+- The Unit base class's StateMachine boots empty — concrete subclasses or scene scripts register their states (Idle, Moving) and call `fsm.init(&"idle")` after registration. The base's `_ready` defaults to `init(&"idle")` only if `&"idle"` is already registered, so wave 2's concrete Unit subclasses (Kargar) can do `fsm.register(IdleState.new())` etc. then `super._ready()`.
+- The path-string-base preload pattern is established for all components. Component scripts extend `"res://scripts/core/sim_node.gd"` to dodge the class_name registry race; concrete consumers reference components by their class_name (`HealthComponent`, etc.) at runtime where the registry has settled.
+- `MovementComponent._sim_tick` is the per-tick driver; phase coordinator wiring (Movement phase calls `unit._sim_tick → fsm.tick → MovingState._sim_tick → MovementComponent._sim_tick`) is wave 2's job. For now, `_sim_tick` is callable directly by states or by the wave 2 phase coordinator.
+- `Unit.replace_command` and `append_command` are the only sanctioned write paths for command_queue (per State Machine Contract §2.5). Wave 2's right-click handler builds these calls.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. No design/feel/balance questions surfaced — the wave was pure infrastructure against ratified contracts.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+- **Unit extends CharacterBody3D, not SimNode directly.** State Machine Contract §5.1 sketches `Unit extends SimNode`. CharacterBody3D is needed for the unit.tscn collision shape, future formation-collision (Phase 1 session 2 GroupMoveController), and for the global_position carve-out to mean anything. Components hold the SimNode discipline; Unit is composition glue. Documented in §6 v0.9.0.
+- **PathSchedulerService.reset() reverts to a fresh production scheduler.** Phase 0 had it null. Phase 1 wires production-by-default at autoload `_ready`, so reset-to-pristine naturally means reset-to-production. Tests that need null write `set_scheduler(null)`. Logged in §6 v0.9.0 + matching test update in `tests/unit/test_match_harness.gd`.
+- **SelectableComponent ring added via `call_deferred`.** Avoids the "parent busy setting up children" error during the parent unit's `_ready`. Tests `await get_tree().process_frame` before inspecting the ring's parent.
+- **NavigationAgentPathScheduler skips PENDING entirely.** Synchronous `NavigationServer3D.map_get_path` resolves at request time. Sim Contract §4.2 says "result lands on requested_tick + 1 or later" — "at the requested tick itself" qualifies as "or later" (a degenerate interpretation, intentional, kept for symmetry with MockPathScheduler's PENDING semantics in tests).
+- **`HealthComponent.take_damage` and `heal` ignore non-positive amounts silently.** No method-routing for sign-flipped values; each method has one intent. Avoids bugs where a buff "heals -5" silently becomes damage with no audit trail.
+- **Fixed-point for HP storage.** Same pattern as Farr per Sim Contract §1.6. `hp_x100: int`. Boundary conversion at `init_max_hp`/HUD/telemetry. Defends against IEEE-754 platform divergence over a long match — doesn't bite at MVP scale, but the determinism principle is cheap to enforce now and expensive to retrofit. Test `test_many_small_damages_sum_exactly` verifies 100 × 0.01 damage adds to exactly 1.0 hp with no float drift.
+- **EventBus.selection_changed payload typed as plain Array, not Array[int].** GDScript signal type-narrowing for typed arrays is finicky in 4.6.2; a plain `Array` accepted with `int(id)` casts inside the SelectableComponent handler is robust against either Array[int] or Array[Variant]-of-ints from the eventual SelectionManager (whose author's wave-2 work doesn't dictate the typed-array shape yet).
 
 ## 2026-05-01 — Phase 0 Session 1: Simulation Backbone
 
