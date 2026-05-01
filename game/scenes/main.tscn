@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3 uid="uid://b0g3dxshahmain"]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+
+[node name="Main" type="Node"]
+script = ExtResource("1_main")
+
+[node name="StatusLabel" type="Label" parent="."]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 600.0
+offset_bottom = 48.0
+text = "tick=0"
