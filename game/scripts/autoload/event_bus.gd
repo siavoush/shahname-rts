@@ -42,6 +42,29 @@ signal unit_health_zero(unit_id: int)
 signal unit_state_changed(unit_id: int, from_id: StringName, to_id: StringName, tick: int)
 
 
+# ---- Farr signals -----------------------------------------------------------
+# Emitted by FarrSystem.apply_farr_change(). The chokepoint is mandated by
+# CLAUDE.md ("All Farr changes flow through a single function..."). Every
+# Farr movement traces through here — UI overlay, telemetry sink, Kaveh-Event
+# trigger, and balance analysis all subscribe.
+#
+# Fields per docs/SIMULATION_CONTRACT.md §7 (Phase 0 telemetry contract):
+#   amount           — effective delta after clamp (float, post-conversion
+#                      from internal fixed-point)
+#   reason           — caller-supplied string for the F2 overlay log
+#                      ("Hero rescued worker", "Worker killed defenseless")
+#   source_unit_id   — int, -1 sentinel when no source unit was provided
+#   farr_after       — Farr value after the change (float, post-clamp)
+#   tick             — SimClock.tick at apply time (immutable in payload)
+#
+# Phase 0 wave 1 ships the signal; producers (generators/drains) wire up in
+# Phase 4. F2 debug overlay consumes from Phase 4 onward.
+
+@warning_ignore("unused_signal")
+signal farr_changed(amount: float, reason: String, source_unit_id: int,
+		farr_after: float, tick: int)
+
+
 # ---- Sink registry ----------------------------------------------------------
 # Sinks observe every signal in _SINK_SIGNALS. To support disconnect_sink, we
 # remember the per-signal forwarder Callables we created for each sink so we
@@ -57,6 +80,7 @@ const _SINK_SIGNALS: Array[StringName] = [
 	&"sim_phase",
 	&"unit_health_zero",
 	&"unit_state_changed",
+	&"farr_changed",
 	# Extend as new write-shaped signals are added. Order is not significant.
 ]
 
@@ -113,6 +137,10 @@ func _make_forwarder(sig: StringName, sink: Callable) -> Callable:
 		&"unit_state_changed":
 			return func(unit_id: int, from_id: StringName, to_id: StringName, tick: int) -> void:
 				sink.call(sig, [unit_id, from_id, to_id, tick])
+		&"farr_changed":
+			return func(amount: float, reason: String, source_unit_id: int,
+					farr_after: float, tick: int) -> void:
+				sink.call(sig, [amount, reason, source_unit_id, farr_after, tick])
 		_:
 			push_error("EventBus._make_forwarder: signal '%s' has no forwarder arm" % sig)
 			return Callable()

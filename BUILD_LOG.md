@@ -261,3 +261,85 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 - Wave 2 task: `MatchHarness` at `game/tests/harness/match_harness.gd` per TESTING_CONTRACT.md §3.1. Blocked on `BalanceData.tres` (balance-engineer) and `FarrSystem` skeleton (gameplay-systems) from wave 1. Determinism regression test stub follows MatchHarness.
 
 **Open questions added to QUESTIONS_FOR_DESIGN.md:** none.
+
+---
+
+## 2026-05-01 — Phase 0 Session 4 Wave 1: Combined Summary (all agents)
+
+**Branch:** `feat/phase-0-foundation`
+
+**Shipped (all agents combined this wave):**
+
+- **MockPathScheduler** (qa-engineer) — `scripts/navigation/mock_path_scheduler.gd`. Full test double for `IPathScheduler`. Straight-line paths, READY at `requested_tick + 1`, public `call_log: Array[Dictionary]`, `fail_next_request()` one-shot flag, idempotent `cancel_repath()`, `clear_log()` full reset. 15 GUT tests in `tests/unit/test_mock_path_scheduler.gd`.
+
+- **FarrSystem skeleton** (gameplay-systems) — `scripts/autoload/farr_system.gd`. Fixed-point int storage (Farr × 100). `apply_farr_change(amount, reason, source_unit)` sole mutation chokepoint; asserts `SimClock.is_ticking()`; emits `EventBus.farr_changed`. `EventBus.farr_changed` signal added to `event_bus.gd`. Generators/drains deferred to Phase 4; Kaveh Event to Phase 5. Tests in `tests/unit/test_farr_system.gd`.
+
+- **BalanceData resource** (balance-engineer) — `data/balance_data.gd` (`class_name BalanceData extends Resource`) + `data/balance.tres`. Six sub-resources: `UnitStats`, `BuildingStats`, `FarrConfig`, `CombatMatrix`, `EconomyConfig` (nests `ResourceNodeConfig`), `AIConfig` (12 flat exported fields for easy/normal/hard per AI_DIFFICULTY.md v1.1.0). `validate_hard()` / `validate_soft()` gate. Tests in `tests/unit/test_balance_data.gd`.
+
+- **Resource HUD + Farr HUD readout** (ui-developer) — `scenes/ui/resource_hud.tscn` + `scripts/ui/resource_hud.gd`. Plain-text Coin / Grain / FARR / Pop readout. All strings via `tr()` for i18n. Wired into `main.tscn`. Circular Farr gauge deferred to Phase 1. Tests in `tests/unit/test_resource_hud.gd`.
+
+- **Translation infrastructure** (ui-developer) — `translations/strings.csv` with `en` and `fa` (Farsi) columns; compiled to `strings.en.translation` and `strings.fa.translation`; registered in `project.godot`. All HUD labels use `tr()` from day one.
+
+- **main.tscn integration** (engine-architect) — `CameraRig` and `ResourceHUD` wired into `scenes/main.tscn`; `StatusLabel` repositioned below the HUD row.
+
+- **ARCHITECTURE.md 0.6.0 → 0.7.0** (qa-engineer) — MockPathScheduler, FarrSystem skeleton, BalanceData, Translation infrastructure, Farr HUD readout rows moved 📋 Planned → ✅ Built.
+
+**Did not ship** (deferred to wave 2 or later):
+- `MatchHarness` — wave 2 (qa-engineer). Both blockers (FarrSystem + BalanceData) now resolved.
+- `NavigationAgentPathScheduler` — engine-architect, pending.
+- Determinism regression test stub — after MatchHarness.
+- `GameRNG` autoload — still deferred.
+- Farr generators/drains (Phase 4); Kaveh Event (Phase 5).
+
+**State for wave 2:**
+- On branch `feat/phase-0-foundation`. Lint clean. All tests passing headless.
+- `MockPathScheduler` + `FarrSystem` + `BalanceData` are all available for `MatchHarness` to inject and query.
+- Wave 2 primary deliverable (qa-engineer): `game/tests/harness/match_harness.gd` per TESTING_CONTRACT.md §3.1 — `advance_ticks(n)`, `snapshot()`, `_test_set_farr(value)`.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none.
+
+---
+
+## 2026-05-01 — Phase 0 session 4 wave 1 (gameplay-systems)
+
+**Branch:** `feat/phase-0-foundation`
+
+(Detail subsection. The combined-summary entry above covers wave 1 across all four agents; this records gameplay-systems-specific decisions and Plan-vs-Reality notes for future Phase 4 work.)
+
+**Shipped:**
+
+- `game/scripts/autoload/farr_system.gd` — `FarrSystem` autoload skeleton per `01_CORE_MECHANICS.md §4` and `docs/SIMULATION_CONTRACT.md §1.6`. Concretely:
+  - Extends `SimNode` via `extends "res://scripts/core/sim_node.gd"` (path-string preload, per the class_name registry race pattern in `docs/ARCHITECTURE.md §6 v0.4.0`). The sim_node.gd file does carry `class_name`, but autoloads parse before the class_name registry fully populates — a path-string base avoids the race entirely while preserving inheritance behavior (`_sim_tick`, `_set_sim`, on-tick assert all inherit cleanly).
+  - **Storage**: `_farr_x100: int` — fixed-point integer (Farr × 100). 50.0 stored as 5000. Per Sim Contract §1.6 to prevent IEEE-754 platform divergence over 25-min matches (45,000 ticks at 30 Hz with multiple Farr generators contributing fractional values per tick).
+  - **Public read accessor**: `value_farr: float` getter — converts at the HUD/telemetry boundary only.
+  - **Chokepoint**: `apply_farr_change(amount: float, reason: String, source_unit: Node) -> void` — mandated by `CLAUDE.md`. Asserts `SimClock.is_ticking()` per Sim Contract §1.3. Converts via `roundi(amount * 100.0)`. Computes `clampi(pre + delta, 0, 10000)` then derives the *effective* delta from the post-clamp value — emitted signal reports what the meter actually moved, not the (possibly oversized) request. Mutates via inherited `_set_sim` (self-only). Encodes `null` source_unit as `-1` sentinel; reads `unit_id` field if present, else `get_instance_id()`.
+  - **Defensive BalanceData read** in `_ready()`: attempts to load `Constants.PATH_BALANCE_DATA`, duck-types the `farr.starting_value` field, clamps, converts, writes `_farr_x100`. Falls back to spec default 50.0 (per §4.1) if `data/balance.tres` doesn't exist or `farr` is absent. Robust to either-order shipping with balance-engineer's parallel BalanceData work.
+
+- `game/scripts/autoload/event_bus.gd` — added typed `farr_changed(amount: float, reason: String, source_unit_id: int, farr_after: float, tick: int)` signal. Added to `_SINK_SIGNALS` and `_make_forwarder` got a new match arm. Phase 6 `MatchLogger` will pick it up automatically via `connect_sink`.
+
+- `game/project.godot` — registered `FarrSystem` as the 10th autoload (after `DebugOverlayManager`). Order ensures `Constants`, `EventBus`, `SimClock`, `TimeProvider` are all up first.
+
+- `game/tests/unit/test_farr_system.gd` — 12 GUT unit tests: default 50.0; storage is `int` and equals 5000; +5 raises to 55; −10 lowers to 40; small fractional delta (0.05) is exact; 10×0.1 lands at exactly 51.0 (no float drift); +200 saturates at 100.0; −200 saturates at 0.0; signal payload (amount, reason, source_unit_id, farr_after, tick); signal reports clamped *effective* delta when saturating; consecutive changes accumulate with one emit each; `is_ticking()` precondition for off-tick assert.
+
+**Test-count delta from gameplay-systems alone:** +12 (157 total at wave-1 close, up from 130 at session 3 close).
+
+**Did not ship** (out of scope per kickoff and `01_CORE_MECHANICS.md §4`):
+
+- **Generator wiring** — Atashkadeh +1/min, Dadgah/Barghah +0.5/min, Yadgar +0.25/min (§4.3). Phase 4.
+- **Drain wiring** — worker killed −1, hero attack ally −5, hero killed fleeing −10, hero killed in battle −5, Atashkadeh lost −5 (§4.3). Phase 4.
+- **Snowball protection** — 3:1 ratio kill drain, broken-economy worker drain (§4.3). Definitions still open in `QUESTIONS_FOR_DESIGN.md`. Phase 4.
+- **Kaveh Event** — Farr < 15 for 30s grace, rebel spawn, worker strike, locked-Farr window, both resolution paths (§9). Phase 5.
+- **F2 Farr-log debug overlay** — the framework exists; the overlay itself ships when generators/drains start producing real-time feed (Phase 4 per the kickoff doc rule "concrete overlays land WITH their owning systems").
+- **Hot-reload of `FarrConfig`** — Phase 5 deliverable per Testing Contract §1.4.
+- **Yadgar building, hero death/respawn coupling** — Phase 5 (Rostam + Kaveh deliverable bundle).
+
+**Decisions made independently** (per `CLAUDE.md` "Escalation" rule #1):
+
+- **Path-string `extends` for FarrSystem** — same workaround pattern as the StateMachine framework session.
+- **`source_unit: Node` encoded as `-1` sentinel int when null.** Signals carry primitives for telemetry-NDJSON serializability (Testing Contract §3.1 / §2.3). −1 matches the project's existing convention (`Constants.TEAM_ANY`, `GameState.match_start_tick = -1`). When a `unit_id: int` field is present on the source node, it's read duck-typed; otherwise `get_instance_id()` is the diagnostic fallback. Phase 1+ Unit nodes will all expose `unit_id` per State Machine Contract.
+- **Emitted signal `amount` is the *effective* (post-clamp) delta, not the requested delta.** Requesting +200 from 50 emits +50, not +200. Rationale: downstream consumers (telemetry ledger, F2 overlay, balance analysis) need a coherent record of how the meter moved.
+- **`roundi` chosen as the deterministic float→int rounding rule.** Sim Contract §1.6 mandates a deterministic rule but doesn't specify which. `roundi` is the GDScript built-in, deterministic across platforms; banker's rounding ceremony has no benefit at Farr-delta magnitudes (deltas are typically ±10.0, never ±0.005).
+- **Source comment in balance-engineer's `FarrConfig` claims `× 1000` storage; the implementation uses `× 100` per Sim Contract §1.6.** Sim Contract §1.6 is the SSOT (canonical "Numeric Representation" principle, Convergence-Review-ratified) and the kickoff doc explicitly said `× 100`. The `FarrConfig` comment is a doc drift in balance-engineer's parallel-shipped sub-resource — flagged for them to harmonize. No behavior impact: the storage scale is FarrSystem-internal; FarrConfig only carries float-typed tunables. Did not edit balance-engineer's file.
+- **Defensive `bd.get(&"farr")` duck-typed read** — same class_name-resolve workaround as `SpatialIndex`'s `agent.get(&"team")`.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. The Farr skeleton is pure infrastructure against §4.1, §1.6, and the chokepoint mandate.

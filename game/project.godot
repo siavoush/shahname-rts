@@ -8,29 +8,19 @@
 
 config_version=5
 
-; Pinned engine version: Godot 4.6.2 stable (official build 71f334935).
-; Bumping to a new MAJOR (e.g., 5.x) requires a DECISIONS.md entry per
-; CLAUDE.md and 02_IMPLEMENTATION_PLAN.md. Patch updates do not.
-; See: docs/ARCHITECTURE.md §2 build-state table for the canonical record.
-
 [application]
 
 config/name="Shahnameh RTS"
 config/description="A real-time strategy game based on Ferdowsi's Shahnameh.
 Iran vs. Turan, Kayanian/Heroic Age. Pre-MVP — placeholder graphics only."
+config/version="0.0.0-phase0"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
-config/version="0.0.0-phase0"
-config/godot_version="4.6.2.stable.official.71f334935"
 config/icon="res://icon.svg"
+config/godot_version="4.6.2.stable.official.71f334935"
 
 [autoload]
 
-; Order matters. TimeProvider, EventBus, Constants have no deps. SimClock
-; depends on EventBus. GameState depends on SimClock (reads tick on match
-; start). SpatialIndex depends on EventBus (listens for spatial_rebuild).
-; PathSchedulerService has no deps (holds an injectable ref). CommandPool
-; has no deps. Per docs/SIMULATION_CONTRACT.md §1 / §3 / §4 / §7.
 TimeProvider="*res://scripts/autoload/time_provider.gd"
 EventBus="*res://scripts/autoload/event_bus.gd"
 Constants="*res://scripts/autoload/constants.gd"
@@ -40,6 +30,7 @@ SpatialIndex="*res://scripts/autoload/spatial_index.gd"
 PathSchedulerService="*res://scripts/autoload/path_scheduler_service.gd"
 CommandPool="*res://scripts/autoload/command_pool.gd"
 DebugOverlayManager="*res://scripts/autoload/debug_overlay_manager.gd"
+FarrSystem="*res://scripts/autoload/farr_system.gd"
 
 [debug]
 
@@ -55,6 +46,17 @@ window/size/viewport_height=720
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/gut/plugin.cfg")
+
+[internationalization]
+
+; Locale registry. Phase 0 ships English-only; Persian column exists in
+; translations/strings.csv but is intentionally empty until Tier 2 (per
+; 01_CORE_MECHANICS.md §1 "OUT for MVP" + CLAUDE.md "Persian addition at
+; Tier 2 must be a config change, not a refactor"). When fa content lands,
+; add "res://translations/strings.fa.translation" to this list — no code
+; changes needed.
+locale/translations=PackedStringArray("res://translations/strings.en.translation")
+locale/fallback="en"
 
 [rendering]
 
