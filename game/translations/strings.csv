@@ -1,0 +1,33 @@
+keys,en,fa
+# ---------------------------------------------------------------------------
+# strings.csv — Godot CSV translation table for Shahnameh RTS.
+#
+# Phase 0 deliverable per 02_IMPLEMENTATION_PLAN.md (ui-developer) and
+# CLAUDE.md ("All UI strings in a translation table from day one. Even if
+# only English is filled in. The Persian (Farsi) addition at Tier 2 must be a
+# config change, not a refactor.").
+#
+# Loading: Godot auto-imports CSV files in this directory at editor open.
+# project.godot's `internationalization/locale/translations` field lists the
+# generated `.translation` resources. `tr("UI_FARR")` looks up the active
+# locale's column.
+#
+# Key naming convention (per kickoff doc + CLAUDE.md §6):
+#   UI_*     — HUD / menu / overlay labels (this section)
+#   UNIT_*   — unit display names (Phase 1+)
+#   BLDG_*   — building display names (Phase 3+)
+#   EVENT_*  — event labels (Kaveh Event banner, victory screen, Phase 5+)
+#
+# Persian (`fa`) column is intentionally blank for Phase 0. Persian content
+# lands at Tier 2 per 01_CORE_MECHANICS.md §1 ("scope OUT for MVP: Persian-
+# language UI"). When that work begins, fill the `fa` column and add `fa` to
+# project.godot's locale list — no code change needed.
+#
+# Lines starting with `#` are comments and ignored by Godot's CSV importer.
+# ---------------------------------------------------------------------------
+UI_FARR,Farr,
+UI_COIN,Coin,
+UI_GRAIN,Grain,
+UI_POPULATION,Pop,
+UI_TIER_VILLAGE,Village,
+UI_TIER_FORTRESS,Fortress,
