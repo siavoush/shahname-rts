@@ -105,6 +105,43 @@ var command_queue: CommandQueue = CommandQueue.new()
 var fsm: StateMachine = StateMachine.new()
 
 
+# Concrete-state script preloads. Path-string instead of class_name to dodge
+# the registry race documented in docs/ARCHITECTURE.md §6 v0.4.0 — when
+# unit.gd is parsed alongside test scripts, the UnitState_Idle / _Moving
+# global class_names may not be in the registry yet, causing unit.gd's own
+# `class_name Unit` to fail to register (which cascades into "unit_type
+# is a property of CharacterBody3D, not Unit" failures in test fixtures).
+# The path-string preload sidesteps the race entirely.
+const _UnitStateIdleScript: Script = preload("res://scripts/units/states/unit_state_idle.gd")
+const _UnitStateMovingScript: Script = preload("res://scripts/units/states/unit_state_moving.gd")
+
+
+## Snapshot of the most-recently-dispatched Command, populated by
+## StateMachine.transition_to_next() before it returns the Command to the
+## CommandPool. Concrete UnitStates (UnitState_Moving, UnitState_Attacking,
+## ...) read kind/payload off this slot in their `enter()` to decide their
+## target / focus.
+##
+## Per State Machine Contract §3.4: "the popped command is returned, so
+## concrete states must read their target from elsewhere (e.g.,
+## ctx.current_command — to be defined when concrete states ship)." This
+## slot is that definition. Wave 2 (ai-engineer) ships it alongside
+## UnitState_Moving — Moving's `enter` reads `ctx.current_command["target"]`.
+##
+## Shape (matches Command):
+##   { "kind": StringName, "payload": Dictionary }
+##
+## Empty Dictionary when no command has been dispatched (initial state).
+## Cleared by transition_to_next when the queue is empty (sentinel for
+## "transitioning to Idle without a command behind the move").
+##
+## Why a Dictionary instead of a Command ref: the Command is returned to
+## the pool immediately after the state-id mapping is computed, so holding
+## a ref would race with the pool re-renting the same instance. The
+## Dictionary is a defensive copy of the kind/payload at dispatch time.
+var current_command: Dictionary = {}
+
+
 # === Component getters (typed accessors) ===================================
 # Per docs/SIMULATION_CONTRACT.md Component Model — getters are the canonical
 # read seam so tests and other systems don't reach into the scene tree with
@@ -170,18 +207,31 @@ func _ready() -> void:
 	# unit-type subclasses or scene scripts may have already set values).
 	_apply_balance_data_defaults()
 
-	# StateMachine setup. Concrete unit types (Kargar, etc.) register their
-	# states in their own _ready BEFORE chaining to super._ready, so by the
-	# time we reach this point in the base, the state list is populated.
-	# If a unit ships with no states registered (the bare base used in
-	# tests), we skip init — the test sets up its own fsm fixture.
+	# StateMachine setup. The Unit base class registers the universally-
+	# useful states (Idle, Moving) here so every concrete unit type ships
+	# with a valid FSM out of the box. Concrete subclasses (Kargar, Piyade,
+	# ...) may register additional role-specific states (Gathering for
+	# workers, Attacking for combat units, etc.) in their own _ready BEFORE
+	# chaining to super._ready, so the base's init(&"idle") sees the full
+	# state set when it lands.
 	fsm.ctx = self
-	if not fsm._states.is_empty():
-		# Default to Idle if it was registered. Concrete subclasses that
-		# want a different starting state call fsm.init(&"<id>") themselves
-		# before super._ready.
-		if fsm._states.has(&"idle"):
-			fsm.init(&"idle")
+	# Register concrete states only if the subclass hasn't already done so
+	# (registering the same state twice would clobber any subclass-specific
+	# state instance in _states[id]). Idle and Moving are the wave-2 default
+	# pair; Attacking, Gathering, etc. ship in later phases with their owning
+	# systems.
+	if not fsm._states.has(&"idle"):
+		fsm.register(_UnitStateIdleScript.new())
+	if not fsm._states.has(&"moving"):
+		fsm.register(_UnitStateMovingScript.new())
+	# init() lands the unit on the starting state and connects the
+	# death-preempt signal. Subclasses that want a different starting
+	# state can call fsm.init(&"<id>") before super._ready (init is
+	# idempotent on already-initialized FSMs only insofar as the
+	# subclass takes care to avoid double-init; we don't double-init
+	# here ourselves).
+	if not fsm._states.is_empty() and fsm.current == null:
+		fsm.init(&"idle")
 
 
 # Read this unit's UnitStats from BalanceData (loaded from

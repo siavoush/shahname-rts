@@ -139,10 +139,22 @@ func transition_to(target_id: StringName) -> void:
 ## Dispatch into the next queued command on ctx.command_queue, or Idle if
 ## the queue is empty. Per Contract §3.4 — the canonical "I'm done"
 ## helper that states call on completion.
+##
+## Stashing the dispatched command on ctx.current_command:
+##   The Command is returned to the CommandPool immediately after we read
+##   its kind/payload (so the pool can re-rent the instance). Concrete states
+##   that need the payload (UnitState_Moving reading `target: Vector3`,
+##   UnitState_Attacking reading `target_unit: Node`, etc.) get it via
+##   ctx.current_command, populated here as a defensive Dictionary copy.
+##   See unit.gd's `current_command` field for the slot's contract.
+##
+##   When the queue is empty we transition to Idle and clear current_command
+##   so a subsequent Idle._sim_tick can't accidentally read a stale payload.
 func transition_to_next() -> void:
 	if ctx == null or not (&"command_queue" in ctx) or ctx.command_queue == null:
 		# Defensive: in tests we may run a StateMachine with a stub ctx that
 		# has no queue. Default to Idle.
+		_clear_current_command()
 		transition_to(&"idle")
 		return
 	var queue = ctx.command_queue
@@ -150,18 +162,38 @@ func transition_to_next() -> void:
 	# as Variant to dodge the class_name resolve race documented elsewhere.
 	var next_cmd = queue.peek()
 	if next_cmd == null:
+		_clear_current_command()
 		transition_to(&"idle")
 		return
 	queue.pop()
-	# Return the popped Command to the pool. The state-id mapping is enough;
-	# the state's enter() reads payload off the *current command* the unit
-	# stashes on itself. Here we keep things simple: the popped command is
-	# returned, so concrete states must read their target from elsewhere
-	# (e.g., ctx.current_command — to be defined when concrete states ship).
-	# For Phase 0 the dispatch logic is the unit-of-test.
+	# Stash a defensive copy of kind/payload on ctx so the receiving state's
+	# enter() can read it. The Command itself is returned to the pool below;
+	# holding a ref would race with the pool re-renting the same instance.
 	var state_id: StringName = _state_for_command(next_cmd.kind)
+	_set_current_command(next_cmd.kind, next_cmd.payload)
 	CommandPool.return_to_pool(next_cmd)
 	transition_to(state_id)
+
+
+# Stash on ctx if it has a current_command field; harmless no-op for stub
+# ctx in unit tests of the framework that don't expose the field. Note: we
+# use direct `set` rather than `_set_sim` because current_command is a
+# StateMachine-internal dispatch slot, not a SimNode field — it's mutated
+# only by transition_to_next, which runs inside the unit's _sim_tick anyway.
+func _set_current_command(kind: StringName, payload: Dictionary) -> void:
+	if ctx == null:
+		return
+	if not (&"current_command" in ctx):
+		return
+	ctx.current_command = {"kind": kind, "payload": payload.duplicate()}
+
+
+func _clear_current_command() -> void:
+	if ctx == null:
+		return
+	if not (&"current_command" in ctx):
+		return
+	ctx.current_command = {}
 
 
 ## Live alias for the F3 debug overlay and AI legibility helpers.
