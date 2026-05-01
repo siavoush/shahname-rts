@@ -120,6 +120,51 @@ func _load_starting_value_from_balance_data() -> void:
 #
 # Phase 4 will add: generator wiring (per-tick), drain wiring (event-driven),
 # snowball-protection helpers. None of those land in this wave.
+## Test/lifecycle helper: reset Farr to the BalanceData starting value (or
+## spec default 50.0 if BalanceData is unavailable). Called by MatchHarness
+## before each simulated match so teardown/restart doesn't leak Farr state.
+##
+## Cross-domain note (docs/ARCHITECTURE.md §6): reset() is added here at
+## qa-engineer's request (Phase 0 session 4 wave 2) per the wave-2 kickoff
+## doc's explicit guidance: "gameplay-systems' wave-1 retro flagged that
+## reset() not added in this skeleton… You're MatchHarness — you need it.
+## Add it (cross-domain, but small; document in §6)."
+## Does NOT call apply_farr_change (which asserts on-tick) — writes the
+## fixed-point store directly, then emits a synthetic farr_changed so
+## subscribers see the reset.
+func reset() -> void:
+	# Determine the target starting value from BalanceData.
+	var target_x100: int = 5000  # spec default (50.0)
+	var path: String = Constants.PATH_BALANCE_DATA
+	if FileAccess.file_exists(path):
+		var bd: Resource = load(path)
+		if bd != null:
+			var farr_cfg: Variant = bd.get(&"farr")
+			if farr_cfg != null:
+				var starting: Variant = farr_cfg.get(&"starting_value")
+				if typeof(starting) == TYPE_FLOAT or typeof(starting) == TYPE_INT:
+					target_x100 = clampi(roundi(float(starting) * 100.0), 0, 10000)
+
+	var old_x100: int = _farr_x100
+	_farr_x100 = target_x100
+
+	# Emit synthetic farr_changed so F2 overlay and any subscriber stays
+	# consistent. delta = new - old; source_unit_id = -1 (no source).
+	# Per Testing Contract §3.1 "_test_set_farr semantics" — same logic applies
+	# to reset(). Note: this emit is off-tick (reset is called by MatchHarness
+	# before/after match start, outside SimClock ticks). That is intentional and
+	# differs from apply_farr_change's on-tick-only contract. The reset() hook
+	# is a test-harness escape, not a gameplay mutation path.
+	var effective_delta: float = float(target_x100 - old_x100) / 100.0
+	EventBus.farr_changed.emit(
+		effective_delta,
+		"harness_reset",
+		-1,
+		float(target_x100) / 100.0,
+		SimClock.tick,
+	)
+
+
 func apply_farr_change(amount: float, reason: String, source_unit: Node) -> void:
 	# On-tick assertion. Sim Contract §1.3 mandates this for every state-
 	# mutating function; CLAUDE.md elevates the apply_farr_change function

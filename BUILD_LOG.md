@@ -300,6 +300,60 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ---
 
+## 2026-05-01 — Phase 0 session 4 wave 2 (qa-engineer)
+
+**Branch:** `feat/phase-0-foundation`
+
+**Shipped:**
+
+- `game/tests/harness/match_harness.gd` — `MatchHarness` per TESTING_CONTRACT.md §3.1. No class_name (registry-race workaround, ARCHITECTURE.md §6 v0.4.0). Public API: `start_match(seed, scenario)` resets all autoloads + injects MockPathScheduler + loads BalanceData + seeds global RNG + starts match. `advance_ticks(n)` via SimClock._test_run_tick (shared code path with live driver — Sim Contract §6.1). `snapshot()` returns flat primitive-only Dict (tick/farr/coin_iran/grain_iran/coin_turan/grain_turan/unit_count_iran/unit_count_turan). `_test_set_farr(value)` direct off-tick write to FarrSystem._farr_x100 with synthetic farr_changed emit. `set_resources/get_resources/get_unit/spawn_unit/spawn_building` helpers (spawn stubs return null in Phase 0). `teardown()` resets all autoloads.
+
+- `game/tests/harness/scenarios.gd` — Scenario catalog (data-only `const CATALOG: Dictionary`). Six scenarios: `empty` (blank slate), `starved` (zero resources), `rich` (1000 coin/grain), `kaveh_edge` (Farr=16.0), `kaveh_triggered` (Farr=14.0), `basic_combat` (stub = empty). Adding new scenario is a one-line Dict entry.
+
+- `game/scripts/autoload/farr_system.gd` — Added `reset()` method (cross-domain; explicitly authorized by wave-2 kickoff doc). Reads starting_value from BalanceData, writes _farr_x100, emits synthetic farr_changed with reason "harness_reset". Off-tick write intentional — reset is a test-harness escape, not a gameplay mutation.
+
+- `game/tests/unit/test_match_harness.gd` — 19 GUT unit tests: start_match resets SimClock+GameState+Farr+PathScheduler, sets GameState PLAYING, captures match_start_tick. advance_ticks(n) increments SimClock by exactly n, advance_ticks(0) no-op, pipeline emits 7 sim_phase signals. snapshot keys/primitives/tick/farr/resources all correct. _test_set_farr updates Farr, emits farr_changed with "test_set" reason, clamps correctly. teardown resets all state; subsequent start_match sees no leakage. Same seed → identical snapshots.
+
+- `game/tests/integration/test_match_harness.gd` — 25 GUT integration tests covering the same API surface from integration perspective: lifecycle, scenarios (kaveh_edge/rich/starved), resource round-trips, snapshot field accuracy, determinism regression stub.
+
+- `game/tests/integration/test_determinism.gd` — 3 GUT integration tests (Sim Contract §6.2 stub): `test_empty_match_is_deterministic` (Phase 0 bar — same seed→same snapshot after 60 ticks), `test_different_seeds_produce_same_empty_snapshots` (documents Phase 0 no-RNG-consumer behavior), `test_sequential_harnesses_are_isolated` (teardown isolation check).
+
+- `docs/ARCHITECTURE.md` bumped 0.7.0 → 0.8.0. MatchHarness and Determinism regression test rows moved 📋 Planned → ✅ Built. New §6 v0.8.0 plan-vs-reality entry: class_name removal, _test_set_farr off-tick simplification, FarrSystem.reset() cross-domain, start_match vs create naming, CATALOG data-only shape, test count delta.
+
+**Test-count delta:** 199 → 250 passing headless (51 new tests). 1 Pending (ui-developer's HUD defensive-fallback test — intentional, unchanged). Lint clean (0 violations across L1-L5).
+
+**Did not ship** (intentionally out of scope per wave-2 kickoff):
+- `spawn_resource_node` test helper — Phase 3.
+- `MatchLogger` NDJSON telemetry writer — Phase 6.
+- AI-vs-AI sim harness batch runner — Phase 6.
+- `GameRNG` autoload wiring in harness — engine-architect's deliverable; harness uses `seed()` on Godot global RNG as fallback with TODO comment.
+- Hot-reload of BalanceData mid-test — Phase 5+.
+- Real unit/building spawning in `spawn_unit` / `spawn_building` — Phase 1+ when scenes exist.
+
+**Plan-vs-reality notes:**
+
+- **`class_name MatchHarness` removed.** The same Godot 4.6.2 registry race that hit StateMachine/State hits RefCounted-based harness scripts. Removed class_name; callers preload the script and call `.new()` + `start_match()`. Contract behavior unchanged.
+
+- **`_test_set_farr` simplified to off-tick pattern.** Initial linter-generated implementation used a one-shot lambda connected to EventBus.sim_phase to run inside a tick. This caused "Cannot disconnect: callable is null" errors from the lambda trying to disconnect itself. Simplified to direct off-tick write (same pattern as FarrSystem.reset()). Does not advance SimClock.tick — tests that care about tick count are explicit about it.
+
+- **`FarrSystem.reset()` added cross-domain.** Small addition authorized by wave-2 kickoff. Documented in ARCHITECTURE.md §6 v0.8.0.
+
+**State for Phase 0 retro / merge:**
+- On branch `feat/phase-0-foundation`. Lint clean. 250/250 non-pending tests pass headless.
+- Run tests: `cd game && GODOT=/opt/homebrew/bin/godot ./run_tests.sh`
+- MatchHarness is the Phase 1+ foundation for all integration and gameplay tests. Usage: `const _MH := preload("res://tests/harness/match_harness.gd"); var h := _MH.new(); h.start_match(seed, scenario); h.advance_ticks(n); var snap := h.snapshot(); h.teardown()`.
+- GameRNG is the main Phase 1 harness TODO — when it ships, replace `seed(seed)` in harness `_setup()` with `GameRNG.seed_match(seed)` per Sim Contract §5.3.
+- ResourceSystem (Phase 3) will take over coin/grain tracking; harness-local `_coin/_grain` dicts become dead code that can be removed.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **No class_name on MatchHarness.** Implementation choice; behavior unchanged. Documented in ARCHITECTURE.md §6 v0.8.0.
+- **Off-tick `_test_set_farr`.** Implementation choice to avoid the lambda-self-disconnect bug. Documented in §6 v0.8.0.
+- **`start_match(seed, scenario)` instead of `static func create(seed, scenario)`.** Implementation choice forced by removal of class_name. Documented in §6 v0.8.0.
+
+---
+
 ## 2026-05-01 — Phase 0 session 4 wave 1 (gameplay-systems)
 
 **Branch:** `feat/phase-0-foundation`
