@@ -234,6 +234,12 @@ This section accumulates rules added/modified through retros. Each entry is date
 
 - *(2026-05-01, post-cleanup-audit)* **SSOT discipline: each fact lives in exactly one file. Other files reference, never restate.** When writing or editing markdown, ask: *"if this fact changes, how many files would I need to update?"* If the answer is more than one, refactor: pick a single owner, replace the duplicate with a link or a one-line summary that points at the owner. Indexes and orientation summaries are allowed only if (a) they're clearly framed as "see X for full content" and (b) they cannot drift independently — i.e., a change to X cannot leave the summary stale. **Why added:** LLMs (this agent included) tend to over-explicate, restating canonical content across multiple docs. In a project this size, that produces silent contradictions within a few revision cycles. Caught and refactored after creating ARCHITECTURE.md by duplicating the directory map and agent table from 02_IMPLEMENTATION_PLAN.md. Cites Manifesto Principle 7 (Single Source of Truth) — "reference the source rather than copying it. When you need information in a second place, point to the original."
 
+- *(2026-05-01, post-Phase-0)* **Scenes need visual smoke tests beyond unit tests.** A scene-level test that loads the scene, renders one frame, and verifies expected visual elements catches the class of bug (elevation, framing, visibility) that headless unit tests structurally cannot catch. **Why added:** Phase 0's camera elevation bug was missed by 130 passing unit tests; surfaced only when Siavoush eyeballed the running game. Tests checked the math; no test checked whether the camera would actually frame the scene. ([Phase 0 retro](#phase-0-implementation--foundation-built))
+
+- *(2026-05-01, post-Phase-0)* **Doc cross-validation: facts referenced in two contracts must explicitly link to the SSOT.** When a fact lives in one contract canonically and is mentioned in another (e.g., FarrSystem storage scale in both Sim Contract §1.6 and FarrConfig.gd comment), the duplicate must be a "see X" pointer with explicit link to the SSOT. The link is the binding. **Why added:** in Phase 0 wave 1, FarrConfig comment claimed ×1000 storage while Sim Contract §1.6 says ×100. SSOT discipline (existing rule) addresses the principle; this rule operationalizes the cross-link mechanism. ([Phase 0 retro](#phase-0-implementation--foundation-built))
+
+- *(2026-05-01, post-Phase-0)* **Pre-commit gate must filter to tracked files when N agents run in parallel.** Otherwise the hook races on staged-vs-untracked test files from concurrent agents and produces non-deterministic gate results. Mitigation: `git diff --cached --name-only` filter on the lint and GUT scope. **Why added:** Phase 0 session 4 wave 1 had 4 agents committing in parallel; pre-commit hook produced flaky results until all agents had pushed. LATER work documented for the next session that runs N>2 agents. ([Phase 0 retro](#phase-0-implementation--foundation-built))
+
 - *(2026-05-01, frontmatter-rollout)* **Every project markdown doc carries YAML frontmatter per the schema below.** New docs ship with frontmatter from creation. Existing docs without frontmatter are added on first edit. The frontmatter is the doc's machine-readable contract; the body is the human-readable content. The frontmatter is the SSOT for: title, type, status, version, owner, audience, read_when, prerequisites, references, ssot_for, tags. Any of those facts appearing in the body without a frontmatter source is a SSOT violation. **Why added:** without frontmatter, an agent scanning N docs has to ingest each one to decide if it's relevant, drifting attention and filling context with noise. The schema lets an agent make a read/skip decision in <30 lines. The `ssot_for` field directly operationalizes the SSOT discipline rule above — facts become machine-greppable to their canonical owner.
 
   **The schema:**
@@ -412,6 +418,51 @@ Constraint Negotiation continues to deliver — ~14 turns for a well-architected
 
 *Pattern validation:*
 Open Consultation is the right pattern for parameter-tuning where multiple agents have judgment but no clear ownership. Cost is minimal (~3 turns), the deliverable is concrete (a values table + rationale + criteria), and lead synthesis is honest (the choice rationale is in the doc, not hidden).
+
+---
+
+### Phase 0 Implementation — Foundation Built
+**Date:** 2026-05-01
+**Pattern:** Implementation mode (per §12) across 4 sessions
+**Participants:** All 7 agents through 4 sessions
+**Outcome:** Phase 0 foundation built. 26 subsystems ✅ Built. 250 unit/integration tests (249 passing + 1 intentional Pending). Lint clean. 16 commits on `feat/phase-0-foundation`.
+
+**Sessions:**
+- **Session 1:** engine-architect — Godot 4.6.2 init + GUT 9.4.0 + 4 autoloads (TimeProvider, EventBus, SimClock) + SimNode + 28 tests
+- **Session 2:** qa-engineer + engine-architect (parallel) — lint script + pre-commit hook + Sim Contract 1.2.1 PATCH
+- **Session 3 wave 1:** engine-architect — Constants, GameState, SpatialIndex, IPathScheduler, StateMachine framework + 60 tests
+- **Session 3 wave 2:** ui-developer + world-builder (parallel) — camera (fixed iso), DebugOverlayManager, terrain plane + nav + 42 tests
+- **Session 3 wiring:** main.tscn integration — terrain + camera visible
+- **Session 3 fix:** camera elevation bug caught by visual inspection
+- **Session 4 wave 1:** balance-engineer + qa-engineer + ui-developer + gameplay-systems (parallel) — BalanceData, MockPathScheduler, HUD + translations, FarrSystem skeleton + 66 tests
+- **Session 4 wave 2:** qa-engineer — MatchHarness + determinism stub + 51 tests
+
+**Retro:**
+
+*What worked:*
+- **The studio process paid off in implementation.** Six syncs of contract-first work produced contracts that agents could read and implement against directly. Zero major architectural surprises during implementation; only small clarifications needed (Sim Contract 1.2.1 patch). The cost of design-mode pays back during implementation-mode through reduced backtracking.
+- **TDD discipline held.** 250 tests across 4 sessions, with each subsystem getting unit tests as it landed. Pre-commit hook caught issues before they reached the branch. The structural enforcement layer (SimNode assertion + lint rules + pre-commit) actually does what it's designed to do.
+- **Parallel waves worked cleanly with file-ownership discipline.** Wave 1 of session 4 ran 4 agents in parallel touching different file domains; cross-agent file conflicts surfaced once (ARCHITECTURE.md merge contention during simultaneous edits) but resolved automatically by git's line-level merging. The "ONLY touch your rows" rule held.
+- **Live coordination via build log.** world-builder cited ui-developer's camera tests as confirming `MAP_SIZE_WORLD` reads cleanly during their parallel work. Truth-Seeking working through artifacts rather than synchronous coordination.
+- **The "trust but verify" rule (Sync 4 retro) saved us again.** ARCHITECTURE.md had been pre-populated by parallel agents with rows describing not-yet-built work. balance-engineer noticed and called it out. Lead's verification habit caught it. Without that rule, the doc would have lied.
+- **Lean Iteration discipline held.** No gold-plating. Every agent shipped minimum viable per their session brief. Camera doesn't have rotation/follow/cinematic modes. Debug overlay framework doesn't have actual overlays. FarrSystem is just the chokepoint, no generators/drains. The point was scaffolding; behavior comes in the phases that need it.
+
+*What broke or felt wrong:*
+- **Camera elevation bug missed by all 130 unit tests.** The bug was geometrically subtle: Camera3D at `(0, 0, zoom_distance)` in rig-local → at world Y=0 (ground level) after the rig's yaw → looking down through the terrain plane. Tests checked `zoom_distance` clamps and `target_position` math but no test verified the camera position would actually frame the scene. **Caught only by visual eyeball.** This is a class of bug that headless unit tests structurally cannot catch.
+- **Pre-commit hook running against untracked test files from parallel agents created non-determinism.** qa-engineer's commit needed multiple attempts because their lint/test gate sometimes saw incomplete tests from parallel agents that weren't yet staged. Acceptable for a 4-agent parallel wave; would compound if more agents ran simultaneously.
+- **Doc drift between contracts.** FarrConfig comment in `balance.tres` claims `× 1000` storage but Sim Contract §1.6 (the SSOT) specifies `× 100`. Two contracts that should agree, drifted. SSOT discipline (§9 rule) is the long-term protection but didn't prevent this one. Worth a cleanup pass.
+- **Testing Contract §1.3 self-contradiction.** "Returns false and refuses to load" (implies bool return) AND "returns list of invariant violations (empty array = pass)" (implies Array[String]). balance-engineer chose Array[String] and flagged the inconsistency. A future PATCH should resolve.
+- **`class_name State` registration race in GUT** (Sync 3 retro re-iterated). RefCounted classes used by GUT-collected test scripts can fail to resolve `class_name` due to test-script parse order vs. class_name registry population order. Workaround: path-based references (`preload(...)` instead of `class_name`). This added verbosity that will accumulate across more tests.
+
+*Changed in this doc:*
+- §9 rule added: **Scenes need visual smoke tests beyond unit tests.** A scene-level test that loads the scene, renders one frame, and verifies expected visual elements (e.g., terrain pixel in framebuffer center) catches the class of bug that elevation/framing/visibility errors fall into. Headless rendering capable; image comparison possible. Phase 1+ work — too thin to ship for Phase 0 alone.
+- §9 rule added: **Doc cross-validation.** When a fact is referenced in two contracts (e.g., FarrSystem storage scale in both Sim Contract §1.6 and FarrConfig comment), at least one of them must explicitly link to the other as the SSOT. The link is the binding; the duplicate becomes a "see X" pointer. SSOT discipline (existing rule) addresses the principle; this new rule operationalizes the cross-link mechanism.
+- §9 rule added: **Pre-commit gate stability under parallel agents.** When N agents run in parallel against the same branch, the pre-commit hook can race on staged-vs-untracked test files. Mitigation: pre-commit should only run lint+tests against tracked files (`git diff --cached --name-only` filter). LATER work; documented for the next session that runs N>2 agents in parallel.
+
+*Pattern validation:*
+- **Implementation mode (TDD-driven, async, per §12.2) works as designed.** No syncs needed during Phase 0. Agents read contracts, wrote tests, implemented, committed. The mode separation (§12) is the right shape.
+- **Sequential waves (wave 1 in parallel, then wave 2) is a good model for dependency-respecting parallelism.** Worked for session 4. Wave 1 agents share no dependencies; wave 2 depends on wave 1's output.
+- **Architecture document earned its keep.** Every agent reported reading it for orientation, and the build-state table in §2 became the source of truth for "what's done vs planned" through the phase. The plan-vs-reality §6 captured 8 honest divergences across the phase.
 
 ---
 
