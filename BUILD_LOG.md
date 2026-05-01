@@ -71,3 +71,33 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 - **Pre-commit hook NOT installed this session** — it's part of the qa-engineer's session 2 deliverable per the kickoff. Adding it now would step on their owned files (`tools/lint_simulation.sh` is theirs).
 - **GUT 9.4.0** chosen as the latest compatible release at session start. Sourced from the official `bitwes/Gut` GitHub release tarball, copied to `game/addons/gut`.
 - **Engine warnings tightened in `[debug]` block** of `project.godot` (`untyped_declaration`, `unsafe_property_access`, `unsafe_method_access`). Catches a class of bugs early without affecting gameplay.
+
+## 2026-04-30 — Phase 0 Session 2: Lint Gate + Pre-commit Hook
+
+**Branch:** `feat/phase-0-foundation`
+
+**Shipped:**
+- `tools/lint_simulation.sh` — implements all 5 simulation lint rules from Sim Contract §1.4. L1: mutation from `_process`. L2: write-shaped EventBus emit from `_process`. L3: bare RNG outside GameRNG allowlist. L4: string-form `emit_signal("...")`. L5: wall-clock reads outside TimeProvider/SimClock. Exits 0 on clean, 1 on violations, 127 if ripgrep not found. Comment-line false-positive filtering added for L3 (GDScript `#` comments containing RNG function names in prose are excluded). All 5 rules verified against deliberate violation files (one per rule, created and deleted without committing).
+- `tools/git-hooks/pre-commit` — the canonical (version-controlled) pre-commit hook. Runs lint then GUT; blocks commit on either failure.
+- `tools/install-hooks.sh` — installs hooks from `tools/git-hooks/` to `.git/hooks/` with backup of any existing hook. Run once after cloning: `bash tools/install-hooks.sh`.
+- `docs/ARCHITECTURE.md` §2 updated: CI lint script and pre-commit hook rows moved from 📋 Planned → ✅ Built. §6 plan-vs-reality entry added for session 2 (L5 allowlist discrepancy, L3 comment filter, rg shell-function note).
+- Pre-commit hook installed locally via install-hooks.sh and verified to fire on a clean commit (lint passes + 28/28 GUT tests pass).
+
+**Did not ship** (per kickoff doc scope — session 3+ or later):
+- `MatchHarness` — blocked on `IPathScheduler` interface (engine-architect, session 3).
+- `MockPathScheduler` — same blocker.
+- Determinism regression test stub — deferred to when MatchHarness exists.
+- `GameRNG`, `SpatialIndex`, `Constants`, `GameState`, `StateMachine`, `DebugOverlayManager`, camera, terrain, translations, HUD readouts — all session 3+ per scope split.
+
+**State for next session:**
+- On branch `feat/phase-0-foundation`. Hook installed locally; any new clone needs `bash tools/install-hooks.sh` once.
+- To verify the gate: `bash tools/lint_simulation.sh` (should exit 0); `cd game && GODOT=/opt/homebrew/bin/godot ./run_tests.sh` (28/28).
+- Godot binary: `/opt/homebrew/bin/godot` (4.6.2 stable). Ripgrep: `/opt/homebrew/bin/rg` (15.1.0).
+- Sessions 3-4 deliverables: `IPathScheduler` + `MockPathScheduler`, `MatchHarness`, `GameRNG`, `Constants`, `GameState`, `StateMachine`, `FarrSystem` skeleton, `DebugOverlayManager`, camera, terrain plane, translations, HUD.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Allowlisted both `time_provider.gd` and `sim_clock.gd` for L5.** The Sim Contract §1.4 table lists `sim_clock.gd`; the kickoff doc and `time_provider.gd` source name `time_provider.gd`. Both are allowlisted. Documented in `docs/ARCHITECTURE.md` §6.
+- **Comment-line filter for L3.** GDScript `#` comment lines that contain RNG function names in prose (e.g., doc comments explaining what NOT to do) would cause false positives. Added a post-scan filter using `rg -v ':[0-9]+:\s*#'` to strip comment matches from L3 results. Analogous filtering could be added to other rules if needed — not added preemptively.
+- **`bash --noprofile --norc` for development verification.** In the Claude Code session environment, `rg` is intercepted as a shell function. The lint script works correctly in a clean bash environment (pre-commit hooks and CI). No change to the script; noted here.

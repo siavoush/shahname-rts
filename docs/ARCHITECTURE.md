@@ -111,8 +111,8 @@ The game is a deterministic real-time simulation with seven phases per tick at 3
 | **TimeProvider autoload** | [SIM 1.2.0 §1](SIMULATION_CONTRACT.md) | ✅ Built | — | engine-architect | Wraps `Time.get_ticks_msec()`; `set_mock` / `clear_mock` / `is_mocked` for deterministic tests. Unit tests in `tests/unit/test_time_provider.gd`. |
 | **SpatialIndex autoload** | [SIM 1.2.0 §3](SIMULATION_CONTRACT.md) | 📋 Planned | — | engine-architect | Phase 1; 8m uniform grid |
 | **IPathScheduler** | [SIM 1.2.0 §4](SIMULATION_CONTRACT.md) | 📋 Planned | — | engine-architect | Real impl Phase 1; mock Phase 0 (qa-engineer) |
-| **CI lint script** | [SIM 1.2.0 §1.4](SIMULATION_CONTRACT.md) | 📋 Planned | — | qa-engineer | `tools/lint_simulation.sh`, Phase 0 |
-| **Pre-commit hook** | [TEST 1.4.0](TESTING_CONTRACT.md) | 📋 Planned | — | qa-engineer | Phase 0; runs lint + GUT |
+| **CI lint script** | [SIM 1.2.0 §1.4](SIMULATION_CONTRACT.md) | ✅ Built | — | qa-engineer | `tools/lint_simulation.sh`. All 5 rules (L1-L5) implemented with allowlists for L3 (`rng.gd` when it lands) and L5 (`time_provider.gd`, `sim_clock.gd`). Exits non-zero on any violation. Verified against deliberate violation test files for each rule. |
+| **Pre-commit hook** | [TEST 1.4.0](TESTING_CONTRACT.md) | ✅ Built | — | qa-engineer | Canonical hook at `tools/git-hooks/pre-commit`; install via `bash tools/install-hooks.sh`. Runs lint then GUT; blocks commit on either failure. |
 | **GUT framework** | [TEST 1.4.0](TESTING_CONTRACT.md) | ✅ Built | 9.4.0 | qa-engineer | Installed at `game/addons/gut`. Headless runner: `game/run_tests.sh` (`godot --headless ... -s addons/gut/gut_cmdln.gd -gconfig=res://.gutconfig.json`). 28 tests across 4 unit-test scripts pass at session 1 close. Pre-commit hook + lint script land session 2. |
 | **MatchHarness** | [TEST 1.4.0 §3](TESTING_CONTRACT.md) | 📋 Planned | — | qa-engineer | Phase 0 |
 | **MockPathScheduler** | [TEST 1.4.0 §3](TESTING_CONTRACT.md) | 📋 Planned | — | qa-engineer | Phase 0 |
@@ -260,6 +260,16 @@ game/
 - **SimNode `_set_sim` off-tick assertion is exercised manually, not in GUT.** GDScript `assert()` halts the script in debug builds and compiles out in release; GUT cannot trap a fired assert in-process. The on-tick happy path is covered by `test_sim_node.gd`; the off-tick path is covered by the lint rule (Sim Contract §1.4) at the call sites that would trigger it, plus the runtime crash-with-stack-trace when a developer breaches the contract in debug. This matches contract intent — the assert is a tripwire, not something to trap. **Resolved: SIM_CONTRACT 1.2.1 (2026-05-01)** patched §1.3 with an explicit "enforcement-via-crash-in-debug, not enforcement-via-test" clarification so future devs don't try to GUT-trap the assert.
 
 - **What did not ship in session 1 (deferred to session 2+ per `02a_PHASE_0_KICKOFF.md` §2):** `GameRNG`, `SpatialIndex`, `Constants` autoload, `BalanceData.tres`, `GameState`, `IPathScheduler` + `MockPathScheduler`, `MatchHarness`, `FarrSystem` skeleton, `DebugOverlayManager`, camera controller, terrain plane, translation infrastructure, HUD readouts, lint script, pre-commit hook. None of these are blocked; all sit on top of the foundations shipped here.
+
+### v0.3.0 — Phase 0 Session 2 (2026-04-30)
+
+- **L5 allowlist discrepancy between Sim Contract §1.4 and kickoff doc.** The Sim Contract §1.4 table lists `sim_clock.gd` as the L5 allowlist file. The kickoff doc (`02a_PHASE_0_KICKOFF.md`) and `time_provider.gd` source comments both name `time_provider.gd` as the correct allowlist. `time_provider.gd` is the file that actually calls `Time.get_ticks_msec()` — `sim_clock.gd` does not. Resolution: both files are allowlisted in `tools/lint_simulation.sh`. `sim_clock.gd` is defensively allowlisted in case a future clock implementation needs wall-clock drift correction. Contract §1.4 table has a minor error in the listed filename; no behavior change to the rule.
+
+- **L3 comment-line false positive.** The bare-RNG pattern (`randi()` etc.) can match GDScript comment lines that happen to reference the function name in prose. Added a post-scan filter that strips matches where the code portion starts with `#` (a GDScript comment marker). The filter uses `rg -v ':[0-9]+:\s*#'` to drop comment lines from the match set. No impact on real violation detection.
+
+- **`rg` shell function in Claude Code session.** During development, ripgrep is intercepted by a Claude Code shell function, causing `command -v rg` to succeed but the subprocess invocation to fail. The lint script runs correctly in a clean `bash --noprofile --norc` environment (which is what pre-commit hooks and CI use). Not a deployment issue; documented here for transparency.
+
+- **What did not ship in session 2 (deferred per kickoff doc):** `MatchHarness`, `MockPathScheduler`, determinism regression test stub — all blocked on `IPathScheduler` interface which is engine-architect's session 3 deliverable. `GameRNG`, `SpatialIndex`, `Constants`, `GameState`, `StateMachine`, `DebugOverlayManager`, camera, terrain plane, translations, HUD readouts — all session 3+ per the original scope split.
 
 ---
 
