@@ -203,13 +203,21 @@ func _apply_transforms() -> void:
 	if not is_inside_tree():
 		return
 	global_position = target_position
-	# Camera child is positioned along its local -Z by zoom_distance. The
-	# isometric angle is set in the scene file (camera_rig.tscn) and is NEVER
-	# rewritten by code — that's the no-rotation contract.
+	# Camera child is positioned in the rig's local +Y / +Z plane such that,
+	# combined with the Camera3D's -55° pitch (set ONCE in camera_rig.tscn and
+	# never modified per the no-rotation contract), the camera looks at the
+	# rig origin. The Y/Z split is sin/cos of the pitch angle:
+	#   pitch = 55° ⇒ Y = zoom_distance * sin(55°) ≈ zoom_distance * 0.819
+	#                  Z = zoom_distance * cos(55°) ≈ zoom_distance * 0.574
+	# This places the camera elevated above and behind the target — the
+	# "two-thirds top-down" RTS framing per camera_rig.tscn's authoring note.
+	# Without the Y component the camera sits at ground level (Y=0) and
+	# looks down through the terrain plane, rendering nothing visible.
 	var cam: Camera3D = _find_camera_child()
 	if cam != null:
-		# Camera looks toward the rig; its local position is on its own -Z axis.
-		cam.position = Vector3(0.0, 0.0, zoom_distance)
+		const PITCH_SIN: float = 0.819152  # sin(55°)
+		const PITCH_COS: float = 0.573576  # cos(55°)
+		cam.position = Vector3(0.0, zoom_distance * PITCH_SIN, zoom_distance * PITCH_COS)
 
 
 func _find_camera_child() -> Camera3D:

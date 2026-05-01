@@ -17,7 +17,12 @@ transform = Transform3D(0.707107, 0, -0.707107, 0, 1, 0, 0.707107, 0, 0.707107, 
 script = ExtResource("1_ctrl")
 
 [node name="Camera3D" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.573576, 0.819152, 0, -0.819152, 0.573576, 0, 0, 40)
+; Position computed by camera_controller._apply_transforms() at runtime as
+; (0, zoom * sin(55°), zoom * cos(55°)) so the camera is elevated above and
+; behind the rig origin and looks at the origin via its -55° pitch. The
+; static value here mirrors that for zoom_default = 40 so the editor preview
+; matches the runtime view. Controller overwrites this on _ready().
+transform = Transform3D(1, 0, 0, 0, 0.573576, 0.819152, 0, -0.819152, 0.573576, 0, 32.77, 22.94)
 fov = 55.0
 near = 0.5
 far = 500.0
