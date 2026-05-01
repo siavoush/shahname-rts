@@ -26,11 +26,19 @@ config/icon="res://icon.svg"
 
 [autoload]
 
-; Order matters — TimeProvider has no deps; EventBus has no deps; SimClock
-; depends on EventBus existing at boot. Per docs/SIMULATION_CONTRACT.md §1.
+; Order matters. TimeProvider, EventBus, Constants have no deps. SimClock
+; depends on EventBus. GameState depends on SimClock (reads tick on match
+; start). SpatialIndex depends on EventBus (listens for spatial_rebuild).
+; PathSchedulerService has no deps (holds an injectable ref). CommandPool
+; has no deps. Per docs/SIMULATION_CONTRACT.md §1 / §3 / §4 / §7.
 TimeProvider="*res://scripts/autoload/time_provider.gd"
 EventBus="*res://scripts/autoload/event_bus.gd"
+Constants="*res://scripts/autoload/constants.gd"
 SimClock="*res://scripts/autoload/sim_clock.gd"
+GameState="*res://scripts/autoload/game_state.gd"
+SpatialIndex="*res://scripts/autoload/spatial_index.gd"
+PathSchedulerService="*res://scripts/autoload/path_scheduler_service.gd"
+CommandPool="*res://scripts/autoload/command_pool.gd"
 
 [debug]
 
