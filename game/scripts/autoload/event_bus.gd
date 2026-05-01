@@ -65,6 +65,24 @@ signal farr_changed(amount: float, reason: String, source_unit_id: int,
 		farr_after: float, tick: int)
 
 
+# ---- Selection signals (read-shaped) ----------------------------------------
+# Emitted by the SelectionManager (Phase 1 ui-developer wave 2 work) when the
+# player's current selection changes. The payload is the canonical list of
+# currently-selected unit ids; SelectableComponents listen and update their
+# is_selected state accordingly.
+#
+# This signal is READ-SHAPED (UI side-effects only) and is therefore exempt
+# from the L2 lint rule (write-shaped EventBus.*.emit forbidden in _process).
+# The allowlist for that exemption lives in tools/lint_simulation.sh.
+#
+# Not added to _SINK_SIGNALS — telemetry sinks track gameplay-state mutations,
+# not UI selection. Selection state is a player-facing UI concern, not a
+# replay-determinism concern.
+
+@warning_ignore("unused_signal")
+signal selection_changed(selected_unit_ids: Array)
+
+
 # ---- Sink registry ----------------------------------------------------------
 # Sinks observe every signal in _SINK_SIGNALS. To support disconnect_sink, we
 # remember the per-signal forwarder Callables we created for each sink so we
