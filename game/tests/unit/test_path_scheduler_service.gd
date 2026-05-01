@@ -41,10 +41,21 @@ func after_each() -> void:
 
 
 # -- Default state -----------------------------------------------------------
+# Phase 1 changed the default from `null` to a fresh production
+# NavigationAgentPathScheduler instance. Tests that need the null state
+# write `set_scheduler(null)` explicitly.
 
-func test_service_starts_with_no_scheduler() -> void:
-	assert_null(PathSchedulerService.scheduler,
-		"Phase 0 default: scheduler is null until session 4 wires concrete impls")
+func test_service_starts_with_production_scheduler() -> void:
+	assert_not_null(PathSchedulerService.scheduler,
+		"Phase 1 default: production NavigationAgentPathScheduler is wired at boot")
+	assert_true(PathSchedulerService.has_scheduler())
+
+
+func test_set_scheduler_null_clears_to_null() -> void:
+	# Tests that exercise the null-scheduler defensive path can opt into
+	# null explicitly.
+	PathSchedulerService.set_scheduler(null)
+	assert_null(PathSchedulerService.scheduler)
 	assert_false(PathSchedulerService.has_scheduler())
 
 
@@ -58,10 +69,17 @@ func test_set_scheduler_stores_the_instance() -> void:
 	assert_true(PathSchedulerService.has_scheduler())
 
 
-func test_reset_clears_the_scheduler() -> void:
-	PathSchedulerService.set_scheduler(_StubScheduler.new())
+func test_reset_reverts_to_production_default() -> void:
+	# Phase 1 contract: reset() reverts to a fresh production scheduler,
+	# not null. The test injects a stub then calls reset() and asserts
+	# the result is non-null and not the stub.
+	var stub := _StubScheduler.new()
+	PathSchedulerService.set_scheduler(stub)
 	PathSchedulerService.reset()
-	assert_null(PathSchedulerService.scheduler)
+	assert_not_null(PathSchedulerService.scheduler,
+		"reset must revert to the production default, not null")
+	assert_ne(PathSchedulerService.scheduler, stub,
+		"reset must replace the stub with a fresh production scheduler")
 
 
 # -- Interface shape ---------------------------------------------------------

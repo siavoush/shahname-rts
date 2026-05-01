@@ -268,11 +268,20 @@ func test_teardown_resets_game_state_to_lobby() -> void:
 	_h = null  # already torn down; prevent after_each double-teardown
 
 
-func test_teardown_clears_path_scheduler() -> void:
+func test_teardown_resets_path_scheduler_to_production_default() -> void:
+	# Phase 1 changed PathSchedulerService.reset() semantics: instead of
+	# clearing to null, it reverts to a fresh production
+	# NavigationAgentPathScheduler instance. The harness's teardown
+	# inherits this behavior — after teardown, the production scheduler is
+	# active and the previously-injected MockPathScheduler is gone.
 	_h = _make_harness(0, &"empty")
+	# Capture the mock the harness injected so we can assert it was replaced.
+	var injected: Variant = PathSchedulerService.scheduler
 	_h.teardown()
-	assert_false(PathSchedulerService.has_scheduler(),
-		"teardown() must clear PathSchedulerService scheduler")
+	assert_true(PathSchedulerService.has_scheduler(),
+		"teardown() must leave a production scheduler in place")
+	assert_ne(PathSchedulerService.scheduler, injected,
+		"teardown() must replace the harness mock with a fresh production scheduler")
 	_h = null  # already torn down
 
 
