@@ -34,6 +34,50 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-01 — Phase 1 Session 1 wave 1: Unit infrastructure foundation
+
+**Branch:** `feat/phase-1-units`
+
+**Shipped:**
+- `Unit` base class + scene template. `class_name Unit extends CharacterBody3D` at `game/scripts/units/unit.gd`. Scene at `game/scenes/units/unit.tscn` composes a placeholder MeshInstance3D (0.5×0.6×0.5 cube), CollisionShape3D, and the four sim components. Static `unit_id` counter with `reset_id_counter()` for match-start. Reads `BalanceData.units[unit_type]` for `max_hp` and `move_speed`. Constructs `command_queue` and `fsm` in `_init` (so external code can call `replace_command` against a freshly-spawned unit before its `_ready`). Legibility helpers (`is_idle`, `is_engaged`, `is_dying`, `is_busy`) defensively handle a not-yet-initialized FSM.
+- `HealthComponent` (`game/scripts/units/components/health_component.gd`, `class_name HealthComponent` extending SimNode by path-string). Fixed-point `hp_x100` storage per Sim Contract §1.6. `init_max_hp` boundary-converts. `take_damage` and `heal` route through `_set_sim`. Latched `EventBus.unit_health_zero` emit at hp=0 (over-kill doesn't re-emit) — feeds the StateMachine death-preempt path.
+- `MovementComponent` (`game/scripts/units/components/movement_component.gd`, `class_name MovementComponent` extending SimNode by path-string). `request_repath(target)` cancels prior in-flight request, issues a new one. `_sim_tick(dt)` polls scheduler, advances the parent Node3D's `global_position` toward the current waypoint at `move_speed * dt` per Sim Contract §4.1's position-write carve-out. `path_state` and `is_moving` are computed properties. Pulls scheduler from `PathSchedulerService.scheduler` at `_ready`.
+- `SelectableComponent` (`game/scripts/units/components/selectable_component.gd`, `class_name SelectableComponent` extending SimNode by path-string). `select` / `deselect` toggle a placeholder MeshInstance3D ring (CylinderMesh, gold). Auto-creates the ring under the parent unit via `call_deferred` (avoids "parent busy setting up children"). Subscribes to `EventBus.selection_changed`; selects when its `unit_id` is in the broadcast list.
+- `NavigationAgentPathScheduler` — production IPathScheduler at `game/scripts/navigation/navigation_agent_path_scheduler.gd`. Wraps `NavigationServer3D.map_get_path(map_rid, from, to, true)` synchronously. Resolves the active navigation map from `Engine.get_main_loop().root.world_3d.navigation_map`. `cancel_repath` flips READY → CANCELLED; FAILED is sticky. Wired as the default in `PathSchedulerService` via the autoload's `_ready`.
+- `EventBus.selection_changed(selected_unit_ids: Array)` — read-shaped UI signal; not in `_SINK_SIGNALS` (telemetry tracks gameplay state, not UI state). Already L2-allowlisted in `tools/lint_simulation.sh` from Phase 0 forward-reference.
+- `PathSchedulerService.reset()` semantics: now reverts to a fresh production scheduler instance, not null. `set_scheduler(null)` is the explicit opt-in for the null-scheduler defensive path.
+- `docs/ARCHITECTURE.md` 0.8.0 → 0.9.0. Five new ✅ Built rows (Unit, three components, NavigationAgentPathScheduler). One Phase 1 ⛓️ wiring update on PathSchedulerService. New §6 v0.9.0 entry covers the seven divergences from spec sketches (most notably Unit-extends-CharacterBody3D-not-SimNode and SelectableComponent's call_deferred pattern).
+
+**Test-count delta:** 250 → 312 tests (62 new tests, 17 health + 11 movement + 11 selectable + 8 nav scheduler + 15 unit). 309 passing, 3 pending (intentional fallbacks: 2 in `test_navigation_agent_path_scheduler.gd` for headless runners without a baked navmesh, 1 pre-existing in `test_resource_hud.gd` for the FarrSystem defensive-default path). 0 failing. Lint clean. ~1.8s run time.
+
+**Did not ship** (intentionally out of scope per `02b_PHASE_1_KICKOFF.md` and the wave-1 task brief):
+- Concrete `Kargar` unit type — gameplay-systems wave 2.
+- Spawning workers in main.gd or a MatchSetup script — gameplay-systems wave 2.
+- `UnitState_Idle` / `UnitState_Moving` concrete states — ai-engineer wave 2.
+- SelectionManager + click-to-select raycast — ui-developer wave 2.
+- Right-click-to-move command-building UI — ui-developer + ai-engineer wave 2.
+- Full integration test of the click-and-move flow — qa-engineer wave 3.
+- Box-select, control groups, multi-select — Phase 1 session 2.
+- Combat, attack-move — Phase 2.
+
+**State for next session (wave 2):**
+- On branch `feat/phase-1-units`. Lint clean. `cd game && GODOT=/opt/homebrew/bin/godot ./run_tests.sh` → 312 tests, 309/309 actually-passing/3 pending.
+- The Unit base class's StateMachine boots empty — concrete subclasses or scene scripts register their states (Idle, Moving) and call `fsm.init(&"idle")` after registration. The base's `_ready` defaults to `init(&"idle")` only if `&"idle"` is already registered, so wave 2's concrete Unit subclasses (Kargar) can do `fsm.register(IdleState.new())` etc. then `super._ready()`.
+- The path-string-base preload pattern is established for all components. Component scripts extend `"res://scripts/core/sim_node.gd"` to dodge the class_name registry race; concrete consumers reference components by their class_name (`HealthComponent`, etc.) at runtime where the registry has settled.
+- `MovementComponent._sim_tick` is the per-tick driver; phase coordinator wiring (Movement phase calls `unit._sim_tick → fsm.tick → MovingState._sim_tick → MovementComponent._sim_tick`) is wave 2's job. For now, `_sim_tick` is callable directly by states or by the wave 2 phase coordinator.
+- `Unit.replace_command` and `append_command` are the only sanctioned write paths for command_queue (per State Machine Contract §2.5). Wave 2's right-click handler builds these calls.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. No design/feel/balance questions surfaced — the wave was pure infrastructure against ratified contracts.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+- **Unit extends CharacterBody3D, not SimNode directly.** State Machine Contract §5.1 sketches `Unit extends SimNode`. CharacterBody3D is needed for the unit.tscn collision shape, future formation-collision (Phase 1 session 2 GroupMoveController), and for the global_position carve-out to mean anything. Components hold the SimNode discipline; Unit is composition glue. Documented in §6 v0.9.0.
+- **PathSchedulerService.reset() reverts to a fresh production scheduler.** Phase 0 had it null. Phase 1 wires production-by-default at autoload `_ready`, so reset-to-pristine naturally means reset-to-production. Tests that need null write `set_scheduler(null)`. Logged in §6 v0.9.0 + matching test update in `tests/unit/test_match_harness.gd`.
+- **SelectableComponent ring added via `call_deferred`.** Avoids the "parent busy setting up children" error during the parent unit's `_ready`. Tests `await get_tree().process_frame` before inspecting the ring's parent.
+- **NavigationAgentPathScheduler skips PENDING entirely.** Synchronous `NavigationServer3D.map_get_path` resolves at request time. Sim Contract §4.2 says "result lands on requested_tick + 1 or later" — "at the requested tick itself" qualifies as "or later" (a degenerate interpretation, intentional, kept for symmetry with MockPathScheduler's PENDING semantics in tests).
+- **`HealthComponent.take_damage` and `heal` ignore non-positive amounts silently.** No method-routing for sign-flipped values; each method has one intent. Avoids bugs where a buff "heals -5" silently becomes damage with no audit trail.
+- **Fixed-point for HP storage.** Same pattern as Farr per Sim Contract §1.6. `hp_x100: int`. Boundary conversion at `init_max_hp`/HUD/telemetry. Defends against IEEE-754 platform divergence over a long match — doesn't bite at MVP scale, but the determinism principle is cheap to enforce now and expensive to retrofit. Test `test_many_small_damages_sum_exactly` verifies 100 × 0.01 damage adds to exactly 1.0 hp with no float drift.
+- **EventBus.selection_changed payload typed as plain Array, not Array[int].** GDScript signal type-narrowing for typed arrays is finicky in 4.6.2; a plain `Array` accepted with `int(id)` casts inside the SelectableComponent handler is robust against either Array[int] or Array[Variant]-of-ints from the eventual SelectionManager (whose author's wave-2 work doesn't dictate the typed-array shape yet).
+
 ## 2026-05-01 — Phase 0 Session 1: Simulation Backbone
 
 **Branch:** `feat/phase-0-foundation`
