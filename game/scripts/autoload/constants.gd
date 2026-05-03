@@ -179,6 +179,29 @@ const MAP_SIZE_WORLD: float = 256.0
 const NAV_AGENT_RADIUS: float = 0.5
 
 
+# === GROUP MOVEMENT ==========================================================
+# Offset distance (world units) used by GroupMoveController to spread a multi-
+# unit move across a small ring around the click point so units don't all path
+# to the exact same nav-target and pile up. Sized at 8x the navmesh `cell_size`
+# (0.25, see Constants.NAV_AGENT_RADIUS-derived bake) so adjacent offsets do
+# not collapse to the same nav-point under NavigationServer3D's snap-to-poly
+# behavior. Single ring at this radius accommodates ≤7 units (1 center + 6
+# slots at 60°); larger groups extend onto a second ring at 2× radius.
+# Structural — moving it would change formation feel and ring capacity.
+# Documented in the GroupMoveController source.
+
+const GROUP_MOVE_OFFSET_RADIUS: float = 2.0
+
+
+# === FARR METER ==============================================================
+# Structural ceiling for the Farr meter. Spec §4.1 defines the range as 0–100;
+# this is an architectural invariant, not a balance knob (the Tier 2 and Kaveh
+# thresholds in FarrConfig are expressed as fractions of this ceiling).
+# Lives here, not in FarrConfig, because no balance pass should ever change it.
+
+const FARR_MAX: float = 100.0
+
+
 # === DEBUG OVERLAY KEYS ======================================================
 # F1-F4 binding registry. ui-developer's DebugOverlayManager (parallel session)
 # reads these to wire toggles to the right registered overlays. Kept here so
