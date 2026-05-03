@@ -336,6 +336,10 @@ func test_bug03_dying_state_frees_unit_after_lethal_damage() -> void:
 	# Allow the deferred queue_free chain to land. queue_free.call_deferred
 	# is double-deferred: outer call_deferred queues queue_free at end-of-
 	# frame; queue_free itself defers actual free to end-of-next-frame.
+	# Three frames is generous; earlier integration-test workloads need a
+	# little more headroom than the unit-test variant because the test
+	# runner has more pending deferred calls in queue.
+	await get_tree().process_frame
 	await get_tree().process_frame
 	await get_tree().process_frame
 

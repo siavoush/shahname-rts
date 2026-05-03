@@ -59,15 +59,14 @@ func test_enter_with_null_ctx_is_noop() -> void:
 	pass_test("Dying.enter(null, null) is a safe no-op")
 
 
-func test_enter_with_freed_ctx_is_noop() -> void:
-	# Defensive: ctx may have been freed between the death-preempt firing
-	# and Dying.enter running. is_instance_valid guards the call.
+func test_enter_with_method_less_ctx_is_noop() -> void:
+	# Defensive: a ctx without queue_free() (e.g., a RefCounted stub used in
+	# StateMachine isolation tests) must not crash. The state's
+	# has_method(&"queue_free") guard covers this case.
 	var s: Variant = UnitStateDyingScript.new()
-	var n: Node = Node.new()
-	n.queue_free()
-	await get_tree().process_frame
-	s.enter(null, n)
-	pass_test("Dying.enter on a freed ctx is a safe no-op")
+	var stub: RefCounted = RefCounted.new()
+	s.enter(null, stub)
+	pass_test("Dying.enter on a ctx without queue_free is a safe no-op")
 
 
 # ---------------------------------------------------------------------------
@@ -85,13 +84,14 @@ func test_enter_schedules_queue_free_on_unit() -> void:
 	var s: Variant = UnitStateDyingScript.new()
 	s.enter(null, u)
 
-	# call_deferred queue_free runs at the next idle tick of the scene tree.
+	# queue_free.call_deferred is double-deferred: the outer call_deferred
+	# queues `queue_free` for end-of-frame; queue_free itself queues the
+	# actual deletion for end-of-next-frame. Two process_frames cover both.
 	await get_tree().process_frame
-	# After the deferred free fires, the unit should be queued for deletion.
-	# is_instance_valid returns false once the underlying object is freed.
+	await get_tree().process_frame
 	assert_false(is_instance_valid(u),
-		"Unit must be freed after Dying.enter + one process_frame "
-		+ "(queue_free.call_deferred ran)")
+		"Unit must be freed after Dying.enter + 2 process_frames "
+		+ "(queue_free.call_deferred ran, then queue_free itself fired)")
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +114,8 @@ func test_unit_health_zero_signal_frees_unit_via_dying_state() -> void:
 	# Fire the death-preempt signal directly. StateMachine listens for it.
 	EventBus.unit_health_zero.emit(int(u.unit_id))
 
-	# Allow the deferred queue_free to land.
+	# Two frames: one for the deferred queue_free call, one for queue_free itself.
+	await get_tree().process_frame
 	await get_tree().process_frame
 	assert_false(is_instance_valid(u),
 		"Unit must be freed after EventBus.unit_health_zero fires for its id")
