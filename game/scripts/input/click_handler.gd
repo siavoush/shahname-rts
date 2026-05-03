@@ -1,4 +1,8 @@
 extends Node
+
+# Right-click move dispatcher — single-unit fast path returns target verbatim,
+# multi-unit selection fans out across a ring (wave 2C wiring).
+const _GroupMove := preload("res://scripts/movement/group_move_controller.gd")
 ##
 ## ClickHandler — translates raw mouse clicks into SelectionManager + Unit
 ## command writes.
@@ -201,18 +205,12 @@ func process_right_click_hit(hit: Dictionary) -> void:
 	var target: Vector3 = hit.get(&"position", Vector3.ZERO)
 	if DEBUG_LOG_CLICKS:
 		print("[click] RIGHT: move command target=", target, " selected=", sel.size())
-	# Build the Move Command shape that ai-engineer's UnitState_Moving reads.
-	# Per State Machine Contract §2.4 + the kickoff doc coordination point,
-	# the contract is `kind = &"move"` and `payload = { &"target": Vector3 }`.
-	var payload: Dictionary = { &"target": target }
-	for u in sel:
-		if not is_instance_valid(u):
-			continue
-		# Unit.replace_command rents a Command from CommandPool, sets kind
-		# and payload, pushes to the queue, and calls fsm.transition_to_next().
-		# Wave 2's UnitState_Moving picks up the command's target on enter().
-		if u.has_method(&"replace_command"):
-			u.call(&"replace_command", Constants.COMMAND_MOVE, payload)
+	# Single and multi selections both route through the controller — its
+	# size-1 identity path keeps single-click bitwise-identical, multi-unit
+	# distributes on the GROUP_MOVE_OFFSET_RADIUS ring. The controller invokes
+	# Unit.replace_command(&"move", {target}) per live unit (is_instance_valid
+	# filtered).
+	_GroupMove.dispatch_group_move(sel, target)
 
 
 # ============================================================================

@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-01
+last_updated: 2026-05-04
 ---
 
 # Build Log
@@ -33,6 +33,263 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 ```
 
 ## Entries
+
+## 2026-05-01 — Phase 1 session 2 wave 3 (qa-engineer): integration tests — session-2 flows
+
+**Branch:** `feat/phase-1-session-2`
+
+**Shipped:**
+
+1. **37 new integration tests across 5 files** (498 → 535 total; 3 pre-existing PENDING unchanged):
+   - `game/tests/integration/test_session_2_box_select.gd` — 7 tests. Box/drag selection via `BoxSelectHandler` public test seams (`box_select_units`, `begin_press`, `update_motion`, `end_press`, `current_drag_rect`) with injected projection callable (10:1 scale, no real Camera3D). Covers: drag-covers-all, drag-covers-none-clears, Shift-additive, dead-zone click vs. drag arbitration, drag-rect state transitions, motion-without-press no-op.
+   - `game/tests/integration/test_session_2_control_groups.gd` — 6 tests. Bind/recall/center round-trip. Camera centering verified via an inner `_CameraStub extends RefCounted` injected via `ControlGroups.set_camera_target(stub)`. Covers: bind/recall restores selection, freed-unit filtered on recall, unbound-group recall is no-op, double-tap fires center_on with correct centroid, cross-key double-tap no-op, stale-tap (>10 ticks) no-op.
+   - `game/tests/integration/test_session_2_group_move.gd` — 6 tests. Group-move pile-prevention with MockPathScheduler. Covers: dispatch produces ≥4 distinct targets for 5 units (ε=0.5), all targets within GROUP_MOVE_OFFSET_RADIUS, units arrive at distinct positions after 60 ticks, single-unit identity, empty-array no-op, freed unit skipped.
+   - `game/tests/integration/test_session_2_farr_gauge.gd` — 10 tests. `FarrGauge` listener round-trip off-tick per Sim Contract §1.5. Covers: signal updates `target_farr`, color bands at all boundary values (<15 red, 15→dim, 40→ivory, 70→gold), delta accumulation, seeded from `FarrSystem._farr_x100` at _ready, successive signals correct, large negative clamps, signal-before-in-tree crash guard.
+   - `game/tests/integration/test_session_2_panel.gd` — 9 tests. `SelectedUnitPanel` content correctness via `SelectionManager.add_to_selection` + `await get_tree().process_frame`. Covers: empty state, single layout (unit_id, type label, hp_ratio ≈ 1.0), 5-icon multi (icon_count == 5), icon-click narrows to single, unit death transitions to empty, freed-icon click is safe no-op, deselect_all returns empty, partial HP bar (hp_x100 = max/2 → ratio ≈ 0.5), MOUSE_FILTER_STOP regression guard.
+   - `game/tests/integration/test_session_2_smoke.gd` — 2 tests: (a) main.tscn spot-check: `SelectedUnitPanel` and `DoubleClickSelect` both present and have correct scripts (locks in cross-agent no-stomp guarantee); (b) cross-feature round-trip: box-select 5 → dispatch_group_move → 120 ticks → bind/deselect/recall → farr_changed → narrow box → STATE_SINGLE.
+
+2. **Key implementation learnings documented in ARCHITECTURE.md v0.14.5:**
+   - `add_child_autofree` MUST precede `global_position` assignment (Node3D.global_transform asserts `is_inside_tree()`)
+   - Farr gauge `target_farr` and `color_band` update synchronously on `farr_changed` signal — no `await` needed
+   - HP partial health tests must write `hp_x100` backing field, not the read-only `hp` getter
+   - Smoke test step-5 narrow box computed from actual post-movement unit screen position, not spawn position
+
+**Did not ship:** Production-scheduler pile-prevention test (PENDING — needs baked navmesh). Farr gauge tween intermediate color-band test (Phase 2 polish).
+
+**Bugs found:** None. All 6 session-2 systems verified correct via integration tests.
+
+**State for next session:** All 535 tests pass headless (3 PENDING are pre-existing). Wave-3 integration tests are on `feat/phase-1-session-2`. Next is wave 4 (balance-engineer, if scheduled) or Phase 2 (CombatSystem). The production-scheduler PENDING test in `test_session_2_group_move.gd` should be activated once a baked navmesh scene lands (Phase 3 world-builder task).
+
+---
+
+## 2026-05-04 — Phase 1 session 2 wave 2B (ui-developer): selected-unit panel
+
+**Branch:** `feat/phase-1-session-2`
+
+**Shipped:**
+
+1. **`SelectedUnitPanel`** at `game/scripts/ui/selected_unit_panel.gd` (CanvasLayer, no class_name) + `game/scenes/ui/selected_unit_panel.tscn`. Bottom-left HUD detail widget — 250×120 placeholder rectangle anchored to the bottom-left of the viewport. Three sub-layouts toggled by a single `visible_state: StringName` tag (`&"empty"` / `&"single"` / `&"multi"`):
+   - **Empty:** centered "No selection" Label via `tr("UI_PANEL_NO_SELECTION")`.
+   - **Single:** 50×50 portrait ColorRect colored by team (Iran sandy-brown matches `kargar.tscn`'s mesh material), type Label via `tr("UNIT_<TYPE_UPPER>")`, HP background ColorRect with proportionally-resized HP fill child, "Abilities" label, abilities row with 4 placeholder grey ColorRects.
+   - **Multi:** 4-column GridContainer of `Button` icons (one per selected unit, capped at `_MAX_ICONS = 12`). Each icon Button has a faction-colored child ColorRect swatch and a tooltip showing the unit type's translated name. Button's `pressed.connect(handle_icon_click.bind(unit_id))` routes the click through `SelectionManager.select_only(matching_unit)` to narrow the selection.
+
+2. **HP polled via `_process`, not signal.** Verified during prep: no `unit_health_changed` signal exists. HealthComponent only emits `unit_health_zero` on death (StateMachine death-preempt trigger). Per Sim Contract §1.5, UI reads sim state freely off-tick — polling one displayed unit's `get_health().hp / max_hp` per `_process` is O(1). When CombatSystem ships in Phase 2 and damage numbers / floating-text feedback need on-change precision, that's the right time to add a targeted signal (LATER item; documented in v0.14.3 §6).
+
+3. **mouse_filter discipline (session-1 regression inoculation):**
+   - Container Controls (Background, EmptyLayout, SingleLayout, MultiLayout, Portrait, TypeLabel, HPBackground, HPFill, AbilitiesLabel, AbilitiesRow, IconGrid, EmptyLabel) → `MOUSE_FILTER_PASS` (mouse_filter = 1 in .tscn). Clicks propagate through to the world.
+   - Icon Buttons (multi-selection grid items) → `MOUSE_FILTER_STOP`. The single place clicks land on the panel.
+   - Icon swatch ColorRects (children of each icon Button) → `MOUSE_FILTER_IGNORE`. Button keeps the click.
+   - Test `test_panel_root_control_does_not_swallow_clicks` recursively walks for non-button Controls with MOUSE_FILTER_STOP and asserts the count is zero — pinning this property as a regression tripwire.
+
+4. **`refresh_displayed_unit()` not `apply_*` — lint rule L1.** `tools/lint_simulation.sh` rule L1 forbids `apply_*` method names in any file with `_process`. Same precedent the camera controller set (`pan_by` / `zoom_by` instead of `apply_pan` / `apply_zoom`, per §6 v0.6.0). The naming is a lint signal that this is UI-side state, not sim-side.
+
+5. **Signal lifecycle hygiene.** Subscribes to `EventBus.selection_changed` in `_ready`; disconnects in `_exit_tree`. Same hygiene as `farr_gauge.gd:_exit_tree` — no ghost connections after panel teardown. Defensive `is_instance_valid` guard before reading any unit accessor (death + queue_free safety).
+
+6. **Twelve new tests in `game/tests/unit/test_selected_unit_panel.gd`.** Scene loads + root-is-CanvasLayer; mouse_filter recursive walk; empty / single / multi state transitions; HP bar reflects health (30/60 → ratio 0.5); type label uses `tr()`; multi → icon click narrows to one; freed-unit icon click is safe no-op; freed displayed unit transitions panel out of `&"single"`; translation keys all resolve to English under en locale.
+
+7. **i18n: 4 new keys in `game/translations/strings.csv`** — `UI_PANEL_NO_SELECTION`, `UI_PANEL_HP`, `UI_PANEL_ABILITIES`, `UNIT_KARGAR`. Persian column intentionally blank per CLAUDE.md "Tier 2 is a config change, not a refactor."
+
+8. **`docs/ARCHITECTURE.md` 0.14.2 → 0.14.3.** Added a new `Selected-unit panel` row in §2 (✅ Built); v0.14.3 plan-vs-reality entry covers the no-`unit_health_changed` discovery, the polling rationale, the `refresh_displayed_unit()` naming choice driven by lint rule L1, the mouse_filter discipline, the icon-Button + ColorRect-swatch placeholder pattern, the live-game-broken-surface answers (refined), and 5 LATER items.
+
+9. **`game/scenes/main.tscn` updated** to wire `SelectedUnitPanel` as a CanvasLayer sibling of `ResourceHUD` under `Main` (parallel agent's wave-2C double-click handler also added a sibling Node in the same load — both edits coexist cleanly).
+
+**Test-count delta (this wave):** +12 (all in `test_selected_unit_panel.gd`, all passing). Pre-commit gate green: 484 tests, 0 failures, 4 risky/pending (3 pre-existing pending — FarrSystem fallback path, NavigationAgentPathScheduler navmap-not-ready × 2 — plus 1 risky from a parallel wave's freed-target test). Lint clean (0 violations across L1–L5).
+
+**Did not ship** (intentionally out of scope per kickoff §2 (6)):
+- Real portraits / real ability icons — placeholder rects only (CLAUDE.md "no real art until MVP loop is fun").
+- Build menu inside the panel — Phase 3 (when buildings exist).
+- Subgroup management beyond icon-narrows-to-one — Phase 2+ (ctrl-click-remove-from-selection, shift-click-select-of-type-within-selection).
+- Damage flashes / floating "+N HP" text — Phase 2 with combat (needs `unit_health_changed` signal + a feedback-text widget).
+- Multi-select overflow rendering ("+N more" beyond the 12 cap) — Phase 2 polish; Phase 1's 5-worker limit stays well under.
+- Hotkey hints on ability rects — Phase 2 with real ability buttons.
+- HP bar Label overlay (e.g. "60/60") — kickoff doesn't require it; LATER candidate if lead-test surfaces a need.
+
+**Live-game-broken-surface answers (Experiment 01 — refined):**
+
+1. *State/behavior that must work at runtime that no unit test exercises:* The signal-driven re-render cycle when selection changes mid-frame (box-select releases → SelectionManager broadcasts → panel rebuilds icon grid → player clicks an icon → SelectionManager broadcasts again → panel rebuilds to single-state). Headless tests dispatch each step in isolation; the live game stacks them within a single frame's input + render cycle. Icon-button signal connections survive the rebuild via `queue_free` (deferred — the click that triggered the narrow can complete before the buttons are gone). The `_process` HP poll racing with unit death — `is_instance_valid` guard in `refresh_displayed_unit` falls back to `_render_empty()` defensively.
+
+2. *What headless tests cannot detect that the lead would notice in editor:* Visual layout — does the 250×120 panel feel right at 1280×720 vs 1920×1080? Does it overlap with the FarrGauge's color bands or with the future control-group HUD bar? Does the placeholder grey aesthetic clash with the FarrGauge's gold-ivory palette? Multi-select icon swatches at 36×36 — large enough to distinguish faction colors? Does clicking the icon feel responsive (sub-50ms perceived) or laggy? HP bar fill — proportional ColorRect resize on each `_process` should look smooth as HP drops; certain anchor presets may snap.
+
+3. *Minimum interactive smoke test that catches it:* Lead boots, sees nothing in the panel ("No selection" centered). Lead clicks a kargar: panel shows portrait (sandy-brown), "Kargar" label, full HP bar, 4 grey ability rects. Lead box-selects all 5: panel shows 5 sandy-brown icon swatches in a row. Lead clicks the 3rd icon: selection narrows to that one kargar; panel transitions back to single-layout for that specific unit. Lead clicks empty terrain: panel returns to "No selection." 30-second smoke loop. If the panel covers up the FarrGauge, ResourceHUD, or the kargars themselves at 1280×720, that's a layout LATER candidate.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. Pure UI-layer work against shipped APIs.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Poll HP in `_process`, not subscribe.** Documented above and in v0.14.3 §6. The brief said "verify the actual signal name"; the verified answer is "no such signal exists." Polling one displayed unit is O(1); the future signal goes in when CombatSystem ships and the panel needs damage flashes.
+- **Three-state tag (`visible_state: StringName`) instead of three separate `visible` booleans.** Tests assert on the tag (stable across visual refactors); the implementation toggles per-layout `visible` properties internally.
+- **`_MAX_ICONS = 12` (3 rows × 4 columns).** Phase 1 caps selection at 5 (one player's worker count); 12 covers comfortable Phase 2 expansion. Beyond 12, future "+N more" rendering ships when the cap actually bites.
+- **Placeholder ability count = 4.** The kickoff said "3–5 placeholder grey rects." 4 is the median, fits the 232px-wide AbilitiesRow comfortably with 4px separation. Phase 2 replaces these with real ability buttons; the count becomes data-driven from `UnitStats.ability_set.size()`.
+- **Icon Button + child ColorRect swatch (not theme override).** Godot Button has no native tint; the standard placeholder approach is a child ColorRect filling the rect, with the swatch's `mouse_filter = IGNORE` so the parent Button keeps the click.
+- **No `class_name` on the panel script.** Same registry-race pattern as `box_select_handler.gd`, `group_move_controller.gd`, `match_harness.gd`. The script is referenced only via `preload` from the scene; `class_name` would buy nothing.
+
+**LATER items** (flagged for future sessions; full text in §6 v0.14.3):
+1. **`unit_health_changed` targeted signal** when CombatSystem ships (Phase 2). Adds damage-flash precision; polling stays as fallback.
+2. **Multi-select overflow rendering** beyond `_MAX_ICONS = 12` ("+N more" tag) — Phase 2 polish.
+3. **Subgroup management** (ctrl-click-remove, shift-click-select-of-type within multi) — Phase 2 selection polish.
+4. **Real portraits + real ability buttons** when design chat green-lights art.
+5. **Font-size i18n** for Tier 2 Persian — theme override on the panel root, not a code change.
+
+**Coordination:** ran the brief's "verify diff shows only your additions" check before staging — `docs/ARCHITECTURE.md` and `BUILD_LOG.md` diffs were re-read after parallel agents (wave 2C ai-engineer, wave 2A control-groups, double-click-select) landed their own edits during this wave. The §2 row insertion went between `Box / drag selection` and `CombatSystem`; the §6 v0.14.3 entry went between v0.14.2 and v0.8.0. main.tscn co-edits with parallel double-click work merged cleanly (the .tscn now has both `SelectedUnitPanel` and `DoubleClickSelect` as Main children).
+
+---
+
+## 2026-05-04 — Phase 1 session 2 wave 2C (ai-engineer): GroupMoveController right-click wire-up
+
+**Branch:** `feat/phase-1-session-2`
+
+**Shipped:**
+- `click_handler.gd::process_right_click_hit` now routes through `GroupMoveController.dispatch_group_move(sel, target)` instead of looping `u.call(&"replace_command", Constants.COMMAND_MOVE, payload)` per selected unit. The controller is preloaded once at file scope as `const _GroupMove := preload("res://scripts/movement/group_move_controller.gd")`. The change is contained to the multi-selection write line; the no-selection short-circuit, the empty-hit short-circuit, the hit-on-unit short-circuit, and the DEBUG_LOG_CLICKS instrumentation are untouched.
+- Single-selection right-click is bitwise-identical to wave-2 behavior because the controller's `live.size() == 1` fast path returns the click target verbatim with no offset math — the path is unified, the observable behavior is preserved.
+- Multi-selection right-click now distributes targets on the deterministic ring of `Constants.GROUP_MOVE_OFFSET_RADIUS = 2.0`. With box-select shipping in wave 1A, this is the first wired UI path that puts 2+ units in the selection and right-clicks them — the formation-distribution logic now exercises the production navmesh.
+- Three new tests in `tests/unit/test_click_handler.gd`:
+  1. `test_right_click_multi_selection_distributes_targets` — TDD-red on the unwired baseline (previously all 3 units got the identical click target; now ≥2 of 3 pairs differ).
+  2. `test_right_click_multi_selection_targets_within_radius` — every dispatched target lies within R of the click on the XZ plane; Y is preserved verbatim.
+  3. `test_right_click_single_selection_target_unchanged` — regression guard for session-1's single-click suite; the controller's identity path keeps single-selection bitwise-identical (1e-6 tolerance).
+- Existing `test_right_click_pushes_command_to_every_selected_unit` test still passes (the controller dispatches one `replace_command` per live unit; observable end state matches). Updated its docstring to note the wave-2C routing.
+
+**Did not ship** (intentionally out of scope per the wave-2C brief):
+- Shift-queue formation moves (right-click hardcodes `replace_command`; Shift+right-click waypoint queue is a future wave when keybinding is wired).
+- Right-click on enemy unit (Phase 2 attack-move) — still no-op.
+- Right-click on friendly unit (Phase 2 follow/guard) — still no-op.
+- Any change to `GroupMoveController` itself, `selection_manager.gd`, `unit.gd`, `box_select_handler.gd`, `farr_gauge.gd`, or anything in `scripts/units/` per the wave-2C ownership rules.
+
+**Test-count delta:** +3 (469 → 472 in HEAD). Final: 472 tests, 469 passing, 3 risky/pending (pre-existing, all legitimate per v0.14.0/v0.14.1 entries — navmap-not-ready, FarrSystem fallback path).
+
+**Lint:** `tools/lint_simulation.sh` reports OK (0 violations across L1-L5). The added preload constant and `_GroupMove` reference are valid GDScript identifiers; the lint rule against `apply_*` method names doesn't apply (no new methods, only a preload binding and one dispatch call).
+
+**Live-game-broken-surface answers (Experiment 01) — refined:**
+
+1. *State/behavior that must work at runtime that no unit test exercises:* The integration chain `box_select_handler.gd → SelectionManager.add_to_selection (×N) → click_handler.gd._unhandled_input(MOUSE_BUTTON_RIGHT) → raycast → GroupMoveController.dispatch_group_move → unit.replace_command → StateMachine.transition_to_next → UnitState_Moving.enter() → MovementComponent.request_repath`. Headless tests cover the dispatch chain via `process_right_click_hit(synthetic_hit)`; they cannot exercise the production `NavigationAgentPathScheduler` snapping the offset targets to nav-poly centers. R = 2.0 (8× navmesh `cell_size = 0.25`) keeps adjacent ring slots distinct against `NavigationServer3D.map_get_path`'s snap-to-poly per wave 1B's analysis. With box-select shipping in wave 1A, this wave-2C wiring is the first time multi-unit movement actually reaches the production scheduler with offset targets — until now there was no UI path to put 2+ kargars in the selection.
+
+2. *What headless tests cannot detect that the lead would notice in the editor:* The visible spread of 5 kargars arriving at distinct positions vs. piling up — feel question, passes either way at the unit-test layer. The mid-move-redirect behavior (right-click while units are still moving): does the second dispatch cleanly cancel the first repath and reissue with new ring offsets, or does it visibly stutter? Whether a quick double-right-click on nearby points feels like "go there, then adjust" or jitters. Whether formation rotation looks correct (it shouldn't — facing/rotation is Phase 2; rotation here would be a `UnitState_Moving` regression).
+
+3. *Minimum interactive smoke test that catches it:* Lead box-selects all 5 kargars (now possible with wave 1A's marquee), right-clicks a far point: all 5 walk, no piling, ring is visibly distributed. Lead right-clicks again mid-motion: clean redirect, all 5 still distributed at the new target. Lead right-clicks near a navmesh edge: off-navmesh ring slots fail individually via `request_repath` FAILED and drop back to Idle (per `UnitState_Moving`'s FAILED branch); other slots still walk. This is the interactive test wave-1B flagged as "testable from the keyboard after wave 2C wiring" — wave 2C makes it real.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. Pure infrastructure swap against wave-1B's already-ratified controller surface.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Both single and multi selections route through the controller.** The wave-2C brief left this open ("the structural shape — variable naming and preload location is your call"). Routing the single-unit branch through the controller (instead of "if size == 1 use old loop, else use controller") was authorized by wave-1B's design intent: the identity fast path exists exactly so the wave-2 click-handler can use one dispatch site for both. Future changes to move-dispatch (queueing, logging, attack-move) edit one place, not two.
+- **Defensive `has_method(&"replace_command")` check dropped.** The previous loop did `if u.has_method(&"replace_command"): u.call(...)`. The controller calls `live[i].replace_command(...)` directly, relying on `is_instance_valid()` filtering. This is safe because `SelectionManager` only stores Unit-shaped objects (its `select` API duck-types via `_is_unit_shaped`). The defensive check was load-bearing for a hypothetical future where someone shoves a non-Unit into the selection — that's a contract violation, not a runtime case worth a per-call check.
+- **Preload constant lives at file scope, not inline in the function.** Standard Godot practice for cross-script references; keeps the dispatch line short and the preload cost paid once at script load.
+
+**LATER items** (flagged for future waves):
+1. **Shift-queue formation moves.** When keybinding wave lands Shift+right-click, the click handler can branch on `mb.shift_pressed` and dispatch through a `dispatch_group_move_append` variant (the controller's sister primitive, currently unexposed pending the wave-2 wiring decision flagged in `group_move_controller.gd:66`).
+2. **Right-click on enemy unit / friendly unit.** Currently no-op (Phase 2's attack-move and follow/guard land here). The controller's `dispatch_group_move` is target-agnostic — a parallel `dispatch_group_attack_move` (or a `kind` argument) covers it.
+3. **Stress-test mid-move-redirect at higher unit counts.** With 5 kargars the redirect is fine; at 50+ units (Phase 2/3 army-scale selections) the per-tick MovementComponent repath cancel + reissue cost may be measurable. Profile when army-scale selections actually exist; not blocking now.
+
+---
+
+## 2026-05-03 — Phase 1 session 2 wave 1B (ai-engineer): GroupMoveController skeleton
+
+**Branch:** `feat/phase-1-session-2`
+
+**Shipped (commit `9d54d79`):**
+- `game/scripts/movement/group_move_controller.gd` (135 lines, RefCounted, no class_name). Single static entry point: `dispatch_group_move(units: Array, target: Vector3) -> void`. Concentric-ring distribution centered on the click target — index 0 at center, indices 1..6 on a ring of radius `Constants.GROUP_MOVE_OFFSET_RADIUS = 2.0` (60° spacing), indices 7..18 on a 2R ring (30° spacing), etc. Phase 1's 5-worker cap fits comfortably on ring 1 (1 center + 4 of 6 ring slots used). Determinism via pure index-based trig (`cos(i × 60°)`, `sin(i × 60°)`); no RNG, no time. Empty Array → no-op; single unit → identity (target verbatim — bitwise-identical to existing single-click move); freed entries skipped via `is_instance_valid`. Multi-unit dispatch issues `Constants.COMMAND_MOVE` per unit through `Unit.replace_command(kind, payload)` per State Machine Contract §2.5.
+- `game/tests/unit/test_group_move_controller.gd` (259 lines, 7 tests): empty-array no-op, single-unit identity, 5-unit distinct-offsets-within-radius, determinism (same input → same offsets across runs), freed-unit array still dispatches to live ones, multi-unit Move-command shape (kind + payload.target), dispatch idempotency.
+- `Constants.GROUP_MOVE_OFFSET_RADIUS = 2.0` already added by balance-engineer in `42a2f9b` ahead of wave 1B; the controller is the consumer. Sized 8× the navmesh `cell_size` (0.25 baked in `terrain.tscn`) so adjacent ring slots survive `NavigationServer3D` snap-to-poly.
+
+**Did not ship** (intentionally out of scope per the wave-1B brief and `02c_PHASE_1_SESSION_2_KICKOFF.md`):
+- Click-handler wiring (wave 2C). The right-click branch in `click_handler.gd::process_right_click_hit` still calls `unit.replace_command(&"move", {target})` directly per unit. Wave 2C swaps it for `GroupMoveController.dispatch_group_move(selected, target)` — 2-line change because the controller's single-unit identity path preserves single-click behavior.
+- Facing / rotation (Phase 2).
+- Formation-type selection (line, wedge — Phase 2).
+- Reservation-based pathing (Phase 3+ when buildings exist).
+
+**Test-count delta:** +7 (all in `test_group_move_controller.gd`, all passing). Pre-commit gate green at commit time: 446 tests, 0 failures, 3 risky/pending pre-existing.
+
+**Lint:** `tools/lint_simulation.sh` reports OK (0 violations across L1-L5).
+
+**Live-game-broken-surface answers (Experiment 01) — refined:**
+
+1. *State/behavior that must work at runtime that no unit test exercises:* Real navmesh snapping via `NavigationAgentPathScheduler` (production scheduler). `MockPathScheduler` used in tests returns straight-line targets without snapping. R = 2.0 (8× the 0.25 navmesh `cell_size`) keeps adjacent ring slots distinct on the baked terrain. Off-navmesh click targets cause per-unit `request_repath` to FAIL; `UnitState_Moving` already handles that branch.
+
+2. *What headless tests cannot detect that the lead would notice in editor:* The visible *shape* of the formation. 5 kargars arriving in a tidy ring vs. a clustered blob is a feel question — both pass tests. Whether units overshoot each other and visibly re-collide while pathing. Whether a mid-move redirect (right-click again before first move completes) feels clean or jittery. None of this is observable through `is_moving` flags or `current_command` reads.
+
+3. *Minimum interactive smoke test that catches it:* Lead box-selects all 5 kargars (parallel deliverable 1; if not yet wired at lead-test time, lead shift-clicks them or calls `dispatch_group_move` from `main.gd._ready` as a synthetic test) and right-clicks a far point: all 5 walk, no piling, ring is visibly distributed. Lead right-clicks again mid-motion: clean redirect, all 5 still distributed at the new target. The wave-2C wiring is what makes this testable from the user's keyboard.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. Pure infrastructure against the ratified State Machine Contract.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Lives in `scripts/movement/`, not `scripts/ai/`.** Pure dispatcher for player input — no AI controller, perception, or targeting logic. Leaves `scripts/ai/` exclusively for opponent-AI work (DummyAIController, TuranController). If future AI-side use lands, it imports the controller — same primitive, no relocation needed. Documented in §6 v0.14.0.
+- **No `class_name` on the controller.** Same registry-race pattern as `MatchHarness`. Static methods on a preloaded script ref work identically with or without `class_name`. Kickoff brief explicitly authorized this choice.
+- **Concentric rings (1+6+12+18…), not square grid.** Simplest expression that produces visually-tidy formations and scales to higher unit counts without algorithmic changes. Phase 1's 5-cap fits on ring 1.
+- **Single-unit fast path returns `target` verbatim, NOT `target + cos(0)*R = target + R*(1,0,0)`.** Preserves bitwise-identical single-click behavior. The wave-2 click-handler wiring can route both single and multi selections through the controller without breaking session-1's single-click test suite.
+
+**LATER items** (flagged for future waves):
+1. **Wave 2C wiring** — `click_handler.gd::process_right_click_hit` 2-line swap (multi-selection branch only).
+2. **Stress-test the algorithm at higher unit counts** — Phase 2/3 army-scale selections may want clamping if click is near a building.
+3. **Formation visualization for the F1 pathfinding overlay** — Phase 6 per CLAUDE.md.
+
+**Note on docs flow:** ai-engineer's working-tree docs edits were lost to an earlier `git reset` during the wave-1 cross-agent gate-blocking incident; this BUILD_LOG entry and the §6 v0.14.0 ARCHITECTURE entry were re-authored by lead from ai-engineer's cached report text in a follow-up commit. Content is ai-engineer's; commit attribution is lead.
+
+---
+
+## 2026-05-01 — Phase 1 session 2 wave 1A (ui-developer): box / drag selection
+
+**Branch:** `feat/phase-1-session-2`
+
+**Shipped:**
+
+1. **`BoxSelectMath`** at `game/scripts/input/box_select_math.gd` (RefCounted, no `class_name` — registry-race pattern). Three pure helpers:
+   - `rect_from_corners(a, b)` — direction-agnostic Rect2 normalization. Drag from any of the four diagonal corners produces the same positive-size rect.
+   - `is_past_dead_zone(start, current, dead_zone_px)` — squared-distance threshold for click-vs-drag arbitration. 4px dead zone, comfortable for both mouse and trackpad.
+   - `units_in_rect(rect, projected)` — filter a list of `{unit, screen_pos, on_screen}` entries to those whose projected position lies inside the rect. Skips `on_screen=false` and malformed entries; preserves input order for stable downstream UX.
+
+2. **`BoxSelectHandler`** at `game/scripts/input/box_select_handler.gd` (Node, attached to `Main` after `ClickHandler` so `_unhandled_input` reaches it first under Godot's reverse-tree-order delivery). Owns the press → motion → release flow.
+   - **Press intercept**: claims left-press on `_unhandled_input`, calls `set_input_as_handled()` always. ClickHandler never sees the left button. Captures Shift state at press time.
+   - **Drag activation**: on motion past 4px dead zone, activates drag, shows the overlay, anchors the rect from press position to current cursor.
+   - **Release arbitration**: on release, if drag was active → finalizes the box-select (project Iran units → filter → `add_to_selection` for hits, with `deselect_all` first if no Shift). If drag was NOT active → re-raycasts the release position and forwards via `ClickHandler.process_left_click_hit(hit)` (its existing public seam) so single-click selection still works.
+   - **Public test seams**: `begin_press`, `update_motion`, `end_press`, `current_drag_rect`, `box_select_units(rect, units, project_callable, shift)` lets unit tests inject a projection helper without a real Camera3D.
+   - **Live-unit sweep**: walks `get_tree().current_scene` for unit-shaped Node3Ds (duck-typed: `unit_id` + `team` + Node3D); filters `team == TEAM_IRAN`. Linear walk costs nothing at Phase 1's worker cap (5); SpatialIndex revisit when unit count grows past ~50.
+
+3. **Drag overlay scene** at `game/scenes/ui/drag_overlay.tscn` (CanvasLayer + Control + custom-drawing Rect Control). Translucent gold (Iran palette) — fill alpha 0.20, stroke alpha 0.85, 1px outline. **`mouse_filter = MOUSE_FILTER_IGNORE` enforced both in the .tscn AND defensively at runtime in `_ready` of both `drag_overlay.gd` and `drag_overlay_rect.gd`**. Session 1's regression pattern (HUD labels at default `MOUSE_FILTER_STOP` swallowing clicks) is what we're inoculating against.
+
+4. **31 new tests** across two files:
+   - `game/tests/unit/test_box_select_math.gd` (16 tests): all four drag-corner directions, zero-size rect, dead-zone thresholding (zero, below, at, well past), full-rect coverage, miss-all, off-screen filter, stable order, boundary inclusivity, malformed-entry guards.
+   - `game/tests/unit/test_box_select_handler.gd` (15 tests): press-release-no-motion is click; sub-dead-zone jitter is click; past dead-zone activates drag; rect normalizes both diagonal directions; replaces selection with units inside rect (no Shift); adds with Shift; empty rect deselects (no Shift) / preserves (Shift); skips off-screen units; empty candidates → no-op; drag rect empty before/during press-only; motion without press is no-op; Shift state captured at press, not release.
+
+5. **`docs/ARCHITECTURE.md` 0.13.1 → 0.14.1.** Added a new `Box / drag selection` row in §2 (✅ Built); v0.14.1 plan-vs-reality entry: two-file split rationale, click_handler coordination strategy, press-time Shift, mouse_filter belt-and-braces, empty-rect behavior, linear unit-iteration choice, refined live-game-broken-surface answers, three LATER items.
+
+6. **`game/scenes/main.tscn` updated** to wire `BoxSelectHandler` as a `Node` sibling after `ClickHandler` under `Main`. Tree order is load-bearing: `_unhandled_input` reaches BoxSelectHandler first.
+
+**Test-count delta (this wave):** +31 (16 math + 15 handler). Headless GUT runner: all 31 pass alongside the existing 380. Lint clean (0 violations across L1–L5). Pre-commit gate green for this wave's files. (The session-aggregate count at commit time is higher; ai-engineer's parallel wave 1B and balance-engineer's wave 1C are landing on the same branch.)
+
+**Did not ship** (intentionally out of scope per kickoff):
+- Lasso / freeform selection (StarCraft-style — not needed).
+- Subgroups / type-filtered selection (separate deliverable per kickoff §2 (3)).
+- `selection_manager.gd` / `click_handler.gd` core-logic edits — kickoff explicitly forbade.
+- Right-click cancellation of an active drag — RTS convention but flagged as a LATER item pending lead feel-test.
+- Hover-style highlight while drag is active (drag-preview) — Phase 2 visual polish.
+- `SelectionManager.select_many(units)` collapsed broadcast — flagged as a LATER item; out of scope per the "do NOT modify" rule.
+
+**State for next session / wave:**
+- On branch `feat/phase-1-session-2`. Box-select handler wired into `main.tscn`. The lead's interactive smoke test is the next gate.
+- Math + input-flow tests cover everything a headless test can. Visual rectangle anchoring/transparency, drag-from-HUD interactions, and real-Camera3D `unproject_position` are the lead's call.
+- Wave 2A (ui-developer) — Control groups (Ctrl+1–9 bind, 1–9 recall) and double-click-select-of-type. Both consume the multi-select API now wired through BoxSelectHandler.
+- Wave 2B (ui-developer) — Selected-unit panel.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. All choices were implementation; the kickoff was prescriptive on the gameplay surface.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Two-file split (math vs. handler)** rather than a single monolithic `box_select.gd`. Rationale: pure math is testable headless without a Camera3D; the handler is testable via injected projection callable. The split is ~80 lines + ~370 lines, slightly more total but vastly cleaner test surface.
+- **Press-time Shift, not release-time.** RTS convention; documented in source.
+- **Linear unit-iteration sweep, not SpatialIndex.** Phase 1 worker cap = 5; the SpatialIndex autoload dependency would buy nothing measurable. Revisit Phase 2+ when group sizes scale.
+- **No-Shift drag onto empty rect deselects.** Matches the RTS convention "drag onto nothing = clear selection." Tested explicitly. The alternative (preserve prior selection on empty drag) is the opt-in via Shift.
+- **Method renamed `_apply_selection` → `_commit_selection`.** Avoid the `apply_*` lint pattern (kickoff brief flag) even though our file has no `_process` so L1 wouldn't fire. Belt-and-braces.
+
+**Live-game-broken-surface answers (Experiment 01):**
+
+1. *What state/behavior must work at runtime that no unit test exercises?* The drag overlay's `mouse_filter = MOUSE_FILTER_IGNORE` (set in .tscn AND re-asserted in `_ready` of both `drag_overlay.gd` and `drag_overlay_rect.gd`). Real `Camera3D.unproject_position` per visible Iran unit on every release event. Coordination with `click_handler.gd`: BoxSelectHandler always claims the press; on non-drag release it re-raycasts and forwards via `ClickHandler.process_left_click_hit` — the only one-direction integration path that doesn't violate the "don't modify click_handler.gd" rule.
+
+2. *What can a headless test not detect that the lead would notice in the editor?* Visual: rectangle anchoring, transparency, stroke style (gold, alpha 0.85, 1px outline). Behavioral: drag-from-HUD-into-world (HUD labels are MOUSE_FILTER_IGNORE per session 1, so the press hits us — but if a future interactive HUD lands, its `_gui_input` should claim it before we see it). Drag in all 4 corner-directions (math tested; visual rect anchoring needs eyes). Quick-click with 1–3px jitter mistaken as drag (the 4px squared-distance threshold is the line; lead may want 6 or 8 if it feels twitchy on trackpad).
+
+3. *What's the minimum interactive smoke test that catches it?* Lead drags TL→BR across the 5 kargars: all 5 selected, gold rings appear. Lead drags BR→TL: same result. Lead Shift-drags a partial subset while 2 are already selected: only the new units are added; existing stay. Quick-click on one kargar with no drag: that one selects (single-click path through `ClickHandler.process_left_click_hit` still works). Click on empty terrain: deselect all. Drag onto empty space (no Shift): deselect all. Drag onto empty space with Shift: prior selection preserved.
+
+**LATER items surfaced:**
+1. `SelectionManager.select_many(units)` to collapse multi-add broadcasts into one `selection_changed` emit. Out of scope per kickoff "do NOT modify"; flag for the next wave that touches `SelectionManager`.
+2. Drag-preview (live highlight on units the rect would catch, before release). RTS UX standard; Phase 2 polish budget.
+3. Right-click cancels active drag. RTS convention; pending lead feel-test before deciding.
+
+---
 
 ## 2026-05-01 — Phase 1 session 1 wave 3 (qa-engineer): click-and-move integration tests + flaky navmesh fix
 
@@ -720,3 +977,211 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 - **`CanvasLayer` root, not a `Control`.** A `CanvasLayer` overlays the 3D viewport without coupling to the camera or the world. The Phase 1 circular gauge can sit on the same layer; the eventual minimap can use a separate layer. Implementation choice; no behavioral difference at Phase 0.
 - **Polling in `_process`, not `EventBus.farr_changed`-driven.** Polling is simpler, the read cost is O(1), and it works before FarrSystem emits anything. The Phase 1 gauge will subscribe to `farr_changed` for the floating change-number animation per Sim Contract §1.5's queue-then-drain pattern; for the text readout, polling is enough.
 - **Test-time `FarrSystem` mutation through `_farr_x100` directly, not `apply_farr_change`.** The chokepoint asserts `SimClock.is_ticking()` and we don't want to spin the clock for HUD-only tests. Writing the integer-backed store directly is off-tick (test discipline) and bypasses the on-tick assert; `before_each` / `after_each` snapshot and restore the store so other test files aren't affected.
+
+## 2026-05-01 — Phase 1 session 2 wave 1C (ui-developer): Farr gauge polish
+
+**Branch:** `feat/phase-1-session-2`
+
+**Shipped:**
+
+1. **`FarrGauge`** at `game/scenes/ui/farr_gauge.tscn` + `game/scripts/ui/farr_gauge.gd`. Custom `Control` with `_draw()` override — no asset dependency (CLAUDE.md placeholder visuals policy). Replaces the Phase 0 text "Farr: 50" readout in the top HUD.
+   - **Visual fill**: `displayed_farr / tier2_threshold` clamped [0,1], so the meter is full at Farr=40 (kickoff §149). Above Tier 2, the GOLD color band carries the overshoot signal — the fill stays at 1.0.
+   - **Color bands per spec §4.4**: <15 red, 15-40 dim, 40-70 ivory, ≥70 gold. Inclusive lower bound — exactly 15 → dim, exactly 40 → ivory, exactly 70 → gold. Avoids 14.99-vs-15.00 visual jitter at the Kaveh trigger.
+   - **Threshold ticks**: Tier 2 (gold, medium) and Kaveh (red, thick) painted at angular positions per `BalanceData.farr.tier2_threshold` / `kaveh_trigger_threshold`. Per balance-engineer review: gold tick instead of thin ivory because an ivory tick on the ivory band would have visually disappeared.
+   - **Public API**: `target_farr: float`, `displayed_farr: float`, `color_band: StringName` (BAND_RED / BAND_DIM / BAND_IVORY / BAND_GOLD), `fill_ratio: float` (computed getter), `tier2_threshold` / `kaveh_trigger_threshold: float`. Used by tests now; available to the Phase 4 F2 debug overlay.
+   - **Data wiring**: signal-driven. `_ready` connects to `EventBus.farr_changed` and seeds initial state from `FarrSystem.value_farr`. `_exit_tree` disconnects (no ghost connections after scene teardown). Tween 0.20s `TRANS_QUAD EASE_OUT` per signal — no debounce per balance-engineer veto (debouncing would silently drop F2-overlay log entries, breaking CLAUDE.md's "every Farr movement gets logged" mandate).
+   - **`mouse_filter = MOUSE_FILTER_IGNORE`** at the root + every descendant (none in current scene, but tested defensively per session-1's HUD-eats-clicks regression).
+   - **Defensive degradation**: if `FarrSystem` isn't registered (test scenes), falls back to spec default 50.0; if `BalanceData` is missing, falls back to spec defaults (40, 15) for thresholds. Same pattern as `farr_system.gd:67-91`.
+
+2. **`Constants.FARR_MAX = 100.0`** added by balance-engineer in a parallel commit. The gauge references this constant — never hardcodes 100.
+
+3. **HUD layout refactor in `game/scenes/ui/resource_hud.tscn`**: removed `FarrLabel`, added `Spacer` (Control with `size_flags_horizontal=EXPAND`, `mouse_filter=IGNORE`) + `FarrGauge` instance. The HBox is now `[Coin] [Grain] [Pop] [Spacer] [FarrGauge]` — Coin/Grain/Pop stay left, Spacer expands, gauge anchors right per spec §11.
+
+4. **`scripts/ui/resource_hud.gd`**: dropped `_farr_label`, `_DEFAULT_FARR`, `_read_farr_display`, and the `_autoload_or_null` helper (no longer needed — the gauge owns the FarrSystem read). Coin / Grain / Pop polling logic unchanged.
+
+5. **29 new tests** in `game/tests/unit/test_farr_gauge.gd` (replacing 3 dropped FarrLabel-specific tests in `test_resource_hud.gd`):
+   - Scene loads cleanly; root is Control; mouse_filter is IGNORE; descendant mouse_filter recursive check.
+   - Initial seed from FarrSystem.value_farr; defensive fallback to 50.0 when FarrSystem absent (Pending in standard config since FarrSystem is autoloaded).
+   - `EventBus.farr_changed` updates `target_farr`; clamp to [0, FARR_MAX] on out-of-range payloads.
+   - Edge cases: target at exactly 0, exactly FARR_MAX.
+   - Threshold values match `BalanceData.farr.{tier2_threshold,kaveh_trigger_threshold}` exactly.
+   - Tween: `displayed_farr == target_farr` at _ready; tween settles to target after 30 process_frame awaits.
+   - `fill_ratio` at 0, at Tier 2 threshold, above Tier 2 (clamps to 1.0), at midpoint.
+   - `color_band` at every band boundary including the < / ≥ inclusivity check (14.99→red, 15.0→dim, 39.99→dim, 40.0→ivory, 50.0→ivory, 69.99→ivory, 70.0→gold, 100.0→gold).
+   - Signal connection at _ready (count delta = +1); disconnect on tree exit (count returns to baseline; no ghost connections).
+   - End-to-end integration: seed band, drive farr_changed across boundary, assert band flips and tween settles.
+
+6. **`docs/ARCHITECTURE.md` §2**: marked the **Farr gauge** row `✅ Built` with full implementation notes; updated the **Farr HUD readout** row to reflect the wave-1C refactor (Spacer-pushed layout, Farr no longer polled).
+
+**Test-count delta (this agent's contribution):** +29 in `test_farr_gauge.gd`, −3 obsolete tests removed from `test_resource_hud.gd` (the FarrLabel-specific live-read, defensive-default, and per-frame poll tests) replaced with cross-references to their gauge-side equivalents. End-of-wave run shows 446 tests, 443 passing, 3 pending (legitimate skips: navmesh-not-baked-in-headless ×2, FarrSystem-autoload-defensive-fallback ×1). 0 failures.
+
+**Live-game-broken-surface answers (Experiment 01) — refined:**
+
+1. *What state/behavior must work at runtime that no unit test exercises?*
+   The signal-to-redraw chain in a real running scene. Headless tests verify (a) the gauge connects to `EventBus.farr_changed`, (b) `_on_farr_changed` mutates `target_farr` and `color_band`, (c) the tween eventually settles `displayed_farr`. They CANNOT verify: (i) `queue_redraw()` actually causes a repaint when the gauge is visible and the SceneTree isn't paused; (ii) the tween advances at a usable rate in a 60fps live frame loop (in headless GUT the tween settled in ~30 frames; live timing differs); (iii) the descendant mouse_filter recursion catches descendants the scene file might add later. Mitigation: an integration test that loads `main.tscn`, calls `apply_farr_change` inside a `SimClock` tick, advances real frames, and asserts. Not added this wave (would block on synchronous match-harness scene-load sequence); flagged for qa-engineer wave 3.
+
+2. *What can a headless test not detect that the lead would notice in the editor?*
+   - **Arc orientation**: I picked 12-o'clock start sweeping clockwise. Lead may want a different convention (some games start at 9 o'clock or 3 o'clock).
+   - **Color readability**: the placeholder grey terrain may make the dim band hard to see; the red band may compete with combat damage indicators (Phase 2). Visual-only.
+   - **Tween feel**: 0.20s with `EASE_OUT` was tuned for headless GUT timing tolerance, not live feel. Lead may want 0.15s or 0.30s. Trivial to tune via `_TWEEN_DURATION`.
+   - **Numeric label legibility at 1280×720**: ThemeDB.fallback_font at 12pt — may be too small or clipped by the gauge ring.
+   - **Top-right anchoring**: tested via `Spacer` `size_flags_horizontal=EXPAND` in headless, but actual right-edge alignment at 1280×720 / 1920×1080 / 4K is visual-only verification.
+
+3. *What's the minimum interactive smoke test that catches it?*
+   1. Boot game (F5). Verify the gauge renders top-right with ~50% fill, ivory color, both threshold ticks visible (gold at 40-position, red at 15-position).
+   2. Add a temporary debug binding (or use the editor's remote inspector) to call `FarrSystem.apply_farr_change(+10, "smoke", null)` inside a tick. Watch the arc tween up over ~0.2s; verify it crosses to the gold band when value passes 70.
+   3. Drive Farr to exactly 40, exactly 15, and below 15: verify the fill aligns to the corresponding tick and the color band switches accordingly.
+   4. Click-through test: try clicking a worker through the gauge area. Verify the click selects the worker (gauge does NOT swallow the click via `mouse_filter=IGNORE`). Session-1-regression-canary.
+
+**Did not ship** (out of scope per kickoff §149 + balance-engineer review):
+- Below-Kaveh red pulsing animation per spec §4.4 (`<15 red and pulsing`) — DEFERRED to Phase 2. When implemented, the pulse must be driven from a `_process` state flag (`_is_below_kaveh`) NOT from the tween, because the tween finishes but the pulse must keep animating. Documented in source file.
+- Floating reason-text labels per spec §4.4 ("+3 Farr (hero rescued worker)") — DEFERRED to Phase 2. The same `farr_changed` signal already carries the `reason` payload, so a future widget subscribes independently.
+- Threshold-crossing audio cues per spec §4.4 (chime up at 40/70, distant horn down at 15) — DEFERRED to Tier 2 (audio infrastructure not yet present).
+- Integration-style scene-loading test for the signal-to-redraw chain — flagged for qa-engineer wave 3.
+
+**State for next session / waves:**
+- On `feat/phase-1-session-2`. Lint clean, 443 tests passing, 3 pending (legitimate).
+- The gauge is ready to receive Phase 4 Atashkadeh per-tick contributions. **One known concern:** Atashkadeh adds `+0.000556 Farr/tick` (~30 emits/sec at 30Hz). The gauge's 0.20s tween would re-trigger constantly at low amplitude. Per balance-engineer's review, the producer side should batch into one emit per second (or larger) rather than the gauge debouncing. Flagged here so Phase 4 gameplay-systems can plan the batching.
+- F2 debug overlay (Phase 4) can subscribe to the same `EventBus.farr_changed` signal independently — the gauge is not in its read path.
+- The gauge defensive-fallback paths (no FarrSystem autoload, no BalanceData) are tested as Pending because both autoloads are always registered in this project. If a future test scenario tears them down, those Pending tests become reachable assertions.
+- Persian (`fa`) translation column in `strings.csv` is still empty for `UI_FARR` (the only string the gauge uses) — Tier 2 work, no code change needed.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Custom `Control._draw` over `TextureProgressBar`** — implementation choice (no gameplay impact). No sweep-texture asset exists; bootstrapping a placeholder PNG is more friction than 50 lines of `_draw`. Documented in source file.
+- **Visual fill normalized to `tier2_threshold`, not `FARR_MAX`** — kickoff §149 says "fills from 0 to FARR_TIER2_THRESHOLD." Implementation followed; gold band carries overshoot signal. Linter-added tests confirmed this is the intended behavior.
+- **`color_band` updated synchronously in `_on_farr_changed` (off `target_farr`) AND per-tween-step (off interpolated `displayed_farr`)**. The synchronous update lets observers see the new band immediately; the per-step update lets intermediate band crossings during a tween fire the right visual. Both paths converge on the same final value.
+- **Tween duration 0.20s** (down from the 0.25s in the proposal). Headless GUT's frame timing made the integration tween-settles tests flaky at 0.25s. Visually indistinguishable; lead can re-tune via `_TWEEN_DURATION` if desired.
+- **Inclusive-at-lower-bound boundary policy for color bands** — linter-added test docstring specified this. Avoids 14.99-vs-15.00 jitter. Encoded in `_band_for(...)` with `>=` checks descending from the gold threshold.
+- **`_TIER3_VISUAL_THRESHOLD = 70.0` hardcoded in the gauge, not in `FarrConfig`**. Spec §8 lists Tier 3 as post-MVP; `FARR_MAX = 100.0` belongs in `Constants` for the same reason. When Tier 3 ships and 70 becomes a balance knob, it moves to `FarrConfig` then. Citation comment in source.
+- **Removed obsolete `_inject_or_mutate_farr_system` / `_remove_mock_farr_system` helpers** from `test_resource_hud.gd` after dropping the three FarrLabel-specific tests that used them. Coverage moved to `test_farr_gauge.gd`. Cleaner than leaving dead code in place.
+
+## 2026-05-04 — Phase 1 session 2 wave 2A (ui-developer): control groups + double-click-select-of-type
+
+**Branch:** `feat/phase-1-session-2`
+
+**Shipped:**
+
+1. **`ControlGroups`** autoload at `game/scripts/input/control_groups.gd`. Registered in `game/project.godot` `[autoload]` AFTER `SelectionManager` (parse-time ordering matters — at this autoload's `_ready`, SelectionManager must already be parsed so `selected_units` reads return live data). Internal state: `_groups: Dictionary[int, Array]` keyed 1..9 (0 explicitly excluded; the spec is 1..9). On `Ctrl+N` press: snapshots `SelectionManager.selected_units` into group N (replacing prior contents; `is_instance_valid` lazy filter on read). On `N` alone: replaces selection with group N's live members (no-op if unbound or empty — recall is one-way restore, never clears prior selection). Double-tap detection uses `SimClock.tick`, NOT wall-clock — `DOUBLE_TAP_TICKS = 10` (~333ms at 30Hz, rounded from kickoff's 350ms guess). Different keycode between taps cancels. `event.echo` filter suppresses OS auto-repeat. Direct keycode reads (`event.keycode in KEY_1..KEY_9`, `event.ctrl_pressed`) — no InputMap actions needed. `set_camera_target(stub)` test seam injects a RefCounted stub. `reset()` wipes all groups + double-tap state.
+
+2. **`CameraController.center_on(world_pos: Vector3)`** added as a single-line public method at `game/scripts/camera/camera_controller.gd`. Clamps to bounds via existing `clamp_to_bounds` (Y forced to 0 — camera target rides on ground plane), then `_apply_transforms()`. Kickoff explicitly authorized this scoped addition; not a refactor.
+
+3. **`DoubleClickSelect`** Node at `game/scripts/input/double_click_select.gd`, instanced under `Main` in `main.tscn` as a sibling after `BoxSelectHandler` (NOT autoload — needs scene-bound viewport for live Camera3D). Detection strategy is **kickoff option (b)** — subscribe to `EventBus.selection_changed`. When the broadcast payload is exactly one unit, check whether that same unit was the sole selection on a recent prior emission within `DOUBLE_CLICK_TICKS = 9` ticks (~300ms). If yes, replace selection with all visible-on-screen units of the same `unit_type`. Multi-select (size > 1) and empty (deselect_all) payloads disarm the tracker. Visible-on-screen filter via `Camera3D.is_position_behind` + `unproject_position` + viewport-rect comparison (1px tolerance). Public seam `select_visible_of_type(target_unit, candidates, project_callable)` lets unit tests inject a projector closure without a real Camera3D — same pattern as `BoxSelectHandler.box_select_units`. Target unit always part of the result (defensive against 1-frame projection edge case).
+
+4. **`game/project.godot`** — `ControlGroups` registered AFTER `SelectionManager` in `[autoload]`.
+
+5. **`game/scenes/main.tscn`** — `DoubleClickSelect` node added as sibling after `BoxSelectHandler`. (Re-applied after a cross-agent commit reverted my initial wiring; I confirmed the wave-2B / wave-2C agents had landed their own changes by checking `git diff` before re-applying.)
+
+6. **`docs/ARCHITECTURE.md`** — added two `✅ Built` rows in §2 (Control groups + Double-click select-of-type) before the Selected-unit panel row. Added `### v0.14.4` plan-vs-reality entry in §6 covering both deliverables. Bumped front-matter `version: 0.14.4` and the comment.
+
+7. **37 new tests** (+23 in `tests/unit/test_control_groups.gd`, +14 in `tests/unit/test_double_click_select.gd`). Coverage: bind/recall correctness, freed-member filtering, double-tap timing window in/out, same-key/cross-key, centroid math (single, multi, with-frees, empty), reset semantics, synthetic InputEventKey dispatch (press/release, echo, non-digit, Ctrl-vs-bare). Double-click coverage: type-filter, on-screen filter, replace-prior-selection, null/freed targets, signal-driven arming/disarming, multi-select disarms, deselect_all resets, reset wipes state. Headless GUT: all pass; lint clean.
+
+**Test-count delta (this agent's contribution):** +37 (23 control_groups + 14 double_click_select). All pass; pre-commit gate green.
+
+**Live-game-broken-surface answers (Experiment 01 — refined):**
+
+*Control groups:*
+
+1. *What state/behavior must work at runtime that no unit test exercises?* Autoload parse-time ordering — if `ControlGroups` were registered BEFORE `SelectionManager` in `[autoload]`, this autoload's `_ready` would fail to read `SelectionManager.selected_units` (autoload-during-autoload-init order is undefined in Godot 4). Tests register the script as a fresh `.new()` instance with a manual SelectionManager seed; live mode runs through the project.godot order. Camera resolution happens lazily on first double-tap; if the user double-taps before the camera rig has finished `_ready`, the autoload silently no-ops (logged via `DEBUG_LOG_GROUPS`). InputEventKey.echo state — held keys auto-repeat at the OS level; without the `event.echo` filter, holding `1` would spam recall every frame. Tests synthesize echo=false events; live mode might.
+
+2. *What can a headless test not detect that the lead would notice in the editor?* Double-tap timing FEEL — `DOUBLE_TAP_TICKS = 10` is the kickoff's 350ms guess minus integer rounding. Lead may want 7 (faster) or 13 (slower — accommodates trackpad users). Whether camera centering should be a snap (current MVP) or a smooth tween (animated). The visual cue when a group is bound vs. recalled (no UI feedback yet — out of scope per kickoff "Control group display in HUD — Phase 2+"). Whether `Ctrl+1+2` fires ambiguously when the player is sloppy.
+
+3. *Minimum interactive smoke test:* Lead boxes 3 kargars, hits Ctrl+1, deselects via empty-space click → no rings. Lead hits 1 → same 3 select (gold rings). Lead hits 1 again within ~350ms → camera centers on them. Lead binds Ctrl+2 to a different selection; toggles 1 ↔ 2. Lead hits 5 (unbound) → no change to current selection.
+
+*Double-click select-of-type:*
+
+1. *What state/behavior must work at runtime that no unit test exercises?* `Camera3D.unproject_position` runs against the live camera with the unit's actual `global_position`; headless tests inject a projector closure. The viewport-rect filter compares against `vp.get_visible_rect().size` which depends on window resize state. Subscribers see exactly one emission per `SelectionManager.select_only` call — if a future "select_many" fast-path lands and emits twice for one logical operation, the detector would false-fire (gated by the size==1 check, but worth knowing).
+
+2. *What can a headless test not detect that the lead would notice in the editor?* Double-click timing FEEL — `DOUBLE_CLICK_TICKS = 9` (~300ms). Lead may want 7 or 12. Whether the visible-on-screen filter does the right thing at extreme zoom. Whether the player's intent was "deliberate two clicks on the same unit" vs. "double-click for select-of-type" — UX call. The 1px viewport-edge tolerance: at 1280×720 vs. 1920×1080 vs. 4K, units exactly at the edge may flicker in/out of selection.
+
+3. *Minimum interactive smoke test:* Lead double-clicks one kargar with all 5 visible → all 5 selected. Lead pans so only 2 are on-screen, double-clicks one → only those 2 selected. Lead clicks one kargar, waits 1 second, clicks again → single-select both times (window expired). Lead box-selects 3, then double-clicks the 4th outside the box → all 5 same-type selected (multi-select prior disarmed; double-click-only fires after a fresh single-select pair).
+
+**Did not ship** (out of scope per kickoff §2):
+
+- Control group append (Shift+N to add) — Phase 2+.
+- Control group display in HUD (numbered icons at screen-bottom) — Phase 2+.
+- Triple-click → select-all-of-type-globally — Phase 2+ if lead-test demands.
+- Animated camera centering (lerp instead of snap) — camera polish.
+- Right-click double-click semantics — not needed.
+
+**State for next session / waves:**
+
+- On `feat/phase-1-session-2`. Lint clean; my 37 new tests pass alongside the prior 484+ from waves 1A/1B/1C/2B/2C. Total project test count after this commit lands: ~520+ (exact count after merge — the parallel waves' final aggregation depends on commit order).
+- The double-click detector and the box-select handler share an inline `_project_unit` body — if a future change adds a third Camera3D-projection consumer, hoist into a shared helper. Pencil-in only; the duplication is small and the helper would be a one-method class.
+- LATER items surfaced in v0.14.4: Control group display in HUD (Phase 2+), Shift+N append (Phase 2+), animated camera centering (camera polish), triple-click globally (Phase 3+), OS-level click-speed setting integration (deferred indefinitely — may conflict with replay-determinism guarantee).
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+
+- **Signal-driven double-click (kickoff option b) over sibling-ordered input listener (option a).** Both are valid per kickoff. Option (b) makes the detector independent of which input layer routed the click — ClickHandler, BoxSelectHandler, or any future single-click producer all funnel through SelectionManager and emit the same broadcast. Option (a) would have to coordinate with BoxSelectHandler's click-vs-drag arbitration, fragile.
+
+- **Multi-select payload disarms the double-click tracker.** Without this, a sequence "box-select 5 → click one of them → click that one again" would false-fire as a double-click on the second single-click. Single-target selections are the only ones that arm or fire.
+
+- **`recall(n)` is a no-op on unbound or empty groups (does NOT clear selection).** The kickoff smoke-test sequence implies recall is a one-way restore. Pressing 5 for a group never bound shouldn't lose the current selection. Matches StarCraft 2 / AoE2 convention.
+
+- **`DOUBLE_TAP_TICKS = 10`, `DOUBLE_CLICK_TICKS = 9`.** Both round from the kickoff's "350ms" / "300ms" guesses to integer ticks (30Hz). Easy lead-tunable knobs.
+
+- **No InputMap entries for Ctrl+1..9 / 1..9.** Direct keycode reads via `event.keycode` and `event.ctrl_pressed` — same pattern as CameraController for WASD. 18 InputMap actions for a 1:1 keycode mapping would be needless ceremony.
+
+- **Lazy CameraController resolution via duck-typed scene walk.** `ControlGroups` does NOT preload `camera_controller.gd` because that would couple the autoload to a specific path. Instead, walks `get_tree().current_scene` looking for a node with the unique CameraController surface (`has_method(&"center_on")` AND `target_position in node`). Same duck-typing pattern `box_select_handler.gd::_resolve_click_handler` uses.
+
+- **`select_visible_of_type` always includes the target unit.** Defensive against a 1-frame projection edge case where `is_position_behind` flickers true. The player's intent is clear: "select all of this type starting from THIS one."
+
+- **Cross-agent coordination lesson learned.** When I first applied my `main.tscn` and `docs/ARCHITECTURE.md` edits, parallel wave-2B/2C agents had in-flight commits that reverted them on landing. After the second pass, I (a) re-read the files immediately before each Edit call (avoiding Edit-staleness errors), (b) used a different ext_resource id slot (`8_doubleclick`) so the box-select handler / panel ids didn't collide, and (c) verified `git diff main.tscn project.godot docs/ARCHITECTURE.md BUILD_LOG.md` showed only my additions before staging — the kickoff doc's coordination warning ("`git add` stages whole files including other agents' draft text") was the load-bearing gotcha here.
+
+- **Removed `test_select_of_type_with_freed_target_is_noop` test.** GDScript's typed-argument runtime reject for "previously-freed Object" makes the test path unreachable without changing the public method's signature to `Variant`. The realistic concern (a freed entry inside `candidates`) is covered by `test_select_of_type_with_freed_candidate_is_skipped`. Trimming the brittle test in favor of the realistic one.
+
+## 2026-05-04 — Phase 1 session 2 wave 2A bug-fix (ui-developer): double-click ring visual not refreshed for units 2..N
+
+**Branch:** `feat/phase-1-session-2`
+
+**Bug:** Live-test by lead surfaced that double-clicking a Kargar correctly expanded the SelectionManager's set to all 5 visible workers, but only the originally-clicked unit displayed its gold selection ring. Units 2..5 were logically selected (downstream selected_unit_panel showed multi-select) but their `SelectableComponent._ring.visible` was `false`.
+
+**Why existing tests missed it:** the unit-level `tests/unit/test_double_click_select.gd` exercised `select_visible_of_type` via the public test seam (direct API call) AND drove the signal-driven path with FakeUnit mocks — but its assertions only checked `SelectionManager.is_selected(unit)` (selection-set membership). Neither component-level `is_selected` nor `_ring.visible` was asserted on. So a bug where the set was correct but the ring rendering was wrong slipped past green tests.
+
+**Root cause (matches kickoff hypothesis (c) — re-entrant signal emission with stale outer payload):**
+
+`DoubleClickSelect._on_selection_changed` ran its expansion synchronously **inside** the `EventBus.selection_changed` emit raised by the user's second-click `SelectionManager.select_only(target)`. The expansion's `deselect_all` + per-unit `add_to_selection` calls each fired their own broadcasts, recursively iterating all receivers. After all the recursive emits completed (with the final being `[1, 2, 3, 4, 5]` — every component correctly receives this and turns its ring on), control returned up to the original outer emit, which **continued iterating its remaining receivers with the original stale payload `[1]`**.
+
+Because `DoubleClickSelect` is connected to `EventBus.selection_changed` BEFORE the per-unit `SelectableComponent`s (the detector registers in `main.tscn`'s scene `_ready`; components register as their unit scenes are instantiated and added later), the connection order was: `[detector, sc_1, sc_2, sc_3, sc_4, sc_5, ...]`. The detector ran first and recursively expanded; when control returned to the outer emit, the stale `[1]` payload was delivered to `sc_2..sc_5`, which dutifully set `_apply_selection(false)` because they didn't see their own unit_ids in the (stale) list.
+
+Verified by reproduction print-stream during the headless integration test:
+```
+selection_changed ids=[1, 2, 3, 4, 5] rings=[T,T,T,T,T]   ← final inner emit, all on
+selection_changed ids=[1]              rings=[T,F,F,F,F]   ← stale outer payload, units 2..5 turned off
+```
+
+**Fix (one-line, in the responsible file):**
+
+`game/scripts/input/double_click_select.gd::_on_selection_changed` now defers the expansion via `_expand_to_visible_of_type.call_deferred(target)` instead of calling it synchronously. The deferred call lands on the next idle frame, AFTER the outer emit has finished delivering its stale payload to every receiver. The components reach their post-outer-emit settled state (only unit_1 selected — which matches what `select_only` was meant to produce) and THEN the deferred expansion runs as a single coherent pass, with every receiver seeing a clean monotonic sequence `[]` → `[1]` → `[1, 2]` → ... → `[1, 2, 3, 4, 5]`. No stale payload arrives afterward.
+
+**Why deferred (and not "buffer the expansion target and run from `_process`"):** `call_deferred` is exactly what we need — Godot guarantees the call lands once on the next idle frame, after the current signal-emission stack fully unwinds. No bookkeeping required, no per-frame polling, no extra fields. This is the canonical fix for "I want to mutate state that's currently being broadcast about." Five-character change in the source file. The only code-comment in the patch documents *why* (so a future reader doesn't try to "optimize" by calling synchronously again).
+
+**Test coverage delta (regression lock-in):**
+
+New file: `game/tests/integration/test_session_2_double_click_visual.gd`. Three integration tests, all using **real** `Kargar` instances spawned via `kargar.tscn` (the production scene template), asserting on:
+- `SelectableComponent.is_selected` per unit (the component-level state, not the SelectionManager set).
+- `_ring.visible` per unit (the actual rendered property the lead saw fail).
+- The full deselect→reselect cycle keeps rings in sync (regression guard for the symmetric case).
+
+The third test (`test_signal_driven_double_click_makes_all_rings_visible`) drives the full production codepath: `SelectionManager.select_only(target)` twice within the double-click window, the same way ClickHandler would dispatch from a live mouse click. **Without the fix, this test fails on units 2..5; with the fix, all 5 rings end up visible.** This is the test that would have caught the original regression had it existed before.
+
+The existing unit test `test_second_select_same_unit_within_window_triggers_type_select` was updated to `await get_tree().process_frame` after the second `select_only` (because the expansion is now deferred). The change is one new line + a comment explaining why the await is needed.
+
+**Test-count delta (this fix's contribution):** +3 integration tests (file `test_session_2_double_click_visual.gd`). One existing unit test (`test_second_select_same_unit_within_window_triggers_type_select`) modified to await the deferred expansion. Total: 542 tests, 539 passing, 3 pending (pre-existing autoload / navmap pending tests, unrelated). 0 failures. Lint clean.
+
+**Hypothesis match:** kickoff hypothesis **(c)** — exactly. The diagnostic predicted: "intermediate broadcasts (size 1, 2, 3, 4) cause repeated `_apply_selection` calls that for some reason end with rings off on units 2-5." The actual mechanism was slightly different — it wasn't the intermediate broadcasts per se, but the **outer original emit's stale payload** being delivered AFTER the recursion completed. The kickoff was on the right scent (re-entrant signal emission); the precise mechanism was the receiver-iteration order of the outer emit, not the recursion itself.
+
+**State for next session:** the fix unblocks the lead's live-test of double-click. The `selection_changed` re-entrancy pattern is now documented inline in `double_click_select.gd` as a CRITICAL block-comment warning future contributors not to "optimize" the expansion back to synchronous. The same re-entrancy class would bite any future feature that mutates `SelectionManager` from inside an `EventBus.selection_changed` handler — `call_deferred` is the canonical pattern for that.
+
+**Open questions:** none.
+
+**Decisions made independently (per CLAUDE.md "Escalation" rule #1):**
+
+- **Defer via `call_deferred` over alternatives** (e.g., a "is currently broadcasting" guard on SelectionManager, or a `_pending_expansion` field on the detector polled in `_process`). Both alternatives are more code, more state, more places to forget. `call_deferred` is the engine's purpose-built mechanism for "do this after the current signal stack unwinds."
+
+- **Updated `test_second_select_same_unit_within_window_triggers_type_select` to `await` instead of removing it.** The test still validates the user-facing contract: "second click on same unit within window expands selection." The implementation detail (synchronous vs. deferred) is hidden behind the await — same shape as the existing `test_session_2_panel.gd` tests that await a process_frame after `add_to_selection`.
+
+- **Did NOT add a "pending expansion target" field to the detector** even though it would let the test skip the await. The deferred call is fire-and-forget; adding an observable field only to satisfy a test would be premature complexity (and the `await` is a more honest representation of the production timing anyway).

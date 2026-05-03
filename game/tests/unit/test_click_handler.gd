@@ -216,6 +216,10 @@ func test_right_click_pushes_command_to_every_selected_unit() -> void:
 	# multi-selection (add_to_selection). When session 2 wires Shift+click, the
 	# right-click move flow fans out to every selected unit. Test it now so the
 	# wave-2 plumbing is forward-compatible.
+	#
+	# Wave 2C update: the dispatch routes through GroupMoveController, which
+	# still issues exactly one replace_command per live unit — observable end
+	# state matches the pre-wire-up behavior.
 	var a: FakeUnit = _make_unit(1)
 	var b: FakeUnit = _make_unit(2)
 	SelectionManager.select(a)
@@ -225,6 +229,85 @@ func test_right_click_pushes_command_to_every_selected_unit() -> void:
 		"every selected unit gets the Move Command")
 	assert_eq(b._replace_call_count, 1,
 		"every selected unit gets the Move Command")
+
+
+# ===========================================================================
+# Right click — multi-selection routes through GroupMoveController (wave 2C)
+# ===========================================================================
+
+func test_right_click_multi_selection_distributes_targets() -> void:
+	# Wave 2C wire-up: when 2+ units are selected, the right-click handler
+	# routes through GroupMoveController.dispatch_group_move so units get
+	# distinct ring-offset targets instead of piling on the exact click point.
+	# The controller's algorithm puts unit 0 at center (target verbatim) and
+	# units 1..N on a ring of radius Constants.GROUP_MOVE_OFFSET_RADIUS.
+	var a: FakeUnit = _make_unit(1)
+	var b: FakeUnit = _make_unit(2)
+	var c: FakeUnit = _make_unit(3)
+	SelectionManager.select(a)
+	SelectionManager.add_to_selection(b)
+	SelectionManager.add_to_selection(c)
+	var click_target: Vector3 = Vector3(10.0, 0.0, 20.0)
+	handler.process_right_click_hit(_terrain_hit(click_target))
+	# Each unit got exactly one move command.
+	assert_eq(a._replace_call_count, 1)
+	assert_eq(b._replace_call_count, 1)
+	assert_eq(c._replace_call_count, 1)
+	# Targets are not all identical — at least 2 of 3 must differ from each
+	# other (formation distribution). Center slot may equal click_target;
+	# ring slots must offset.
+	var ta: Vector3 = a._last_replace_payload[&"target"]
+	var tb: Vector3 = b._last_replace_payload[&"target"]
+	var tc: Vector3 = c._last_replace_payload[&"target"]
+	var distinct_count: int = 0
+	if not ta.is_equal_approx(tb):
+		distinct_count += 1
+	if not tb.is_equal_approx(tc):
+		distinct_count += 1
+	if not ta.is_equal_approx(tc):
+		distinct_count += 1
+	assert_gte(distinct_count, 2,
+		"3-unit selection must produce at least 2 pairs of distinct targets "
+		+ "(ring distribution prevents pile-up)")
+
+
+func test_right_click_multi_selection_targets_within_radius() -> void:
+	# Each dispatched target must lie within the ring radius of the click
+	# point on the XZ plane — the controller's geometry contract. Y is
+	# preserved verbatim from the click.
+	var a: FakeUnit = _make_unit(1)
+	var b: FakeUnit = _make_unit(2)
+	var c: FakeUnit = _make_unit(3)
+	SelectionManager.select(a)
+	SelectionManager.add_to_selection(b)
+	SelectionManager.add_to_selection(c)
+	var click_target: Vector3 = Vector3(0.0, 1.5, 0.0)
+	handler.process_right_click_hit(_terrain_hit(click_target))
+	var max_offset: float = Constants.GROUP_MOVE_OFFSET_RADIUS + 1e-3
+	for u in [a, b, c]:
+		var t: Vector3 = u._last_replace_payload[&"target"]
+		var dx: float = t.x - click_target.x
+		var dz: float = t.z - click_target.z
+		var dist: float = sqrt(dx * dx + dz * dz)
+		assert_lte(dist, max_offset,
+			"each unit's target must lie within R of the click on the XZ plane")
+		assert_almost_eq(t.y, click_target.y, 1e-4,
+			"Y is preserved verbatim through the controller")
+
+
+func test_right_click_single_selection_target_unchanged() -> void:
+	# Single-selection must remain bitwise-identical to pre-wire-up behavior:
+	# the target is the click point verbatim, no ring offset. This is the
+	# regression guard for session-1's single-click move test suite.
+	var u: FakeUnit = _make_unit(1)
+	SelectionManager.select(u)
+	var click_target: Vector3 = Vector3(7.5, 0.0, -3.25)
+	handler.process_right_click_hit(_terrain_hit(click_target))
+	var t: Vector3 = u._last_replace_payload[&"target"]
+	assert_almost_eq(t.x, click_target.x, 1e-6,
+		"single-unit dispatch is identity — no offset math, no float drift")
+	assert_almost_eq(t.y, click_target.y, 1e-6)
+	assert_almost_eq(t.z, click_target.z, 1e-6)
 
 
 # ===========================================================================

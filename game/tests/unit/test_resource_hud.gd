@@ -35,18 +35,6 @@ var _gs_had_resources: bool = false
 var _gs_had_pop: bool = false
 var _gs_had_pop_cap: bool = false
 
-# Tracks the FarrSystem mocks this test created so after_each can remove
-# them without touching a real autoload that future sessions might wire.
-var _mock_farr_systems: Array[Node] = []
-
-# When we mutate the real FarrSystem autoload's backing fixed-point store,
-# stash the original value so after_each restores it and other test files
-# don't see leaked state. Mutating the autoload directly (rather than via
-# apply_farr_change) keeps these tests off-tick — apply_farr_change asserts
-# SimClock.is_ticking() and we don't want to spin the clock here.
-var _saved_farr_x100: Variant = null
-
-
 func before_each() -> void:
 	# Snapshot any GameState fields we might overwrite.
 	_gs_had_resources = (GameState.get(&"player_resources") != null)
@@ -55,12 +43,6 @@ func before_each() -> void:
 	_saved_resources = GameState.get(&"player_resources") if _gs_had_resources else null
 	_saved_pop = GameState.get(&"player_pop") if _gs_had_pop else null
 	_saved_pop_cap = GameState.get(&"player_pop_cap") if _gs_had_pop_cap else null
-	# Snapshot the live FarrSystem autoload's backing store, if registered.
-	var farr: Node = get_tree().root.get_node_or_null(NodePath("FarrSystem"))
-	if farr != null:
-		_saved_farr_x100 = farr.get(&"_farr_x100")
-	else:
-		_saved_farr_x100 = null
 
 
 func after_each() -> void:
@@ -80,11 +62,6 @@ func after_each() -> void:
 		GameState.set(&"player_pop_cap", _saved_pop_cap)
 	else:
 		GameState.set(&"player_pop_cap", null)
-	_remove_mock_farr_system()
-	# Restore live FarrSystem autoload's backing store.
-	var farr: Node = get_tree().root.get_node_or_null(NodePath("FarrSystem"))
-	if farr != null and _saved_farr_x100 != null:
-		farr.set(&"_farr_x100", _saved_farr_x100)
 
 
 # ---------------------------------------------------------------------------
@@ -132,44 +109,32 @@ func test_resource_hud_scene_loads_without_error() -> void:
 
 
 func test_resource_hud_scene_has_expected_labels() -> void:
-	# The scene must expose the four Labels the script @onreadys onto.
-	# Names match the .tscn structure: Margin/HBox/{Coin,Grain,Farr,Pop}Label.
+	# The scene must expose the three Labels the script @onreadys onto, plus
+	# the FarrGauge sub-scene that replaces the Phase 0 FarrLabel.
+	# Names match the .tscn structure: Margin/HBox/{Coin,Grain,Pop}Label and
+	# Margin/HBox/FarrGauge.
 	var hud: CanvasLayer = _instantiate_hud()
 	if hud == null:
 		pending("resource_hud.tscn unavailable")
 		return
 	assert_not_null(hud.get_node_or_null("Margin/HBox/CoinLabel"))
 	assert_not_null(hud.get_node_or_null("Margin/HBox/GrainLabel"))
-	assert_not_null(hud.get_node_or_null("Margin/HBox/FarrLabel"))
 	assert_not_null(hud.get_node_or_null("Margin/HBox/PopLabel"))
+	assert_not_null(hud.get_node_or_null("Margin/HBox/FarrGauge"),
+		"FarrGauge sub-scene replaces the Phase 0 FarrLabel (wave 1C)")
+	# FarrLabel must be gone — its presence would mean a stale reference still
+	# in the scene file. Catch any incomplete migration.
+	assert_null(hud.get_node_or_null("Margin/HBox/FarrLabel"),
+		"FarrLabel removed in wave 1C; FarrGauge replaces it")
 
 
 # ---------------------------------------------------------------------------
 # 3. Defensive reads — HUD shows defaults when producers absent
 # ---------------------------------------------------------------------------
 
-func test_farr_label_shows_default_when_farr_system_absent() -> void:
-	# Defensive default path: when no FarrSystem autoload (or stand-in) is
-	# present at the SceneTree root, the HUD falls back to 50 (the
-	# documented starting Farr per 01_CORE_MECHANICS.md §4.1).
-	#
-	# If gameplay-systems' real FarrSystem autoload has already shipped and
-	# is wired into project.godot by the time this test runs, this scenario
-	# (no producer at all) is no longer reachable — skip the test rather
-	# than report a false failure.
-	_remove_mock_farr_system()
-	if get_tree().root.get_node_or_null(NodePath("FarrSystem")) != null:
-		pending("FarrSystem autoload is registered; defensive-default path unreachable")
-		return
-	var hud: CanvasLayer = _instantiate_hud()
-	if hud == null:
-		pending("resource_hud.tscn unavailable")
-		return
-	# _ready ran at instantiation; force a refresh anyway for determinism.
-	hud._refresh_labels()
-	var label: Label = hud.get_node("Margin/HBox/FarrLabel")
-	assert_eq(label.text, "Farr: 50",
-		"FarrLabel must read default 50 when FarrSystem autoload is missing")
+# Phase 1 session 2 wave 1C: FarrLabel replaced by FarrGauge. Coverage of
+# the gauge's defensive seeding when FarrSystem is absent lives in
+# test_farr_gauge.gd::test_initial_displayed_farr_falls_back_when_farr_system_missing.
 
 
 func test_coin_label_shows_zero_when_resources_absent() -> void:
@@ -206,23 +171,9 @@ func test_pop_label_shows_zero_zero_when_fields_absent() -> void:
 # 4. Live reads — HUD picks up values from autoloads
 # ---------------------------------------------------------------------------
 
-func test_farr_label_reads_from_mock_farr_system() -> void:
-	# Provide a FarrSystem stand-in at the SceneTree root so _autoload_or_null
-	# resolves it. Mirror the production API: a `value_farr` float field.
-	# If a real FarrSystem autoload is already registered (gameplay-systems'
-	# parallel session-4 work landed first), reuse it and mutate the field
-	# instead — autoloads can't be shadowed by name.
-	_inject_or_mutate_farr_system(47.0)
-	var hud: CanvasLayer = _instantiate_hud()
-	if hud == null:
-		_remove_mock_farr_system()
-		pending("resource_hud.tscn unavailable")
-		return
-	hud._refresh_labels()
-	var label: Label = hud.get_node("Margin/HBox/FarrLabel")
-	assert_eq(label.text, "Farr: 47",
-		"FarrLabel must reflect FarrSystem.value_farr when present")
-	_remove_mock_farr_system()
+# Phase 1 session 2 wave 1C: gauge owns its own FarrSystem read path; the
+# corresponding live-read coverage moved to test_farr_gauge.gd::
+# test_initial_displayed_farr_seeds_from_farr_system.
 
 
 func test_coin_label_reads_from_player_resources() -> void:
@@ -271,30 +222,10 @@ func test_pop_label_reads_from_pop_fields() -> void:
 # 5. _process refresh path — labels update on subsequent frames
 # ---------------------------------------------------------------------------
 
-func test_process_picks_up_farr_changes_between_frames() -> void:
-	# Mutate the FarrSystem after the HUD has been processing. The next
-	# _process tick must show the updated value. Verifies the poll model.
-	#
-	# Both mutations route through _inject_or_mutate_farr_system because the
-	# real FarrSystem autoload's `value_farr` is a getter-only computed
-	# property — a direct `set()` is silently a no-op. The helper writes the
-	# integer-backed `_farr_x100` for the production path.
-	_inject_or_mutate_farr_system(30.0)
-	var hud: CanvasLayer = _instantiate_hud()
-	if hud == null:
-		_remove_mock_farr_system()
-		pending("resource_hud.tscn unavailable")
-		return
-	# Frame 1.
-	await get_tree().process_frame
-	var label: Label = hud.get_node("Margin/HBox/FarrLabel")
-	assert_eq(label.text, "Farr: 30")
-	# Mutate, pump, re-check.
-	_inject_or_mutate_farr_system(95.0)
-	await get_tree().process_frame
-	assert_eq(label.text, "Farr: 95",
-		"_process must re-read FarrSystem each frame")
-	_remove_mock_farr_system()
+# Phase 1 session 2 wave 1C: per-frame poll-and-refresh for Farr is gone;
+# the gauge updates on EventBus.farr_changed. Coverage of the signal-driven
+# refresh lives in test_farr_gauge.gd::test_displayed_farr_eventually_matches_target_after_tween
+# and test_farr_changed_signal_updates_target_farr.
 
 
 # ---------------------------------------------------------------------------
@@ -310,45 +241,3 @@ func _instantiate_hud() -> CanvasLayer:
 	return hud
 
 
-# Provide a FarrSystem-shaped node at the SceneTree root reading `value_farr`
-# float. Three cases:
-#   1. The real FarrSystem autoload exists (gameplay-systems' wave-1 work):
-#      mutate its `_farr_x100` backing store directly (off-tick is fine —
-#      we're not going through apply_farr_change). Returns the autoload.
-#   2. No FarrSystem present and no prior mock: spawn a Node, set
-#      `value_farr`, attach to root, track for cleanup. Returns the mock.
-#   3. A prior mock from this same test exists: mutate it. Returns the mock.
-func _inject_or_mutate_farr_system(target_value: float) -> Node:
-	var farr: Node = get_tree().root.get_node_or_null(NodePath("FarrSystem"))
-	if farr != null:
-		# Case 1 — real autoload (or a prior test session's mock): write the
-		# fixed-point store if it has one (production); else write
-		# `value_farr` directly (mock). Ordering matters: production stores
-		# are integer-backed and `value_farr` is a getter-only computed
-		# property, so writing `value_farr` on the production autoload is a
-		# no-op.
-		if farr.get(&"_farr_x100") != null:
-			farr.set(&"_farr_x100", roundi(target_value * 100.0))
-		else:
-			farr.set(&"value_farr", target_value)
-		return farr
-	# Case 2 — fresh mock.
-	var mock: Node = Node.new()
-	mock.name = "FarrSystem"
-	mock.set(&"value_farr", target_value)
-	get_tree().root.add_child(mock)
-	_mock_farr_systems.append(mock)
-	return mock
-
-
-func _remove_mock_farr_system() -> void:
-	# Drop ONLY the test-injected FarrSystem stand-ins this test owns. We
-	# never touch a node we didn't create — if gameplay-systems' real
-	# FarrSystem autoload lands in parallel and is registered before our
-	# tests run, our mocks are still removable; the real one is not because
-	# we never added it to _mock_farr_systems.
-	for mock: Node in _mock_farr_systems:
-		if is_instance_valid(mock) and mock.is_inside_tree():
-			get_tree().root.remove_child(mock)
-			mock.queue_free()
-	_mock_farr_systems.clear()
