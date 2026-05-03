@@ -1028,3 +1028,79 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 - **Inclusive-at-lower-bound boundary policy for color bands** — linter-added test docstring specified this. Avoids 14.99-vs-15.00 jitter. Encoded in `_band_for(...)` with `>=` checks descending from the gold threshold.
 - **`_TIER3_VISUAL_THRESHOLD = 70.0` hardcoded in the gauge, not in `FarrConfig`**. Spec §8 lists Tier 3 as post-MVP; `FARR_MAX = 100.0` belongs in `Constants` for the same reason. When Tier 3 ships and 70 becomes a balance knob, it moves to `FarrConfig` then. Citation comment in source.
 - **Removed obsolete `_inject_or_mutate_farr_system` / `_remove_mock_farr_system` helpers** from `test_resource_hud.gd` after dropping the three FarrLabel-specific tests that used them. Coverage moved to `test_farr_gauge.gd`. Cleaner than leaving dead code in place.
+
+## 2026-05-04 — Phase 1 session 2 wave 2A (ui-developer): control groups + double-click-select-of-type
+
+**Branch:** `feat/phase-1-session-2`
+
+**Shipped:**
+
+1. **`ControlGroups`** autoload at `game/scripts/input/control_groups.gd`. Registered in `game/project.godot` `[autoload]` AFTER `SelectionManager` (parse-time ordering matters — at this autoload's `_ready`, SelectionManager must already be parsed so `selected_units` reads return live data). Internal state: `_groups: Dictionary[int, Array]` keyed 1..9 (0 explicitly excluded; the spec is 1..9). On `Ctrl+N` press: snapshots `SelectionManager.selected_units` into group N (replacing prior contents; `is_instance_valid` lazy filter on read). On `N` alone: replaces selection with group N's live members (no-op if unbound or empty — recall is one-way restore, never clears prior selection). Double-tap detection uses `SimClock.tick`, NOT wall-clock — `DOUBLE_TAP_TICKS = 10` (~333ms at 30Hz, rounded from kickoff's 350ms guess). Different keycode between taps cancels. `event.echo` filter suppresses OS auto-repeat. Direct keycode reads (`event.keycode in KEY_1..KEY_9`, `event.ctrl_pressed`) — no InputMap actions needed. `set_camera_target(stub)` test seam injects a RefCounted stub. `reset()` wipes all groups + double-tap state.
+
+2. **`CameraController.center_on(world_pos: Vector3)`** added as a single-line public method at `game/scripts/camera/camera_controller.gd`. Clamps to bounds via existing `clamp_to_bounds` (Y forced to 0 — camera target rides on ground plane), then `_apply_transforms()`. Kickoff explicitly authorized this scoped addition; not a refactor.
+
+3. **`DoubleClickSelect`** Node at `game/scripts/input/double_click_select.gd`, instanced under `Main` in `main.tscn` as a sibling after `BoxSelectHandler` (NOT autoload — needs scene-bound viewport for live Camera3D). Detection strategy is **kickoff option (b)** — subscribe to `EventBus.selection_changed`. When the broadcast payload is exactly one unit, check whether that same unit was the sole selection on a recent prior emission within `DOUBLE_CLICK_TICKS = 9` ticks (~300ms). If yes, replace selection with all visible-on-screen units of the same `unit_type`. Multi-select (size > 1) and empty (deselect_all) payloads disarm the tracker. Visible-on-screen filter via `Camera3D.is_position_behind` + `unproject_position` + viewport-rect comparison (1px tolerance). Public seam `select_visible_of_type(target_unit, candidates, project_callable)` lets unit tests inject a projector closure without a real Camera3D — same pattern as `BoxSelectHandler.box_select_units`. Target unit always part of the result (defensive against 1-frame projection edge case).
+
+4. **`game/project.godot`** — `ControlGroups` registered AFTER `SelectionManager` in `[autoload]`.
+
+5. **`game/scenes/main.tscn`** — `DoubleClickSelect` node added as sibling after `BoxSelectHandler`. (Re-applied after a cross-agent commit reverted my initial wiring; I confirmed the wave-2B / wave-2C agents had landed their own changes by checking `git diff` before re-applying.)
+
+6. **`docs/ARCHITECTURE.md`** — added two `✅ Built` rows in §2 (Control groups + Double-click select-of-type) before the Selected-unit panel row. Added `### v0.14.4` plan-vs-reality entry in §6 covering both deliverables. Bumped front-matter `version: 0.14.4` and the comment.
+
+7. **37 new tests** (+23 in `tests/unit/test_control_groups.gd`, +14 in `tests/unit/test_double_click_select.gd`). Coverage: bind/recall correctness, freed-member filtering, double-tap timing window in/out, same-key/cross-key, centroid math (single, multi, with-frees, empty), reset semantics, synthetic InputEventKey dispatch (press/release, echo, non-digit, Ctrl-vs-bare). Double-click coverage: type-filter, on-screen filter, replace-prior-selection, null/freed targets, signal-driven arming/disarming, multi-select disarms, deselect_all resets, reset wipes state. Headless GUT: all pass; lint clean.
+
+**Test-count delta (this agent's contribution):** +37 (23 control_groups + 14 double_click_select). All pass; pre-commit gate green.
+
+**Live-game-broken-surface answers (Experiment 01 — refined):**
+
+*Control groups:*
+
+1. *What state/behavior must work at runtime that no unit test exercises?* Autoload parse-time ordering — if `ControlGroups` were registered BEFORE `SelectionManager` in `[autoload]`, this autoload's `_ready` would fail to read `SelectionManager.selected_units` (autoload-during-autoload-init order is undefined in Godot 4). Tests register the script as a fresh `.new()` instance with a manual SelectionManager seed; live mode runs through the project.godot order. Camera resolution happens lazily on first double-tap; if the user double-taps before the camera rig has finished `_ready`, the autoload silently no-ops (logged via `DEBUG_LOG_GROUPS`). InputEventKey.echo state — held keys auto-repeat at the OS level; without the `event.echo` filter, holding `1` would spam recall every frame. Tests synthesize echo=false events; live mode might.
+
+2. *What can a headless test not detect that the lead would notice in the editor?* Double-tap timing FEEL — `DOUBLE_TAP_TICKS = 10` is the kickoff's 350ms guess minus integer rounding. Lead may want 7 (faster) or 13 (slower — accommodates trackpad users). Whether camera centering should be a snap (current MVP) or a smooth tween (animated). The visual cue when a group is bound vs. recalled (no UI feedback yet — out of scope per kickoff "Control group display in HUD — Phase 2+"). Whether `Ctrl+1+2` fires ambiguously when the player is sloppy.
+
+3. *Minimum interactive smoke test:* Lead boxes 3 kargars, hits Ctrl+1, deselects via empty-space click → no rings. Lead hits 1 → same 3 select (gold rings). Lead hits 1 again within ~350ms → camera centers on them. Lead binds Ctrl+2 to a different selection; toggles 1 ↔ 2. Lead hits 5 (unbound) → no change to current selection.
+
+*Double-click select-of-type:*
+
+1. *What state/behavior must work at runtime that no unit test exercises?* `Camera3D.unproject_position` runs against the live camera with the unit's actual `global_position`; headless tests inject a projector closure. The viewport-rect filter compares against `vp.get_visible_rect().size` which depends on window resize state. Subscribers see exactly one emission per `SelectionManager.select_only` call — if a future "select_many" fast-path lands and emits twice for one logical operation, the detector would false-fire (gated by the size==1 check, but worth knowing).
+
+2. *What can a headless test not detect that the lead would notice in the editor?* Double-click timing FEEL — `DOUBLE_CLICK_TICKS = 9` (~300ms). Lead may want 7 or 12. Whether the visible-on-screen filter does the right thing at extreme zoom. Whether the player's intent was "deliberate two clicks on the same unit" vs. "double-click for select-of-type" — UX call. The 1px viewport-edge tolerance: at 1280×720 vs. 1920×1080 vs. 4K, units exactly at the edge may flicker in/out of selection.
+
+3. *Minimum interactive smoke test:* Lead double-clicks one kargar with all 5 visible → all 5 selected. Lead pans so only 2 are on-screen, double-clicks one → only those 2 selected. Lead clicks one kargar, waits 1 second, clicks again → single-select both times (window expired). Lead box-selects 3, then double-clicks the 4th outside the box → all 5 same-type selected (multi-select prior disarmed; double-click-only fires after a fresh single-select pair).
+
+**Did not ship** (out of scope per kickoff §2):
+
+- Control group append (Shift+N to add) — Phase 2+.
+- Control group display in HUD (numbered icons at screen-bottom) — Phase 2+.
+- Triple-click → select-all-of-type-globally — Phase 2+ if lead-test demands.
+- Animated camera centering (lerp instead of snap) — camera polish.
+- Right-click double-click semantics — not needed.
+
+**State for next session / waves:**
+
+- On `feat/phase-1-session-2`. Lint clean; my 37 new tests pass alongside the prior 484+ from waves 1A/1B/1C/2B/2C. Total project test count after this commit lands: ~520+ (exact count after merge — the parallel waves' final aggregation depends on commit order).
+- The double-click detector and the box-select handler share an inline `_project_unit` body — if a future change adds a third Camera3D-projection consumer, hoist into a shared helper. Pencil-in only; the duplication is small and the helper would be a one-method class.
+- LATER items surfaced in v0.14.4: Control group display in HUD (Phase 2+), Shift+N append (Phase 2+), animated camera centering (camera polish), triple-click globally (Phase 3+), OS-level click-speed setting integration (deferred indefinitely — may conflict with replay-determinism guarantee).
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+
+- **Signal-driven double-click (kickoff option b) over sibling-ordered input listener (option a).** Both are valid per kickoff. Option (b) makes the detector independent of which input layer routed the click — ClickHandler, BoxSelectHandler, or any future single-click producer all funnel through SelectionManager and emit the same broadcast. Option (a) would have to coordinate with BoxSelectHandler's click-vs-drag arbitration, fragile.
+
+- **Multi-select payload disarms the double-click tracker.** Without this, a sequence "box-select 5 → click one of them → click that one again" would false-fire as a double-click on the second single-click. Single-target selections are the only ones that arm or fire.
+
+- **`recall(n)` is a no-op on unbound or empty groups (does NOT clear selection).** The kickoff smoke-test sequence implies recall is a one-way restore. Pressing 5 for a group never bound shouldn't lose the current selection. Matches StarCraft 2 / AoE2 convention.
+
+- **`DOUBLE_TAP_TICKS = 10`, `DOUBLE_CLICK_TICKS = 9`.** Both round from the kickoff's "350ms" / "300ms" guesses to integer ticks (30Hz). Easy lead-tunable knobs.
+
+- **No InputMap entries for Ctrl+1..9 / 1..9.** Direct keycode reads via `event.keycode` and `event.ctrl_pressed` — same pattern as CameraController for WASD. 18 InputMap actions for a 1:1 keycode mapping would be needless ceremony.
+
+- **Lazy CameraController resolution via duck-typed scene walk.** `ControlGroups` does NOT preload `camera_controller.gd` because that would couple the autoload to a specific path. Instead, walks `get_tree().current_scene` looking for a node with the unique CameraController surface (`has_method(&"center_on")` AND `target_position in node`). Same duck-typing pattern `box_select_handler.gd::_resolve_click_handler` uses.
+
+- **`select_visible_of_type` always includes the target unit.** Defensive against a 1-frame projection edge case where `is_position_behind` flickers true. The player's intent is clear: "select all of this type starting from THIS one."
+
+- **Cross-agent coordination lesson learned.** When I first applied my `main.tscn` and `docs/ARCHITECTURE.md` edits, parallel wave-2B/2C agents had in-flight commits that reverted them on landing. After the second pass, I (a) re-read the files immediately before each Edit call (avoiding Edit-staleness errors), (b) used a different ext_resource id slot (`8_doubleclick`) so the box-select handler / panel ids didn't collide, and (c) verified `git diff main.tscn project.godot docs/ARCHITECTURE.md BUILD_LOG.md` showed only my additions before staging — the kickoff doc's coordination warning ("`git add` stages whole files including other agents' draft text") was the load-bearing gotcha here.
+
+- **Removed `test_select_of_type_with_freed_target_is_noop` test.** GDScript's typed-argument runtime reject for "previously-freed Object" makes the test path unreachable without changing the public method's signature to `Variant`. The realistic concern (a freed entry inside `candidates`) is covered by `test_select_of_type_with_freed_candidate_is_skipped`. Trimming the brittle test in favor of the realistic one.

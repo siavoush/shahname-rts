@@ -156,6 +156,15 @@ func zoom_by(scroll_delta: float) -> void:
 	zoom_distance = clampf(zoom_distance + scroll_delta * zoom_step, zoom_min, zoom_max)
 
 
+## Snap the camera target to a world position (clamped to map bounds). Used by
+## the control-groups autoload's double-tap-recall flow (Phase 1 session 2
+## wave 2A) — and any future "go to base / go to hero" hotkey. Y of the input
+## is ignored; target_position rides on the ground plane.
+func center_on(world_pos: Vector3) -> void:
+	target_position = clamp_to_bounds(Vector3(world_pos.x, 0.0, world_pos.z))
+	_apply_transforms()
+
+
 ## Clamp a candidate target position to the map's XZ bounds. Map is centered
 ## at origin so the legal range is [-map_size/2, +map_size/2] on each axis.
 ## Returns the clamped position; does NOT mutate target_position.
