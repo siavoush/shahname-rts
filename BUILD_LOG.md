@@ -34,6 +34,34 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-01 — Phase 1 session 2 wave 3 (qa-engineer): integration tests — session-2 flows
+
+**Branch:** `feat/phase-1-session-2`
+
+**Shipped:**
+
+1. **37 new integration tests across 5 files** (498 → 535 total; 3 pre-existing PENDING unchanged):
+   - `game/tests/integration/test_session_2_box_select.gd` — 7 tests. Box/drag selection via `BoxSelectHandler` public test seams (`box_select_units`, `begin_press`, `update_motion`, `end_press`, `current_drag_rect`) with injected projection callable (10:1 scale, no real Camera3D). Covers: drag-covers-all, drag-covers-none-clears, Shift-additive, dead-zone click vs. drag arbitration, drag-rect state transitions, motion-without-press no-op.
+   - `game/tests/integration/test_session_2_control_groups.gd` — 6 tests. Bind/recall/center round-trip. Camera centering verified via an inner `_CameraStub extends RefCounted` injected via `ControlGroups.set_camera_target(stub)`. Covers: bind/recall restores selection, freed-unit filtered on recall, unbound-group recall is no-op, double-tap fires center_on with correct centroid, cross-key double-tap no-op, stale-tap (>10 ticks) no-op.
+   - `game/tests/integration/test_session_2_group_move.gd` — 6 tests. Group-move pile-prevention with MockPathScheduler. Covers: dispatch produces ≥4 distinct targets for 5 units (ε=0.5), all targets within GROUP_MOVE_OFFSET_RADIUS, units arrive at distinct positions after 60 ticks, single-unit identity, empty-array no-op, freed unit skipped.
+   - `game/tests/integration/test_session_2_farr_gauge.gd` — 10 tests. `FarrGauge` listener round-trip off-tick per Sim Contract §1.5. Covers: signal updates `target_farr`, color bands at all boundary values (<15 red, 15→dim, 40→ivory, 70→gold), delta accumulation, seeded from `FarrSystem._farr_x100` at _ready, successive signals correct, large negative clamps, signal-before-in-tree crash guard.
+   - `game/tests/integration/test_session_2_panel.gd` — 9 tests. `SelectedUnitPanel` content correctness via `SelectionManager.add_to_selection` + `await get_tree().process_frame`. Covers: empty state, single layout (unit_id, type label, hp_ratio ≈ 1.0), 5-icon multi (icon_count == 5), icon-click narrows to single, unit death transitions to empty, freed-icon click is safe no-op, deselect_all returns empty, partial HP bar (hp_x100 = max/2 → ratio ≈ 0.5), MOUSE_FILTER_STOP regression guard.
+   - `game/tests/integration/test_session_2_smoke.gd` — 2 tests: (a) main.tscn spot-check: `SelectedUnitPanel` and `DoubleClickSelect` both present and have correct scripts (locks in cross-agent no-stomp guarantee); (b) cross-feature round-trip: box-select 5 → dispatch_group_move → 120 ticks → bind/deselect/recall → farr_changed → narrow box → STATE_SINGLE.
+
+2. **Key implementation learnings documented in ARCHITECTURE.md v0.14.5:**
+   - `add_child_autofree` MUST precede `global_position` assignment (Node3D.global_transform asserts `is_inside_tree()`)
+   - Farr gauge `target_farr` and `color_band` update synchronously on `farr_changed` signal — no `await` needed
+   - HP partial health tests must write `hp_x100` backing field, not the read-only `hp` getter
+   - Smoke test step-5 narrow box computed from actual post-movement unit screen position, not spawn position
+
+**Did not ship:** Production-scheduler pile-prevention test (PENDING — needs baked navmesh). Farr gauge tween intermediate color-band test (Phase 2 polish).
+
+**Bugs found:** None. All 6 session-2 systems verified correct via integration tests.
+
+**State for next session:** All 535 tests pass headless (3 PENDING are pre-existing). Wave-3 integration tests are on `feat/phase-1-session-2`. Next is wave 4 (balance-engineer, if scheduled) or Phase 2 (CombatSystem). The production-scheduler PENDING test in `test_session_2_group_move.gd` should be activated once a baked navmesh scene lands (Phase 3 world-builder task).
+
+---
+
 ## 2026-05-04 — Phase 1 session 2 wave 2B (ui-developer): selected-unit panel
 
 **Branch:** `feat/phase-1-session-2`
