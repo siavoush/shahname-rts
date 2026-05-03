@@ -166,7 +166,13 @@ func _sim_tick(_dt: float) -> void:
 		_set_sim(&"_target_unit_id", -1)
 		return
 	if health.has_method(&"take_damage_x100"):
-		health.call(&"take_damage_x100", attack_damage_x100, get_parent())
+		# Pass &"melee_attack" as the cause. HealthComponent's death emit
+		# augments this with "_idle_worker" if the dying unit is a Kargar
+		# in idle (Phase 2 session 1 wave 2A deliverable 10). Future
+		# ranged units (Kamandar, ...) will pass &"ranged_attack" from
+		# their own combat path — a CombatComponent-level "kind" flag is
+		# a LATER refactor when the second cause source ships.
+		health.call(&"take_damage_x100", attack_damage_x100, get_parent(), &"melee_attack")
 	# Cooldown reset. roundi enforces the deterministic rounding rule
 	# called out in Sim Contract §1.6.
 	var cooldown: int = roundi(float(SimClock.SIM_HZ) / attack_speed_per_sec)

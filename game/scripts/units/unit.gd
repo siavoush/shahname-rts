@@ -115,6 +115,7 @@ var fsm: StateMachine = StateMachine.new()
 const _UnitStateIdleScript: Script = preload("res://scripts/units/states/unit_state_idle.gd")
 const _UnitStateMovingScript: Script = preload("res://scripts/units/states/unit_state_moving.gd")
 const _UnitStateAttackingScript: Script = preload("res://scripts/units/states/unit_state_attacking.gd")
+const _UnitStateAttackMoveScript: Script = preload("res://scripts/units/states/unit_state_attack_move.gd")
 
 
 ## Snapshot of the most-recently-dispatched Command, populated by
@@ -240,6 +241,8 @@ func _ready() -> void:
 		fsm.register(_UnitStateMovingScript.new())
 	if not fsm._states.has(&"attacking"):
 		fsm.register(_UnitStateAttackingScript.new())
+	if not fsm._states.has(&"attack_move"):
+		fsm.register(_UnitStateAttackMoveScript.new())
 	# init() lands the unit on the starting state and connects the
 	# death-preempt signal. Subclasses that want a different starting
 	# state can call fsm.init(&"<id>") before super._ready (init is

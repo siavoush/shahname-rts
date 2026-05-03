@@ -190,6 +190,42 @@ func _apply_damage_x100(amount_x100: int, source: Node, cause: StringName) -> vo
 		if typeof(uid) == TYPE_INT:
 			killer_unit_id = int(uid)
 
+	# Cause-string augmentation for the worker-killed-idle Farr drain
+	# (Phase 2 session 1 wave 2A deliverable 10, per 02d_PHASE_2_KICKOFF.md
+	# §2 strategy (c)). When the dying unit is a Kargar AND its FSM is in
+	# &"idle" at the moment of death, append "_idle_worker" to the cause.
+	# FarrSystem's listener parses this suffix and applies -1 Farr
+	# (01_CORE_MECHANICS.md §4 "Worker killed idle (-1)").
+	#
+	# Why this lives in HealthComponent (not FarrSystem): the listener-side
+	# of unit_died can't reach back into a possibly-freed unit to ask
+	# "were you idle?" The dying-side has the parent unit and its FSM
+	# still alive (we're inside the damage tick, queue_free is deferred).
+	# Encoding in the cause string is the simplest way to carry that info
+	# across the signal boundary without extending the signal signature
+	# (which would require coordinated changes across EventBus's allowlist
+	# and forwarder; the suffix convention is forward-extensible without
+	# any of that).
+	#
+	# Convention: the suffix is "_idle_worker" — concatenated with whatever
+	# base cause the caller passed. So "melee_attack" becomes
+	# "melee_attack_idle_worker" when the conditions match. FarrSystem's
+	# parser uses String(cause).ends_with("_idle_worker") so any future
+	# cause prefix automatically participates.
+	var augmented_cause: StringName = cause
+	var pn: Node = parent_node
+	if pn != null:
+		var pn_unit_type: Variant = pn.get(&"unit_type")
+		if typeof(pn_unit_type) == TYPE_STRING_NAME and pn_unit_type == &"kargar":
+			# Check the parent's FSM state via the legibility helper. Per
+			# State Machine Contract §6.5: is_idle() returns true when the
+			# unit's current state is &"idle" (and ALSO when fsm.current is
+			# null, defensively — a unit with no current state is treated
+			# as idle for damage-attribution purposes, since it's certainly
+			# not engaged in any meaningful work).
+			if pn.has_method(&"is_idle") and bool(pn.call(&"is_idle")):
+				augmented_cause = StringName(String(cause) + "_idle_worker")
+
 	# Emit ORDER MATTERS — see the listener-order discipline note above.
 	#   1. unit_health_zero — StateMachine death-preempt (Contract §4.2).
 	#      Triggers transition to &"dying" (or queue_free fallback).
@@ -199,7 +235,7 @@ func _apply_damage_x100(amount_x100: int, source: Node, cause: StringName) -> vo
 	#      is_instance_valid each frame, but a unit_died-driven prune is a
 	#      LATER optimization).
 	EventBus.unit_health_zero.emit(unit_id)
-	EventBus.unit_died.emit(unit_id, killer_unit_id, cause, death_pos)
+	EventBus.unit_died.emit(unit_id, killer_unit_id, augmented_cause, death_pos)
 
 
 ## Apply healing. Increases hp by `amount`, clamped to max_hp_x100.

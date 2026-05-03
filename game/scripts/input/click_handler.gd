@@ -181,6 +181,16 @@ func _handle_right_click(screen_pos: Vector2) -> void:
 ## If no units are selected, no-op (the caller's _handle_right_click also
 ## short-circuits, but this method is defensive so direct test calls behave
 ## the same way as the input-driven path).
+##
+## Dispatch table (Phase 2 session 1 wave 2B):
+##   - hit empty / no selection → no-op.
+##   - hit is a Unit AND hit_unit.team != selected_team → Attack Command per
+##     selected unit. Payload carries target_unit_id; UnitState_Attacking
+##     resolves the live ref via scene-tree walk.
+##   - hit is a Unit AND hit_unit.team == selected_team → no-op (friendly
+##     fire / follow / guard are later phases — documented choice).
+##   - hit is terrain (collider isn't unit-shaped) → group-move dispatch via
+##     GroupMoveController (existing wave 2C behavior).
 func process_right_click_hit(hit: Dictionary) -> void:
 	var sel: Array = SelectionManager.selected_units
 	if sel.is_empty():
@@ -193,14 +203,40 @@ func process_right_click_hit(hit: Dictionary) -> void:
 		if DEBUG_LOG_CLICKS:
 			print("[click] RIGHT: no raycast hit → no-op")
 		return
-	# If the hit is a unit, this is the attack-move case — Phase 2. For wave 2
-	# we ignore unit hits on right-click. (Right-clicking a friendly unit might
-	# eventually become "follow" or "guard"; right-clicking an enemy is the
-	# attack target. Both are out of scope here.)
+	# Branch on hit-unit team relative to the selection's team. The reference
+	# team is read off the first selected unit's `team` field (selection is
+	# always single-team in MVP — Iran selecting their own; cross-team multi-
+	# select would imply spectator mode which is out of scope for Phase 2).
 	var hit_unit: Object = _resolve_unit_from_hit(hit)
 	if hit_unit != null:
+		var hit_team: int = _read_team(hit_unit)
+		var sel_team: int = _read_team(sel[0])
+		if hit_team != sel_team:
+			# Enemy: dispatch Attack command per selected unit.
+			var target_uid_v: Variant = hit_unit.get(&"unit_id")
+			if target_uid_v == null or typeof(target_uid_v) != TYPE_INT:
+				if DEBUG_LOG_CLICKS:
+					print("[click] RIGHT: enemy hit but unit_id missing/typed wrong → no-op")
+				return
+			var target_uid: int = int(target_uid_v)
+			if DEBUG_LOG_CLICKS:
+				print("[click] RIGHT: attack command target_unit_id=",
+					target_uid, " selected=", sel.size())
+			# Per-unit dispatch: UnitState_Attacking handles target resolution
+			# + range checks. Group formation engagement priority (split fire,
+			# focus fire) is Phase 3+ — for now every selected friendly attacks
+			# the same target.
+			for u in sel:
+				if u != null and is_instance_valid(u):
+					u.replace_command(
+						Constants.COMMAND_ATTACK,
+						{&"target_unit_id": target_uid},
+					)
+			return
+		# Friendly: no-op. Follow / guard / friendly-fire are later phases.
 		if DEBUG_LOG_CLICKS:
-			print("[click] RIGHT: hit unit (attack-move is Phase 2) → no-op")
+			print("[click] RIGHT: hit friendly unit (same team=",
+				sel_team, ") → no-op")
 		return
 	var target: Vector3 = hit.get(&"position", Vector3.ZERO)
 	if DEBUG_LOG_CLICKS:
@@ -211,6 +247,18 @@ func process_right_click_hit(hit: Dictionary) -> void:
 	# Unit.replace_command(&"move", {target}) per live unit (is_instance_valid
 	# filtered).
 	_GroupMove.dispatch_group_move(sel, target)
+
+
+## Read the `team` field off a Unit-shaped Node, defaulting to TEAM_NEUTRAL
+## when the field is missing. Same defensive pattern as _is_unit_shaped's
+## duck-typing — avoids an `is Unit` check that would re-introduce the
+## class_name registry race.
+func _read_team(unit: Object) -> int:
+	if unit == null:
+		return Constants.TEAM_NEUTRAL
+	if not (&"team" in unit):
+		return Constants.TEAM_NEUTRAL
+	return int(unit.get(&"team"))
 
 
 # ============================================================================

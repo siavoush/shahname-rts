@@ -1,0 +1,52 @@
+[gd_scene load_steps=5 format=3 uid="uid://shahnameh_turan_piyade_unit"]
+
+; turan_piyade.tscn — TuranPiyade (Turan foot infantry) scene.
+;
+; Source: 01_CORE_MECHANICS.md §6 (units) + §11 (Turan faction red palette).
+; Per 02d_PHASE_2_KICKOFF.md §2 deliverable 6: mirror of Iran Piyade —
+; same archetype, same stats, different team color. The visual half of
+; the Iran-vs-Turan team split.
+;
+; Pattern: scene inheritance via instance=ExtResource("path_to_unit.tscn").
+; Same shape as kargar.tscn / piyade.tscn — overrides only the
+; MeshInstance3D's mesh + material plus the root's script.
+;
+; Visual placeholder per CLAUDE.md "colored shapes only" policy:
+;   - Box (cube), 0.5 wide × 0.7 tall × 0.5 deep — same dimensions as
+;     the Iran Piyade so silhouette is identical (mirror combat). Only
+;     the team color differs.
+;   - Turan-red color (Color(0.7, 0.3, 0.3) — saturated red, distinct
+;     from the Iran-blue (0.3, 0.4, 0.7) and from any potential future
+;     Div faction color (which 01_CORE_MECHANICS.md §11 implies a darker
+;     palette for).
+
+[ext_resource type="PackedScene" uid="uid://shahnameh_unit_base" path="res://scenes/units/unit.tscn" id="1_unit_template"]
+[ext_resource type="Script" path="res://scripts/units/turan_piyade.gd" id="2_turan_piyade"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_turan_piyade"]
+; Same dimensions as Iran Piyade (0.5 × 0.7 × 0.5). Mirror combat means
+; same silhouette — only team color differs. If/when RPS gets faction-
+; asymmetric stats (Phase 2 session 2+), the mesh size could differ to
+; signal that visually.
+size = Vector3(0.5, 0.7, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_turan_piyade"]
+; Turan red. Saturated enough to read against the sandy terrain and
+; clearly distinct from the Iran-blue Piyade. CLAUDE.md placeholder
+; policy — pick a color that communicates "Turan combat unit" at a glance.
+albedo_color = Color(0.7, 0.3, 0.3, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — same simple lit pipeline as
+                  ; the rest of the placeholder units.
+
+
+; Inherit the Unit scene template; override only what differs.
+[node name="TuranPiyade" instance=ExtResource("1_unit_template")]
+script = ExtResource("2_turan_piyade")
+
+[node name="MeshInstance3D" parent="." index="0"]
+; Override the base Unit's BoxMesh (0.5×0.6×0.5) with the Turan Piyade
+; box (0.5×0.7×0.5) — same as Iran Piyade so the silhouette match
+; communicates "same archetype, opposing team."
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, 0)
+mesh = SubResource("BoxMesh_turan_piyade")
+material_override = SubResource("StandardMaterial3D_turan_piyade")

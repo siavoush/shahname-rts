@@ -1,6 +1,8 @@
 # Tests for ClickHandler — left/right click → SelectionManager + move command.
 #
 # Contract: docs/02b_PHASE_1_KICKOFF.md §2 (2)+(3) and the wave-2 brief.
+# Phase 2 session 1 wave 2B extends right-click to dispatch Attack commands
+# when the hit collider is an enemy Unit (deliverable 2 input wiring).
 #
 # What we cover:
 #   - Left click on a unit → SelectionManager.select_only(unit)
@@ -8,9 +10,14 @@
 #   - Left click on empty space (no hit) → deselect_all
 #   - Right click on terrain with a unit selected → Move Command pushed
 #   - Right click with no units selected → no-op
-#   - Right click on a unit (attack-move target, Phase 2) → no-op for wave 2
+#   - Right click on an enemy unit (Phase 2 wave 2B) → Attack Command pushed
+#     to every selected unit with payload = { target_unit_id: int }
+#   - Right click on a friendly unit → no-op (friendly fire / follow / guard
+#     semantics are later phases; documented choice)
 #   - Right click on empty space → no-op
 #   - Move Command shape: kind = &"move", payload = { target: Vector3 }
+#   - Attack Command shape: kind = &"attack",
+#                            payload = { target_unit_id: int }
 #
 # We bypass real raycasting by exercising `process_left_click_hit(hit)` and
 # `process_right_click_hit(hit)` directly with synthetic hit Dictionaries.
@@ -28,10 +35,11 @@ const SelectableComponentScript: Script = preload(
 
 # Fake unit with the duck-typed surface ClickHandler expects. Mirrors the
 # shape SelectionManager + ClickHandler probe (replace_command, command_queue,
-# unit_id, get_selectable). Inherits CharacterBody3D so a future stricter
+# unit_id, get_selectable, team). Inherits CharacterBody3D so a future stricter
 # `is Unit` check still works (CharacterBody3D is the production base).
 class FakeUnit extends CharacterBody3D:
 	var unit_id: int = -1
+	var team: int = Constants.TEAM_IRAN
 	var command_queue: Object = null
 	var _selectable: Variant = null
 	var _last_replace_kind: StringName = &""
@@ -70,9 +78,10 @@ func after_each() -> void:
 
 
 # Build a fake unit with a real SelectableComponent attached.
-func _make_unit(uid: int) -> FakeUnit:
+func _make_unit(uid: int, team: int = Constants.TEAM_IRAN) -> FakeUnit:
 	var u: FakeUnit = FakeUnit.new()
 	u.unit_id = uid
+	u.team = team
 	add_child_autofree(u)
 	var sc: Variant = SelectableComponentScript.new()
 	sc.unit_id = uid
@@ -187,16 +196,66 @@ func test_right_click_with_no_selection_is_noop() -> void:
 		"right-click with no selection must not push a command to any unit")
 
 
-func test_right_click_on_unit_is_noop_in_wave2() -> void:
-	# Phase 2 will route this to attack-move; for now, right-clicking a unit
-	# is a no-op (the move command must NOT be pushed with the clicked unit's
-	# position as the target).
-	var selected: FakeUnit = _make_unit(1)
-	var target_unit: FakeUnit = _make_unit(2)
+func test_right_click_on_enemy_unit_pushes_attack_command() -> void:
+	# Phase 2 session 1 wave 2B (deliverable 2 input wiring): right-clicking an
+	# ENEMY unit (different team) issues an Attack command to every selected
+	# unit. Payload carries the target's unit_id so UnitState_Attacking can
+	# resolve it via the scene-tree walk.
+	var selected: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	var enemy: FakeUnit = _make_unit(2, Constants.TEAM_TURAN)
 	SelectionManager.select(selected)
-	handler.process_right_click_hit(_hit(target_unit, Vector3.ZERO))
+	handler.process_right_click_hit(_hit(enemy, Vector3(3.0, 0.0, 0.0)))
+	assert_eq(selected._replace_call_count, 1,
+		"right-click on an enemy unit must push exactly one Attack Command "
+		+ "to each selected unit")
+	assert_eq(selected._last_replace_kind, Constants.COMMAND_ATTACK,
+		"Attack Command must use Constants.COMMAND_ATTACK (&\"attack\") — "
+		+ "matches StateMachine._COMMAND_KIND_TO_STATE_ID dispatch table")
+
+
+func test_right_click_attack_command_payload_has_target_unit_id() -> void:
+	# Payload shape contract with UnitState_Attacking — see
+	# unit_state_attacking.gd::enter() reading payload[&"target_unit_id"].
+	var selected: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	var enemy: FakeUnit = _make_unit(42, Constants.TEAM_TURAN)
+	SelectionManager.select(selected)
+	handler.process_right_click_hit(_hit(enemy, Vector3.ZERO))
+	assert_true(selected._last_replace_payload.has(&"target_unit_id"),
+		"Attack Command payload must contain a `target_unit_id` key")
+	assert_eq(int(selected._last_replace_payload[&"target_unit_id"]), 42,
+		"Attack Command payload.target_unit_id matches the clicked unit's id")
+
+
+func test_right_click_attack_dispatches_to_every_selected_unit() -> void:
+	# Multi-selection: every selected friendly gets the Attack Command with
+	# the same target_unit_id. (Group-move's ring distribution does NOT apply
+	# to attack — formation engagement priority is Phase 3+.)
+	var a: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	var b: FakeUnit = _make_unit(2, Constants.TEAM_IRAN)
+	var c: FakeUnit = _make_unit(3, Constants.TEAM_IRAN)
+	var enemy: FakeUnit = _make_unit(99, Constants.TEAM_TURAN)
+	SelectionManager.select(a)
+	SelectionManager.add_to_selection(b)
+	SelectionManager.add_to_selection(c)
+	handler.process_right_click_hit(_hit(enemy, Vector3.ZERO))
+	for u in [a, b, c]:
+		assert_eq(u._replace_call_count, 1,
+			"every selected unit must get exactly one Attack Command")
+		assert_eq(u._last_replace_kind, Constants.COMMAND_ATTACK)
+		assert_eq(int(u._last_replace_payload[&"target_unit_id"]), 99)
+
+
+func test_right_click_on_friendly_unit_is_noop() -> void:
+	# Friendly fire / follow / guard semantics are later phases. For Phase 2
+	# session 1, right-clicking a same-team unit is a no-op — the selected
+	# units do nothing rather than walking to the friendly's position.
+	var selected: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	var friendly: FakeUnit = _make_unit(2, Constants.TEAM_IRAN)
+	SelectionManager.select(selected)
+	handler.process_right_click_hit(_hit(friendly, Vector3(5.0, 0.0, 5.0)))
 	assert_eq(selected._replace_call_count, 0,
-		"right-click on a unit must NOT push a Move Command in Phase 1 wave 2")
+		"right-click on a same-team friendly unit must NOT push a command "
+		+ "(friendly-fire / guard / follow are later phases)")
 
 
 func test_right_click_on_empty_space_is_noop() -> void:
