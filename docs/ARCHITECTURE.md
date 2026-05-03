@@ -19,7 +19,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
 last_updated: 2026-05-01
-# bumped to v0.17.1 — Phase 2 Session 1 wave 2B: UnitState_AttackMove + click-handler enemy-right-click + AttackMoveHandler (ai-engineer)
+# bumped to v0.17.3 — Phase 2 Session 1 wave 3: BUG-01 + BUG-03 fixes (gameplay-systems)
 ---
 
 # Architecture — Target Shape and Build State

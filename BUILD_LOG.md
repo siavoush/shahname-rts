@@ -34,6 +34,42 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-01 — Phase 2 session 1 wave 3 (gameplay-systems): BUG-01 + BUG-03 fixes
+
+**Branch:** `feat/phase-2-session-1`
+
+**Shipped:**
+
+1. **BUG-01 fix.** `UnitState_Attacking._sim_tick` now drives `combat._sim_tick(dt)` after `combat.set_target(...)` in the in-range branch. Mirrors the `_movement._sim_tick(dt)` pattern UnitState_Moving uses. Damage now fires through the production EventBus chain. Same LATER applies — when CombatSystem phase coordinator ships, the drive call moves out of the state into the coordinator.
+
+2. **BUG-03 fix.** New `UnitState_Dying` at `game/scripts/units/states/unit_state_dying.gd`. id=`&"dying"`, priority=100, interrupt_level=NEVER. enter() calls `ctx.queue_free.call_deferred()` so the SceneTree is mutated AFTER the StateMachine's transition unwinds. Registered idempotently in `Unit._ready` alongside the other states. `StateMachine._on_unit_health_zero` now lands the death-preempt cleanly; killed units are freed within ~2 process_frames (one for the deferred CALL, one for queue_free's own deferral).
+
+3. **qa regression tests flipped from broken-state to correct-state assertions.** `test_bug01_combat_sim_tick_not_driven_by_fsm` → `test_bug01_combat_sim_tick_drives_damage_via_fsm` (asserts HP decreases over 10 ticks via the EventBus chain). `test_bug03_no_dying_state_unit_stays_valid_after_death` → `test_bug03_dying_state_frees_unit_after_lethal_damage` (asserts unit is freed after lethal damage + 3 process_frames).
+
+4. **5 new unit tests** in `test_unit_state_dying.gd` covering id/priority/interrupt_level shape, null/method-less ctx defensive bails, queue_free.call_deferred verification on a real Unit, and the full EventBus.unit_health_zero → StateMachine → UnitState_Dying chain.
+
+**Test-count delta:** 711 → 716 (5 new). Passing: 706 → 711 (the 2 BUG-01/BUG-03 regression tests went green; +5 new dying-state tests; the 3 BUG-02 / pre-existing pending tests stay pending). Lint: 0 violations.
+
+**Live-game-broken-surface answers (Experiment 01):**
+
+1. *State at runtime no unit test exercises:* The full Iran-attacks-Turan-to-death loop in main.tscn — does HP decrease visibly via the EventBus chain (BUG-01) and does the Turan Piyade's box disappear from the scene when it dies (BUG-03)? Unit tests cover the components and the integration test exercises the chain headlessly, but only a live Iran-vs-Turan engagement confirms the visual.
+2. *What headless tests cannot detect:* Whether the unit-disappears-instantly behavior reads as too abrupt to a player. A death animation / sink-into-ground placeholder is a Phase 5 polish item — for now, the unit just vanishes. This may surface in lead live-test as "feels jarring."
+3. *Minimum interactive smoke test:* Box-select an Iran Piyade. Right-click on a Turan Piyade. Watch HP decrease (BUG-01 fix). Wait for kill — Turan should disappear from the scene (BUG-03 fix).
+
+**Known Godot Pitfalls applied:**
+- Pitfall #2 (FSM driver wiring): the BUG-01 fix is exactly an instance of "code inside states only runs when something calls it" — Attacking's _sim_tick must explicitly drive combat._sim_tick the same way Moving drives movement._sim_tick. The pattern is now consistent across the two states.
+- Pitfall #4 (re-entrant signal mutation): `queue_free.call_deferred()` rather than direct `queue_free()` inside enter() — we're inside StateMachine._apply_transition which is itself inside a signal handler (_on_unit_health_zero). Direct free would invalidate `current` while the StateMachine still holds it. Deferring is the canonical fix.
+
+**New Pitfalls candidates:**
+
+- **Pitfall #8 (candidate): `Node.queue_free.call_deferred()` is double-deferred.** The outer call_deferred queues `queue_free` for end-of-frame; queue_free itself queues the actual deletion for end-of-next-frame. Tests that verify "unit is freed after Dying.enter" need TWO `await get_tree().process_frame` calls, not one. The integration-test variant of the same assertion needed THREE frames in practice (test runner backlog). Worth surfacing in the test contract as the canonical "wait for queued free" idiom. A `test_helper_await_node_freed(n)` polling helper would close the cost out at the test layer.
+
+**Decisions made independently:** UnitState_Dying.enter uses `ctx.queue_free.call_deferred()` rather than emitting a `unit_freed_requested` signal back to a coordinator. The deferred call is simpler, doesn't need a new signal, and matches the pattern Godot itself uses for pretty-much-every "kill this node" action. If a future system needs to observe "this unit's state machine entered Dying" it should subscribe to `unit_state_changed` (already emitted by the StateMachine on every transition).
+
+**LATER:** CombatSystem phase coordinator (mirror of MovementSystem coordinator); `set_target` should be made idempotent (currently resets cooldown every call, which means the BUG-01 fix's per-tick `set_target` re-call resets cooldown each tick — works correct enough for damage to fire every tick, but is at odds with the docstring's "called once on entry" intent and also collapses the 30-tick cooldown semantic in the FSM-driven path). Tracked but out-of-scope for this fix dispatch.
+
+---
+
 ## 2026-05-01 — Phase 2 session 1 wave 3 (qa-engineer): Integration tests for combat flows
 
 **Branch:** `feat/phase-2-session-1`
