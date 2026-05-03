@@ -116,6 +116,7 @@ const _UnitStateIdleScript: Script = preload("res://scripts/units/states/unit_st
 const _UnitStateMovingScript: Script = preload("res://scripts/units/states/unit_state_moving.gd")
 const _UnitStateAttackingScript: Script = preload("res://scripts/units/states/unit_state_attacking.gd")
 const _UnitStateAttackMoveScript: Script = preload("res://scripts/units/states/unit_state_attack_move.gd")
+const _UnitStateDyingScript: Script = preload("res://scripts/units/states/unit_state_dying.gd")
 
 
 ## Snapshot of the most-recently-dispatched Command, populated by
@@ -243,6 +244,13 @@ func _ready() -> void:
 		fsm.register(_UnitStateAttackingScript.new())
 	if not fsm._states.has(&"attack_move"):
 		fsm.register(_UnitStateAttackMoveScript.new())
+	# BUG-03 fix (Phase 2 session 1 wave 3): Dying must be registered so the
+	# StateMachine death-preempt path (Contract §4.2 — _on_unit_health_zero)
+	# can land the transition. Without this register, _apply_transition
+	# push_errors on the missing &"dying" entry and the unit stays alive in
+	# the scene tree, leaving zombie corpses for attackers to keep engaging.
+	if not fsm._states.has(&"dying"):
+		fsm.register(_UnitStateDyingScript.new())
 	# init() lands the unit on the starting state and connects the
 	# death-preempt signal. Subclasses that want a different starting
 	# state can call fsm.init(&"<id>") before super._ready (init is

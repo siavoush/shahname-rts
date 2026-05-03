@@ -4,44 +4,26 @@
 # Related:  docs/TESTING_CONTRACT.md §3.1, docs/SIMULATION_CONTRACT.md §6.1,
 #           docs/STATE_MACHINE_CONTRACT.md §3.4 / §3.5.
 #
-# BUGS FOUND (report to team-lead for routing):
+# BUG STATUS:
 #
-# BUG-01: CombatComponent._sim_tick never called via EventBus.sim_phase chain.
-#   File/line: game/scripts/units/states/unit_state_attacking.gd, entire _sim_tick.
-#   Root cause: UnitState_Attacking._sim_tick calls combat.set_target() on each
-#     in-range tick but never calls combat._sim_tick(dt). There is no combat phase
-#     coordinator registered either, so EventBus.sim_phase(&"combat") fires with no
-#     listeners. Damage never fires through the production FSM path.
-#   Assertion that exposes it: test_bug01_combat_sim_tick_not_driven_by_fsm (below).
-#   Fix path: UnitState_Attacking._sim_tick should call combat._sim_tick(dt) after
-#     combat.set_target() when in range — same pattern as UnitState_Moving calling
-#     movement._sim_tick(dt). Owner: gameplay-systems (ai-engineer owns the state,
-#     but the handoff to combat._sim_tick follows the pattern gameplay-systems
-#     established for Movement).
+# BUG-01: FIXED in Phase 2 session 1 wave 3 (gameplay-systems). UnitState_Attacking
+#   ._sim_tick now calls combat._sim_tick(dt) after combat.set_target(...) when in
+#   range — mirrors UnitState_Moving's _movement._sim_tick(dt) pattern. The qa
+#   regression test (test_bug01_combat_sim_tick_drives_damage_via_fsm) asserts
+#   correct behavior: HP decreases via the EventBus chain. LATER: when CombatSystem
+#   phase coordinator ships, the drive call moves out of the state.
 #
-# BUG-02: AttackMoveHandler not present in main.tscn.
+# BUG-02: PENDING — AttackMoveHandler not present in main.tscn. ai-engineer's BUG-02
+#   dispatch follows BUG-01 + BUG-03 fix.
 #   File/line: game/scenes/main.tscn — no AttackMoveHandler node.
-#   Root cause: wave-2B shipped AttackMoveHandler but Deviation 02 (commit-race)
-#     caused the ui-dev agent's commit (aa429ef) to sweep up the wave-2B code
-#     without the main.tscn addition for AttackMoveHandler.
-#   Assertion that exposes it: test_main_tscn_attack_move_handler_before_click_handler.
 #   Fix path: Add AttackMoveHandler node BEFORE ClickHandler in main.tscn,
-#     with script = res://scripts/input/attack_move_handler.gd. Owner: ai-engineer
-#     (wave-2B was their scope).
+#     with script = res://scripts/input/attack_move_handler.gd. Owner: ai-engineer.
 #
-# BUG-03: No 'dying' state registered for combat units (Piyade, Kargar, etc).
-#   File/line: game/scripts/units/unit.gd — _ready() registers idle/moving/attacking/
-#     attack_move states but NOT 'dying'. StateMachine._on_unit_health_zero() at line 288
-#     push_errors and returns without queuing the unit free.
-#   Root cause: The dying state implementation was deferred (not shipped in wave 1+2).
-#     StateMachine.gd already has the death-preempt handler (_on_unit_health_zero) that
-#     calls _apply_transition(&"dying", ...) but requires the state to be registered.
-#     Without a dying state, killed units stay in the scene tree and remain valid Node
-#     references — UnitState_Attacking._sim_tick()'s is_instance_valid(_target) check
-#     never triggers, so attackers never return to idle after killing a target.
-#   Assertion that exposes it: test_bug03_no_dying_state_unit_stays_valid_after_death.
-#   Fix path: Add UnitState_Dying to unit.gd's FSM registration that calls queue_free()
-#     on its owning unit (via ctx.queue_free()). Owner: gameplay-systems.
+# BUG-03: FIXED in Phase 2 session 1 wave 3 (gameplay-systems). UnitState_Dying
+#   shipped at game/scripts/units/states/unit_state_dying.gd and registered in
+#   Unit._ready. The qa regression test
+#   (test_bug03_dying_state_frees_unit_after_lethal_damage) asserts correct
+#   behavior: unit is freed after lethal damage + one process_frame.
 #
 # Integration test structure:
 #   Flows 1-2 (single attack, cooldown): drive CombatComponent via tick boundary
@@ -185,18 +167,16 @@ func _combat_ticks(combat: Node, n: int) -> void:
 
 
 # ============================================================================
-# BUG-01 regression — CombatComponent never driven via EventBus.sim_phase chain
+# BUG-01 regression-lock — CombatComponent IS driven via EventBus.sim_phase chain
 # ============================================================================
-# This test DOCUMENTS the current bug. Until BUG-01 is fixed it asserts the
-# broken (current) behavior and serves as the regression lock.
-#
-# The fix: UnitState_Attacking._sim_tick should call combat._sim_tick(dt)
-# after calling combat.set_target() when in range. Owner: gameplay-systems.
-#
-# BUG-03 regression is in test_bug03_no_dying_state_unit_stays_valid_after_death
-# below (asserts that a killed unit is NOT freed — current broken behavior).
+# After the Phase 2 session 1 wave-3 fix (gameplay-systems), UnitState_Attacking
+# ._sim_tick calls combat._sim_tick(dt) after combat.set_target(...) when the
+# target is in range — mirroring UnitState_Moving's _movement._sim_tick(dt)
+# pattern. This test asserts the FIXED behavior: HP decreases via the full
+# production EventBus chain. If this test ever fails again, BUG-01 has regressed
+# OR the CombatSystem phase coordinator (LATER) hasn't taken over the drive call.
 
-func test_bug01_combat_sim_tick_not_driven_by_fsm() -> void:
+func test_bug01_combat_sim_tick_drives_damage_via_fsm() -> void:
 	_iran = _spawn_iran(Vector3.ZERO)
 	_turan = _spawn_turan(Vector3(1.0, 0.0, 0.0))  # within 1.5 attack range
 
@@ -209,20 +189,16 @@ func test_bug01_combat_sim_tick_not_driven_by_fsm() -> void:
 	# Advance 10 ticks via the real EventBus.sim_phase chain. This exercises:
 	#   sim_phase(&"movement") → Unit._on_sim_phase → fsm.tick()
 	#     → UnitState_Attacking._sim_tick() → combat.set_target() (in range)
-	#   sim_phase(&"combat") → nobody listening (no coordinator registered)
-	# Result: combat.set_target() is called each tick but combat._sim_tick() never runs.
+	#       → combat._sim_tick(dt) → HealthComponent.take_damage_x100
+	# Result: HP decrements via the production FSM chain.
 	_advance(10)
 
 	var hp_after: int = int(_turan.get_health().hp_x100)
 
-	# BUG-01: HP does NOT decrement via the EventBus.sim_phase chain because
-	# UnitState_Attacking._sim_tick never calls combat._sim_tick(dt).
-	# When this test fails (hp_after < initial_hp_x100), BUG-01 is fixed.
-	assert_eq(hp_after, initial_hp_x100,
-		"BUG-01 REGRESSION: CombatComponent._sim_tick is not driven via EventBus chain; "
-		+ "HP unchanged after 10 ticks (initial=%d after=%d). "
-		% [initial_hp_x100, hp_after]
-		+ "When fixed: UnitState_Attacking._sim_tick must call combat._sim_tick(dt).")
+	# Fixed behavior: HP must drop after 10 ticks of in-range engagement.
+	assert_lt(hp_after, initial_hp_x100,
+		"BUG-01 regression-lock: HP must decrease via the EventBus chain "
+		+ "(initial=%d after=%d after 10 ticks)" % [initial_hp_x100, hp_after])
 
 
 # ============================================================================
@@ -328,35 +304,50 @@ func test_single_attack_last_death_position_captured_before_free() -> void:
 		% [str(pos), str(turan_world_pos)])
 
 
-# BUG-03 regression: No dying state means killed units are never freed.
-# This test asserts the current BROKEN behavior (unit still valid after being
-# dealt lethal damage). When BUG-03 is fixed (dying state registered, unit
-# gets queue_free'd), this test will fail — a sign to update it.
-func test_bug03_no_dying_state_unit_stays_valid_after_death() -> void:
+# BUG-03 regression-lock: dying state is registered and frees killed units.
+# After the Phase 2 session 1 wave-3 fix (gameplay-systems), UnitState_Dying
+# is registered in Unit._ready and StateMachine._on_unit_health_zero force-
+# transitions into it on lethal damage. The state's enter() calls
+# queue_free.call_deferred on the owning unit, so by the next process_frame
+# the unit is freed.
+func test_bug03_dying_state_frees_unit_after_lethal_damage() -> void:
 	_iran = _spawn_iran(Vector3.ZERO)
 	_turan = _spawn_turan(Vector3(1.0, 0.0, 0.0))
 
-	var combat: Node = _iran.get_combat()
-	combat.target_lookup_callable = func(uid: int) -> Variant:
-		if is_instance_valid(_turan) and int(_turan.unit_id) == uid:
-			return _turan
-		return null
-	combat.set_target(int(_turan.unit_id))
+	# Capture unit_id before the deferred free invalidates the ref so the test
+	# message can still reference it for diagnostics.
+	var turan_id: int = int(_turan.unit_id)
 
-	# Deal enough damage to kill Turan (100 HP, 10 dmg/hit). After lethal damage:
-	# - unit_health_zero fires → StateMachine push_errors (no dying state) → returns
-	# - unit_died fires
-	# - But the unit is NEVER queue_free'd — is_instance_valid() remains true.
-	for _i in range(20):
-		_combat_tick(combat)
+	# Pre-condition: dying state must be registered (BUG-03 fix landed).
+	assert_true(_turan.fsm._states.has(&"dying"),
+		"pre-condition: dying state must be registered (BUG-03 fix)")
 
-	# BUG-03: Turan is still a valid instance after lethal damage because
-	# no dying state exists to call queue_free. When this fails (Turan is freed),
-	# BUG-03 is fixed — add a dying state and update this test.
-	assert_true(is_instance_valid(_turan),
-		"BUG-03 REGRESSION: unit stays valid after lethal damage because no "
-		+ "'dying' state is registered. Fix: add UnitState_Dying to unit.gd that "
-		+ "calls ctx.queue_free(). Owner: gameplay-systems.")
+	# Deal lethal damage directly. The death-preempt chain (HealthComponent
+	# emits unit_health_zero → StateMachine._on_unit_health_zero force-
+	# transitions to &"dying" → UnitState_Dying.enter calls queue_free.
+	# call_deferred on the unit) does not depend on HOW the damage was dealt.
+	# Turan Piyade has 100 HP (hp_x100 = 10000); 20000 is overkill damage.
+	# This avoids the CombatComponent cooldown (1 atk/sec at 30Hz = 30-tick
+	# cooldown — would need 100+ ticks to land 10 attacks for kill).
+	SimClock._is_ticking = true
+	_turan.get_health().take_damage_x100(20000, _iran, &"melee_attack")
+	SimClock._is_ticking = false
+
+	# Allow the deferred queue_free chain to land. queue_free.call_deferred
+	# is double-deferred: outer call_deferred queues queue_free at end-of-
+	# frame; queue_free itself defers actual free to end-of-next-frame.
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# Fixed behavior: the killed unit must be freed.
+	assert_false(is_instance_valid(_turan),
+		"BUG-03 regression-lock: unit %d must be freed after lethal damage "
+		% turan_id
+		+ "(UnitState_Dying registered + enter() calls queue_free.call_deferred). "
+		+ "If this fails: dying state may have been removed from Unit._ready, or "
+		+ "the call_deferred path has changed.")
+	# Null the local ref so after_each's defensive queue_free doesn't double-free.
+	_turan = null
 
 
 # ============================================================================

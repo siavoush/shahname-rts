@@ -25,10 +25,15 @@ class_name UnitState_Attacking extends "res://scripts/core/state_machine/unit_st
 ##           counts grow past ~50 (Phase 3+), switch to a stale-distance
 ##           threshold or a per-N-ticks throttle.
 ##       (d) If distance ≤ attack_range: stop driving movement (cancel any
-##           in-flight repath via the scheduler) and call
-##           `combat.set_target(target.unit_id)`. CombatComponent's own
-##           _sim_tick handles damage/cooldown firing per Phase 2 kickoff
-##           §2 deliverable 1.
+##           in-flight repath via the scheduler), call
+##           `combat.set_target(target.unit_id)`, AND drive
+##           `combat._sim_tick(dt)` so cooldown advances and damage fires.
+##           Mirrors UnitState_Moving's `_movement._sim_tick(dt)` pattern.
+##           LATER: when the CombatSystem phase coordinator ships, the
+##           drive call moves out of this state into the coordinator's
+##           &"combat" phase iteration; this state then only calls
+##           set_target. Same shape as the MovementSystem coordinator
+##           refactor noted in BUILD_LOG 2026-05-01 wave 2.
 ##   - exit(): defensive cleanup. `combat.set_target(-1)` so the
 ##     CombatComponent doesn't keep firing at the prior target after the
 ##     state ends. Cancel any in-flight repath so the scheduler doesn't
@@ -147,8 +152,9 @@ func enter(_prev: Object, ctx: Object) -> void:
 #   1. If target was freed since last tick: transition_to_next.
 #   2. Compute XZ distance to target.
 #   3. If out of attack_range: drive request_repath toward target's current pos.
-#   4. If in attack_range: cancel in-flight repath, drive combat.set_target.
-func _sim_tick(_dt: float, ctx: Object) -> void:
+#   4. If in attack_range: cancel in-flight repath, drive combat.set_target,
+#      then drive combat._sim_tick(dt) so cooldown advances and damage fires.
+func _sim_tick(dt: float, ctx: Object) -> void:
 	# Step 1: target validity. queue_freed targets become invalid on the
 	# tick after free, which is how dying targets exit combat.
 	if _target == null or not is_instance_valid(_target):
@@ -178,6 +184,16 @@ func _sim_tick(_dt: float, ctx: Object) -> void:
 	_cancel_in_flight_repath()
 	if _combat != null and _combat.has_method(&"set_target"):
 		_combat.set_target(int(_target.unit_id))
+	# Drive combat._sim_tick so cooldown advances and damage fires. Until
+	# the CombatSystem phase coordinator lands (LATER — same refactor shape
+	# as MovementSystem in BUILD_LOG 2026-05-01 wave 2), Attacking is the
+	# per-tick driver for CombatComponent. When the coordinator ships, this
+	# call moves out of the state into the coordinator's &"combat" phase
+	# iteration. Defensive: stub combats in tests may not implement
+	# `_sim_tick` — we tolerate the absence rather than push_error so the
+	# wave-1B unit-test stub keeps working.
+	if _combat != null and _combat.has_method(&"_sim_tick"):
+		_combat._sim_tick(dt)
 
 
 # Exit: defensive cleanup. Clear combat target so CombatComponent doesn't
