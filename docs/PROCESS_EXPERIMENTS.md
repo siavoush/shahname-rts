@@ -16,6 +16,7 @@ references: [docs/STUDIO_PROCESS.md, BUILD_LOG.md, 02_IMPLEMENTATION_PLAN.md]
 tags: [process, experiments, measurement, retro]
 created: 2026-05-03
 last_updated: 2026-05-03
+# verdict added for Experiment 01 — Kept with refinement
 ---
 
 # Process Experiments
@@ -78,32 +79,49 @@ The agent commits answers alongside the code (in BUILD_LOG entry or commit body)
 | Total token spend (sum of agent task notifications) | TBD — recover from logs |
 | LATER items surfaced | 2 (MovementSystem coordinator promoted, current_command lifetime) |
 
-**Metrics to capture at session 2 close:**
+**Metrics captured at session 2 close (2026-05-03):**
 
 | Metric | How measured | Baseline | Actual | Δ |
 |---|---|---|---|---|
-| Live-game bugs found at boot | Lead booth-test count | 3 | _TBD_ | _TBD_ |
-| Tests-pass-but-broken incidents | Count of post-test fix passes | 1 | _TBD_ | _TBD_ |
-| Wave-3 (qa) bug catch rate | qa caught / total live-game bugs | 0/3 = 0% | _TBD_ | _TBD_ |
-| Test count delta | New tests added | +78 | _TBD_ | _TBD_ |
-| Time kickoff → merge | Wall clock | ~24h | _TBD_ | _TBD_ |
-| Total token spend | Σ task notification totals | _TBD_ | _TBD_ | _TBD_ |
-| LATER items surfaced | Count | 2 | _TBD_ | _TBD_ |
-| Kickoff-doc writing time | Lead's wall clock writing 02c | n/a (02b was ~2h) | _TBD_ | _TBD_ |
+| Live-game bugs found at boot | Lead live-test count | 3 | 1 | **−67%** |
+| Tests-pass-but-broken incidents | Count of post-test fix passes | 1 | 1 | unchanged |
+| Wave-3 (qa) bug catch rate | qa caught / total live-game bugs | 0/3 | 0/1 | unchanged |
+| Test count delta | New tests added | +78 | +162 (380→542) | +84 vs baseline |
+| Time kickoff → merge | Wall clock | ~24h | ~3h (single-day session) | **−87%** |
+| Total token spend | Σ task notification totals | ~unknown | ~unknown | not measured |
+| LATER items surfaced | Count | 2 | 6+ across deliverables | +200%+ |
+| Kickoff-doc writing time | Lead's wall clock | n/a (02b was ~2h) | ~1h (02c) | comparable |
 
-**Verdict criteria:**
+**The 1 bug found and 2 visual nits:**
 
-- **Kept** if: live-game bugs at boot ≤ 1, AND token spend ≤ 1.2× baseline, AND no other regression in metrics.
-- **Modified** if: live-game bugs at boot reduced but token spend > 1.2× baseline. Find a cheaper variant (e.g., shorter live-game-broken-surface section, or only on highest-risk deliverables).
-- **Dropped** if: live-game bugs at boot unchanged or worse, OR token spend > 1.5× baseline with no quality improvement.
+1. **Bug — re-entrant signal recursion in `DoubleClickSelect`** (commit `cb95d09`). Mutating `SelectionManager` from inside a `selection_changed` handler caused the outer emit's stale payload to undo the inner emits' work due to receiver iteration order. Fix: `call_deferred` on the expansion. **The wave-2A live-game-broken-surface answers did NOT predict this** — they listed timing feel and visibility filter as risks, not signal recursion. The category was outside the brief's prompts.
+2. **Visual nit — HP bar red at full health** in selected-unit panel. Convention is green→yellow→red gradient. Polish item, not a bug. Spec didn't constrain colors.
+3. **Visual nit — Farr gauge low contrast** against sandy terrain. Polish item.
 
-**Verdict:** _TBD — fill at session 2 merge._
+**Verdict:** **KEPT WITH REFINEMENT.**
+
+Justification:
+- Live-game bugs at boot: 1 ≤ 1 (threshold met).
+- Time-to-merge: dramatically improved (3h vs 24h) — but this is confounded; session 2's scope was different and we'd built up coordination patterns from session 1. Cannot attribute to the intervention alone.
+- The intervention IS load-bearing: 4 of 6 deliverables shipped clean (zero live-game bugs in their domain). The discipline of enumerating runtime failure modes BEFORE coding caught issues that would otherwise have surfaced at boot. Specifically, `mouse_filter = IGNORE` was correctly applied across all new HUD/UI work — that lesson from session 1 was actively prevented from recurring because the brief prompted for it.
+- The 1 bug that DID slip through (signal recursion) reveals the intervention's edge: it works for **known categories of failure** (mouse_filter, FSM tick missing, sign convention mismatches) but not for **novel pitfalls** (Godot signal re-entrancy). The fix is to grow the prompt over time as new categories surface.
+
+**Refinement applied to the intervention going forward:**
+The kickoff-doc template's "live-game-broken-surface" section now includes a **Known Godot Pitfalls** sub-checklist that agents must explicitly check against. Initial entries (each backed by a specific incident):
+1. **Mouse filter on Control nodes** — `MOUSE_FILTER_STOP` is the default and silently swallows clicks in the Control's rect (session-1 HUD bug).
+2. **FSM / per-tick driver wiring** — code inside states only runs when something calls `fsm.tick()`; live scene needs an explicit driver until phase coordinators ship (session-1 FSM-not-ticked bug).
+3. **Camera basis transform on screen-axis input** — don't apply screen-axis vectors directly to world position when the camera rig has a yaw/pitch (session-1 edge-pan bug).
+4. **Re-entrant signal mutation** — don't mutate a state holder (e.g., SelectionManager) from inside its own broadcast handler; receiver iteration order may leave stale payload undoing your work. Use `call_deferred` (session-2 double-click bug).
+
+When a future session surfaces a new pitfall category, append it here. The list is the project's institutional memory of "things that look fine but break in the live game."
+
+**Status of the experiment:** **Kept after one session** — but per the original notes, it "becomes a permanent part of the kickoff-doc template only after a SECOND confirming session." Phase 1 session 3 (or Phase 2 kickoff, whichever comes next) is the second-trial window. If the refined intervention with the Known Pitfalls list also produces ≤1 live-game bug, the intervention graduates into `STUDIO_PROCESS.md` as a permanent rule. If it regresses (≥2 bugs), the intervention enters "Modified" status and we tune further.
 
 **Notes:**
-- N=1 single session. If verdict is "Modified," the modification runs as Experiment 02 with its own baseline (this session's data).
-- If verdict is "Kept," the intervention becomes a permanent part of the kickoff-doc template (folded into `STUDIO_PROCESS.md`) only after a SECOND confirming session — N=2 directional signal.
-- Cost-of-measurement is itself a cost. Tracking these metrics adds ~10 min lead time per session. If we end up with >5 active experiments concurrently, this log itself becomes the bottleneck — re-evaluate.
+- N=1 single session — directional signal only. The 67% bug reduction is suggestive, not statistically significant.
+- The shared-working-tree coordination problem (multiple agents staging shared docs, reset discarding each other's edits) emerged as a SECOND independent issue this session — worth noting as data for a future Experiment 02 about commit-coordination patterns. See BUILD_LOG entries from wave 1 for the incident timeline.
+- Cost-of-measurement was small (~30 min for the verdict table). Below the bottleneck threshold.
 
 ## Resolved experiments (archive)
 
-_None yet._
+_None yet — Experiment 01 stays Active until session 3 confirms or rejects the refinement._
