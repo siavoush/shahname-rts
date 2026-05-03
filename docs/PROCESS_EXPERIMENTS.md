@@ -219,6 +219,41 @@ Per the discipline rule, deviations from the documented studio process (kickoff 
 
 **Verdict on the deviation itself:** appropriate for the situation but indicative of a process gap that should be closed in Phase 2 session 2's kickoff brief.
 
+### Deviation 02 — parallel-agent commit-staging race produced a misattributed commit (2026-05-03, Phase 2 session 1 wave 2)
+
+**Trigger:** three wave-2 agents (`gameplay-piyade-and-drain`, `ai-eng-attack-input`, `ui-dev-health-and-overlay`) running in parallel each modified shared files (`main.tscn`, `BUILD_LOG.md`, `docs/ARCHITECTURE.md`) AND wrote their own files. Each agent's editor / linter kept re-asserting their changes into the working tree. ui-dev-health-and-overlay was first to attempt commit:
+1. Staged 9 of their own files. Verified `git diff --staged --stat` showed only theirs.
+2. Between the verification and the actual commit, parallel agents' background writes restored more files into the index.
+3. The pre-commit hook committed what was in the index at commit-time — which included gameplay-piyade-and-drain's wave-2A files AND ai-eng-attack-input's wave-2B files alongside / instead of ui-dev's wave-2C.
+4. Result: commit `aa429ef` has the title `feat(ui): floating health bars + F4 attack-range overlay — Phase 2 session 1 wave 2C` but its content is the wave 2A + 2B work (Piyade, Turan_Piyade, Farr drain, attack-move handler, UnitState_AttackMove, click_handler enemy-right-click branch).
+5. ui-dev-health-and-overlay caught the discrepancy post-commit, made a corrective commit `c203dfe` with their actual wave-2C deliverables and a clear note in the body explaining what happened. They tried `git reset --soft HEAD~1` to amend the misattributed commit but the action was sandbox-denied as destructive.
+
+**Process expectation violated:**
+- STUDIO_PROCESS §9 (2026-05-01) "verify git tree at session close, not just lint + tests" — the lead-side equivalent of `git diff --staged --stat` JUST BEFORE commit was not enforceable across parallel-agent boundaries. The tree changes between verification and commit.
+- STUDIO_PROCESS §9 (2026-05-01) "Pre-commit gate must filter to tracked files when N agents run in parallel" — was already a known LATER item; this incident is the second occurrence (first was Phase 0 session 4 wave 1). Still not implemented.
+- Implicit but unstated rule: "atomic commits per agent." The race violates this even though no agent intended to.
+
+**Deviation:** lead is logging the issue and standing down agents whose work landed in the misattributed commit. NOT rewriting history (would require destructive `git reset` / `git rebase` and is contained to local branch — but per discipline rule, deviations are painful and serious; we don't compound by adding history rewrite). The commit log will permanently show the misattribution; the corrective commit `c203dfe` documents it in its body. Future readers of `git log` will see both commits and understand the race.
+
+**Cost avoided:**
+- Avoided destructive `git reset --hard` / `git rebase -i` operations that could have lost wave-2C work entirely under tooling error.
+- Avoided multi-round agent coordination ("you commit first, no you commit first") which was already the failure mode.
+
+**Cost paid:**
+- Permanent ugly archaeology in `git log` — `aa429ef`'s commit message lies about its content. Mitigated by `c203dfe`'s body explanation, but a future agent reading just `git log --oneline` will be confused.
+- The wave 2A and wave 2B agents have ambiguous "did I commit or not" state — needs explicit lead messaging to release them. Adds ~5 turns of cleanup messaging.
+- `BUILD_LOG.md` and `docs/ARCHITECTURE.md` entries from wave 2A and 2B are NOT in `aa429ef` — they were in the working tree at commit time but didn't make it into the index. They're shipped via `c203dfe` (which had the wave-2C agent's docs additions only). The wave 2A and 2B retro entries are LOST FROM HISTORY unless reconstructed.
+
+**Resolution / mitigation for future:**
+- **Implement the LATER item from STUDIO_PROCESS §9 (2026-05-01):** pre-commit gate must filter to tracked files via `git diff --cached --name-only`. Already documented; long overdue.
+- **Add to wave brief template:** "before staging, freeze the working tree by signaling other agents to pause. After staging, run `git diff --staged --stat` AND `git diff --stat` (the unstaged-but-modified set should not include any of YOUR files). Commit immediately."
+- **Better: serialize wave-end commits.** Instead of N agents committing in parallel, lead nominates an order at wave-close. Each agent commits, signals done, next agent commits. Costs a few turns of coordination but eliminates the race entirely.
+- **Best (long-term):** each agent commits IMMEDIATELY after completing each TDD red→green cycle, not at end-of-wave. By the time wave-close happens, only docs need committing. The agent gameplay-combat-core's own retrospective from Deviation 01 made this exact point.
+
+**Pattern recognition:** this is the THIRD session this class of cross-agent shared-tree issue has surfaced (session 2 had docs-stomp; this session has Deviation 01 verification-loop AND Deviation 02 commit-race). The pattern is now load-bearing enough to warrant its own experiment in a future session — Experiment 03: incremental commits + serialized wave-close. Promote when current Experiments 01/02 close.
+
+**Verdict on the deviation itself:** appropriate. Rewriting history would have introduced more risk than the misattribution itself. The commit log will live with the lie; the in-line body of `c203dfe` and this Deviation 02 entry are the explanatory record.
+
 ## Resolved experiments (archive)
 
 _None yet — Experiment 01 stays Active until session 3 confirms or rejects the refinement, and Experiment 02 stays Active until Phase 2 session 1 produces its first verdict._
