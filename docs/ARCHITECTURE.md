@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.14.5
+version: 0.16.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -19,7 +19,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
 last_updated: 2026-05-01
-# bumped to v0.14.5 — Phase 1 Session 2 wave 3 integration tests (qa-engineer)
+# bumped to v0.16.0 — Phase 2 Session 1 wave 1A: CombatComponent + HealthComponent death-emit (gameplay-systems)
 ---
 
 # Architecture — Target Shape and Build State
@@ -593,6 +593,32 @@ User-visible Definition of Done (kickoff §73, items 1–8) was confirmed green 
 - **LATER items surfaced in v0.15.0:**
   1. **Kamandar combat fields unpopulated.** Kamandar in balance.tres uses GDScript defaults (`attack_damage_x100 = 0`, `attack_speed_per_sec = 1.0`). It will appear as a non-attacking unit until Phase 2 session 2 populates its combat fields alongside the full RPS matrix.
   2. **`piyade.max_hp` changed from 120.0 → 100.0.** Phase 0 value was 120; session-1 kickoff brief specifies 100 (1.7× Kargar's 60). The prior 120 value was also a "starting point to be tuned" per §0. Any test asserting `max_hp == 120` should be updated; currently `test_balance_data.gd` asserts 100.
+
+---
+
+### v0.16.0 — Phase 2 Session 1 wave 1A (2026-05-01) — gameplay-systems (CombatComponent + HealthComponent death-emit expansion)
+
+- **`CombatComponent` ships at `scripts/units/components/combat_component.gd`.** Path-string SimNode base (matches HealthComponent / MovementComponent / FarrSystem registry-race pattern). Holds `attack_damage_x100: int`, `attack_speed_per_sec: float`, `attack_range: float` (read from BalanceData by Unit `_apply_balance_data_defaults`); internal `_target_unit_id: int = -1` and `_attack_cooldown_ticks: int = 0` (both written via `_set_sim`). `set_target(uid)` is the public command interface; `_sim_tick` runs cooldown decrement → target resolution → XZ-range check → fire (calls `target.get_health().take_damage_x100`). Production target lookup walks the scene tree O(N) per missed lookup; tests inject a closure (mirrors MovementComponent's `_scheduler` pattern from Sim Contract §4.1). Wired into `unit.tscn` as a sibling of MovementComponent; Unit `_apply_balance_data_defaults` reads the three combat fields with defensive type checks.
+
+- **`HealthComponent` extended with the fixed-point hot path + cause-aware unit_died emit.** New `take_damage_x100(amount_x100: int, source: Node = null, cause: StringName = &"unspecified")` is the integer-only chokepoint CombatComponent calls per attack tick — no float→fixed-point round-trip. Both float `take_damage` and fixed-point `take_damage_x100` converge in private `_apply_damage_x100(amount_x100, source, cause)`. New field `last_death_position: Vector3` captured from parent Node3D's `global_position` BEFORE either signal fires; Phase 5 Yadgar building reads off the listener-side `unit_died` payload (`position` field) so it never calls back into a possibly-freed component. `killer_unit_id` resolved duck-typed from `source.unit_id` (`-1` sentinel when source is null or has no `unit_id`).
+
+- **Death-emit listener-order discipline (cb95d09 lesson).** `EventBus.unit_health_zero(unit_id)` fires FIRST (StateMachine death-preempt per State Machine Contract §4.2), then `EventBus.unit_died(unit_id, killer_unit_id, cause, position)` (broader telemetry / Farr-drain channel). The `_zero_emitted` latch is set via `_set_sim` BEFORE either emit so a re-entrant listener that synchronously damages the same component can't recurse through the death path. Single latch covers both signals — over-kill ticks emit neither.
+
+- **`EventBus.unit_died` signal added** with `(unit_id: int, killer_unit_id: int, cause: StringName, position: Vector3)` payload. Forwarder arm added to `_make_forwarder` for the four-arg signature; `_SINK_SIGNALS` extended so MatchLogger (Phase 6) sinks it automatically. Comment block above the declaration warns listeners against synchronous cross-listener mutation.
+
+- **Why fixed-point damage instead of pure float?** Per Sim Contract §1.6, gameplay state that accumulates over a match (Farr, hp) stores as fixed-point int to eliminate IEEE-754 platform divergence over thousands of ticks. CombatComponent's `attack_damage_x100` matches `HealthComponent.hp_x100` so the subtraction is `hp_x100 -= attack_damage_x100` with zero rounding. The float `take_damage` wrapper still exists for legacy callers (Farr drain pathways, tests) — both wrappers funnel through `_apply_damage_x100` so the death-emit discipline is identical regardless of entry point.
+
+- **`set_target` resets cooldown to 0 on engagement.** First tick after `set_target(uid)` fires immediately (single-tick attack on engagement, matches RTS convention). The shipped tests verify `_attack_cooldown_ticks == 30` after the swing at 1.0 atk/s on 30 Hz, and `== 15` at 2.0 atk/s — pinning the cooldown formula `roundi(SimClock.SIM_HZ / attack_speed_per_sec)` directly.
+
+- **CombatComponent target lookup is `target_lookup_callable` injection — production wires a tree-walk fallback.** Production callable walks `get_tree().root` looking for a Node3D with matching `unit_id` (O(N) per missed lookup, acceptable at session-1 scale ≤15 units). Tests assign a closure over fixture Node3Ds — same injection seam shape as MovementComponent's `_scheduler`. The `is_instance_valid` defense in `_resolve_target` is what makes "freed target safe-clear" work: if the unit was queue_freed mid-engagement, the next `_sim_tick` lookup sees null, `_target_unit_id` is reset to -1 via `_set_sim`, no fire, no crash.
+
+- **Forward-resolved task #139's `has_method(&"take_damage_x100")` guard.** When CombatComponent shipped earlier in the wave, `take_damage_x100` didn't yet exist on HealthComponent — the implementation guarded with `has_method` so it would no-op gracefully. With wave 1A complete, the chokepoint is real and the guard is now always-true; can be removed in a future cleanup pass without behavior change.
+
+- **LATER items surfaced in v0.16.0:**
+  1. **`UnitRegistry` autoload (id → ref dict).** Production target lookup is O(N) tree-walk per missed lookup. Acceptable at session-1's 15-unit cap; needs replacement when N>~100 (mid-Phase 3 economy + Phase 6 AI). Closes target lookup to O(1).
+  2. **CombatSystem phase coordinator.** Same shape as the future MovementSystem coordinator (§6 v0.10.0). Currently UnitState_Attacking drives CombatComponent's `_sim_tick` directly via Unit's StateMachine tick path. When the coordinator lands, it iterates registered CombatComponents during the `combat` phase and calls their `_sim_tick`; UnitState_Attacking drops the explicit drive call. One-line refactor.
+  3. **Cleanup of CombatComponent's `has_method(&"take_damage_x100")` guard.** Now always-true; can be removed without behavior change in a future cleanup pass.
+  4. **Float `take_damage` legacy path could be deprecated.** All Phase 2+ damage flows through `take_damage_x100`; the float wrapper exists only for pre-Phase-2 callers and tests. If those migrate, the float path can shrink to a thin convenience that round-trips to fixed-point — or be removed entirely.
 
 ---
 
