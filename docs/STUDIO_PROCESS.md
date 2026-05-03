@@ -2,7 +2,7 @@
 title: Studio Process — How the Virtual Studio Operates
 type: process
 status: living
-version: 1.0.0
+version: 1.1.0
 owner: team
 summary: Operating contract for multi-agent collaboration — discussion patterns, facilitator role, retro practice, SemVer policy, mode separation, sync log.
 audience: all
@@ -21,7 +21,7 @@ ssot_for:
 references: [MANIFESTO.md, ARCHITECTURE.md]
 tags: [process, syncs, retros, ssot, modes, semver, frontmatter]
 created: 2026-04-30
-last_updated: 2026-05-01
+last_updated: 2026-05-03
 ---
 
 # Studio Process — How the Virtual Studio Operates
@@ -281,6 +281,19 @@ This section accumulates rules added/modified through retros. Each entry is date
   ```
 
   **`read_when` taxonomy is intentionally loose for now.** Constrain it later if values proliferate inconsistently. **`.claude/agents/*.md`** files keep their existing Claude Code agent schema (name, description, model, tools) and do *not* take this frontmatter — different consumer (the CC harness), different schema, no dual-frontmatter mess. **A lint validator for the schema is deferred** per Manifesto Principle 4 (Lean Iteration) — we'll build it after a few revision cycles produce real signal on which fields drift and need automated checks.
+
+- *(2026-05-03, post-Phase-1-session-2)* **Wave-close review: at the end of each wave, BEFORE PR creation, the lead spawns `godot-code-reviewer` and `architecture-reviewer` in parallel against the wave's commit range.** Both produce structured review output (verdict, blocking issues, non-blocking suggestions, nits, what's clean). Blocking issues route back to the original agent for fix; non-blocking suggestions and nits surface in the PR description. The reviewers are read-only — they do not write code, do not push commits, do not modify the project beyond their review text. **Why added:** Phase 1 session 2 surfaced one bug at the lead's live-test (re-entrant signal recursion in `DoubleClickSelect`) that all 535 unit + integration tests had passed. Static review by an agent with Godot expertise OR architectural awareness would have caught it earlier. The trial run on PR #4 validated both agents catch real structural drift (Manifesto principle grading, contract-fit checks, layer-leak detection) even when the live-test surfaces nothing. The intervention is now under measurement as Experiment 02 in `docs/PROCESS_EXPERIMENTS.md`. Cites Manifesto Principle 1 (Truth-Seeking): trust but verify — peer review of code BEFORE merge is the test-side mirror of "lead verifies file diff against design decisions." The two agent definitions live in `.claude/agents/godot-code-reviewer.md` and `.claude/agents/architecture-reviewer.md`. ([Phase 1 session 2 retro](#phase-1-session-2--multi-select-formation-movement-hud-polish))
+
+  **Lead workflow at wave close:**
+  1. All wave commits land on the feature branch.
+  2. Lead spawns BOTH reviewers in parallel (one Agent dispatch each, run_in_background=true) with the wave's commit range and known-context briefing.
+  3. Lead waits for BOTH to return. Reviews are independent — reviewers don't coordinate.
+  4. Lead reads both reviews. If either has blocking issues, lead routes the fix back to the original agent (or fixes inline if trivial).
+  5. Once both verdicts are APPROVE (or all blockers fixed), lead opens the PR with the review summaries in the description.
+
+  **The Known Godot Pitfalls list** in `docs/PROCESS_EXPERIMENTS.md` Experiment 01's verdict section is the godot-code-reviewer's primary checklist. Each entry is backed by a specific commit. New pitfalls discovered in future sessions get appended; the list is the project's institutional memory of "things that look fine but break in the live game."
+
+  **Why two agents, not one:** their lenses are different. `godot-code-reviewer` asks "is this code correct? does it avoid Godot-engine pitfalls?" `architecture-reviewer` asks "does this code fit the target architecture? does it honor manifesto principles? does it respect the contracts?" The first finds bugs the second wouldn't notice; the second finds drift the first wouldn't notice. Confirmed in the PR #4 trial run — convergent on a few items, but each agent surfaced things the other did not.
 
 ---
 

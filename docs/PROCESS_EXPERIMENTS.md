@@ -122,6 +122,77 @@ When a future session surfaces a new pitfall category, append it here. The list 
 - The shared-working-tree coordination problem (multiple agents staging shared docs, reset discarding each other's edits) emerged as a SECOND independent issue this session — worth noting as data for a future Experiment 02 about commit-coordination patterns. See BUILD_LOG entries from wave 1 for the incident timeline.
 - Cost-of-measurement was small (~30 min for the verdict table). Below the bottleneck threshold.
 
+### Experiment 02 — Wave-close code review by godot-code-reviewer + architecture-reviewer (2026-05-03)
+
+**Sessions:** Phase 2 session 1 (first formal trial); PR #4 (Phase 1 session 2) was an informal trial run after the wave had already shipped — its findings inform but don't count as the experiment's data point.
+
+**Hypothesis:** Spawning `godot-code-reviewer` and `architecture-reviewer` in parallel at the end of each wave, BEFORE PR creation, catches at least one issue per session that the lead's live-test would otherwise miss OR significantly improves the structural quality of merged code (Manifesto principle adherence, contract fit, layer separation). The intervention is worth its token cost if either condition holds.
+
+**Intervention:** Per `docs/STUDIO_PROCESS.md` §9 wave-close-review rule. After all wave commits land, lead spawns both reviewers in parallel (one Agent dispatch each, `run_in_background=true`). Reviewers produce structured output per their agent definitions (verdict, blocking issues, non-blocking suggestions, nits, what's clean). Blocking issues route back to the original agent for fix; non-blocking suggestions surface in PR description.
+
+**Held constant** (from Experiment 01's intervention which is now baseline):
+- Live-game-broken-surface section in every kickoff brief, including the Known Godot Pitfalls list (Experiment 01 refinement).
+- Same kickoff-doc structure, wave breakdown, agent set, TDD discipline, pre-commit gate.
+
+**Trial run data (PR #4, Phase 1 session 2 — post-merge informal trial):**
+
+Both reviewers ran against PR #4 after the lead had already live-tested and the cb95d09 fix had landed. Findings:
+
+| Reviewer | Verdict | Blocking | Non-blocking suggestions | Nits | New pitfalls candidates |
+|---|---|---|---|---|---|
+| godot-code-reviewer | APPROVE | 0 | 4 (S1 staleness window, S2 N+1 broadcast, S3 tree-order, S4 PASS-vs-IGNORE coverage) | 4 | 2 (N+1 broadcast pattern, MOUSE_FILTER_PASS coverage gap) |
+| architecture-reviewer | APPROVE | 0 | 6 LATER follow-ups | — | 0 (no Manifesto/contract violations) |
+
+**Trial-run signal:** the reviewers caught **0 bugs the lead's live-test had missed** in this small N=1 post-fix sample. They DID surface high-leverage refactor candidates (godot's S2 `select_many(units)` primitive closes 3 issues at once) and validated the cb95d09 fix's correctness across the codebase (godot-reviewer affirmatively checked the re-entrant pattern across all `selection_changed` subscribers). The architecture-reviewer's Manifesto-principle-grading lens is structural value the lead's live-test cannot provide.
+
+**Trial run is suggestive but inconclusive.** The reviewers ran AFTER the bug was found and fixed. We don't know whether they would have caught the cb95d09 bug at write-time (i.e., reviewing the original wave-2A commit before cb95d09 existed). The Phase 2 session 1 formal trial is the first real test.
+
+**Baseline (Experiment 01's session-2 result):**
+
+| Metric | Session 2 value (with Experiment 01 intervention only) |
+|---|---|
+| Live-game bugs found at boot by lead | 1 (re-entrant signal recursion, cb95d09) |
+| Tests-pass-but-broken incidents | 1 |
+| Wave-3 (qa) bug catch rate | 0/1 |
+| Manifesto/contract violations caught at merge | not measured (no reviewer existed) |
+| Test count delta | +162 (380→542) |
+| Time kickoff → merge | ~3h |
+| LATER items surfaced | 6+ |
+
+**Metrics to capture at Phase 2 session 1 close:**
+
+| Metric | How measured | Baseline (session 2) | Actual | Δ |
+|---|---|---|---|---|
+| Live-game bugs found at boot | Lead live-test count | 1 | _TBD_ | _TBD_ |
+| Bugs caught at wave-close review (BEFORE lead live-test) | Reviewers' blocking + actionable non-blocking findings | n/a (reviewers didn't exist) | _TBD_ | _TBD_ |
+| Tests-pass-but-broken incidents | Count of post-test fix passes | 1 | _TBD_ | _TBD_ |
+| Wave-3 (qa) bug catch rate | qa caught / total live-game bugs | 0/1 | _TBD_ | _TBD_ |
+| Manifesto/contract violations caught | architecture-reviewer findings + lead-validated routes | n/a | _TBD_ | _TBD_ |
+| Refactor candidates surfaced | reviewers' "next-session priority" list | 0 | _TBD_ (wave-3 PR #4 trial: 2) | _TBD_ |
+| Reviewer token cost (sum of two agents per wave × N waves) | Σ task notification totals for review-only dispatches | n/a | _TBD_ | _TBD_ |
+| Lead's review-processing time | Wall clock to read both reviews + route fixes | n/a | _TBD_ | _TBD_ |
+
+**Verdict criteria:**
+
+- **Kept** if: AT LEAST ONE of the following holds:
+  - Reviewers caught ≥1 bug at write-time that the lead's live-test would have missed (causal lift, not correlation), OR
+  - Reviewers found ≥2 actionable refactor candidates per session that subsequently paid off in cleaner Phase 3+ code, OR
+  - Reviewers surfaced ≥1 Manifesto/contract violation per session that would have caused future drift.
+
+  AND the reviewer token cost is ≤ 25% of total session token spend.
+
+- **Modified** if: reviewers add value but the cost is high. Find a cheaper variant — e.g., one reviewer per wave instead of two, or only on highest-risk waves, or only at session-close instead of wave-close.
+
+- **Dropped** if: reviewers consistently produce zero actionable findings AND token cost exceeds 25% of session spend, OR they produce noise that wastes lead time without preventing drift.
+
+**Verdict:** _TBD — fill at Phase 2 session 1 merge._
+
+**Notes:**
+- Like Experiment 01, N=1 single session is directional only. Graduates to permanent rule after second confirming session.
+- The trial run revealed a **process bug to fix before the formal trial:** the original `arch-reviewer-pr4` instance went idle for ~10 minutes without producing review content; required a direct nudge from the lead via Claude Code's agent-message UI. Hypothesis: read-only reviewer agents (no `SendMessage` in tools) may have ambiguous return-output mechanics. **Mitigation for Phase 2:** add `SendMessage` to both reviewer agents' tool list so they can proactively report.
+- The trial run also revealed the reviewers' value compounds when given the Known Godot Pitfalls list as their checklist. Phase 2's wave-close briefs should include the latest pitfalls list as part of the briefing, not just by reference.
+- Cost-of-measurement: ~20 min lead time per wave (write the briefs, read the reviews, route fixes). Tracked in the metrics table.
+
 ## Resolved experiments (archive)
 
-_None yet — Experiment 01 stays Active until session 3 confirms or rejects the refinement._
+_None yet — Experiment 01 stays Active until session 3 confirms or rejects the refinement, and Experiment 02 stays Active until Phase 2 session 1 produces its first verdict._

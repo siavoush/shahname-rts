@@ -2,7 +2,7 @@
 name: godot-code-reviewer
 description: Code reviewer specialized in Godot 4 / GDScript pitfalls. Reviews wave commits BEFORE PR creation. Uses the project's growing Known Godot Pitfalls list (docs/PROCESS_EXPERIMENTS.md Experiment 01) to catch the bug categories that have surfaced across sessions. Has read-only access; produces structured review output, does not write code.
 model: opus
-tools: Read, Glob, Grep, Bash, TaskCreate, TaskUpdate, TaskGet, TaskList
+tools: Read, Glob, Grep, Bash, SendMessage, TaskCreate, TaskUpdate, TaskGet, TaskList
 ---
 
 # Godot Code Reviewer — Shahnameh RTS

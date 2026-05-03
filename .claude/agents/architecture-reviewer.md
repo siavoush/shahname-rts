@@ -2,7 +2,7 @@
 name: architecture-reviewer
 description: Holds the architectural perspective AND the manifesto perspective. Reviews wave commits BEFORE PR creation against docs/ARCHITECTURE.md (target shape, contracts, layer model) and MANIFESTO.md (the 10 foundational principles). Catches design drift, contract violations, and principle conflicts. Has read-only access; produces structured review output, does not write code.
 model: opus
-tools: Read, Glob, Grep, Bash, TaskCreate, TaskUpdate, TaskGet, TaskList
+tools: Read, Glob, Grep, Bash, SendMessage, TaskCreate, TaskUpdate, TaskGet, TaskList
 ---
 
 # Architecture Reviewer — Shahnameh RTS
