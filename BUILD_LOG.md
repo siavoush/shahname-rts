@@ -34,6 +34,77 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-04 — Phase 1 session 2 wave 2B (ui-developer): selected-unit panel
+
+**Branch:** `feat/phase-1-session-2`
+
+**Shipped:**
+
+1. **`SelectedUnitPanel`** at `game/scripts/ui/selected_unit_panel.gd` (CanvasLayer, no class_name) + `game/scenes/ui/selected_unit_panel.tscn`. Bottom-left HUD detail widget — 250×120 placeholder rectangle anchored to the bottom-left of the viewport. Three sub-layouts toggled by a single `visible_state: StringName` tag (`&"empty"` / `&"single"` / `&"multi"`):
+   - **Empty:** centered "No selection" Label via `tr("UI_PANEL_NO_SELECTION")`.
+   - **Single:** 50×50 portrait ColorRect colored by team (Iran sandy-brown matches `kargar.tscn`'s mesh material), type Label via `tr("UNIT_<TYPE_UPPER>")`, HP background ColorRect with proportionally-resized HP fill child, "Abilities" label, abilities row with 4 placeholder grey ColorRects.
+   - **Multi:** 4-column GridContainer of `Button` icons (one per selected unit, capped at `_MAX_ICONS = 12`). Each icon Button has a faction-colored child ColorRect swatch and a tooltip showing the unit type's translated name. Button's `pressed.connect(handle_icon_click.bind(unit_id))` routes the click through `SelectionManager.select_only(matching_unit)` to narrow the selection.
+
+2. **HP polled via `_process`, not signal.** Verified during prep: no `unit_health_changed` signal exists. HealthComponent only emits `unit_health_zero` on death (StateMachine death-preempt trigger). Per Sim Contract §1.5, UI reads sim state freely off-tick — polling one displayed unit's `get_health().hp / max_hp` per `_process` is O(1). When CombatSystem ships in Phase 2 and damage numbers / floating-text feedback need on-change precision, that's the right time to add a targeted signal (LATER item; documented in v0.14.3 §6).
+
+3. **mouse_filter discipline (session-1 regression inoculation):**
+   - Container Controls (Background, EmptyLayout, SingleLayout, MultiLayout, Portrait, TypeLabel, HPBackground, HPFill, AbilitiesLabel, AbilitiesRow, IconGrid, EmptyLabel) → `MOUSE_FILTER_PASS` (mouse_filter = 1 in .tscn). Clicks propagate through to the world.
+   - Icon Buttons (multi-selection grid items) → `MOUSE_FILTER_STOP`. The single place clicks land on the panel.
+   - Icon swatch ColorRects (children of each icon Button) → `MOUSE_FILTER_IGNORE`. Button keeps the click.
+   - Test `test_panel_root_control_does_not_swallow_clicks` recursively walks for non-button Controls with MOUSE_FILTER_STOP and asserts the count is zero — pinning this property as a regression tripwire.
+
+4. **`refresh_displayed_unit()` not `apply_*` — lint rule L1.** `tools/lint_simulation.sh` rule L1 forbids `apply_*` method names in any file with `_process`. Same precedent the camera controller set (`pan_by` / `zoom_by` instead of `apply_pan` / `apply_zoom`, per §6 v0.6.0). The naming is a lint signal that this is UI-side state, not sim-side.
+
+5. **Signal lifecycle hygiene.** Subscribes to `EventBus.selection_changed` in `_ready`; disconnects in `_exit_tree`. Same hygiene as `farr_gauge.gd:_exit_tree` — no ghost connections after panel teardown. Defensive `is_instance_valid` guard before reading any unit accessor (death + queue_free safety).
+
+6. **Twelve new tests in `game/tests/unit/test_selected_unit_panel.gd`.** Scene loads + root-is-CanvasLayer; mouse_filter recursive walk; empty / single / multi state transitions; HP bar reflects health (30/60 → ratio 0.5); type label uses `tr()`; multi → icon click narrows to one; freed-unit icon click is safe no-op; freed displayed unit transitions panel out of `&"single"`; translation keys all resolve to English under en locale.
+
+7. **i18n: 4 new keys in `game/translations/strings.csv`** — `UI_PANEL_NO_SELECTION`, `UI_PANEL_HP`, `UI_PANEL_ABILITIES`, `UNIT_KARGAR`. Persian column intentionally blank per CLAUDE.md "Tier 2 is a config change, not a refactor."
+
+8. **`docs/ARCHITECTURE.md` 0.14.2 → 0.14.3.** Added a new `Selected-unit panel` row in §2 (✅ Built); v0.14.3 plan-vs-reality entry covers the no-`unit_health_changed` discovery, the polling rationale, the `refresh_displayed_unit()` naming choice driven by lint rule L1, the mouse_filter discipline, the icon-Button + ColorRect-swatch placeholder pattern, the live-game-broken-surface answers (refined), and 5 LATER items.
+
+9. **`game/scenes/main.tscn` updated** to wire `SelectedUnitPanel` as a CanvasLayer sibling of `ResourceHUD` under `Main` (parallel agent's wave-2C double-click handler also added a sibling Node in the same load — both edits coexist cleanly).
+
+**Test-count delta (this wave):** +12 (all in `test_selected_unit_panel.gd`, all passing). Pre-commit gate green: 484 tests, 0 failures, 4 risky/pending (3 pre-existing pending — FarrSystem fallback path, NavigationAgentPathScheduler navmap-not-ready × 2 — plus 1 risky from a parallel wave's freed-target test). Lint clean (0 violations across L1–L5).
+
+**Did not ship** (intentionally out of scope per kickoff §2 (6)):
+- Real portraits / real ability icons — placeholder rects only (CLAUDE.md "no real art until MVP loop is fun").
+- Build menu inside the panel — Phase 3 (when buildings exist).
+- Subgroup management beyond icon-narrows-to-one — Phase 2+ (ctrl-click-remove-from-selection, shift-click-select-of-type-within-selection).
+- Damage flashes / floating "+N HP" text — Phase 2 with combat (needs `unit_health_changed` signal + a feedback-text widget).
+- Multi-select overflow rendering ("+N more" beyond the 12 cap) — Phase 2 polish; Phase 1's 5-worker limit stays well under.
+- Hotkey hints on ability rects — Phase 2 with real ability buttons.
+- HP bar Label overlay (e.g. "60/60") — kickoff doesn't require it; LATER candidate if lead-test surfaces a need.
+
+**Live-game-broken-surface answers (Experiment 01 — refined):**
+
+1. *State/behavior that must work at runtime that no unit test exercises:* The signal-driven re-render cycle when selection changes mid-frame (box-select releases → SelectionManager broadcasts → panel rebuilds icon grid → player clicks an icon → SelectionManager broadcasts again → panel rebuilds to single-state). Headless tests dispatch each step in isolation; the live game stacks them within a single frame's input + render cycle. Icon-button signal connections survive the rebuild via `queue_free` (deferred — the click that triggered the narrow can complete before the buttons are gone). The `_process` HP poll racing with unit death — `is_instance_valid` guard in `refresh_displayed_unit` falls back to `_render_empty()` defensively.
+
+2. *What headless tests cannot detect that the lead would notice in editor:* Visual layout — does the 250×120 panel feel right at 1280×720 vs 1920×1080? Does it overlap with the FarrGauge's color bands or with the future control-group HUD bar? Does the placeholder grey aesthetic clash with the FarrGauge's gold-ivory palette? Multi-select icon swatches at 36×36 — large enough to distinguish faction colors? Does clicking the icon feel responsive (sub-50ms perceived) or laggy? HP bar fill — proportional ColorRect resize on each `_process` should look smooth as HP drops; certain anchor presets may snap.
+
+3. *Minimum interactive smoke test that catches it:* Lead boots, sees nothing in the panel ("No selection" centered). Lead clicks a kargar: panel shows portrait (sandy-brown), "Kargar" label, full HP bar, 4 grey ability rects. Lead box-selects all 5: panel shows 5 sandy-brown icon swatches in a row. Lead clicks the 3rd icon: selection narrows to that one kargar; panel transitions back to single-layout for that specific unit. Lead clicks empty terrain: panel returns to "No selection." 30-second smoke loop. If the panel covers up the FarrGauge, ResourceHUD, or the kargars themselves at 1280×720, that's a layout LATER candidate.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. Pure UI-layer work against shipped APIs.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Poll HP in `_process`, not subscribe.** Documented above and in v0.14.3 §6. The brief said "verify the actual signal name"; the verified answer is "no such signal exists." Polling one displayed unit is O(1); the future signal goes in when CombatSystem ships and the panel needs damage flashes.
+- **Three-state tag (`visible_state: StringName`) instead of three separate `visible` booleans.** Tests assert on the tag (stable across visual refactors); the implementation toggles per-layout `visible` properties internally.
+- **`_MAX_ICONS = 12` (3 rows × 4 columns).** Phase 1 caps selection at 5 (one player's worker count); 12 covers comfortable Phase 2 expansion. Beyond 12, future "+N more" rendering ships when the cap actually bites.
+- **Placeholder ability count = 4.** The kickoff said "3–5 placeholder grey rects." 4 is the median, fits the 232px-wide AbilitiesRow comfortably with 4px separation. Phase 2 replaces these with real ability buttons; the count becomes data-driven from `UnitStats.ability_set.size()`.
+- **Icon Button + child ColorRect swatch (not theme override).** Godot Button has no native tint; the standard placeholder approach is a child ColorRect filling the rect, with the swatch's `mouse_filter = IGNORE` so the parent Button keeps the click.
+- **No `class_name` on the panel script.** Same registry-race pattern as `box_select_handler.gd`, `group_move_controller.gd`, `match_harness.gd`. The script is referenced only via `preload` from the scene; `class_name` would buy nothing.
+
+**LATER items** (flagged for future sessions; full text in §6 v0.14.3):
+1. **`unit_health_changed` targeted signal** when CombatSystem ships (Phase 2). Adds damage-flash precision; polling stays as fallback.
+2. **Multi-select overflow rendering** beyond `_MAX_ICONS = 12` ("+N more" tag) — Phase 2 polish.
+3. **Subgroup management** (ctrl-click-remove, shift-click-select-of-type within multi) — Phase 2 selection polish.
+4. **Real portraits + real ability buttons** when design chat green-lights art.
+5. **Font-size i18n** for Tier 2 Persian — theme override on the panel root, not a code change.
+
+**Coordination:** ran the brief's "verify diff shows only your additions" check before staging — `docs/ARCHITECTURE.md` and `BUILD_LOG.md` diffs were re-read after parallel agents (wave 2C ai-engineer, wave 2A control-groups, double-click-select) landed their own edits during this wave. The §2 row insertion went between `Box / drag selection` and `CombatSystem`; the §6 v0.14.3 entry went between v0.14.2 and v0.8.0. main.tscn co-edits with parallel double-click work merged cleanly (the .tscn now has both `SelectedUnitPanel` and `DoubleClickSelect` as Main children).
+
+---
+
 ## 2026-05-04 — Phase 1 session 2 wave 2C (ai-engineer): GroupMoveController right-click wire-up
 
 **Branch:** `feat/phase-1-session-2`

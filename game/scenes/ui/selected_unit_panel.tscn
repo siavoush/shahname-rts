@@ -1,0 +1,115 @@
+[gd_scene load_steps=2 format=3 uid="uid://b7shahselectedpanel01"]
+
+[ext_resource type="Script" path="res://scripts/ui/selected_unit_panel.gd" id="1_panel"]
+
+[node name="SelectedUnitPanel" type="CanvasLayer"]
+script = ExtResource("1_panel")
+
+[node name="Root" type="Control" parent="."]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = -136.0
+offset_right = 266.0
+offset_bottom = -16.0
+grow_vertical = 0
+mouse_filter = 1
+
+[node name="Background" type="ColorRect" parent="Root"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 1
+color = Color(0.1, 0.1, 0.12, 0.75)
+
+[node name="EmptyLayout" type="Control" parent="Root"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 1
+
+[node name="EmptyLabel" type="Label" parent="Root/EmptyLayout"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -60.0
+offset_top = -10.0
+offset_right = 60.0
+offset_bottom = 10.0
+mouse_filter = 1
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "No selection"
+
+[node name="SingleLayout" type="Control" parent="Root"]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 1
+
+[node name="Portrait" type="ColorRect" parent="Root/SingleLayout"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 58.0
+offset_bottom = 58.0
+mouse_filter = 1
+color = Color(0.65, 0.5, 0.3, 1)
+
+[node name="TypeLabel" type="Label" parent="Root/SingleLayout"]
+offset_left = 68.0
+offset_top = 8.0
+offset_right = 240.0
+offset_bottom = 28.0
+mouse_filter = 1
+text = "Kargar"
+
+[node name="HPBackground" type="ColorRect" parent="Root/SingleLayout"]
+offset_left = 68.0
+offset_top = 36.0
+offset_right = 218.0
+offset_bottom = 46.0
+mouse_filter = 1
+color = Color(0.15, 0.05, 0.05, 0.9)
+
+[node name="HPFill" type="ColorRect" parent="Root/SingleLayout/HPBackground"]
+offset_right = 150.0
+offset_bottom = 10.0
+mouse_filter = 1
+color = Color(0.85, 0.25, 0.2, 1)
+
+[node name="AbilitiesLabel" type="Label" parent="Root/SingleLayout"]
+offset_left = 8.0
+offset_top = 70.0
+offset_right = 100.0
+offset_bottom = 86.0
+mouse_filter = 1
+text = "Abilities"
+
+[node name="AbilitiesRow" type="HBoxContainer" parent="Root/SingleLayout"]
+offset_left = 8.0
+offset_top = 88.0
+offset_right = 240.0
+offset_bottom = 116.0
+mouse_filter = 1
+theme_override_constants/separation = 4
+
+[node name="MultiLayout" type="Control" parent="Root"]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 1
+
+[node name="IconGrid" type="GridContainer" parent="Root/MultiLayout"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 240.0
+offset_bottom = 112.0
+mouse_filter = 1
+columns = 4
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
