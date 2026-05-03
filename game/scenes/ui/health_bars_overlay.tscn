@@ -1,0 +1,18 @@
+[gd_scene load_steps=2 format=3 uid="uid://shahhealthbarsoverlay"]
+
+; health_bars_overlay.tscn — Phase 2 session 1 wave 2C (ui-developer).
+;
+; Per 02d_PHASE_2_KICKOFF.md §2 deliverable 8. A fullscreen Control overlay
+; that draws floating HP bars at projected world-positions of every damaged
+; on-screen unit.
+;
+; CRITICAL: mouse_filter MUST be MOUSE_FILTER_IGNORE (= 2). Pitfall #1 — the
+; canonical session-1 regression. _ready double-checks at runtime.
+
+[ext_resource type="Script" path="res://scripts/ui/health_bars_overlay.gd" id="1_overlay"]
+
+[node name="HealthBarsOverlay" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("1_overlay")

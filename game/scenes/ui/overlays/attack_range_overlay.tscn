@@ -1,0 +1,23 @@
+[gd_scene load_steps=2 format=3 uid="uid://shahattackrangeoverlay"]
+
+; attack_range_overlay.tscn — Phase 2 session 1 wave 2C (ui-developer).
+;
+; Per 02d_PHASE_2_KICKOFF.md §2 deliverable 9. F4 debug overlay that draws
+; attack-range circles around each currently-selected unit.
+;
+; Implementation choice (documented in the script): Control + projected
+; circle, NOT Node3D + cylinder — DebugOverlayManager.register_overlay is
+; statically typed against Control, and the kickoff brief forbids modifying
+; debug_overlay_manager.gd.
+;
+; CRITICAL: mouse_filter MUST be MOUSE_FILTER_IGNORE (= 2). Pitfall #1.
+; visible = false by default — F4 keypress is the only show-path.
+
+[ext_resource type="Script" path="res://scripts/ui/overlays/attack_range_overlay.gd" id="1_overlay"]
+
+[node name="AttackRangeOverlay" type="Control"]
+visible = false
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("1_overlay")

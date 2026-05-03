@@ -1280,3 +1280,81 @@ The existing unit test `test_second_select_same_unit_within_window_triggers_type
 **State for next session:** wave-1C is complete. `turan_piyade` is in `balance.tres` but the `turan_piyade.tscn` scene and `turan_piyade.gd` script are gameplay-systems wave-2A territory — unit data is ready for them to consume. `ENGAGE_RADIUS` is in Constants for the ai-engineer's `UnitState_AttackMove` to use in wave-2B.
 
 **Open questions:** none for balance. Piyade `max_hp` changed from Phase 0's 120 to session-1 spec's 100; if any test outside `test_balance_data.gd` was asserting 120, it should be updated (search for `120.0` in unit tests).
+
+## 2026-05-03 — Phase 2 session 1 wave 2C (ui-developer): floating health bars + F4 attack-range overlay
+
+**Branch:** `feat/phase-2-session-1`
+
+**Shipped:**
+
+1. **`HealthBarsOverlay`** at `game/scripts/ui/health_bars_overlay.gd` + `game/scenes/ui/health_bars_overlay.tscn`. A single fullscreen `Control` overlay that renders floating HP bars above every damaged on-screen unit. Each frame `_process` walks every Iran/Turan unit (linear scene tree walk — same pattern as `box_select_handler._gather_candidate_units`), projects through the live Camera3D, computes color-band tag + width, and queue_redraws. `_draw` paints horizontal bars (4 px tall, padded background, color-coded fill) at the projected positions with `_BAR_HEIGHT_OFFSET = 30 px` above each unit. Color-band thresholds match kickoff §2 (8) exactly: > 70% green, 30%-70% yellow, < 30% red — boundary policy is **inclusive at the yellow band's bounds** (exactly 70% / 30% are yellow), avoiding combat-flicker. Width by `unit_type`: kargar 32 px (small), piyade / turan_piyade 48 px (medium), default fallback medium. Hidden when HP is full (clean visual default — closes the session-2 polish nit where the panel HP bar was full-red regardless of HP). `compute_bar_entries(units, project_unit_callable)` is the public test seam — same shape as `box_select_handler.box_select_units`. Method names avoid `apply_*` (lint rule L1 forbids in `_process` files).
+
+2. **`AttackRangeOverlay`** at `game/scripts/ui/overlays/attack_range_overlay.gd` + `game/scenes/ui/overlays/attack_range_overlay.tscn`. F4 debug overlay drawing attack-range circles around each currently-selected unit. Subscribes to `EventBus.selection_changed` in `_ready`, refreshes `_entries` from `SelectionManager.selected_units` on each broadcast (read-only — Pitfall #4 audit point passed). Registers under `Constants.OVERLAY_KEY_F4` via `DebugOverlayManager.register_overlay(self)`; `_exit_tree` symmetrically disconnects + unregisters. `_draw` samples `_CIRCLE_SAMPLES = 48` points around each circle in world space (XZ ring at Y=0.05, slightly above ground for no z-fight), unprojects each through the live Camera3D, and draws a polyline connecting them. Color: `Color(1.0, 0.85, 0.2, 0.55)` (warm gold, semi-transparent). Boots invisible — F4 keypress is the only show-path. Defensive: skips units without `CombatComponent`, units with `attack_range == 0` (Kargars), freed units between broadcasts.
+
+3. **`game/scenes/main.tscn`** — both overlays wired as children under `Main`, sibling to the existing `ResourceHUD` / `SelectedUnitPanel` / `ClickHandler` / etc.
+
+**Test-count delta:** +34 (`tests/unit/test_health_bars_overlay.gd` 20 + `tests/unit/test_attack_range_overlay.gd` 14). All pass headless. Pre-merge total: 675 tests, 672 passing, 3 pending (pre-existing FarrSystem fallback + navmesh-not-ready × 2). Lint clean across L1-L5.
+
+**Implementation choices (per CLAUDE.md "Escalation" rule #1):**
+
+- **Health bars: kickoff option (b), single Control overlay over per-unit Sprite3D-Viewport.** The kickoff explicitly authorized either approach; (b) was picked for scale-friendliness — one `_draw` call regardless of unit count (vs. one Viewport allocation per unit). Per-unit Viewport is heavy at 50+ units (Godot 4 guidance); single-overlay's only cost is "the entire overlay redraws when ANY unit's HP changes," which at session-1's 15-unit cap is invisible. Documented in the source.
+
+- **Attack-range overlay: Control + projected circle, NOT Node3D + cylinder.** Kickoff brief preferred 3D ("circles in world space stay correct under camera moves"). However: `DebugOverlayManager.register_overlay(key, overlay: Control)` is statically typed against `Control`, and `toggle_overlay` does `_overlays[key] as Control` (returns null for a Node3D — F4 toggle would silently no-op). The wave 2C brief explicitly forbids modifying `debug_overlay_manager.gd` ("touch only via public API"). Per-frame screen projection of N circle samples via `Camera3D.unproject_position` produces visually identical results under any camera move. Documented in the source AND surfaces a new Pitfall candidate (see below).
+
+- **Color-band boundary policy: inclusive at yellow's bounds.** Exactly 70% → yellow, exactly 30% → yellow. Avoids combat-flicker at HP threshold values. Mirrors `farr_gauge.gd`'s color-band convention. Tests assert on stable `BAND_*` StringName tags, not RGB values, so the implementer can tune the palette without breaking tests.
+
+- **`_gather_candidate_units` is permissive (BOTH teams).** Iran AND Turan units get HP bars — a Turan Piyade taking damage from your Piyade should also show its HP draining (combat-feel signal). Intentional vs. `box_select_handler`'s Iran-only filter (correct for SELECTION but wrong for HP-bar VISIBILITY). At Phase 4 (fog of war), this filter will likely tighten to "all teams the player has visibility on."
+
+**Live-game-broken-surface answers (Experiment 01 — refined):**
+
+*HealthBarsOverlay (deliverable 8):*
+
+1. *What state/behavior must work at runtime that no unit test exercises?* The Camera3D unproject_position projection against the live camera. Tests inject a closure; production resolves the camera via `get_viewport().get_camera_3d()` each frame. If the camera rig re-parents (future cinematic), that lookup must keep working. `is_position_behind` filter handles units behind the camera (rare at top-down, possible during free camera). Per-frame cost at 50+ units — at session-1 scale (10 units) the linear walk is invisible; profile when N>50.
+2. *What can a headless test not detect that the lead would notice in the editor?* Bar width readability at default zoom — 32 / 48 px chosen for visibility without overpowering unit silhouettes. Vertical offset `_BAR_HEIGHT_OFFSET = 30 px` tuned for Piyade cubes ~1.0 tall at default isometric distance; cavalry / heroes (Phase 5) may need a per-unit-type offset. Color-band feel: green→yellow→red is the MVP convention; lead may want a smoother gradient (5-line refactor of `_color_for_band`). Whether the bars compete visually with the SelectedUnitPanel or FarrGauge at 1920×1080.
+3. *What's the minimum interactive smoke test that catches it?* Lead's Piyade attacks a Turan Piyade → bar fades green → yellow → red as combat proceeds → bar disappears when target dies. At full HP (boot), no bars visible — clean default.
+
+*AttackRangeOverlay (deliverable 9):*
+
+1. *What state/behavior must work at runtime that no unit test exercises?* The F4 toggle path through `DebugOverlayManager._unhandled_input`. Headless tests register and call `handle_function_key` directly; live mode requires `process_mode = ALWAYS` (already set in Phase 0) and that no other `_unhandled_input` listener earlier in the tree intercepts F4. Symptom of a regression would be "F4 does nothing" with no error. Pitfall #4 — verified handler is read-only by inspection.
+2. *What can a headless test not detect that the lead would notice in the editor?* Whether the circle's color (gold, alpha 0.55) reads as "this is a debug visualization" vs. "this is a gameplay element." Whether the circle is drawn AT the unit's feet (Y=0.05 above ground) or floating awkwardly. At extreme zoom-out, sampled circle vertices would be sparse enough to look polygonal — `_CIRCLE_SAMPLES = 48` smooth at default zoom; tunable.
+3. *What's the minimum interactive smoke test that catches it?* Lead selects 5 Iran Piyade, hits F4 → 5 gold circles on the ground around them, radius 1.5 (matches BalanceData attack_range). Lead hits F4 again → circles disappear. Lead deselects → next F4 press shows nothing.
+
+**Known Godot Pitfalls checklist (per Experiment 01 — refined):**
+
+1. **Mouse filter on Control nodes (Pitfall #1).** ✅ Both overlays set `mouse_filter = MOUSE_FILTER_IGNORE` in BOTH the .tscn AND defensively in `_ready`. Belt-and-braces against editor accidents that flip the .tscn back to STOP. Two new regression-guard tests assert the runtime invariant.
+2. **FSM / per-tick driver wiring (Pitfall #2).** N/A — UI overlays use `_process` polling per Sim Contract §1.5. No tick driver involved.
+3. **Camera basis transform on screen-axis input (Pitfall #3).** N/A — overlays read FROM the camera (project-to-screen), don't write to it.
+4. **Re-entrant signal mutation (Pitfall #4).** ✅ AttackRangeOverlay's `handle_selection_changed` is read-only — walks `SelectionManager.selected_units` and stashes entries; never calls SelectionManager mutators. Verified by code inspection AND captured in a CRITICAL block-comment above the handler. Joins `selected_unit_panel.gd` (read-only) and `double_click_select.gd` (defers via `call_deferred`) as the third concrete `selection_changed` consumer to ship cleanly with the cb95d09 lesson.
+
+**New Pitfall candidate surfaced — Pitfall #5 (proposed):**
+
+> **API parameter narrowing in registries can force visual approach changes downstream.** When a registry/manager accepts overlays/widgets/handlers under a statically-typed parameter (`Control`, `Sprite2D`, etc.), consumers that prefer a different node class must either (a) wrap their preferred class in a thin proxy of the registered type, OR (b) re-implement the semantics inside the accepted type (as wave 2C did with the screen-projected circle). The cost is silent — `as Control` returns null for a Node3D and `toggle_overlay` becomes a no-op with no error. Mitigation: registries should accept the broadest base class their toggle/lookup logic actually uses (e.g., `CanvasItem` if `visible` is the only property accessed; `Node` if even broader).
+>
+> Originating incident: AttackRangeOverlay (wave 2C) wanted Node3D + cylinder per the kickoff brief; `DebugOverlayManager.register_overlay` rejected it; switched to Control + projected polyline. Recommend this entry land in `docs/PROCESS_EXPERIMENTS.md` Experiment 01's pitfalls list once the lead confirms.
+
+**Did not ship** (out of scope per kickoff §2):
+- Floating damage numbers — Phase 5 polish.
+- Tweened bar fade on damage (currently the bar pops to its new ratio instantly each frame). LATER item.
+- Spatial-query gathering for HP bars at high unit counts (Phase 4+ when N>50).
+- Per-unit-type bar offset for cavalry / heroes (Phase 5).
+
+**State for next session / waves:**
+
+- All 34 of my tests pass headless alongside the rest of the project's 675 total. Lint clean.
+- F4 overlay registration is idempotent (DebugOverlayManager re-register replaces) so a future scene reload in editor works without bookkeeping.
+- The `compute_bar_entries` and `handle_selection_changed` test seams parallel `box_select_handler.box_select_units` — same closure-injection pattern. If a future change adds a fourth Camera3D-projection consumer, hoist the projection helper into a shared utility (currently three independent inlinings; the shape is the same enough to warrant a helper at consumer #4).
+- Visual feel knobs the lead may want to tune after live-test: HP bar `_BAR_HEIGHT_OFFSET` (30 px), bar widths (32 / 48 px), color palette in `_color_for_band` (3 constants), F4 circle alpha (0.55), `_CIRCLE_SAMPLES` (48), `_CIRCLE_GROUND_Y` (0.05). All commented as tunable in the source.
+
+**Open questions:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+
+- **Color-band thresholds inclusive at yellow's bounds (exactly 70% → yellow, exactly 30% → yellow).** Boundary policy choice; mirrors `farr_gauge.gd`. Avoids combat-flicker at threshold HP values.
+- **Width fallback for unknown unit_type → medium (48 px).** Safer default than throwing; future unit types (Kamandar, Savar, Asb-savar) get sensible bars on first integration.
+- **F4 overlay starts hidden.** Kickoff §2 (9): "Hits F4 → circles render" implies the toggle is the show-path, not the boot state.
+- **Permissive team filter for HP bars.** Both Iran and Turan damaged units show bars (combat-feel signal). Documented in source.
+- **F4 attack-range Control + projection over Node3D + cylinder.** API constraint forced this; documented thoroughly in source and ARCHITECTURE.md §6 v0.16.2 entry.
+- **Pitfall #5 surfaced as candidate, not committed to PROCESS_EXPERIMENTS.md.** Lead's call whether the pattern is N=1 (just this incident) or warrants a list entry.
+- **No new keys in `translations/strings.csv`.** Both overlays are pure visual (no labels — bars, circles only). i18n table stays untouched.
+
+**Cross-agent coordination:** wave 2A (gameplay-piyade-and-drain — Iran/Turan Piyade + farr drain), wave 2B (ai-eng — UnitState_AttackMove + AttackMoveHandler) ran in parallel with my wave 2C work. `main.tscn` was the contention point: the wave 2B agent added `AttackMoveHandler` while I added `HealthBarsOverlay` + `AttackRangeOverlay`. To avoid cross-contamination, I committed only my own additions to main.tscn (the two overlay nodes + their two `[ext_resource]` declarations); the wave 2B agent's `AttackMoveHandler` remains in the working tree for them to commit separately. This keeps `git log` traceability clean per the kickoff coordination rule ("verify `git diff --staged` shows only your files").

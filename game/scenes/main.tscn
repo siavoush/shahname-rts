@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3 uid="uid://b0g3dxshahmain"]
+[gd_scene load_steps=12 format=3 uid="uid://b0g3dxshahmain"]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 [ext_resource type="PackedScene" uid="uid://terrain256x256" path="res://scenes/world/terrain.tscn" id="2_terrain"]
@@ -8,6 +8,8 @@
 [ext_resource type="Script" path="res://scripts/input/box_select_handler.gd" id="6_boxselect"]
 [ext_resource type="PackedScene" uid="uid://b7shahselectedpanel01" path="res://scenes/ui/selected_unit_panel.tscn" id="7_panel"]
 [ext_resource type="Script" path="res://scripts/input/double_click_select.gd" id="8_doubleclick"]
+[ext_resource type="PackedScene" uid="uid://shahhealthbarsoverlay" path="res://scenes/ui/health_bars_overlay.tscn" id="9_healthbars"]
+[ext_resource type="PackedScene" uid="uid://shahattackrangeoverlay" path="res://scenes/ui/overlays/attack_range_overlay.tscn" id="10_attackrange"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -53,3 +55,7 @@ script = ExtResource("6_boxselect")
 
 [node name="DoubleClickSelect" type="Node" parent="."]
 script = ExtResource("8_doubleclick")
+
+[node name="HealthBarsOverlay" parent="." instance=ExtResource("9_healthbars")]
+
+[node name="AttackRangeOverlay" parent="." instance=ExtResource("10_attackrange")]
