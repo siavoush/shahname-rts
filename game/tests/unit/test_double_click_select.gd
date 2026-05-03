@@ -203,6 +203,11 @@ func test_second_select_same_unit_within_window_triggers_type_select() -> void:
 	for _i in range(int(detector.DOUBLE_CLICK_TICKS) - 1):
 		SimClock._test_run_tick()
 	SelectionManager.select_only(a)
+	# Expansion is deferred to the next idle frame (see
+	# double_click_select.gd::_on_selection_changed for rationale — running
+	# expansion synchronously inside the outer signal emit produced a
+	# stale-payload race that left rings 2..N hidden).
+	await get_tree().process_frame
 	assert_true(SelectionManager.is_selected(a))
 	assert_true(SelectionManager.is_selected(b),
 		"double-click on a same-type unit selects all visible same-type")

@@ -1132,3 +1132,56 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 - **Cross-agent coordination lesson learned.** When I first applied my `main.tscn` and `docs/ARCHITECTURE.md` edits, parallel wave-2B/2C agents had in-flight commits that reverted them on landing. After the second pass, I (a) re-read the files immediately before each Edit call (avoiding Edit-staleness errors), (b) used a different ext_resource id slot (`8_doubleclick`) so the box-select handler / panel ids didn't collide, and (c) verified `git diff main.tscn project.godot docs/ARCHITECTURE.md BUILD_LOG.md` showed only my additions before staging — the kickoff doc's coordination warning ("`git add` stages whole files including other agents' draft text") was the load-bearing gotcha here.
 
 - **Removed `test_select_of_type_with_freed_target_is_noop` test.** GDScript's typed-argument runtime reject for "previously-freed Object" makes the test path unreachable without changing the public method's signature to `Variant`. The realistic concern (a freed entry inside `candidates`) is covered by `test_select_of_type_with_freed_candidate_is_skipped`. Trimming the brittle test in favor of the realistic one.
+
+## 2026-05-04 — Phase 1 session 2 wave 2A bug-fix (ui-developer): double-click ring visual not refreshed for units 2..N
+
+**Branch:** `feat/phase-1-session-2`
+
+**Bug:** Live-test by lead surfaced that double-clicking a Kargar correctly expanded the SelectionManager's set to all 5 visible workers, but only the originally-clicked unit displayed its gold selection ring. Units 2..5 were logically selected (downstream selected_unit_panel showed multi-select) but their `SelectableComponent._ring.visible` was `false`.
+
+**Why existing tests missed it:** the unit-level `tests/unit/test_double_click_select.gd` exercised `select_visible_of_type` via the public test seam (direct API call) AND drove the signal-driven path with FakeUnit mocks — but its assertions only checked `SelectionManager.is_selected(unit)` (selection-set membership). Neither component-level `is_selected` nor `_ring.visible` was asserted on. So a bug where the set was correct but the ring rendering was wrong slipped past green tests.
+
+**Root cause (matches kickoff hypothesis (c) — re-entrant signal emission with stale outer payload):**
+
+`DoubleClickSelect._on_selection_changed` ran its expansion synchronously **inside** the `EventBus.selection_changed` emit raised by the user's second-click `SelectionManager.select_only(target)`. The expansion's `deselect_all` + per-unit `add_to_selection` calls each fired their own broadcasts, recursively iterating all receivers. After all the recursive emits completed (with the final being `[1, 2, 3, 4, 5]` — every component correctly receives this and turns its ring on), control returned up to the original outer emit, which **continued iterating its remaining receivers with the original stale payload `[1]`**.
+
+Because `DoubleClickSelect` is connected to `EventBus.selection_changed` BEFORE the per-unit `SelectableComponent`s (the detector registers in `main.tscn`'s scene `_ready`; components register as their unit scenes are instantiated and added later), the connection order was: `[detector, sc_1, sc_2, sc_3, sc_4, sc_5, ...]`. The detector ran first and recursively expanded; when control returned to the outer emit, the stale `[1]` payload was delivered to `sc_2..sc_5`, which dutifully set `_apply_selection(false)` because they didn't see their own unit_ids in the (stale) list.
+
+Verified by reproduction print-stream during the headless integration test:
+```
+selection_changed ids=[1, 2, 3, 4, 5] rings=[T,T,T,T,T]   ← final inner emit, all on
+selection_changed ids=[1]              rings=[T,F,F,F,F]   ← stale outer payload, units 2..5 turned off
+```
+
+**Fix (one-line, in the responsible file):**
+
+`game/scripts/input/double_click_select.gd::_on_selection_changed` now defers the expansion via `_expand_to_visible_of_type.call_deferred(target)` instead of calling it synchronously. The deferred call lands on the next idle frame, AFTER the outer emit has finished delivering its stale payload to every receiver. The components reach their post-outer-emit settled state (only unit_1 selected — which matches what `select_only` was meant to produce) and THEN the deferred expansion runs as a single coherent pass, with every receiver seeing a clean monotonic sequence `[]` → `[1]` → `[1, 2]` → ... → `[1, 2, 3, 4, 5]`. No stale payload arrives afterward.
+
+**Why deferred (and not "buffer the expansion target and run from `_process`"):** `call_deferred` is exactly what we need — Godot guarantees the call lands once on the next idle frame, after the current signal-emission stack fully unwinds. No bookkeeping required, no per-frame polling, no extra fields. This is the canonical fix for "I want to mutate state that's currently being broadcast about." Five-character change in the source file. The only code-comment in the patch documents *why* (so a future reader doesn't try to "optimize" by calling synchronously again).
+
+**Test coverage delta (regression lock-in):**
+
+New file: `game/tests/integration/test_session_2_double_click_visual.gd`. Three integration tests, all using **real** `Kargar` instances spawned via `kargar.tscn` (the production scene template), asserting on:
+- `SelectableComponent.is_selected` per unit (the component-level state, not the SelectionManager set).
+- `_ring.visible` per unit (the actual rendered property the lead saw fail).
+- The full deselect→reselect cycle keeps rings in sync (regression guard for the symmetric case).
+
+The third test (`test_signal_driven_double_click_makes_all_rings_visible`) drives the full production codepath: `SelectionManager.select_only(target)` twice within the double-click window, the same way ClickHandler would dispatch from a live mouse click. **Without the fix, this test fails on units 2..5; with the fix, all 5 rings end up visible.** This is the test that would have caught the original regression had it existed before.
+
+The existing unit test `test_second_select_same_unit_within_window_triggers_type_select` was updated to `await get_tree().process_frame` after the second `select_only` (because the expansion is now deferred). The change is one new line + a comment explaining why the await is needed.
+
+**Test-count delta (this fix's contribution):** +3 integration tests (file `test_session_2_double_click_visual.gd`). One existing unit test (`test_second_select_same_unit_within_window_triggers_type_select`) modified to await the deferred expansion. Total: 542 tests, 539 passing, 3 pending (pre-existing autoload / navmap pending tests, unrelated). 0 failures. Lint clean.
+
+**Hypothesis match:** kickoff hypothesis **(c)** — exactly. The diagnostic predicted: "intermediate broadcasts (size 1, 2, 3, 4) cause repeated `_apply_selection` calls that for some reason end with rings off on units 2-5." The actual mechanism was slightly different — it wasn't the intermediate broadcasts per se, but the **outer original emit's stale payload** being delivered AFTER the recursion completed. The kickoff was on the right scent (re-entrant signal emission); the precise mechanism was the receiver-iteration order of the outer emit, not the recursion itself.
+
+**State for next session:** the fix unblocks the lead's live-test of double-click. The `selection_changed` re-entrancy pattern is now documented inline in `double_click_select.gd` as a CRITICAL block-comment warning future contributors not to "optimize" the expansion back to synchronous. The same re-entrancy class would bite any future feature that mutates `SelectionManager` from inside an `EventBus.selection_changed` handler — `call_deferred` is the canonical pattern for that.
+
+**Open questions:** none.
+
+**Decisions made independently (per CLAUDE.md "Escalation" rule #1):**
+
+- **Defer via `call_deferred` over alternatives** (e.g., a "is currently broadcasting" guard on SelectionManager, or a `_pending_expansion` field on the detector polled in `_process`). Both alternatives are more code, more state, more places to forget. `call_deferred` is the engine's purpose-built mechanism for "do this after the current signal stack unwinds."
+
+- **Updated `test_second_select_same_unit_within_window_triggers_type_select` to `await` instead of removing it.** The test still validates the user-facing contract: "second click on same unit within window expands selection." The implementation detail (synchronous vs. deferred) is hidden behind the await — same shape as the existing `test_session_2_panel.gd` tests that await a process_frame after `add_to_selection`.
+
+- **Did NOT add a "pending expansion target" field to the detector** even though it would let the test skip the await. The deferred call is fire-and-forget; adding an observable field only to satisfy a test would be premature complexity (and the `await` is a more honest representation of the production timing anyway).

@@ -169,9 +169,22 @@ func _on_selection_changed(unit_ids: Array) -> void:
 			and elapsed <= DOUBLE_CLICK_TICKS
 			and is_instance_valid(_armed_unit_ref)):
 		# Double-click! Expand selection to same-type-on-screen.
+		#
+		# CRITICAL: defer the expansion. We are running INSIDE the
+		# selection_changed signal emission with payload [sole_id]. If we
+		# expand synchronously, our recursive deselect_all + add_to_selection
+		# calls emit intermediate broadcasts that arrive at every receiver in
+		# turn — but after the recursion completes, the OUTER emit's
+		# remaining receivers (SelectableComponents 2..N, panels, etc.,
+		# connected after this detector) still get called with the original
+		# stale [sole_id] payload. They then deselect themselves, undoing the
+		# expansion's work. Deferring to the next idle frame lets the outer
+		# emit finish cleanly first, then the expansion runs as a single
+		# coherent pass with everyone seeing the final [1, 2, 3, 4, 5]. (Bug
+		# was reproduced in tests/integration/test_session_2_double_click_visual.gd.)
 		var target: Object = _armed_unit_ref
 		_disarm()  # Reset before mutating selection (which re-emits the signal).
-		_expand_to_visible_of_type(target)
+		_expand_to_visible_of_type.call_deferred(target)
 		return
 	# First (or fresh) single-target select: arm the detector.
 	_armed_unit_id = sole_id
