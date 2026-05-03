@@ -132,6 +132,34 @@ func test_set_target_stores_id() -> void:
 	assert_eq(_combat._target_unit_id, 100, "set_target stores the id")
 
 
+# BUG-04 regression-lock — set_target is idempotent on same-target re-entry.
+# UnitState_Attacking._sim_tick calls set_target every in-range tick after
+# the BUG-01 fix; without idempotency, cooldown resets to 0 every tick and
+# damage fires at 30 atk/sec instead of 1 atk/sec at 30 Hz. The early-return
+# preserves cooldown semantics across per-tick set_target while still
+# resetting on a genuine target change.
+func test_set_target_idempotent_does_not_reset_cooldown() -> void:
+	_combat.set_target(100)
+	_combat_tick()  # First attack fires; cooldown resets to 30.
+	assert_eq(_combat._attack_cooldown_ticks, 30,
+		"pre-condition: first attack reset cooldown to 30")
+	# Same-target re-call must NOT reset cooldown to 0.
+	_combat.set_target(100)
+	assert_eq(_combat._attack_cooldown_ticks, 30,
+		"BUG-04: same-target set_target must be idempotent — cooldown preserved "
+		+ "(if 0, set_target reset cooldown unconditionally and combat fires every tick)")
+
+
+func test_set_target_new_target_resets_cooldown() -> void:
+	_combat.set_target(100)
+	_combat_tick()  # First attack fires; cooldown 30.
+	# New target → cooldown reset (engagement timing starts fresh).
+	_combat.set_target(200)
+	assert_eq(_combat._attack_cooldown_ticks, 0,
+		"genuine target change resets cooldown (single-tick attack on new engagement)")
+	assert_eq(_combat._target_unit_id, 200, "new target id stored")
+
+
 # ---------------------------------------------------------------------------
 # Damage path
 # ---------------------------------------------------------------------------

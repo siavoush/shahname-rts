@@ -102,7 +102,18 @@ var target_lookup_callable: Callable = Callable()
 ## fire immediately (no "wind-up" delay). The state machine's enter() is
 ## what calls this; the discrete enter+first-tick gives a single-tick
 ## attack on engagement, which matches RTS expectations.
+##
+## **Idempotent on same-target re-entry (BUG-04 fix, Phase 2 session 1
+## post-wave-3).** UnitState_Attacking._sim_tick calls this every in-range
+## tick (per the BUG-01 fix's per-tick drive pattern). Without idempotency,
+## cooldown would reset to 0 every tick and the attack would fire every
+## tick (30 atk/sec at 30 Hz instead of the 1.0 atk/sec the cooldown
+## semantic intends). The early-return preserves cooldown semantics across
+## per-tick set_target calls while still resetting on a genuine target
+## change (engagement, retarget). Only NEW targets restart the timing.
 func set_target(unit_id_value: int) -> void:
+	if _target_unit_id == unit_id_value:
+		return
 	_target_unit_id = unit_id_value
 	_attack_cooldown_ticks = 0
 
