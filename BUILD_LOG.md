@@ -1519,3 +1519,21 @@ The existing unit test `test_second_select_same_unit_within_window_triggers_type
 - **No new keys in `translations/strings.csv`.** Both overlays are pure visual (no labels — bars, circles only). i18n table stays untouched.
 
 **Cross-agent coordination:** wave 2A (gameplay-piyade-and-drain — Iran/Turan Piyade + farr drain), wave 2B (ai-eng — UnitState_AttackMove + AttackMoveHandler) ran in parallel with my wave 2C work. `main.tscn` was the contention point: the wave 2B agent added `AttackMoveHandler` while I added `HealthBarsOverlay` + `AttackRangeOverlay`. To avoid cross-contamination, I committed only my own additions to main.tscn (the two overlay nodes + their two `[ext_resource]` declarations); the wave 2B agent's `AttackMoveHandler` remains in the working tree for them to commit separately. This keeps `git log` traceability clean per the kickoff coordination rule ("verify `git diff --staged` shows only your files").
+
+## 2026-05-01 — Phase 2 session 1 BUG-02 fix (ai-engineer)
+
+**Branch:** feat/phase-2-session-1
+**Shipped:**
+- `main.tscn` now wires `AttackMoveHandler` as a sibling Node under `Main`, placed IMMEDIATELY BEFORE `ClickHandler` so reverse-tree-order `_unhandled_input` delivery reaches it first when A+click is pending. The wiring restores what wave 2B (`ai-eng-attack-input`) authored but lost in Deviation 02's parallel-agent commit-staging race. Pitfall #5 (sibling tree-order is load-bearing) was the recognition framework.
+- Two `pending(...)` regression locks in `test_phase_2_session_1_combat.gd` (`test_main_tscn_attack_move_handler_before_click_handler` and `test_pitfall_5_attack_move_handler_before_click_handler_standalone`) flipped to passing assertions. The BUG-02 status comment block at the top of the test file updated to FIXED.
+
+**Did not ship:** nothing — the brief was scoped tight to the wiring + test flip.
+
+**State for next session:**
+- Test count: 716 → 718 passing. No new tests added; two pending locks went green.
+- A+click attack-move is now end-to-end: select Piyade → press A → left-click ground → all selected Piyade walk toward target via `Constants.COMMAND_ATTACK_MOVE`, engaging any enemy en route via `UnitState_AttackMove`.
+- Verified live in headless GUT: scene loads, AttackMoveHandler is at index 4 (before ClickHandler at index 5) — Pitfall #5 ordering invariant holds.
+
+**Open questions:** none.
+
+**Cross-agent coordination:** my fix is a one-line scene-wiring change. The unstaged `docs/ARCHITECTURE.md` v0.17.3 entry (gameplay-systems' BUG-01+BUG-03 documentation, never committed in `47680cd`) and the test-file refinements that were briefly staged earlier in the session are NOT mine and were left for the lead to handle separately — I staged only my own additions per the anti-race protocol.

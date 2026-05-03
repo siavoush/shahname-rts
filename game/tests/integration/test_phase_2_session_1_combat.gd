@@ -13,11 +13,12 @@
 #   correct behavior: HP decreases via the EventBus chain. LATER: when CombatSystem
 #   phase coordinator ships, the drive call moves out of the state.
 #
-# BUG-02: PENDING — AttackMoveHandler not present in main.tscn. ai-engineer's BUG-02
-#   dispatch follows BUG-01 + BUG-03 fix.
-#   File/line: game/scenes/main.tscn — no AttackMoveHandler node.
-#   Fix path: Add AttackMoveHandler node BEFORE ClickHandler in main.tscn,
-#     with script = res://scripts/input/attack_move_handler.gd. Owner: ai-engineer.
+# BUG-02: FIXED in Phase 2 session 1 (ai-engineer). main.tscn now declares
+#   AttackMoveHandler as a sibling of ClickHandler with sibling tree-order
+#   AttackMoveHandler → ClickHandler — reverse-tree-order _unhandled_input
+#   delivery reaches AttackMoveHandler first when A+click is pending. Pitfall #5
+#   regression locks: test_main_tscn_attack_move_handler_before_click_handler
+#   and test_pitfall_5_attack_move_handler_before_click_handler_standalone.
 #
 # BUG-03: FIXED in Phase 2 session 1 wave 3 (gameplay-systems). UnitState_Dying
 #   shipped at game/scripts/units/states/unit_state_dying.gd and registered in
@@ -903,17 +904,9 @@ func test_main_tscn_attack_move_handler_before_click_handler() -> void:
 	var amh: Node = main_node.get_node_or_null("AttackMoveHandler")
 	var ch: Node = main_node.get_node_or_null("ClickHandler")
 
-	if amh == null:
-		# BUG-02: AttackMoveHandler absent from main.tscn. Mark pending so the
-		# pre-commit gate passes while the bug is outstanding.
-		# Fix: add 'AttackMoveHandler' node BEFORE 'ClickHandler' in main.tscn
-		# with script = res://scripts/input/attack_move_handler.gd. Owner: ai-engineer.
-		pending("BUG-02: AttackMoveHandler not yet in main.tscn (wave-2B deliverable). "
-			+ "Remove this pending() call once the node is added.")
-		return
-
 	assert_not_null(amh,
 		"main.tscn must contain AttackMoveHandler (wave-2B deliverable)")
+	assert_not_null(ch, "main.tscn must contain ClickHandler")
 
 	if amh != null and ch != null:
 		assert_true(amh.get_index() < ch.get_index(),
@@ -1003,13 +996,9 @@ func test_pitfall_5_attack_move_handler_before_click_handler_standalone() -> voi
 	var amh: Node = main_node.get_node_or_null("AttackMoveHandler")
 	var ch: Node = main_node.get_node_or_null("ClickHandler")
 
-	if amh == null:
-		# BUG-02: AttackMoveHandler absent — pitfall #5 ordering cannot be verified.
-		pending("BUG-02: AttackMoveHandler not yet in main.tscn. "
-			+ "Remove this pending() once the node is wired.")
-		return
+	assert_not_null(amh, "AttackMoveHandler must be in main.tscn")
 	assert_not_null(ch, "ClickHandler must be in main.tscn")
-	if ch == null:
+	if amh == null or ch == null:
 		return
 	assert_true(amh.get_index() < ch.get_index(),
 		"Pitfall #5: AttackMoveHandler (idx=%d) must appear BEFORE ClickHandler (idx=%d) "

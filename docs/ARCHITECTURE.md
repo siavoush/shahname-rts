@@ -780,6 +780,20 @@ Code shipped under commit `aa429ef` (cross-agent contamination during a parallel
 
 ---
 
+### v0.17.4 — Phase 2 Session 1 (2026-05-01) — ai-engineer (BUG-02 fix: wire AttackMoveHandler in main.tscn)
+
+- **BUG-02 fixed.** `main.tscn` now declares `AttackMoveHandler` as a sibling Node under `Main`, positioned IMMEDIATELY BEFORE `ClickHandler` in the .tscn so reverse-tree-order `_unhandled_input` delivery reaches AttackMoveHandler first when A+click is pending. Without the wiring, A+click was a silent no-op — the script existed and was preloaded by tests, but no instance hosted its `_unhandled_input` at runtime. Root cause: the Phase 2 wave 2B agent (`ai-eng-attack-input`) authored the script and the .tscn edit, but Deviation 02's parallel-agent commit-staging race left the .tscn change out of the wave's commit. Pitfall #5 (sibling tree-order is load-bearing) caught it.
+
+- **Tree order check.** `AttackMoveHandler.get_index() < ClickHandler.get_index()` is now asserted in two integration tests (`test_main_tscn_attack_move_handler_before_click_handler` and `test_pitfall_5_attack_move_handler_before_click_handler_standalone`). Both were `pending(...)` waiting on this fix; both now run with full assertions.
+
+- **Scene file mechanics.** Added one `[ext_resource]` declaration (`id="11_attackmove"`, the next free integer after wave 2C's 10_attackrange) and one `[node]` block. `load_steps` bumped 12 → 13 to match the new ext_resource count.
+
+- **Test count: 716 → 718.** Two BUG-02 pending tests flipped to passing assertions. No new tests added — the existing regression locks were already in place from wave 3.
+
+- **Files owned by this fix:** `game/scenes/main.tscn` (the wiring), `game/tests/integration/test_phase_2_session_1_combat.gd` (flipped 2 BUG-02 pending tests + updated the BUG-02 status comment block at the top of the file).
+
+---
+
 ### v0.17.2 — Phase 2 Session 1 wave 3 (2026-05-01) — qa-engineer (Integration tests for combat flows)
 
 - **36 new integration tests in `game/tests/integration/test_phase_2_session_1_combat.gd`.** Covers 9 flows: single-attack, range+cooldown, right-click-on-enemy, attack-move FSM, Farr drain worker-killed-idle, HealthBarsOverlay compute_bar_entries, AttackRangeOverlay+F4, cross-feature smoke (main.tscn structure), and pitfall regressions #1–#5. Test count: 675 → 711. Passing: 672 → 706 (34/36 new tests pass; 2 are intentional regression locks for BUG-02).
