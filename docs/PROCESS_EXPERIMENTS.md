@@ -193,6 +193,32 @@ Both reviewers ran against PR #4 after the lead had already live-tested and the 
 - The trial run also revealed the reviewers' value compounds when given the Known Godot Pitfalls list as their checklist. Phase 2's wave-close briefs should include the latest pitfalls list as part of the briefing, not just by reference.
 - Cost-of-measurement: ~20 min lead time per wave (write the briefs, read the reviews, route fixes). Tracked in the metrics table.
 
+## Mid-flight deviations log
+
+Per the discipline rule, deviations from the documented studio process (kickoff doc, STUDIO_PROCESS §9, ongoing experiments) are allowed when running into a known wall, but must be explicit and logged.
+
+### Deviation 01 — lead committed wave-1A + wave-1B on behalf of stuck agents (2026-05-03, Phase 2 session 1)
+
+**Trigger:** `gameplay-combat-core` (subagent_type=gameplay-systems, name=gameplay-combat-core) entered a verification loop after completing implementation work in the shared working tree. Each subsequent task on their list looked at the file already in the tree and reported "task already shipped by another agent, standing down" — when in fact the work was theirs from earlier in the same session, just uncommitted. Three rounds of explicit lead messaging ("this is YOUR work, please commit") failed to break the loop. `ai-eng-attacking-state` had similar behavior (work in tree, never reached the commit step).
+
+**Process expectation violated:** kickoff doc §5 "End of session: Lead live-tests before PR" — but agents are supposed to commit their own work first. STUDIO_PROCESS §9 (2026-05-01) "verify git tree at session close" requires a tree to verify — agents weren't producing one.
+
+**Deviation:** lead manually staged and committed wave-1A's gameplay-combat-core work and wave-1B's ai-eng-attacking-state work as a bundled commit (`81cf42a`), with body crediting both agents for authorship and tagging the commit as a mid-flight deviation. balance-engineer's wave-1C work (`a2b444f`) was committed by the agent themselves cleanly — no deviation there.
+
+**Cost avoided:** continued waste of conversation rounds messaging stuck agents. Each "task already shipped, standing down" message + lead nudge cycle was costing ~5 turns. Without the deviation, work in the tree would have been blocked indefinitely or required a fresh agent spawn (which costs more tokens than just committing).
+
+**Cost paid:**
+- **Cleaner attribution loss:** the `81cf42a` commit credits two agents in one commit body, not the standard one-agent-per-commit shape. Future archaeologists reading `git log` see "lead committed two agents' work" as an outlier vs. the standard pattern. Mitigated by explicit body documentation.
+- **Experiment 01 (live-game-broken-surface) data quality dent:** the deviation may correlate with the agent verification-loop bug in some way — was the loop a side effect of agents trying to apply the live-game-broken-surface section to too many tasks and getting confused about state? Need to verify in the session-close retro. Don't conflate the symptoms.
+- **Experiment 02 (wave-close review) trial setup:** the wave-close review is supposed to happen AFTER all wave commits land, BEFORE PR. The lead-deviation commits land on the branch normally; wave-close review still runs against the branch. So this doesn't break Experiment 02's setup, but it does muddy the "agents are responsible for their own commits" assumption built into the agent dispatch process.
+
+**Resolution / mitigation for future:**
+- **Fold into the next agent-dispatch brief**: explicitly tell each agent that they are responsible for committing their own work BEFORE standing down. Add "if you find work in the tree that you don't recognize, run `git diff` to verify whether it's yours from earlier in the session — your task list is the authority on what you've done."
+- **Investigate root cause**: the verification loop pattern is likely a fundamental Claude Code agent confusion about session continuity. May be worth a separate Experiment 03 on commit-discipline patterns once the current Experiments 01 and 02 close.
+- **Recurring problem:** session 2 had a similar shared-tree-coordination problem (different mechanism: agents stepped on each other's docs). This is the second session this class of issue has surfaced. Tagging as a recurring pattern worth its own study.
+
+**Verdict on the deviation itself:** appropriate for the situation but indicative of a process gap that should be closed in Phase 2 session 2's kickoff brief.
+
 ## Resolved experiments (archive)
 
 _None yet — Experiment 01 stays Active until session 3 confirms or rejects the refinement, and Experiment 02 stays Active until Phase 2 session 1 produces its first verdict._
