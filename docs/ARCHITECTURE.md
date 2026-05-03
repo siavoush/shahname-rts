@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.17.1
+version: 0.17.5
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -871,6 +871,59 @@ Code shipped under commit `aa429ef` (cross-agent contamination during a parallel
 - **`tests/integration/test_match_harness.gd` added alongside `tests/integration/test_determinism.gd`.** The linter created `test_match_harness.gd` in the integration directory in parallel. Both files exercise the harness: `test_match_harness.gd` covers the API surface (25 tests); `test_determinism.gd` covers the empty-match determinism guarantee (3 tests). The `tests/unit/test_match_harness.gd` tests overlap slightly — this is intentional redundancy for robustness. Test counts: 199 before wave 2 → 250 after (51 new tests; 1 intentional Pending remains from ui-developer's HUD defensive-fallback test).
 
 - **What did not ship in wave 2 (intentionally out of scope per kickoff):** `spawn_resource_node` test helper (Phase 3). `MatchLogger` NDJSON writer (Phase 6). AI-vs-AI batch runner (Phase 6). `GameRNG` autoload wiring in harness (engine-architect; harness uses `seed()` on global RNG as fallback with TODO comment). Hot-reload of BalanceData mid-test (Phase 5+). Real unit/building spawn in `spawn_unit` / `spawn_building` (Phase 1+ when scenes exist — stubs return null with push_warning).
+
+---
+
+### v0.17.3 — Phase 2 Session 1 wave 3 bug fixes (2026-05-03) — gameplay-systems (BUG-01 + BUG-03)
+
+Backfilled retroactively per arch-reviewer-phase-2-s1's F-1 finding.
+
+- **BUG-01 fix — drive `combat._sim_tick(dt)` from `UnitState_Attacking._sim_tick`.** Mirrors `UnitState_Moving`'s `_movement._sim_tick(dt)` pattern: the state IS the per-tick driver for the component until a phase coordinator ships. The single-line addition (`unit_state_attacking.gd` in-range branch, after `combat.set_target(...)`) closes the gap where `EventBus.sim_phase(&"combat")` fired with no listeners. Without this fix, damage never fired through the production FSM chain — qa wave 3's integration tests (`test_bug01_combat_sim_tick_drives_damage_via_fsm`) caught the gap by writing a 10-tick advance through the real EventBus chain and asserting HP decreased; the original "broken-behavior assertion" was flipped to the fixed-behavior assertion when the fix landed.
+
+- **BUG-01 ARCHITECTURAL CONSEQUENCE — combat damage now fires during the `&"movement"` phase, not the `&"combat"` phase.** Sim Contract §2 specifies a 7-phase canonical order: `input → ai → movement → spatial_rebuild → combat → farr → cleanup`. With combat reached via `Unit._on_sim_phase(&"movement")` → `fsm.tick()` → `UnitState_Attacking._sim_tick()` → `combat._sim_tick()`, damage application happens BEFORE `spatial_rebuild` runs each tick. Per Sim Contract §2 also: *"combat must see post-movement positions"* — combat now sees pre-movement positions because it runs IN movement. **At session-1's 15-unit cap with no ranged units, the impact is invisible.** When the CombatSystem phase coordinator lands (LATER), it subscribes to `&"combat"` and iterates registered CombatComponents, the drive call moves out of `UnitState_Attacking._sim_tick`, and §2 phase-order is restored. **Tagged as a known drift in `unit_state_attacking.gd:30-36` and `combat_component.gd:27-33`.** Phase-order audits at later phases will catch this if it slips out of the LATER queue.
+
+- **BUG-03 fix — register `UnitState_Dying` in `unit.gd._ready`.** New file `game/scripts/units/states/unit_state_dying.gd`: `class_name UnitState_Dying`, id=`&"dying"`, priority=100 (top), interrupt_level=NEVER. `enter(prev, ctx)` calls `ctx.queue_free.call_deferred()` — the deferred path is load-bearing because `enter()` runs inside `StateMachine._apply_transition`, which is itself called inside `_on_unit_health_zero` (a signal handler firing inside another component's `_sim_tick`). A direct `queue_free()` would invalidate `current` while the StateMachine was still using it. Registered alongside Idle/Moving/Attacking/AttackMove via the existing idempotent register chain. Without registration, `StateMachine._on_unit_health_zero` push_errored on the missing `&"dying"` state and units stayed alive in the scene tree as zombie corpses for attackers to continue engaging. qa wave 3's integration test `test_bug03_dying_state_frees_unit_after_lethal_damage` asserts the unit is freed after lethal damage + 2 process_frames (see Pitfall #8 candidate below).
+
+- **New Pitfall #8 candidate — `Node.queue_free.call_deferred()` is double-deferred.** Outer `call_deferred` queues `queue_free` for end-of-frame; `queue_free` itself queues actual deletion for end-of-next-frame. Tests verifying "unit freed after Dying.enter" need 2 `await get_tree().process_frame` calls (unit-test variant) or 3 (integration-test variant — runner has more pending deferreds). Surfaced during BUG-03 fix verification; godot-code-reviewer's wave-close audit confirmed this is real and load-bearing — promoted to Known Pitfalls list per Experiment 01's growing-list pattern.
+
+- **Test strategy — direct `take_damage_x100(20000, ...)` for BUG-03 regression test.** The regression test originally drove damage through 20 `_combat_tick` iterations, but cooldown semantics meant that path landed only 1-2 attacks per 20 ticks (insufficient for kill at 100 HP). Lead's edit (committed as part of `47680cd`) switched to direct `health.take_damage_x100(20000, _iran, &"melee_attack")` — the death-preempt chain (HealthComponent → unit_health_zero → StateMachine → UnitState_Dying.enter → queue_free.call_deferred) does not depend on HOW damage was dealt. Same chain exercised, simpler test setup.
+
+- **Process: lead-proxy commit (Deviation 01 second occurrence).** Wave-3 fix dispatch agents fell into the verification-loop pattern AGAIN despite explicit anti-loop guardrails in their brief. Lead committed BUG-01 + BUG-03 as `47680cd` on their behalf (gameplay-bug-fixes' authorship credited in commit body); the agent self-corrected and shipped the post-commit follow-ups (`6590a16` test_phase_2_session_1_combat.gd + test_unit_state_dying.gd refinements; `4ff8658` BUILD_LOG retros). Logged in `docs/PROCESS_EXPERIMENTS.md` as continuation of Deviation 01.
+
+- **LATER items surfaced:**
+  1. **CombatSystem phase coordinator** — closes the §2 phase-order drift documented above.
+  2. **`set_target` idempotency** — wave-3 retro flagged that the BUG-01 fix's per-tick `set_target` call would reset cooldown every tick. Surfaced as **BUG-04**, fixed in v0.17.5.
+  3. **`UnitRegistry` autoload** — closes target-lookup cost from O(N) tree-walk to O(1) when N>~100. Triple-LATER (CombatComponent, UnitState_Attacking, UnitState_AttackMove all surface this).
+
+---
+
+### v0.17.5 — Phase 2 Session 1 post-wave-3 (2026-05-03) — lead (BUG-04 fix: set_target idempotency)
+
+Backfilled retroactively per arch-reviewer-phase-2-s1's F-2 finding.
+
+- **BUG-04 — `CombatComponent.set_target` was not idempotent on same-target re-entry.** The BUG-01 fix (v0.17.3) wired `UnitState_Attacking._sim_tick` to call `combat.set_target(target.unit_id)` on EVERY in-range tick. `set_target` unconditionally reset `_attack_cooldown_ticks = 0`. So cooldown reset to 0 every tick → damage fired every tick (30 atk/sec at 30 Hz instead of the 1.0 atk/sec the cooldown formula intends).
+
+- **Why the integration test missed it.** `test_bug01_combat_sim_tick_drives_damage_via_fsm` asserted on END behavior (HP decreases) without checking the rate. Combat resolved correctly in terms of DAMAGE FLOWING through the chain — just 30x faster than designed. The unit-level cooldown tests passed because they drove `combat._sim_tick` directly without the FSM, so per-tick `set_target` never fired in those test paths. Two test layers, neither caught the rate.
+
+- **Fix.** `set_target` now early-returns when `_target_unit_id == unit_id_value`:
+
+  ```gdscript
+  func set_target(unit_id_value: int) -> void:
+      if _target_unit_id == unit_id_value:
+          return  # Idempotent — same target preserves cooldown.
+      _target_unit_id = unit_id_value
+      _attack_cooldown_ticks = 0
+  ```
+
+  Same-target re-call preserves cooldown. Genuine target change still resets to 0 — the "single-tick attack on engagement" RTS expectation is preserved. Setting `-1` while already `-1` is also no-op (no-target stable state).
+
+- **Two regression tests** in `test_combat_component.gd`:
+  - `test_set_target_idempotent_does_not_reset_cooldown` — first attack fires (cooldown→30), then `set_target(same_id)` must not change cooldown.
+  - `test_set_target_new_target_resets_cooldown` — `set_target(new_id)` must reset to 0 and store the new id.
+
+- **Future caller contract.** Anyone using `set_target` as a "force-fire-immediately" primitive must use `set_target(-1)` first to clear, then `set_target(target_id)`. The idempotency comment in source documents this. Otherwise the `same id` path skips the cooldown reset.
+
+- **Process: lead-deviation (third small one this session).** Surfaced by `gameplay-bug-fixes`'s post-wave-3 retro report; lead made the 3-line fix + 2 regression tests directly rather than spawning yet another agent given the verification-loop and commit-race patterns recurring. Logged in `docs/PROCESS_EXPERIMENTS.md` Deviation 01 (second occurrence) and `47680cd`/`fd7b07b` commit bodies.
 
 ---
 

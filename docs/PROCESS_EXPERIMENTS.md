@@ -185,7 +185,40 @@ Both reviewers ran against PR #4 after the lead had already live-tested and the 
 
 - **Dropped** if: reviewers consistently produce zero actionable findings AND token cost exceeds 25% of session spend, OR they produce noise that wastes lead time without preventing drift.
 
-**Verdict:** _TBD — fill at Phase 2 session 1 merge._
+**Verdict:** **KEPT WITH REFINEMENT.**
+
+Filled at Phase 2 session 1 wave-close (2026-05-03), post-reviewer-dispatch, pre-merge.
+
+**Metrics captured:**
+
+| Metric | How measured | Baseline (sess. 2) | Actual (Phase 2 sess. 1) | Δ |
+|---|---|---|---|---|
+| Live-game bugs found at boot | Lead live-test | 1 | 0 (qa caught 4 first) | −100% |
+| Bugs caught at wave-close review | Reviewer findings flagged blocking/actionable | n/a | 0 blocking + 5 actionable docs/contract findings | new metric |
+| Bugs caught by qa wave 3 (BEFORE reviewers) | qa report bug count | 0 (caught nothing lead missed) | 4 (BUG-01..04 — 3 production, 1 derivative) | +400% |
+| Manifesto/contract findings | architecture-reviewer findings | 0 | 6 (F-1..F-6 in architecture-reviewer's review) | new metric |
+| Refactor candidates surfaced | reviewers' "next-session priority" list | 2 | 5 (UnitRegistry triple-LATER, CombatSystem coordinator, suffix Constants, encapsulation helper, MatchHarness migration) | +150% |
+| Test count delta | Σ tests added | +37 | +176 (542→718) | +376% |
+| Time kickoff → merge | Wall clock | ~3h | ~5h+ (multiple bug-fix cycles + 2 deviations) | +67% |
+| Reviewer token cost | Σ task notification totals (review-only dispatches) | n/a (informal trial) | TBD — recover from logs | new metric |
+| Lead's review-processing time | Wall clock to read both reviews + route fixes | n/a | ~30 min | new metric |
+
+**Verdict justification:**
+
+The wave-close review **did** add structural value the lead's live-test wouldn't surface — specifically:
+1. **arch-reviewer's F-1 + F-2** (missing §6 entries for BUG-01+03 and BUG-04 fixes) preserve archaeology that future sessions need. The lead noticed the v0.17.3 hole during commit history audits but the architecture-reviewer's structured grade caught BOTH F-1 and F-2 before merge.
+2. **godot-code-reviewer's BUG-04 verification** (three-trace audit: same-target / new-target / freed-target) confirmed the fix didn't introduce a new bug — that's a level of static-analysis rigor the lead's live-test cannot match.
+3. **5 candidate Pitfalls evaluated with calibrated KEEP/DEFER/REJECT decisions** — godot-code-reviewer correctly distinguished engine pitfalls (#5 sibling tree-order, #8 double-deferred queue_free) from process patterns (#7 commit-race) and rejected unsupported claims (#9 lambda capture). This is exactly the lens the wave-close review was designed to provide.
+4. **arch-reviewer's contract-fit findings** caught the §2 phase-order drift (combat in movement phase) explicitly — a real but acknowledged-as-LATER architectural deviation.
+
+The intervention's value comes from **structural drift detection**, not from "catching a bug the lead would have missed at boot." Phase 2 session 1's bugs (BUG-01..04) were caught by qa wave 3's integration tests, not by either reviewer. But the reviewers caught the v0.17.3/v0.17.5 §6 documentation holes that would have rotted the project's archaeology over multiple phases.
+
+**Refinement applied to the intervention going forward:**
+
+- **Reviewer briefs must include the explicit §6 entry checklist.** The reviewer-brief-side checklist works; the agent-brief-side reminder ("write a §6 entry per non-trivial deliverable") is observably insufficient when agents fall into the verification-loop pattern. The reviewer should be the second line of defense for archaeology.
+- **`SendMessage` in reviewer tool list confirmed working.** Both reviewers proactively returned their structured output via SendMessage; no idle-without-content failures repeated from the informal trial. Mitigation from Experiment 02's setup is validated.
+
+**Status:** **Kept after one formal session.** Per the original notes, graduates to permanent rule in `STUDIO_PROCESS.md` only after a SECOND confirming session (Phase 2 session 2). The session-2 trial will measure: do the reviewers continue to surface ≥1 actionable archaeological/contract finding per session?
 
 **Notes:**
 - Like Experiment 01, N=1 single session is directional only. Graduates to permanent rule after second confirming session.
