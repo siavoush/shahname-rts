@@ -34,6 +34,39 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-04 — Phase 2 session 1 wave 2B (ai-engineer): UnitState_AttackMove + click-handler enemy-right-click + AttackMoveHandler
+
+**Branch:** `feat/phase-2-session-1`. Source code shipped in commit `aa429ef` (bundled with ui-developer's wave 2C — same Pitfall #7 cross-agent commit-race that scrambled wave 2A's attribution). ARCHITECTURE.md retro shipped in commit `4f5c1da`. Code itself is correct; this BUILD_LOG entry retros the wave-2B scope.
+
+**Shipped (code in `aa429ef`, ARCHITECTURE in `4f5c1da`):**
+
+1. **`UnitState_AttackMove`** at `game/scripts/units/states/unit_state_attack_move.gd`. New concrete UnitState. id=`&"attack_move"`, priority=15, interrupt_level=NEVER. enter() reads target Vector3 from `ctx.current_command.payload.target`; `MovementComponent.request_repath(target)`. _sim_tick drives movement; per-tick `SpatialIndex.query_radius_team(self.position, Constants.ENGAGE_RADIUS, OPPOSING_TEAM)` for engage detection. `_opposing_team(self_team)` is binary Iran↔Turan with TEAM_ANY for neutral.
+
+2. **Resume-after-kill mechanic** lives entirely in queue FIFO discipline. When AttackMove discovers an enemy: `Unit.append_command(COMMAND_ATTACK_MOVE, {target: original_target})` to the BACK; `CommandPool.rent` + `command_queue.push_front(attack_cmd)` to the FRONT (canonical AI-panic-insertion per State Machine Contract §2.4 / §2.5); `fsm.transition_to_next` lands in Attacking with the enemy's id stashed on `ctx.current_command`. When Attacking exits (target dead → transition_to_next), the queue's head is the resume-AttackMove. **No "remember target across states" plumbing**.
+
+3. **`click_handler.gd::process_right_click_hit` extended with team-aware unit-hit branch.** Enemy hit (different team than `sel[0].team`) → Attack Command per selected friendly. Same-team hit → no-op (friendly fire / follow / guard semantics later phases — documented choice).
+
+4. **`AttackMoveHandler`** at `game/scripts/input/attack_move_handler.gd`. Sibling of ClickHandler in `main.tscn`, BEFORE ClickHandler in document order so its `_unhandled_input` consumes the click first. KEY_A pending → next left-click consumes; right-click/Escape cancels.
+
+5. **Constants additions**: `Constants.COMMAND_ATTACK_MOVE`, `Constants.STATE_ATTACK_MOVE`. **`StateMachine._COMMAND_KIND_TO_STATE_ID`** gains `&"attack_move" → &"attack_move"`. **`unit.gd`** registers AttackMove alongside Idle/Moving/Attacking. **`main.tscn`** wires AttackMoveHandler.
+
+6. **22 new tests**: test_unit_state_attack_move.gd (11), test_attack_move_handler.gd (7), test_click_handler.gd (+4), test_click_and_move.gd docstring update.
+
+**Test-count delta:** +22. Final after all wave 2 work: 675 tests, 672 passing, 3 risky/pending pre-existing.
+
+**Lint:** clean.
+
+**Live-game-broken-surface answers:** (1) Moving → AttackMove → Attacking → AttackMove resume cycle requires the per-tick spatial-rebuild + the in-tree AttackMoveHandler-before-ClickHandler ordering — the BEFORE-placement is the sole mechanism enforcing click consumption priority (Pitfall #5 candidate). (2) ENGAGE_RADIUS feel; closest-enemy tie-breaking (pile-on); resume-eagerness — all balance/tuning concerns. (3) Box-select 5 Piyade, hold A, click across map past 5 Turan; all 5 walk, engage, kill, resume.
+
+**Pitfalls candidates this wave:**
+- **Pitfall #5 (candidate): Sibling tree order is load-bearing for `_unhandled_input` consumption.** AttackMoveHandler MUST come before ClickHandler in main.tscn for A+click consumption to work; reordering silently breaks it. Symmetric class to cb95d09. Mitigation: explicit InputDispatcher.
+
+**Decisions made independently:** Right-click on friendly = no-op (kickoff "documented choice"); AttackMoveHandler separate Node not flag on click_handler; resume-after-kill via push_front (standard dispatch path); `_opposing_team` flat function (Phase 4+ alliance-table replacement).
+
+**LATER**: Formation engagement priority; stale-distance engage throttle (N>50); A+click force-attack semantic; InputDispatcher (Pitfall #5 mitigation); cursor change while pending; cancel pending on selection change; UnitRegistry autoload.
+
+---
+
 ## 2026-05-04 — Phase 2 session 1 wave 2A (gameplay-systems): Piyade + TuranPiyade + first Farr drain
 
 **Branch:** `feat/phase-2-session-1`. Code shipped under commit `aa429ef` (cross-agent contamination during a parallel-wave window — ui-developer's `git commit` swept up the working-tree state which included this wave's already-completed gameplay-systems files; wave 2A code is intact under that SHA, attribution is the only thing scrambled). This BUILD_LOG entry retros the wave-2A scope.
