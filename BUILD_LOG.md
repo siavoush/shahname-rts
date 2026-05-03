@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-04
+last_updated: 2026-05-04 (Phase 2 session 1 wave 1A)
 ---
 
 # Build Log
@@ -33,6 +33,73 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 ```
 
 ## Entries
+
+## 2026-05-04 — Phase 2 session 1 wave 1A (gameplay-systems): CombatComponent + HealthComponent death capture
+
+**Branch:** `feat/phase-2-session-1`
+
+**Shipped:**
+
+1. **`CombatComponent`** at `game/scripts/units/components/combat_component.gd`. SimNode (path-string base) holding `attack_damage_x100: int`, `attack_speed_per_sec: float`, `attack_range: float` plus internal `_target_unit_id` and `_attack_cooldown_ticks`. `set_target(uid)` resets cooldown so the first tick after engagement fires (single-tick attack on engagement). `_sim_tick(dt)` order: cooldown decrement → no-target shortcut → target resolution (via injected `target_lookup_callable` test seam, with a tree-walk fallback in production) → XZ-only range check → cooldown gate → fire via `target.get_health().take_damage_x100(attack_damage_x100, get_parent())` and reset cooldown to `roundi(SIM_HZ / attack_speed_per_sec)`. Defensive freed-target safe-clear (sets `_target_unit_id = -1`, no crash).
+
+2. **`HealthComponent` extended** with `take_damage_x100(amount_x100: int, source: Node = null, cause: StringName = &"unspecified")` — the fixed-point hot path CombatComponent uses. Both float `take_damage` and the new fixed-point path converge in private `_apply_damage_x100`. Captures `last_death_position: Vector3` from the parent's `global_position` BEFORE any signal fires (Yadgar consumer in Phase 5 reads off the listener-side `unit_died` payload, not the freed component). Resolves `killer_unit_id` from `source.unit_id` duck-typed (`-1` sentinel when null/missing). Emit ORDER pinned: `unit_health_zero` FIRST (FSM death-preempt per State Machine Contract §4.2), then `unit_died(unit_id, killer_unit_id, cause, position)`. Single `_zero_emitted` latch covers both.
+
+3. **`EventBus.unit_died` signal declared** with `(unit_id: int, killer_unit_id: int, cause: StringName, position: Vector3)` payload. Added to `_SINK_SIGNALS` allowlist with the matching `_make_forwarder` arm — Phase 6 MatchLogger will sink it automatically. Comment block above the declaration warns listeners against synchronous cross-listener mutation (cb95d09 lesson preserved).
+
+4. **`unit.tscn` updated** to instance CombatComponent as a sibling of MovementComponent. Every Unit composes one; Kargar's `attack_damage_x100 = 0` (set by balance-engineer wave 1C) makes the attack tick a no-op (the call hits `take_damage_x100(0, ...)` which short-circuits on the non-positive amount check). Composition shape is uniform so subclass scripts don't need scene edits.
+
+5. **`Unit._apply_balance_data_defaults` reads three new combat fields** (`attack_damage_x100` TYPE_INT, `attack_speed_per_sec` TYPE_FLOAT/INT, `attack_range` TYPE_FLOAT/INT) from `BalanceData.units[unit_type]`, alongside the existing `max_hp` and `move_speed` reads. Defensive — missing fields keep CombatComponent defaults.
+
+6. **17 new tests** (test_combat_component.gd: 11, test_health_component.gd: +6 = 23 total). Combat coverage: HP decrement on attack, fixed-point exact arithmetic (1255 → exactly 1255 hp_x100 reduction), cooldown formula at 1.0/2.0 atk/s, rapid-fire blocked, fires again after cooldown elapses, out-of-range blocked, range XZ-only ignoring Y, target=-1 no-op, set_target stores id, freed-target safe-clear. Health additions: `take_damage_x100` decrements/ignores-non-positive, `last_death_position` captured before emit, `unit_died` payload (id, killer, cause, position), no double-emit on overkill, `unit_health_zero` fires BEFORE `unit_died`.
+
+**Test-count delta:** +17 (535 → 578 if you account for the 26 added by ai-engineer's parallel wave 1B + balance-engineer's wave 1C; my +17 is the gameplay-systems contribution). Final: 578 tests, 575 passing, 3 risky/pending pre-existing.
+
+**Lint:** `tools/lint_simulation.sh` reports OK (0 violations across L1-L5). `take_damage_x100` and `set_target` method names avoid the L1 `apply_*` pattern. The fixed-point arithmetic uses `roundi` (deterministic half-away-from-zero) per Sim Contract §1.6.
+
+**Live-game-broken-surface answers (Experiment 01) — refined:**
+
+1. *State/behavior that must work at runtime that no unit test exercises:* The `_sim_tick` driver chain — `EventBus.sim_phase(&"movement", _)` → `Unit._on_sim_phase` → `fsm.tick(SIM_DT)` → `UnitState_Attacking._sim_tick` (ai-engineer wave 1B) → `combat._sim_tick`. Headless tests drive `combat._sim_tick` directly; the live game routes through the state. If the state never reaches the component (state ID typo, FSM transition failure, component missing on a freshly-spawned unit), combat silently never fires — no crash, just units that walk to each other and don't attack. Lead's smoke test catches this — 5v5 mirror combat with HP visibly draining on both sides verifies the chain end-to-end. Also: signal listener order on `unit_died`. Phase 2 session 1 wires FarrSystem (wave 2A) and could later wire SelectionManager + SelectedUnitPanel. The handler order isn't deterministic across signal connection times — each handler must mutate ONLY its own state (this is what we documented inline in event_bus.gd).
+
+2. *What headless tests cannot detect that the lead would notice in the editor:* Combat *feel* — does an attack at range = 1.5 look right for melee? Are 30-tick cooldowns appropriate so 100 HP vs 10 damage resolves in ~10 seconds, not 2 or 60? Whether a unit's silhouette "freezes" mid-step when it transitions from Moving → Attacking (the cooldown reset on engagement was deliberate to avoid wind-up but might feel jerky). Whether the death position capture is visually anchored (Phase 5 Yadgar will reveal this — the position is fully correct in the payload but Yadgar's renderer might add visual offset). Whether two Iran Piyade attacking the same Turan target both fire on the same tick (deterministic per the StateMachine sort order) and whether that double-tap feels right or chaotic.
+
+3. *Minimum interactive smoke test that catches it:* Lead spawns 5 Iran Piyade and 5 Turan Piyade (Phase 2 session 1 wave 2A will wire the Turan_Piyade unit). Selects all 5 Iran. Right-clicks a Turan (wave 2B click-handler wiring lands separately). Watches: Iran walks to Turan, transitions to Attacking, HP visibly decrements on both sides (current state/behavior must work at runtime), one side wins in 5-15s (combat feel — passing this is the calibration target). Console shows no errors. F2 overlay (Phase 4) would show `unit_died` events landing with `cause = &"unspecified"` and the correct `position`. Running the same 5v5 with friendly fire would reveal whether the cause field needs richer values (e.g., `&"hero_friendly_fire"` per `01_CORE_MECHANICS.md` §4) — currently all attacks emit `&"unspecified"` unless the caller sets one explicitly.
+
+**New Pitfalls candidates (for Experiment 01's Known Godot Pitfalls list):**
+
+- **Pitfall #5 (candidate): Node3D position writes before `add_child_autofree`.** Adding to a tree initializes `global_transform`; setting `global_position` before is in-tree triggers `Condition '!is_inside_tree()' is true. Returning: Transform3D()` and the position effectively doesn't take. Already documented for `farr_gauge` in v0.14.5 but bit me again here when writing CombatComponent tests. The fix is `add_child_autofree(node) ; node.global_position = ...`. Worth promoting from "session-2 lesson" to a permanent Pitfalls list entry — it's a class of bug, not a one-off.
+
+- **Pitfall #6 (candidate): `queue_free` is deferred; tests that need synchronous death use `free()`.** A test that `queue_free`s a node and then ticks the simulation in the same frame still has the node alive (queue_free runs at end-of-frame). For deterministic "freed mid-tick" tests, `node.free()` is the synchronous primitive — but using both (queue_free THEN free) double-frees in some Godot versions. Pinned in `test_combat_component.gd::test_freed_target_clears_target_id` with a comment.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. Pure infrastructure work against shipped contracts and pre-filled kickoff briefs.
+
+**Decisions made independently** (per CLAUDE.md Escalation rule #1):
+
+- **Target lookup is a `Callable` injection seam, not a registry autoload.** The kickoff §2 deliverable 1 left this open: "use SpatialIndex or a unit registry — if no registry exists, this is the trigger to add one." Wave 1A picks the simplest path: `target_lookup_callable: Callable` (defaulting to a tree-walk fallback). At session-1's 15-unit cap an O(N) tree-walk per missed lookup is microseconds. The registry autoload is a LATER item (one autoload covers both CombatComponent and ai-engineer's UnitState_Attacking, both of which flagged the same need).
+
+- **Cooldown stored as integer ticks, not float seconds.** The kickoff brief said "fixed-point — count down ticks; cleaner than float math when SimClock.SIM_HZ is integer 30." Confirmed: integer arithmetic, exact comparison-against-zero, replays bitwise-deterministic across platforms. The `attack_speed_per_sec` parameter stays float (cooldown denominator) because the rounded boundary conversion happens once at engagement, not every tick.
+
+- **Single `_apply_damage_x100` chokepoint, two public entry points.** `take_damage(float, source)` (legacy, no cause) and `take_damage_x100(int, source, cause)` (Phase 2). Both converge in the private chokepoint so the death-emit discipline is identical regardless of entry. Adding a `cause` parameter to the float path would have broken Phase 1 callers (kargar tests, integration tests); the dual-entry shape avoids that.
+
+- **`unit_health_zero` BEFORE `unit_died`.** Two different audiences and lifetimes — `unit_health_zero` is FSM-internal (Contract §4.2 mandates it triggers Dying transition); `unit_died` is the broader sim/UI/telemetry channel. Order is pinned so any `unit_died` listener that wants to read FSM state via `is_dying()` sees a transitioned unit. Documented inline in source.
+
+- **Both signals latched on the same `_zero_emitted` flag.** Over-kill ticks emit neither. Without this, sustained DoT (Phase 6 burning, Phase 7 status effects) past the moment of death would re-trigger Yadgar placements and Farr drains.
+
+**LATER items** (flagged for future waves):
+
+1. **`UnitRegistry` autoload (id → ref dict).** Replaces production tree-walk lookup with O(1) when N>~100. Both CombatComponent and UnitState_Attacking need this; one autoload covers both. ~10 LOC: register/unregister hooks in `Unit._ready`/`_exit_tree`.
+2. **CombatSystem phase coordinator.** Same shape as future MovementSystem coordinator (§6 v0.10.0). When it ships, UnitState_Attacking drops the explicit `combat._sim_tick(dt)` drive call; the coordinator iterates registered components in `unit_id` order during the `combat` phase.
+3. **Cleanup the `has_method(&"take_damage_x100")` guard** in CombatComponent. Was defensive when CombatComponent shipped before HealthComponent's chokepoint; now always-true.
+4. **Phase 5 `Dying` state.** Currently units transition to Dying via the FSM death-preempt only if a Dying state is registered; otherwise the unit queue_frees. Phase 5's polish frame (1s death animation) ships a real Dying state — at that point register it on Unit's base or per-subclass.
+5. **Float `take_damage` deprecation.** All Phase 2+ damage flows through `take_damage_x100`; the float wrapper exists only for legacy callers. If those migrate, the float path can be removed entirely.
+6. **`cause` taxonomy.** Currently sites pass `&"unspecified"` from CombatComponent's default. A small enum constant set in Constants.gd (`CAUSE_MELEE_ATTACK`, `CAUSE_RANGED_ATTACK`, `CAUSE_FARR_DRAIN`, `CAUSE_HERO_FRIENDLY_FIRE`, …) would let FarrSystem branch deterministically on the StringName. Lands when the first non-unspecified consumer ships — the FarrSystem worker-killed-idle drain (wave 2A this session) is the first.
+
+**Coordination notes (cross-agent contamination guard from session 2 lesson):**
+
+- `unit.gd` was edited in **only** the `_apply_balance_data_defaults` method per kickoff scope. AI-engineer's wave 1B parallel work added `_combat_component`, `get_combat()`, and `_UnitStateAttackingScript` references; these landed cleanly because we touched non-overlapping line ranges. Verified via `git diff game/scripts/units/unit.gd` showing only my balance-defaults block as additions.
+- `event_bus.gd` got the new `unit_died` declaration + sink registration. Verified diff scope.
+- `docs/ARCHITECTURE.md` had a §2 row inserted (CombatComponent + EventBus.unit_died) and a §6 v0.16.0 entry. Frontmatter `version` bumped from 0.14.5 → 0.16.0. AI-engineer's UnitState_Attacking row landed in the same wave; balance-engineer's v0.15.0 entry already existed when we started. Cross-agent diffs verified clean.
+
+---
 
 ## 2026-05-01 — Phase 1 session 2 wave 3 (qa-engineer): integration tests — session-2 flows
 
