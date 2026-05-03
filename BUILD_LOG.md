@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-01
+last_updated: 2026-05-04
 ---
 
 # Build Log
@@ -33,6 +33,52 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 ```
 
 ## Entries
+
+## 2026-05-04 — Phase 1 session 2 wave 2C (ai-engineer): GroupMoveController right-click wire-up
+
+**Branch:** `feat/phase-1-session-2`
+
+**Shipped:**
+- `click_handler.gd::process_right_click_hit` now routes through `GroupMoveController.dispatch_group_move(sel, target)` instead of looping `u.call(&"replace_command", Constants.COMMAND_MOVE, payload)` per selected unit. The controller is preloaded once at file scope as `const _GroupMove := preload("res://scripts/movement/group_move_controller.gd")`. The change is contained to the multi-selection write line; the no-selection short-circuit, the empty-hit short-circuit, the hit-on-unit short-circuit, and the DEBUG_LOG_CLICKS instrumentation are untouched.
+- Single-selection right-click is bitwise-identical to wave-2 behavior because the controller's `live.size() == 1` fast path returns the click target verbatim with no offset math — the path is unified, the observable behavior is preserved.
+- Multi-selection right-click now distributes targets on the deterministic ring of `Constants.GROUP_MOVE_OFFSET_RADIUS = 2.0`. With box-select shipping in wave 1A, this is the first wired UI path that puts 2+ units in the selection and right-clicks them — the formation-distribution logic now exercises the production navmesh.
+- Three new tests in `tests/unit/test_click_handler.gd`:
+  1. `test_right_click_multi_selection_distributes_targets` — TDD-red on the unwired baseline (previously all 3 units got the identical click target; now ≥2 of 3 pairs differ).
+  2. `test_right_click_multi_selection_targets_within_radius` — every dispatched target lies within R of the click on the XZ plane; Y is preserved verbatim.
+  3. `test_right_click_single_selection_target_unchanged` — regression guard for session-1's single-click suite; the controller's identity path keeps single-selection bitwise-identical (1e-6 tolerance).
+- Existing `test_right_click_pushes_command_to_every_selected_unit` test still passes (the controller dispatches one `replace_command` per live unit; observable end state matches). Updated its docstring to note the wave-2C routing.
+
+**Did not ship** (intentionally out of scope per the wave-2C brief):
+- Shift-queue formation moves (right-click hardcodes `replace_command`; Shift+right-click waypoint queue is a future wave when keybinding is wired).
+- Right-click on enemy unit (Phase 2 attack-move) — still no-op.
+- Right-click on friendly unit (Phase 2 follow/guard) — still no-op.
+- Any change to `GroupMoveController` itself, `selection_manager.gd`, `unit.gd`, `box_select_handler.gd`, `farr_gauge.gd`, or anything in `scripts/units/` per the wave-2C ownership rules.
+
+**Test-count delta:** +3 (469 → 472 in HEAD). Final: 472 tests, 469 passing, 3 risky/pending (pre-existing, all legitimate per v0.14.0/v0.14.1 entries — navmap-not-ready, FarrSystem fallback path).
+
+**Lint:** `tools/lint_simulation.sh` reports OK (0 violations across L1-L5). The added preload constant and `_GroupMove` reference are valid GDScript identifiers; the lint rule against `apply_*` method names doesn't apply (no new methods, only a preload binding and one dispatch call).
+
+**Live-game-broken-surface answers (Experiment 01) — refined:**
+
+1. *State/behavior that must work at runtime that no unit test exercises:* The integration chain `box_select_handler.gd → SelectionManager.add_to_selection (×N) → click_handler.gd._unhandled_input(MOUSE_BUTTON_RIGHT) → raycast → GroupMoveController.dispatch_group_move → unit.replace_command → StateMachine.transition_to_next → UnitState_Moving.enter() → MovementComponent.request_repath`. Headless tests cover the dispatch chain via `process_right_click_hit(synthetic_hit)`; they cannot exercise the production `NavigationAgentPathScheduler` snapping the offset targets to nav-poly centers. R = 2.0 (8× navmesh `cell_size = 0.25`) keeps adjacent ring slots distinct against `NavigationServer3D.map_get_path`'s snap-to-poly per wave 1B's analysis. With box-select shipping in wave 1A, this wave-2C wiring is the first time multi-unit movement actually reaches the production scheduler with offset targets — until now there was no UI path to put 2+ kargars in the selection.
+
+2. *What headless tests cannot detect that the lead would notice in the editor:* The visible spread of 5 kargars arriving at distinct positions vs. piling up — feel question, passes either way at the unit-test layer. The mid-move-redirect behavior (right-click while units are still moving): does the second dispatch cleanly cancel the first repath and reissue with new ring offsets, or does it visibly stutter? Whether a quick double-right-click on nearby points feels like "go there, then adjust" or jitters. Whether formation rotation looks correct (it shouldn't — facing/rotation is Phase 2; rotation here would be a `UnitState_Moving` regression).
+
+3. *Minimum interactive smoke test that catches it:* Lead box-selects all 5 kargars (now possible with wave 1A's marquee), right-clicks a far point: all 5 walk, no piling, ring is visibly distributed. Lead right-clicks again mid-motion: clean redirect, all 5 still distributed at the new target. Lead right-clicks near a navmesh edge: off-navmesh ring slots fail individually via `request_repath` FAILED and drop back to Idle (per `UnitState_Moving`'s FAILED branch); other slots still walk. This is the interactive test wave-1B flagged as "testable from the keyboard after wave 2C wiring" — wave 2C makes it real.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. Pure infrastructure swap against wave-1B's already-ratified controller surface.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Both single and multi selections route through the controller.** The wave-2C brief left this open ("the structural shape — variable naming and preload location is your call"). Routing the single-unit branch through the controller (instead of "if size == 1 use old loop, else use controller") was authorized by wave-1B's design intent: the identity fast path exists exactly so the wave-2 click-handler can use one dispatch site for both. Future changes to move-dispatch (queueing, logging, attack-move) edit one place, not two.
+- **Defensive `has_method(&"replace_command")` check dropped.** The previous loop did `if u.has_method(&"replace_command"): u.call(...)`. The controller calls `live[i].replace_command(...)` directly, relying on `is_instance_valid()` filtering. This is safe because `SelectionManager` only stores Unit-shaped objects (its `select` API duck-types via `_is_unit_shaped`). The defensive check was load-bearing for a hypothetical future where someone shoves a non-Unit into the selection — that's a contract violation, not a runtime case worth a per-call check.
+- **Preload constant lives at file scope, not inline in the function.** Standard Godot practice for cross-script references; keeps the dispatch line short and the preload cost paid once at script load.
+
+**LATER items** (flagged for future waves):
+1. **Shift-queue formation moves.** When keybinding wave lands Shift+right-click, the click handler can branch on `mb.shift_pressed` and dispatch through a `dispatch_group_move_append` variant (the controller's sister primitive, currently unexposed pending the wave-2 wiring decision flagged in `group_move_controller.gd:66`).
+2. **Right-click on enemy unit / friendly unit.** Currently no-op (Phase 2's attack-move and follow/guard land here). The controller's `dispatch_group_move` is target-agnostic — a parallel `dispatch_group_attack_move` (or a `kind` argument) covers it.
+3. **Stress-test mid-move-redirect at higher unit counts.** With 5 kargars the redirect is fine; at 50+ units (Phase 2/3 army-scale selections) the per-tick MovementComponent repath cancel + reissue cost may be measurable. Profile when army-scale selections actually exist; not blocking now.
+
+---
 
 ## 2026-05-03 — Phase 1 session 2 wave 1B (ai-engineer): GroupMoveController skeleton
 
