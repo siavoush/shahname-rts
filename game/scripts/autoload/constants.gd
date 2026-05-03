@@ -202,6 +202,15 @@ const GROUP_MOVE_OFFSET_RADIUS: float = 2.0
 const FARR_MAX: float = 100.0
 
 
+# === COMBAT ==================================================================
+# Distance within which an attack-moving unit auto-engages a visible enemy.
+# Sized to be larger than the longest melee attack range (1.5) so units engage
+# before they're already at the enemy's feet, but smaller than typical visual
+# screen distance so they don't engage off-path-of-travel. 4.0 = ~2.7× max
+# melee range. Tuned later when ranged units (Kamandar) ship in session 2.
+const ENGAGE_RADIUS: float = 4.0
+
+
 # === DEBUG OVERLAY KEYS ======================================================
 # F1-F4 binding registry. ui-developer's DebugOverlayManager (parallel session)
 # reads these to wire toggles to the right registered overlays. Kept here so

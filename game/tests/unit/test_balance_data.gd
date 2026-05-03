@@ -345,3 +345,123 @@ func test_validate_soft_clean_config_is_array() -> void:
 	var warnings: Array = _balance.call(&"validate_soft")
 	assert_true(warnings is Array,
 		"validate_soft() must return an Array[String] for the canonical config")
+
+
+# ---------------------------------------------------------------------------
+# 5. Phase 2 session 1 — combat fields on UnitStats
+# ---------------------------------------------------------------------------
+
+func test_unit_stats_has_attack_damage_x100_field() -> void:
+	# Verify the new fixed-point field exists on the UnitStats schema.
+	var stats: Resource = UnitStatsScript.new()
+	assert_true(stats.get(&"attack_damage_x100") != null or stats.get(&"attack_damage_x100") == 0,
+		"UnitStats must have attack_damage_x100 field (Sim Contract §1.6 fixed-point)")
+
+
+func test_unit_stats_has_attack_speed_per_sec_field() -> void:
+	var stats: Resource = UnitStatsScript.new()
+	# Default value should be 1.0 per schema definition
+	assert_almost_eq(float(stats.get(&"attack_speed_per_sec")), 1.0, 1e-4,
+		"UnitStats must have attack_speed_per_sec field with default 1.0")
+
+
+func test_kargar_combat_fields_populated() -> void:
+	# Kargar: workers don't attack — attack_damage_x100 = 0.
+	assert_not_null(_balance)
+	var units: Dictionary = _balance.get(&"units")
+	var kargar: Resource = units.get(&"kargar")
+	assert_not_null(kargar, "kargar entry must exist")
+	assert_eq(int(kargar.get(&"attack_damage_x100")), 0,
+		"kargar.attack_damage_x100 must be 0 — workers cannot attack")
+	assert_almost_eq(float(kargar.get(&"attack_speed_per_sec")), 1.0, 1e-4,
+		"kargar.attack_speed_per_sec must be 1.0 (irrelevant since damage is 0)")
+	assert_almost_eq(float(kargar.get(&"attack_range")), 0.0, 1e-4,
+		"kargar.attack_range must be 0.0 — workers do not engage in melee")
+
+
+func test_piyade_entry_exists_with_combat_stats() -> void:
+	# Piyade: Iran infantry — 1000 x100 damage = 10 dmg/hit; kills Kargar in 6 hits.
+	assert_not_null(_balance)
+	var units: Dictionary = _balance.get(&"units")
+	var piyade: Resource = units.get(&"piyade")
+	assert_not_null(piyade, "piyade entry must exist")
+	assert_almost_eq(float(piyade.get(&"max_hp")), 100.0, 1e-4,
+		"piyade.max_hp must be 100.0 (1.7× Kargar's 60)")
+	assert_almost_eq(float(piyade.get(&"move_speed")), 2.5, 1e-4,
+		"piyade.move_speed must be 2.5 (slower than Kargar's 3.5)")
+	assert_eq(int(piyade.get(&"attack_damage_x100")), 1000,
+		"piyade.attack_damage_x100 must be 1000 (= 10.0 dmg; 6 hits to kill Kargar)")
+	assert_almost_eq(float(piyade.get(&"attack_speed_per_sec")), 1.0, 1e-4,
+		"piyade.attack_speed_per_sec must be 1.0")
+	assert_almost_eq(float(piyade.get(&"attack_range")), 1.5, 1e-4,
+		"piyade.attack_range must be 1.5 (melee)")
+
+
+func test_turan_piyade_entry_exists_and_mirrors_iran_piyade() -> void:
+	# Turan_Piyade: mirror of Iran Piyade for session 1.
+	# RPS effectiveness differentiating them ships in Phase 2 session 2.
+	assert_not_null(_balance)
+	var units: Dictionary = _balance.get(&"units")
+	assert_true(units.has(&"turan_piyade"), "turan_piyade entry must exist")
+	var turan: Resource = units.get(&"turan_piyade")
+	var iran: Resource = units.get(&"piyade")
+	assert_not_null(turan)
+	assert_not_null(iran)
+	assert_almost_eq(float(turan.get(&"max_hp")), float(iran.get(&"max_hp")), 1e-4,
+		"turan_piyade.max_hp must mirror iran piyade")
+	assert_almost_eq(float(turan.get(&"move_speed")), float(iran.get(&"move_speed")), 1e-4,
+		"turan_piyade.move_speed must mirror iran piyade")
+	assert_eq(int(turan.get(&"attack_damage_x100")), int(iran.get(&"attack_damage_x100")),
+		"turan_piyade.attack_damage_x100 must mirror iran piyade")
+	assert_almost_eq(float(turan.get(&"attack_speed_per_sec")), float(iran.get(&"attack_speed_per_sec")), 1e-4,
+		"turan_piyade.attack_speed_per_sec must mirror iran piyade")
+	assert_almost_eq(float(turan.get(&"attack_range")), float(iran.get(&"attack_range")), 1e-4,
+		"turan_piyade.attack_range must mirror iran piyade")
+
+
+func test_validate_hard_rejects_negative_attack_damage_x100() -> void:
+	# Hard invariant: attack_damage_x100 must be >= 0.
+	assert_not_null(_balance)
+	var bad_unit: Resource = UnitStatsScript.new()
+	bad_unit.set(&"max_hp", 100.0)
+	bad_unit.set(&"attack_damage_x100", -1)
+	bad_unit.set(&"attack_speed_per_sec", 1.0)
+	bad_unit.set(&"attack_range", 1.5)
+	var units: Dictionary = _balance.get(&"units")
+	units[&"__bad_dmg__"] = bad_unit
+	_balance.set(&"units", units)
+	var errors: Array = _balance.call(&"validate_hard")
+	assert_gt(errors.size(), 0,
+		"validate_hard() must catch negative attack_damage_x100")
+
+
+func test_validate_hard_rejects_zero_attack_speed_per_sec() -> void:
+	# Hard invariant: attack_speed_per_sec must be > 0 (prevents divide-by-zero in cooldown).
+	assert_not_null(_balance)
+	var bad_unit: Resource = UnitStatsScript.new()
+	bad_unit.set(&"max_hp", 100.0)
+	bad_unit.set(&"attack_damage_x100", 1000)
+	bad_unit.set(&"attack_speed_per_sec", 0.0)
+	bad_unit.set(&"attack_range", 1.5)
+	var units: Dictionary = _balance.get(&"units")
+	units[&"__bad_speed__"] = bad_unit
+	_balance.set(&"units", units)
+	var errors: Array = _balance.call(&"validate_hard")
+	assert_gt(errors.size(), 0,
+		"validate_hard() must catch zero attack_speed_per_sec")
+
+
+func test_validate_hard_rejects_negative_attack_range() -> void:
+	# Hard invariant: attack_range must be >= 0 (negative range is nonsensical).
+	assert_not_null(_balance)
+	var bad_unit: Resource = UnitStatsScript.new()
+	bad_unit.set(&"max_hp", 100.0)
+	bad_unit.set(&"attack_damage_x100", 1000)
+	bad_unit.set(&"attack_speed_per_sec", 1.0)
+	bad_unit.set(&"attack_range", -1.0)
+	var units: Dictionary = _balance.get(&"units")
+	units[&"__bad_range__"] = bad_unit
+	_balance.set(&"units", units)
+	var errors: Array = _balance.call(&"validate_hard")
+	assert_gt(errors.size(), 0,
+		"validate_hard() must catch negative attack_range")

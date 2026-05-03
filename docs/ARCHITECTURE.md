@@ -575,6 +575,24 @@ User-visible Definition of Done (kickoff §73, items 1–8) was confirmed green 
 
 ---
 
+### v0.15.0 — Phase 2 Session 1 wave 1C (2026-05-01) — balance-engineer (BalanceData combat fields)
+
+- **Three new `UnitStats` fields for Phase 2 combat (`attack_damage_x100`, `attack_speed_per_sec`).** `attack_range` was already present from Phase 0. The two new fields follow the Sim Contract §1.6 fixed-point convention: `attack_damage_x100` stores damage × 100 as `int` to eliminate float drift at 30 Hz tick rates. `attack_speed_per_sec` is a `float` since it drives a cooldown denominator, not a tick counter. The legacy `damage: float` and `attack_speed_ticks: int` fields are retained — existing kargar/piyade/kamandar entries populated them and other agents' code may read them. Phase 2 `CombatComponent` reads the new fields only.
+
+- **Kargar `attack_damage_x100 = 0` is the "cannot attack" sentinel.** `attack_range` set to `0.0` (was `1.0` — was an oversight in Phase 0; 1.0 implied it could enter melee range). `CombatComponent` will skip the attack tick when `attack_damage_x100 == 0`.
+
+- **`turan_piyade` entry added to balance.tres.** Mirrors Iran `piyade` exactly — `max_hp=100`, `attack_damage_x100=1000`, `attack_speed_per_sec=1.0`, `attack_range=1.5`. RPS effectiveness differentiating Turan vs Iran units ships in Phase 2 session 2. A TODO comment in the sub-resource marks the gap.
+
+- **`Constants.ENGAGE_RADIUS = 4.0` added under new `# === COMBAT ===` section.** Used by `UnitState_AttackMove` to decide when to break from move and engage. Sized at ~2.7× max melee range (1.5). Tunable without code change when Kamandar (ranged, range 8.0) ships.
+
+- **`validate_hard()` extended for new fields.** Three new hard invariants: `attack_damage_x100 >= 0`, `attack_speed_per_sec > 0` (divide-by-zero guard in cooldown calc), `attack_range >= 0`. `validate_soft()` warns on suspiciously high values (>10000 damage, >100 speed, >50 range).
+
+- **LATER items surfaced in v0.15.0:**
+  1. **Kamandar combat fields unpopulated.** Kamandar in balance.tres uses GDScript defaults (`attack_damage_x100 = 0`, `attack_speed_per_sec = 1.0`). It will appear as a non-attacking unit until Phase 2 session 2 populates its combat fields alongside the full RPS matrix.
+  2. **`piyade.max_hp` changed from 120.0 → 100.0.** Phase 0 value was 120; session-1 kickoff brief specifies 100 (1.7× Kargar's 60). The prior 120 value was also a "starting point to be tuned" per §0. Any test asserting `max_hp == 120` should be updated; currently `test_balance_data.gd` asserts 100.
+
+---
+
 ### v0.14.4 — Phase 1 Session 2 wave 2A (2026-05-04) — ui-developer (Control groups + double-click-select-of-type)
 
 - **`ControlGroups` is an autoload, ordered AFTER `SelectionManager`.** Control groups outlive any single scene transition (UI overlay, pause menu, debug panel) and need a single global instance accessible to any future hotkey rebinder, replay player, or panel UI. Mirrors the SelectionManager pattern. The `[autoload]` order matters at parse time — at `ControlGroups._ready`, `SelectionManager` must already be parsed so `SelectionManager.selected_units` returns live data. The kickoff explicitly specified this ordering.

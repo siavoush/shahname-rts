@@ -91,6 +91,13 @@ func validate_hard() -> Array[String]:
 			errors.append("units[%s].grain_cost is negative (%s)" % [unit_key, us.grain_cost])
 		if us.damage < 0.0:
 			errors.append("units[%s].damage is negative (%s)" % [unit_key, us.damage])
+		# Fixed-point combat fields (Phase 2 — Sim Contract §1.6)
+		if us.attack_damage_x100 < 0:
+			errors.append("units[%s].attack_damage_x100 is negative (%s)" % [unit_key, us.attack_damage_x100])
+		if us.attack_speed_per_sec <= 0.0:
+			errors.append("units[%s].attack_speed_per_sec is <= 0 (%s) — divide-by-zero in cooldown calc" % [unit_key, us.attack_speed_per_sec])
+		if us.attack_range < 0.0:
+			errors.append("units[%s].attack_range is negative (%s)" % [unit_key, us.attack_range])
 
 	for bld_key: Variant in buildings:
 		var bs: BuildingStats = buildings[bld_key]
@@ -192,6 +199,25 @@ func validate_soft() -> Array[String]:
 			% farr.kaveh_grace_ticks
 			+ "player response window may be too short to be meaningful."
 		)
+
+	# Warn if any unit has suspiciously extreme combat stats (Phase 2 fields)
+	for unit_key: Variant in units:
+		var us: UnitStats = units[unit_key]
+		if us.attack_damage_x100 > 10000:
+			warnings.append(
+				"units[%s].attack_damage_x100 (%d) > 10000 — likely a data entry error (= %.1f damage per hit)."
+				% [unit_key, us.attack_damage_x100, us.attack_damage_x100 / 100.0]
+			)
+		if us.attack_speed_per_sec > 100.0:
+			warnings.append(
+				"units[%s].attack_speed_per_sec (%.1f) > 100 — unreasonably fast attack rate."
+				% [unit_key, us.attack_speed_per_sec]
+			)
+		if us.attack_range > 50.0:
+			warnings.append(
+				"units[%s].attack_range (%.1f) > 50 world units — beyond typical screen distance."
+				% [unit_key, us.attack_range]
+			)
 
 	# Warn if combat matrix is completely empty (no matchups defined)
 	if combat.effectiveness.is_empty():

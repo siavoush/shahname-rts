@@ -16,7 +16,7 @@
 ; constants_version: manual stamp for this session. qa-engineer will wire
 ; file-hash auto-derivation in wave 2 (MatchHarness). See TESTING_CONTRACT.md §2.3.
 
-[gd_resource type="Resource" script_class="BalanceData" load_steps=22 format=3 uid="uid://balance_data_main"]
+[gd_resource type="Resource" script_class="BalanceData" load_steps=23 format=3 uid="uid://balance_data_main"]
 
 [ext_resource type="Script" path="res://data/balance_data.gd" id="1_balancedata"]
 [ext_resource type="Script" path="res://data/sub_resources/unit_stats.gd" id="2_unitstats"]
@@ -34,33 +34,56 @@
 ; Kargar (worker) — 01_CORE_MECHANICS.md §6
 ; Fragile, minimal combat. Gathers resources, constructs buildings, repairs.
 ; HP: low (easily killed — reinforces the -1 Farr penalty when idle workers die).
-; No attack in practical terms (damage 1 = can theoretically fight but won't win).
+; attack_damage_x100 = 0: workers cannot attack (CombatComponent skips 0-damage units).
 [sub_resource type="Resource" id="unit_kargar"]
 script = ExtResource("2_unitstats")
 max_hp = 60.0
 damage = 2.0
 attack_speed_ticks = 60
-attack_range = 1.0
+attack_range = 0.0
 move_speed = 3.5
 population_cost = 1
 coin_cost = 25
 grain_cost = 0
 production_ticks = 360
+attack_damage_x100 = 0
+attack_speed_per_sec = 1.0
 
-; Piyade (foot infantry) — 01_CORE_MECHANICS.md §6
+; Piyade (foot infantry, Iran) — 01_CORE_MECHANICS.md §6
 ; Cheap, slow, durable. Spear-and-shield. Strong vs cavalry (> savar in RPS).
-; "cheap, slow, durable" — starting values reflect this profile.
+; Session-1 combat values: 1000 x100 damage = 10 dmg/hit; 6 hits to kill Kargar (60 HP).
+; Piyade mirror combat: 100 HP ÷ (10 dmg × 1 hit/s) = 10s to resolve Piyade vs Piyade.
+; RPS effectiveness multipliers ship in Phase 2 session 2; currently all matchups neutral.
 [sub_resource type="Resource" id="unit_piyade"]
 script = ExtResource("2_unitstats")
-max_hp = 120.0
+max_hp = 100.0
 damage = 12.0
-attack_speed_ticks = 45
+attack_speed_ticks = 30
 attack_range = 1.5
 move_speed = 2.5
 population_cost = 1
 coin_cost = 50
 grain_cost = 10
 production_ticks = 600
+attack_damage_x100 = 1000
+attack_speed_per_sec = 1.0
+
+; Turan_Piyade (foot infantry, Turan) — mirror of Iran Piyade for Phase 2 session 1.
+; Identical stats — RPS effectiveness matrix differentiating unit types ships in session 2.
+; TODO: add Turan-specific RPS effectiveness in Phase 2 session 2 when full unit roster lands.
+[sub_resource type="Resource" id="unit_turan_piyade"]
+script = ExtResource("2_unitstats")
+max_hp = 100.0
+damage = 12.0
+attack_speed_ticks = 30
+attack_range = 1.5
+move_speed = 2.5
+population_cost = 1
+coin_cost = 50
+grain_cost = 10
+production_ticks = 600
+attack_damage_x100 = 1000
+attack_speed_per_sec = 1.0
 
 ; Kamandar (archer) — 01_CORE_MECHANICS.md §6
 ; Ranged infantry. Strong vs piyade (kamandar > piyade in RPS triangle).
@@ -242,11 +265,12 @@ hard_attack_army_threshold = 16
 
 [resource]
 script = ExtResource("1_balancedata")
-constants_version = "2026-05-01-phase-0-init"
+constants_version = "2026-05-01-phase-2-session-1-combat"
 units = {
 &"kargar": SubResource("unit_kargar"),
 &"piyade": SubResource("unit_piyade"),
-&"kamandar": SubResource("unit_kamandar")
+&"kamandar": SubResource("unit_kamandar"),
+&"turan_piyade": SubResource("unit_turan_piyade")
 }
 buildings = {
 &"throne": SubResource("bldg_throne"),

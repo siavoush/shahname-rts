@@ -1185,3 +1185,31 @@ The existing unit test `test_second_select_same_unit_within_window_triggers_type
 - **Updated `test_second_select_same_unit_within_window_triggers_type_select` to `await` instead of removing it.** The test still validates the user-facing contract: "second click on same unit within window expands selection." The implementation detail (synchronous vs. deferred) is hidden behind the await — same shape as the existing `test_session_2_panel.gd` tests that await a process_frame after `add_to_selection`.
 
 - **Did NOT add a "pending expansion target" field to the detector** even though it would let the test skip the await. The deferred call is fire-and-forget; adding an observable field only to satisfy a test would be premature complexity (and the `await` is a more honest representation of the production timing anyway).
+
+---
+
+## 2026-05-01 — Phase 2 session 1 wave 1C (balance-engineer): BalanceData combat fields
+
+**Branch:** `feat/phase-2-session-1`
+
+**Shipped:**
+- Three new `UnitStats` fields: `attack_damage_x100: int = 0`, `attack_speed_per_sec: float = 1.0` (both new); `attack_range: float = 1.5` was pre-existing from Phase 0.
+- `balance.tres` updated: kargar has `attack_damage_x100 = 0`, `attack_speed_per_sec = 1.0`, `attack_range = 0.0`. Iran piyade: `max_hp = 100.0`, `attack_damage_x100 = 1000`, `attack_speed_per_sec = 1.0`, `attack_range = 1.5`. New `turan_piyade` entry mirrors Iran piyade exactly.
+- `Constants.ENGAGE_RADIUS = 4.0` under new `# === COMBAT ===` section.
+- `validate_hard()` extended with three new invariants: `attack_damage_x100 >= 0`, `attack_speed_per_sec > 0` (prevents divide-by-zero in cooldown calc), `attack_range >= 0`.
+- `validate_soft()` extended with high-value warnings: >10000 damage, >100 attack speed, >50 attack range.
+- `test_balance_data.gd`: 8 new tests covering the new schema fields, all 3 unit entries, and the 3 new `validate_hard()` rejection paths. 37/37 passed.
+- `docs/ARCHITECTURE.md` §6 v0.15.0 entry added.
+
+**Did not ship:** RPS effectiveness matrix entries for Turan Piyade (ships Phase 2 session 2 with full unit roster). Kamandar combat fields (also session 2 — intentionally left with defaults).
+
+**Live-game-broken-surface (wave-1C):**
+1. *What state/behavior must work at runtime that no unit test exercises?* Values must be readable via `BalanceData.units[unit_type]` at unit `_ready`. Verify this read seam works for `&"turan_piyade"` — it will fail loudly at first spawn if a key is mistyped. The `constants_version` stamp was also updated so match logs are identifiable.
+2. *What can a headless test not detect that the lead would notice in the editor?* Whether 6 hits to kill a Kargar (10 dmg/hit × 6 = 60 HP) feels too fast or too slow in live play. Whether a 10-second Piyade-vs-Piyade mirror combat (100 HP ÷ 10 dmg/s) feels like a meaningful fight or is too drawn-out.
+3. *What's the minimum interactive smoke test that catches it?* Lead's wave-2B+ in-game combat test. Combat values editable in `balance.tres` without code change.
+
+**Known Godot Pitfalls checklist (per Experiment 01):** Pitfalls 1–4 (mouse filter, FSM wiring, camera basis, re-entrant signals) are N/A for pure data work. No new pitfalls surfaced.
+
+**State for next session:** wave-1C is complete. `turan_piyade` is in `balance.tres` but the `turan_piyade.tscn` scene and `turan_piyade.gd` script are gameplay-systems wave-2A territory — unit data is ready for them to consume. `ENGAGE_RADIUS` is in Constants for the ai-engineer's `UnitState_AttackMove` to use in wave-2B.
+
+**Open questions:** none for balance. Piyade `max_hp` changed from Phase 0's 120 to session-1 spec's 100; if any test outside `test_balance_data.gd` was asserting 120, it should be updated (search for `120.0` in unit tests).
