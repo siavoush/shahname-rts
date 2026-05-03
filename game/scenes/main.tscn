@@ -1,10 +1,11 @@
-[gd_scene load_steps=7 format=3 uid="uid://b0g3dxshahmain"]
+[gd_scene load_steps=8 format=3 uid="uid://b0g3dxshahmain"]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 [ext_resource type="PackedScene" uid="uid://terrain256x256" path="res://scenes/world/terrain.tscn" id="2_terrain"]
 [ext_resource type="PackedScene" uid="uid://b8shahcamerarig01" path="res://scenes/camera/camera_rig.tscn" id="3_camera"]
 [ext_resource type="PackedScene" uid="uid://b7shahresourcehud01" path="res://scenes/ui/resource_hud.tscn" id="4_hud"]
 [ext_resource type="Script" path="res://scripts/input/click_handler.gd" id="5_click"]
+[ext_resource type="Script" path="res://scripts/input/box_select_handler.gd" id="6_boxselect"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -42,3 +43,6 @@ text = "tick=0"
 
 [node name="ClickHandler" type="Node" parent="."]
 script = ExtResource("5_click")
+
+[node name="BoxSelectHandler" type="Node" parent="."]
+script = ExtResource("6_boxselect")

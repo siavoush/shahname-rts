@@ -34,6 +34,74 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-01 — Phase 1 session 2 wave 1A (ui-developer): box / drag selection
+
+**Branch:** `feat/phase-1-session-2`
+
+**Shipped:**
+
+1. **`BoxSelectMath`** at `game/scripts/input/box_select_math.gd` (RefCounted, no `class_name` — registry-race pattern). Three pure helpers:
+   - `rect_from_corners(a, b)` — direction-agnostic Rect2 normalization. Drag from any of the four diagonal corners produces the same positive-size rect.
+   - `is_past_dead_zone(start, current, dead_zone_px)` — squared-distance threshold for click-vs-drag arbitration. 4px dead zone, comfortable for both mouse and trackpad.
+   - `units_in_rect(rect, projected)` — filter a list of `{unit, screen_pos, on_screen}` entries to those whose projected position lies inside the rect. Skips `on_screen=false` and malformed entries; preserves input order for stable downstream UX.
+
+2. **`BoxSelectHandler`** at `game/scripts/input/box_select_handler.gd` (Node, attached to `Main` after `ClickHandler` so `_unhandled_input` reaches it first under Godot's reverse-tree-order delivery). Owns the press → motion → release flow.
+   - **Press intercept**: claims left-press on `_unhandled_input`, calls `set_input_as_handled()` always. ClickHandler never sees the left button. Captures Shift state at press time.
+   - **Drag activation**: on motion past 4px dead zone, activates drag, shows the overlay, anchors the rect from press position to current cursor.
+   - **Release arbitration**: on release, if drag was active → finalizes the box-select (project Iran units → filter → `add_to_selection` for hits, with `deselect_all` first if no Shift). If drag was NOT active → re-raycasts the release position and forwards via `ClickHandler.process_left_click_hit(hit)` (its existing public seam) so single-click selection still works.
+   - **Public test seams**: `begin_press`, `update_motion`, `end_press`, `current_drag_rect`, `box_select_units(rect, units, project_callable, shift)` lets unit tests inject a projection helper without a real Camera3D.
+   - **Live-unit sweep**: walks `get_tree().current_scene` for unit-shaped Node3Ds (duck-typed: `unit_id` + `team` + Node3D); filters `team == TEAM_IRAN`. Linear walk costs nothing at Phase 1's worker cap (5); SpatialIndex revisit when unit count grows past ~50.
+
+3. **Drag overlay scene** at `game/scenes/ui/drag_overlay.tscn` (CanvasLayer + Control + custom-drawing Rect Control). Translucent gold (Iran palette) — fill alpha 0.20, stroke alpha 0.85, 1px outline. **`mouse_filter = MOUSE_FILTER_IGNORE` enforced both in the .tscn AND defensively at runtime in `_ready` of both `drag_overlay.gd` and `drag_overlay_rect.gd`**. Session 1's regression pattern (HUD labels at default `MOUSE_FILTER_STOP` swallowing clicks) is what we're inoculating against.
+
+4. **31 new tests** across two files:
+   - `game/tests/unit/test_box_select_math.gd` (16 tests): all four drag-corner directions, zero-size rect, dead-zone thresholding (zero, below, at, well past), full-rect coverage, miss-all, off-screen filter, stable order, boundary inclusivity, malformed-entry guards.
+   - `game/tests/unit/test_box_select_handler.gd` (15 tests): press-release-no-motion is click; sub-dead-zone jitter is click; past dead-zone activates drag; rect normalizes both diagonal directions; replaces selection with units inside rect (no Shift); adds with Shift; empty rect deselects (no Shift) / preserves (Shift); skips off-screen units; empty candidates → no-op; drag rect empty before/during press-only; motion without press is no-op; Shift state captured at press, not release.
+
+5. **`docs/ARCHITECTURE.md` 0.13.1 → 0.14.1.** Added a new `Box / drag selection` row in §2 (✅ Built); v0.14.1 plan-vs-reality entry: two-file split rationale, click_handler coordination strategy, press-time Shift, mouse_filter belt-and-braces, empty-rect behavior, linear unit-iteration choice, refined live-game-broken-surface answers, three LATER items.
+
+6. **`game/scenes/main.tscn` updated** to wire `BoxSelectHandler` as a `Node` sibling after `ClickHandler` under `Main`. Tree order is load-bearing: `_unhandled_input` reaches BoxSelectHandler first.
+
+**Test-count delta (this wave):** +31 (16 math + 15 handler). Headless GUT runner: all 31 pass alongside the existing 380. Lint clean (0 violations across L1–L5). Pre-commit gate green for this wave's files. (The session-aggregate count at commit time is higher; ai-engineer's parallel wave 1B and balance-engineer's wave 1C are landing on the same branch.)
+
+**Did not ship** (intentionally out of scope per kickoff):
+- Lasso / freeform selection (StarCraft-style — not needed).
+- Subgroups / type-filtered selection (separate deliverable per kickoff §2 (3)).
+- `selection_manager.gd` / `click_handler.gd` core-logic edits — kickoff explicitly forbade.
+- Right-click cancellation of an active drag — RTS convention but flagged as a LATER item pending lead feel-test.
+- Hover-style highlight while drag is active (drag-preview) — Phase 2 visual polish.
+- `SelectionManager.select_many(units)` collapsed broadcast — flagged as a LATER item; out of scope per the "do NOT modify" rule.
+
+**State for next session / wave:**
+- On branch `feat/phase-1-session-2`. Box-select handler wired into `main.tscn`. The lead's interactive smoke test is the next gate.
+- Math + input-flow tests cover everything a headless test can. Visual rectangle anchoring/transparency, drag-from-HUD interactions, and real-Camera3D `unproject_position` are the lead's call.
+- Wave 2A (ui-developer) — Control groups (Ctrl+1–9 bind, 1–9 recall) and double-click-select-of-type. Both consume the multi-select API now wired through BoxSelectHandler.
+- Wave 2B (ui-developer) — Selected-unit panel.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. All choices were implementation; the kickoff was prescriptive on the gameplay surface.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Two-file split (math vs. handler)** rather than a single monolithic `box_select.gd`. Rationale: pure math is testable headless without a Camera3D; the handler is testable via injected projection callable. The split is ~80 lines + ~370 lines, slightly more total but vastly cleaner test surface.
+- **Press-time Shift, not release-time.** RTS convention; documented in source.
+- **Linear unit-iteration sweep, not SpatialIndex.** Phase 1 worker cap = 5; the SpatialIndex autoload dependency would buy nothing measurable. Revisit Phase 2+ when group sizes scale.
+- **No-Shift drag onto empty rect deselects.** Matches the RTS convention "drag onto nothing = clear selection." Tested explicitly. The alternative (preserve prior selection on empty drag) is the opt-in via Shift.
+- **Method renamed `_apply_selection` → `_commit_selection`.** Avoid the `apply_*` lint pattern (kickoff brief flag) even though our file has no `_process` so L1 wouldn't fire. Belt-and-braces.
+
+**Live-game-broken-surface answers (Experiment 01):**
+
+1. *What state/behavior must work at runtime that no unit test exercises?* The drag overlay's `mouse_filter = MOUSE_FILTER_IGNORE` (set in .tscn AND re-asserted in `_ready` of both `drag_overlay.gd` and `drag_overlay_rect.gd`). Real `Camera3D.unproject_position` per visible Iran unit on every release event. Coordination with `click_handler.gd`: BoxSelectHandler always claims the press; on non-drag release it re-raycasts and forwards via `ClickHandler.process_left_click_hit` — the only one-direction integration path that doesn't violate the "don't modify click_handler.gd" rule.
+
+2. *What can a headless test not detect that the lead would notice in the editor?* Visual: rectangle anchoring, transparency, stroke style (gold, alpha 0.85, 1px outline). Behavioral: drag-from-HUD-into-world (HUD labels are MOUSE_FILTER_IGNORE per session 1, so the press hits us — but if a future interactive HUD lands, its `_gui_input` should claim it before we see it). Drag in all 4 corner-directions (math tested; visual rect anchoring needs eyes). Quick-click with 1–3px jitter mistaken as drag (the 4px squared-distance threshold is the line; lead may want 6 or 8 if it feels twitchy on trackpad).
+
+3. *What's the minimum interactive smoke test that catches it?* Lead drags TL→BR across the 5 kargars: all 5 selected, gold rings appear. Lead drags BR→TL: same result. Lead Shift-drags a partial subset while 2 are already selected: only the new units are added; existing stay. Quick-click on one kargar with no drag: that one selects (single-click path through `ClickHandler.process_left_click_hit` still works). Click on empty terrain: deselect all. Drag onto empty space (no Shift): deselect all. Drag onto empty space with Shift: prior selection preserved.
+
+**LATER items surfaced:**
+1. `SelectionManager.select_many(units)` to collapse multi-add broadcasts into one `selection_changed` emit. Out of scope per kickoff "do NOT modify"; flag for the next wave that touches `SelectionManager`.
+2. Drag-preview (live highlight on units the rect would catch, before release). RTS UX standard; Phase 2 polish budget.
+3. Right-click cancels active drag. RTS convention; pending lead feel-test before deciding.
+
+---
+
 ## 2026-05-01 — Phase 1 session 1 wave 3 (qa-engineer): click-and-move integration tests + flaky navmesh fix
 
 **Branch:** `feat/phase-1-units`
