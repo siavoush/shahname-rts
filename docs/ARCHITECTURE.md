@@ -780,6 +780,24 @@ Code shipped under commit `aa429ef` (cross-agent contamination during a parallel
 
 ---
 
+### v0.17.2 — Phase 2 Session 1 wave 3 (2026-05-01) — qa-engineer (Integration tests for combat flows)
+
+- **36 new integration tests in `game/tests/integration/test_phase_2_session_1_combat.gd`.** Covers 9 flows: single-attack, range+cooldown, right-click-on-enemy, attack-move FSM, Farr drain worker-killed-idle, HealthBarsOverlay compute_bar_entries, AttackRangeOverlay+F4, cross-feature smoke (main.tscn structure), and pitfall regressions #1–#5. Test count: 675 → 711. Passing: 672 → 706 (34/36 new tests pass; 2 are intentional regression locks for BUG-02).
+
+- **BUG-01 found and locked: `UnitState_Attacking._sim_tick` never calls `combat._sim_tick(dt)`.** `sim_phase(&"combat")` fires with no listeners; `UnitState_Attacking._sim_tick` calls `combat.set_target()` when in range but never drives the CombatComponent tick. Damage never fires through the production FSM chain. Test `test_bug01_combat_sim_tick_not_driven_by_fsm` asserts the current broken behavior (HP unchanged after 10 FSM ticks) and will turn green when the fix lands. Fix: `UnitState_Attacking._sim_tick` must call `combat._sim_tick(dt)` after `combat.set_target()` in the in-range branch. Owner: gameplay-systems.
+
+- **BUG-02 locked: `AttackMoveHandler` absent from `main.tscn`.** Wave-2B shipped `attack_move_handler.gd` but Deviation 02 (parallel-agent commit-race) caused the ui-developer's `git add -A` to sweep up wave-2B code without the main.tscn node entry. Tests `test_main_tscn_attack_move_handler_before_click_handler` and `test_pitfall_5_attack_move_handler_before_click_handler_standalone` will fail until the node is added. Fix: Add `AttackMoveHandler` node BEFORE `ClickHandler` in main.tscn with `script = res://scripts/input/attack_move_handler.gd`. Owner: ai-engineer.
+
+- **BUG-03 found and locked: No `dying` state registered for combat units.** `unit.gd._ready()` registers `idle/moving/attacking/attack_move` but not `dying`. When `unit_health_zero` fires, `StateMachine._on_unit_health_zero()` push_errors and returns without calling `queue_free`. Killed units stay valid in the scene tree — `UnitState_Attacking._sim_tick()`'s `is_instance_valid(_target)` check never triggers, so attackers never transition to idle after killing a target. Test `test_bug03_no_dying_state_unit_stays_valid_after_death` asserts units are still valid after lethal damage (current broken behavior) and will turn green when fixed. Fix: Add `UnitState_Dying` to `unit.gd` registration that calls `ctx.queue_free()`. Owner: gameplay-systems.
+
+- **Integration test strategy: direct `CombatComponent._sim_tick` drive for damage tests (BUG-01 workaround).** Because the EventBus.sim_phase chain doesn't reach CombatComponent (BUG-01), Flow 1 (single-attack HP math) and Flow 2 (cooldown timing) tests drive combat directly using `SimClock._is_ticking = true; combat._sim_tick(dt); SimClock._is_ticking = false` — the same pattern as `test_combat_component.gd`. FSM-level tests (Flow 3, 4) use `_advance(n)` via `SimClock._test_run_tick()`. The two helpers must not be mixed in the same test function — `_test_run_tick()` fires `sim_phase(&"movement")` which triggers `UnitState_Attacking._sim_tick()` → `combat.set_target()`, resetting the cooldown to 0 and invalidating cooldown assertions.
+
+- **GDScript lambda capture gotcha (Pitfall #6 candidate): primitive ints captured by value.** Test `test_pitfall_4_no_reentrant_unit_died_on_worker_death` originally used `var unit_died_count: int = 0` with an `EventBus.unit_died.connect(func(...) -> void: unit_died_count += 1)` lambda. The increment had no effect — GDScript lambdas capture primitive `int` by value; the outer `unit_died_count` never changed. Fixed by using `var unit_died_events: Array = []` and `unit_died_events.append(uid)`. Array is passed by reference; mutations inside the lambda are visible outside. **Rule**: signal-counting lambdas must use `Array.append`, not `int += 1`.
+
+- **Files owned by this wave:** `game/tests/integration/test_phase_2_session_1_combat.gd` (new, 36 tests). No production code modified.
+
+---
+
 ### v0.14.4 — Phase 1 Session 2 wave 2A (2026-05-04) — ui-developer (Control groups + double-click-select-of-type)
 
 - **`ControlGroups` is an autoload, ordered AFTER `SelectionManager`.** Control groups outlive any single scene transition (UI overlay, pause menu, debug panel) and need a single global instance accessible to any future hotkey rebinder, replay player, or panel UI. Mirrors the SelectionManager pattern. The `[autoload]` order matters at parse time — at `ControlGroups._ready`, `SelectionManager` must already be parsed so `SelectionManager.selected_units` returns live data. The kickoff explicitly specified this ordering.

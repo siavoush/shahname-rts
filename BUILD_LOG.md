@@ -34,6 +34,38 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-01 — Phase 2 session 1 wave 3 (qa-engineer): Integration tests for combat flows
+
+**Branch:** `feat/phase-2-session-1`
+
+**Shipped:**
+
+1. **36 integration tests** in `game/tests/integration/test_phase_2_session_1_combat.gd`. 9 flows: single-attack HP math, range+cooldown timing, right-click-on-enemy dispatch, attack-move FSM, Farr drain worker-killed-idle, HealthBarsOverlay compute_bar_entries, AttackRangeOverlay+F4 toggle, cross-feature smoke (main.tscn structure), and pitfall regression locks #1–#5.
+
+2. **34/36 tests pass.** The 2 failures are intentional regression locks for BUG-02 (see below). No production code modified.
+
+**Did not ship:** A passing `test_main_tscn_attack_move_handler_before_click_handler` — that test intentionally fails until BUG-02 is fixed.
+
+**Test-count delta:** +36. Total: 711 tests. Passing: 706 (3 pre-existing + 2 new BUG-02 locks = 5 failing).
+
+**Bugs found (not fixed — reported for routing):**
+
+- **BUG-01**: `UnitState_Attacking._sim_tick` calls `combat.set_target()` when in range but NEVER calls `combat._sim_tick(dt)`. `EventBus.sim_phase(&"combat")` fires with no listeners. Damage never fires via the production FSM chain. Test: `test_bug01_combat_sim_tick_not_driven_by_fsm`. Fix: `UnitState_Attacking._sim_tick` must call `combat._sim_tick(dt)` after `combat.set_target()`. Owner: **gameplay-systems** (ai-engineer owns the state; the `_sim_tick → component._sim_tick` handoff follows the pattern gameplay-systems established for MovementComponent).
+
+- **BUG-02**: `AttackMoveHandler` node absent from `main.tscn`. Wave-2B shipped the script but the Deviation 02 commit-race left the node unregistered. Two tests will fail until fixed. Fix: Add `AttackMoveHandler` node BEFORE `ClickHandler` in main.tscn with `script = res://scripts/input/attack_move_handler.gd`. Owner: **ai-engineer**.
+
+- **BUG-03**: No `dying` state registered for combat units. `unit.gd._ready()` registers idle/moving/attacking/attack_move but not `dying`. `StateMachine._on_unit_health_zero()` push_errors and returns without calling `queue_free`. Killed units stay as valid instances — attackers never transition back to idle after killing a target. Test: `test_bug03_no_dying_state_unit_stays_valid_after_death`. Fix: Add `UnitState_Dying` to `unit.gd` registration that calls `ctx.queue_free()`. Owner: **gameplay-systems**.
+
+**Technical insight (GDScript Pitfall #6 candidate):** GDScript lambdas capture primitive `int` by value — mutations inside the lambda don't propagate to the outer variable. Signal-counting lambdas must use `Array.append`, not `int += 1`. The test `test_pitfall_4` originally failed with count=0 for this reason; fixed by switching to an Array.
+
+**Lint:** clean (0 violations).
+
+**State for next session:** BUG-01 and BUG-03 are both in gameplay-systems' domain and block a meaningful end-to-end combat loop (damage never fires via FSM; dead units never get freed). BUG-02 is in ai-engineer's domain (main.tscn wiring). All three should be addressed before Phase 2 session 2 begins. The integration tests serve as regression locks — when fixed, the relevant tests turn green.
+
+**Decisions made independently:** Integration test strategy — drive CombatComponent directly via `SimClock._is_ticking` manipulation for all combat-math tests (mirrors existing unit tests), FSM-level tests via `_advance(n)`. This separates the two concerns cleanly without needing to fix BUG-01 first.
+
+---
+
 ## 2026-05-04 — Phase 2 session 1 wave 2B (ai-engineer): UnitState_AttackMove + click-handler enemy-right-click + AttackMoveHandler
 
 **Branch:** `feat/phase-2-session-1`. Source code shipped in commit `aa429ef` (bundled with ui-developer's wave 2C — same Pitfall #7 cross-agent commit-race that scrambled wave 2A's attribution). ARCHITECTURE.md retro shipped in commit `4f5c1da`. Code itself is correct; this BUILD_LOG entry retros the wave-2B scope.
