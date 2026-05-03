@@ -34,6 +34,66 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-04 — Phase 2 session 1 wave 2A (gameplay-systems): Piyade + TuranPiyade + first Farr drain
+
+**Branch:** `feat/phase-2-session-1`. Code shipped under commit `aa429ef` (cross-agent contamination during a parallel-wave window — ui-developer's `git commit` swept up the working-tree state which included this wave's already-completed gameplay-systems files; wave 2A code is intact under that SHA, attribution is the only thing scrambled). This BUILD_LOG entry retros the wave-2A scope.
+
+**Shipped (in commit `aa429ef`):**
+
+1. **`Piyade` (Iran foot infantry) unit type** at `game/scripts/units/piyade.gd` and `game/scenes/units/piyade.tscn`. Path-string `extends "res://scripts/units/unit.gd"`. Dual `_init` + `_ready` `unit_type = &"piyade"` write — the `_ready` override fires BEFORE `super._ready()` reads unit_type. Scene inherits unit.tscn, overrides MeshInstance3D mesh (BoxMesh 0.5 × 0.7 × 0.5) and material (Iran-blue albedo `Color(0.3, 0.4, 0.7)`). Stats from BalanceData: max_hp 100, move_speed 2.5, attack_damage_x100 1000, attack_speed_per_sec 1.0, attack_range 1.5.
+
+2. **`TuranPiyade` (first Turan unit)** at `game/scripts/units/turan_piyade.gd` and `game/scenes/units/turan_piyade.tscn`. Same shape as Piyade but `unit_type = &"turan_piyade"` and Turan-red albedo `Color(0.7, 0.3, 0.3)`. Same dimensions as Iran Piyade (mirror-combat archetype — only color differs).
+
+3. **`main.gd::_spawn_starting_kargars` renamed to `_spawn_starting_units`**, extended to spawn 5 Kargar (IDs 1..5) + 5 Iran Piyade (IDs 6..10) + 5 Turan Piyade (IDs 11..15). Z-axis gap >20 units between Iran and Turan means right-click engagements walk a meaningful distance.
+
+4. **First Farr drain (worker-killed-idle, -1 Farr)** per `01_CORE_MECHANICS.md` §4. Cause-string strategy (c) per kickoff: HealthComponent's death emit augments the cause with `_idle_worker` suffix when the dying unit is a Kargar AND its FSM is in `&"idle"`. FarrSystem's new `_on_unit_died` listener parses `String(cause).ends_with("_idle_worker")` and calls `apply_farr_change(-1.0, "worker_killed_idle", null)`. Listener confines itself to apply_farr_change only (cb95d09 re-entrancy guard).
+
+5. **CombatComponent now passes `&"melee_attack"` as cause** (was `&"unspecified"` default). One-line change.
+
+6. **+32 new tests across 4 files:** `test_piyade.gd` (13), `test_turan_piyade.gd` (13), `test_farr_drain.gd` (6). `test_match_start_spawn.gd` updated 5 → 16.
+
+**Test count:** suite-wide 651 passing + 3 pre-existing pending. Lint: 0 violations.
+
+**Cause-string strategy choice (a/b/c) + rationale:** Picked **(c) per kickoff direction.** (a) extending the unit_died signature requires 3 cross-domain coordination points. (b) FarrSystem-side metadata Dictionary has lifetime concerns. (c) is purely additive — uses an existing signal field, no new state, forward-extensible (future drains use suffixes like `_fleeing`, `_engaged` for hero drains per §4).
+
+**Live-game-broken-surface answers (Experiment 01):**
+
+1. *State at runtime no unit test exercises:* The cross-system signal chain HealthComponent → unit_died → FarrSystem → apply_farr_change → farr_changed → FarrGauge. Listener-order is engine-defined; the re-entrancy guard pattern (only apply_farr_change from listener) is what makes this safe.
+2. *What headless tests cannot detect:* Whether -1 Farr per worker FEELS impactful. Whether Iran-blue / Turan-red color contrast reads cleanly against sandy terrain.
+3. *Minimum interactive smoke test (post-wave-2B click_handler wiring):* Lead spawns 5/5/5 roster (already wired). Selects an Iran Piyade, right-clicks across map onto a Turan Piyade — Iran walks >20 units, transitions into Attacking, both sides' HP drains. Lead has Turan Piyade attack idle Iran Kargar — Kargar dies → Farr 50→49.
+
+**New Pitfalls candidates:**
+
+- **Pitfall #6 (candidate): Cause-string suffix conventions are domain language, not free-form telemetry.** New suffixes need explicit producer-side discipline AND consumer-side parser updates.
+
+- **Pitfall #7 (candidate, surfaced this session): Multi-agent shared-tree commit race.** Multiple Claude Code agents working in the same git working tree can `git add` AND `git commit` each other's working-tree changes. Worse: another agent's `Write` tool against a shared doc file can wipe your unstaged edits. Mitigation: (1) verify `git diff --staged --stat` IMMEDIATELY before `git commit` AND `git log -1 --stat` after; (2) for shared docs, prefer commit-and-move-on over speculative edits; (3) destructive resets get denied — safest recovery is a follow-up "retro" commit referencing the existing SHA.
+
+**Open questions:** none. Friendly-fire policy (DoD §10) remains owned by wave 2B.
+
+**Decisions made independently:**
+
+- **Cause-string suffix is `_idle_worker`** (leading underscore convention).
+- **FarrSystem listener passes null for source_unit.** Killer Node passthrough requires UnitRegistry (LATER).
+- **`reset()` re-arms the listener idempotently.**
+- **CombatComponent's cause hard-coded to `&"melee_attack"`.**
+
+**LATER items:**
+
+1. **`UnitRegistry` autoload.** Triple-LATER (CombatComponent target lookup, Attacking state target lookup, FarrSystem killer Node resolution).
+2. **`cause` taxonomy enum in Constants.**
+3. **F2 overlay (Farr log).**
+4. **Friendly-fire policy.**
+5. **Killer Node passthrough via UnitRegistry.**
+
+**Coordination notes:**
+
+- `health_component.gd` extended ONLY in the augmenter block.
+- `combat_component.gd` changed in exactly one line.
+- `farr_system.gd` got the `_on_unit_died` listener + `_ready` connect + `reset` re-arm.
+- `unit.gd`, `unit.tscn`, `event_bus.gd` UNTOUCHED.
+
+---
+
 ## 2026-05-04 — Phase 2 session 1 wave 1A (gameplay-systems): CombatComponent + HealthComponent death capture
 
 **Branch:** `feat/phase-2-session-1`
