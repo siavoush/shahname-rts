@@ -34,6 +34,50 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-03 — Phase 1 session 2 wave 1B (ai-engineer): GroupMoveController skeleton
+
+**Branch:** `feat/phase-1-session-2`
+
+**Shipped (commit `9d54d79`):**
+- `game/scripts/movement/group_move_controller.gd` (135 lines, RefCounted, no class_name). Single static entry point: `dispatch_group_move(units: Array, target: Vector3) -> void`. Concentric-ring distribution centered on the click target — index 0 at center, indices 1..6 on a ring of radius `Constants.GROUP_MOVE_OFFSET_RADIUS = 2.0` (60° spacing), indices 7..18 on a 2R ring (30° spacing), etc. Phase 1's 5-worker cap fits comfortably on ring 1 (1 center + 4 of 6 ring slots used). Determinism via pure index-based trig (`cos(i × 60°)`, `sin(i × 60°)`); no RNG, no time. Empty Array → no-op; single unit → identity (target verbatim — bitwise-identical to existing single-click move); freed entries skipped via `is_instance_valid`. Multi-unit dispatch issues `Constants.COMMAND_MOVE` per unit through `Unit.replace_command(kind, payload)` per State Machine Contract §2.5.
+- `game/tests/unit/test_group_move_controller.gd` (259 lines, 7 tests): empty-array no-op, single-unit identity, 5-unit distinct-offsets-within-radius, determinism (same input → same offsets across runs), freed-unit array still dispatches to live ones, multi-unit Move-command shape (kind + payload.target), dispatch idempotency.
+- `Constants.GROUP_MOVE_OFFSET_RADIUS = 2.0` already added by balance-engineer in `42a2f9b` ahead of wave 1B; the controller is the consumer. Sized 8× the navmesh `cell_size` (0.25 baked in `terrain.tscn`) so adjacent ring slots survive `NavigationServer3D` snap-to-poly.
+
+**Did not ship** (intentionally out of scope per the wave-1B brief and `02c_PHASE_1_SESSION_2_KICKOFF.md`):
+- Click-handler wiring (wave 2C). The right-click branch in `click_handler.gd::process_right_click_hit` still calls `unit.replace_command(&"move", {target})` directly per unit. Wave 2C swaps it for `GroupMoveController.dispatch_group_move(selected, target)` — 2-line change because the controller's single-unit identity path preserves single-click behavior.
+- Facing / rotation (Phase 2).
+- Formation-type selection (line, wedge — Phase 2).
+- Reservation-based pathing (Phase 3+ when buildings exist).
+
+**Test-count delta:** +7 (all in `test_group_move_controller.gd`, all passing). Pre-commit gate green at commit time: 446 tests, 0 failures, 3 risky/pending pre-existing.
+
+**Lint:** `tools/lint_simulation.sh` reports OK (0 violations across L1-L5).
+
+**Live-game-broken-surface answers (Experiment 01) — refined:**
+
+1. *State/behavior that must work at runtime that no unit test exercises:* Real navmesh snapping via `NavigationAgentPathScheduler` (production scheduler). `MockPathScheduler` used in tests returns straight-line targets without snapping. R = 2.0 (8× the 0.25 navmesh `cell_size`) keeps adjacent ring slots distinct on the baked terrain. Off-navmesh click targets cause per-unit `request_repath` to FAIL; `UnitState_Moving` already handles that branch.
+
+2. *What headless tests cannot detect that the lead would notice in editor:* The visible *shape* of the formation. 5 kargars arriving in a tidy ring vs. a clustered blob is a feel question — both pass tests. Whether units overshoot each other and visibly re-collide while pathing. Whether a mid-move redirect (right-click again before first move completes) feels clean or jittery. None of this is observable through `is_moving` flags or `current_command` reads.
+
+3. *Minimum interactive smoke test that catches it:* Lead box-selects all 5 kargars (parallel deliverable 1; if not yet wired at lead-test time, lead shift-clicks them or calls `dispatch_group_move` from `main.gd._ready` as a synthetic test) and right-clicks a far point: all 5 walk, no piling, ring is visibly distributed. Lead right-clicks again mid-motion: clean redirect, all 5 still distributed at the new target. The wave-2C wiring is what makes this testable from the user's keyboard.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. Pure infrastructure against the ratified State Machine Contract.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Lives in `scripts/movement/`, not `scripts/ai/`.** Pure dispatcher for player input — no AI controller, perception, or targeting logic. Leaves `scripts/ai/` exclusively for opponent-AI work (DummyAIController, TuranController). If future AI-side use lands, it imports the controller — same primitive, no relocation needed. Documented in §6 v0.14.0.
+- **No `class_name` on the controller.** Same registry-race pattern as `MatchHarness`. Static methods on a preloaded script ref work identically with or without `class_name`. Kickoff brief explicitly authorized this choice.
+- **Concentric rings (1+6+12+18…), not square grid.** Simplest expression that produces visually-tidy formations and scales to higher unit counts without algorithmic changes. Phase 1's 5-cap fits on ring 1.
+- **Single-unit fast path returns `target` verbatim, NOT `target + cos(0)*R = target + R*(1,0,0)`.** Preserves bitwise-identical single-click behavior. The wave-2 click-handler wiring can route both single and multi selections through the controller without breaking session-1's single-click test suite.
+
+**LATER items** (flagged for future waves):
+1. **Wave 2C wiring** — `click_handler.gd::process_right_click_hit` 2-line swap (multi-selection branch only).
+2. **Stress-test the algorithm at higher unit counts** — Phase 2/3 army-scale selections may want clamping if click is near a building.
+3. **Formation visualization for the F1 pathfinding overlay** — Phase 6 per CLAUDE.md.
+
+**Note on docs flow:** ai-engineer's working-tree docs edits were lost to an earlier `git reset` during the wave-1 cross-agent gate-blocking incident; this BUILD_LOG entry and the §6 v0.14.0 ARCHITECTURE entry were re-authored by lead from ai-engineer's cached report text in a follow-up commit. Content is ai-engineer's; commit attribution is lead.
+
+---
+
 ## 2026-05-01 — Phase 1 session 2 wave 1A (ui-developer): box / drag selection
 
 **Branch:** `feat/phase-1-session-2`
