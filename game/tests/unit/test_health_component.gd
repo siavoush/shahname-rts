@@ -234,3 +234,157 @@ func test_take_damage_works_inside_real_sim_clock_tick() -> void:
 	EventBus.sim_phase.disconnect(phase_handler)
 	assert_eq(_hc.hp_x100, 5000,
 		"take_damage within a real tick (combat phase) must mutate hp_x100")
+
+
+# ---------------------------------------------------------------------------
+# take_damage_x100 — fixed-point hot path used by CombatComponent
+# ---------------------------------------------------------------------------
+
+func test_take_damage_x100_decrements_exactly() -> void:
+	_hc.init_max_hp(60.0)
+	_on_tick(func() -> void: _hc.take_damage_x100(1255, null, &"melee_attack"))
+	assert_eq(_hc.hp_x100, 6000 - 1255,
+		"take_damage_x100 with 1255 must decrement hp_x100 by exactly 1255 (no float round-trip)")
+
+
+func test_take_damage_x100_ignores_non_positive() -> void:
+	_hc.init_max_hp(60.0)
+	_on_tick(func() -> void: _hc.take_damage_x100(0, null, &"melee_attack"))
+	_on_tick(func() -> void: _hc.take_damage_x100(-100, null, &"melee_attack"))
+	assert_eq(_hc.hp_x100, 6000, "take_damage_x100 must ignore <= 0 amounts")
+
+
+# ---------------------------------------------------------------------------
+# last_death_position + unit_died emit (Phase 2 deliverable 3)
+# ---------------------------------------------------------------------------
+
+# A small local fixture that places the HealthComponent under a Node3D
+# parent so global_position can be set and read at death time.
+class _HealthHostNode3D extends Node3D:
+	var unit_id: int = -1
+
+
+# Capture buffer for unit_died signal payloads.
+var _captured_unit_died: Array[Dictionary] = []
+
+
+func _on_unit_died(unit_id: int, killer_unit_id: int, cause: StringName, position: Vector3) -> void:
+	_captured_unit_died.append({
+		&"unit_id": unit_id,
+		&"killer_unit_id": killer_unit_id,
+		&"cause": cause,
+		&"position": position,
+	})
+
+
+func test_last_death_position_captured_before_emit() -> void:
+	# Build a hosted HealthComponent so global_position is meaningful.
+	# add_child_autofree -> set position -> add component (per the wave-1 lesson
+	# in test_combat_component / BUILD_LOG v0.14.5: Node3D.global_transform
+	# asserts is_inside_tree()).
+	var host := _HealthHostNode3D.new()
+	host.unit_id = 7
+	add_child_autofree(host)
+	host.global_position = Vector3(12.0, 0.0, -5.0)
+
+	var hc: Variant = HealthComponentScript.new()
+	hc.unit_id = 7
+	host.add_child(hc)
+	hc.init_max_hp(20.0)
+
+	_captured_unit_died.clear()
+	EventBus.unit_died.connect(_on_unit_died)
+	_on_tick(func() -> void: hc.take_damage_x100(2000, null, &"melee_attack"))
+	EventBus.unit_died.disconnect(_on_unit_died)
+
+	assert_eq(hc.last_death_position, Vector3(12.0, 0.0, -5.0),
+		"last_death_position must be captured from the parent's global_position at death")
+	assert_eq(_captured_unit_died.size(), 1,
+		"unit_died must fire exactly once when hp reaches 0")
+	var payload: Dictionary = _captured_unit_died[0]
+	assert_eq(payload[&"unit_id"], 7, "payload carries the dying unit's id")
+	assert_eq(payload[&"position"], Vector3(12.0, 0.0, -5.0),
+		"payload carries the captured death position")
+
+
+func test_unit_died_payload_includes_killer_and_cause() -> void:
+	# Build attacker (provides unit_id for killer plumbing) + victim.
+	var attacker := _HealthHostNode3D.new()
+	attacker.unit_id = 99
+	add_child_autofree(attacker)
+
+	var host := _HealthHostNode3D.new()
+	host.unit_id = 8
+	add_child_autofree(host)
+	host.global_position = Vector3(0.0, 0.0, 0.0)
+
+	var hc: Variant = HealthComponentScript.new()
+	hc.unit_id = 8
+	host.add_child(hc)
+	hc.init_max_hp(10.0)
+
+	_captured_unit_died.clear()
+	EventBus.unit_died.connect(_on_unit_died)
+	_on_tick(func() -> void: hc.take_damage_x100(1500, attacker, &"ranged_attack"))
+	EventBus.unit_died.disconnect(_on_unit_died)
+
+	assert_eq(_captured_unit_died.size(), 1, "unit_died fires once on death")
+	var payload: Dictionary = _captured_unit_died[0]
+	assert_eq(payload[&"killer_unit_id"], 99,
+		"killer_unit_id must be pulled off source.unit_id duck-typed")
+	assert_eq(payload[&"cause"], &"melee_attack" if false else &"ranged_attack",
+		"cause string must propagate from the damage call into the payload")
+
+
+func test_unit_died_does_not_double_emit_on_overkill() -> void:
+	var host := _HealthHostNode3D.new()
+	host.unit_id = 10
+	add_child_autofree(host)
+
+	var hc: Variant = HealthComponentScript.new()
+	hc.unit_id = 10
+	host.add_child(hc)
+	hc.init_max_hp(10.0)
+
+	_captured_unit_died.clear()
+	EventBus.unit_died.connect(_on_unit_died)
+	_on_tick(func() -> void: hc.take_damage_x100(1500, null, &"melee_attack"))
+	# Over-kill — the latch must prevent a second emit.
+	_on_tick(func() -> void: hc.take_damage_x100(500, null, &"melee_attack"))
+	EventBus.unit_died.disconnect(_on_unit_died)
+
+	assert_eq(_captured_unit_died.size(), 1,
+		"unit_died must NOT re-emit on over-kill — same latch as unit_health_zero")
+
+
+func test_unit_health_zero_fires_before_unit_died() -> void:
+	# Listener-order discipline (cb95d09 lesson). The two death signals fire
+	# in order: unit_health_zero first (StateMachine death-preempt), then
+	# unit_died (broader telemetry / Farr-drain). Listeners that depend on
+	# the FSM having transitioned (e.g., FarrSystem reading is_idle()) need
+	# the FSM-side signal to land first.
+	var host := _HealthHostNode3D.new()
+	host.unit_id = 11
+	add_child_autofree(host)
+
+	var hc: Variant = HealthComponentScript.new()
+	hc.unit_id = 11
+	host.add_child(hc)
+	hc.init_max_hp(5.0)
+
+	var order: Array[StringName] = []
+	var on_zero := func(_uid: int) -> void:
+		order.append(&"unit_health_zero")
+	var on_died := func(_uid: int, _kid: int, _c: StringName, _p: Vector3) -> void:
+		order.append(&"unit_died")
+	EventBus.unit_health_zero.connect(on_zero)
+	EventBus.unit_died.connect(on_died)
+	_on_tick(func() -> void: hc.take_damage_x100(1000, null, &"melee_attack"))
+	EventBus.unit_health_zero.disconnect(on_zero)
+	EventBus.unit_died.disconnect(on_died)
+
+	assert_eq(order.size(), 2, "both death signals must fire")
+	assert_eq(order[0], &"unit_health_zero",
+		"unit_health_zero must fire BEFORE unit_died (FSM preempt before telemetry)")
+	assert_eq(order[1], &"unit_died",
+		"unit_died fires AFTER unit_health_zero")

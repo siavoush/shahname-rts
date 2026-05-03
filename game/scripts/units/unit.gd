@@ -114,6 +114,7 @@ var fsm: StateMachine = StateMachine.new()
 # The path-string preload sidesteps the race entirely.
 const _UnitStateIdleScript: Script = preload("res://scripts/units/states/unit_state_idle.gd")
 const _UnitStateMovingScript: Script = preload("res://scripts/units/states/unit_state_moving.gd")
+const _UnitStateAttackingScript: Script = preload("res://scripts/units/states/unit_state_attacking.gd")
 
 
 ## Snapshot of the most-recently-dispatched Command, populated by
@@ -155,6 +156,7 @@ var current_command: Dictionary = {}
 
 @onready var _health_component: Node = get_node_or_null(^"HealthComponent")
 @onready var _movement_component: Node = get_node_or_null(^"MovementComponent")
+@onready var _combat_component: Node = get_node_or_null(^"CombatComponent")
 @onready var _selectable_component: Node = get_node_or_null(^"SelectableComponent")
 @onready var _spatial_agent: Node = get_node_or_null(^"SpatialAgentComponent")
 
@@ -168,6 +170,16 @@ func get_health() -> Node:
 
 func get_movement() -> Node:
 	return _movement_component
+
+
+## Returns the CombatComponent child (if present). Wave 1B (Phase 2 session 1)
+## ships the accessor; CombatComponent itself ships in gameplay-systems' wave
+## 1A. UnitState_Attacking calls this in its enter() to cache the component
+## ref; the state tolerates a null return defensively (out-of-range targets
+## still drive movement; in-range targets are no-ops on the combat side with
+## a push_warning).
+func get_combat() -> Node:
+	return _combat_component
 
 
 func get_selectable() -> Node:
@@ -200,6 +212,8 @@ func _ready() -> void:
 		_health_component.set(&"unit_id", unit_id)
 	if _movement_component != null:
 		_movement_component.set(&"unit_id", unit_id)
+	if _combat_component != null:
+		_combat_component.set(&"unit_id", unit_id)
 	if _selectable_component != null:
 		_selectable_component.set(&"unit_id", unit_id)
 
@@ -224,6 +238,8 @@ func _ready() -> void:
 		fsm.register(_UnitStateIdleScript.new())
 	if not fsm._states.has(&"moving"):
 		fsm.register(_UnitStateMovingScript.new())
+	if not fsm._states.has(&"attacking"):
+		fsm.register(_UnitStateAttackingScript.new())
 	# init() lands the unit on the starting state and connects the
 	# death-preempt signal. Subclasses that want a different starting
 	# state can call fsm.init(&"<id>") before super._ready (init is
@@ -300,6 +316,23 @@ func _apply_balance_data_defaults() -> void:
 		or typeof(move_speed_value) == TYPE_INT
 	):
 		_movement_component.set(&"move_speed", float(move_speed_value))
+	# Apply combat fields from stats. CombatComponent ships in Phase 2 session 1
+	# wave 1A (gameplay-systems); BalanceData fields are populated by
+	# balance-engineer's wave 1C. All three reads are defensive — a unit with
+	# no combat (e.g., Kargar with attack_damage_x100 = 0) tolerates missing
+	# fields by keeping the component's defaults.
+	if _combat_component != null:
+		var attack_damage_x100_value: Variant = stats.get(&"attack_damage_x100")
+		if typeof(attack_damage_x100_value) == TYPE_INT:
+			_combat_component.set(&"attack_damage_x100", int(attack_damage_x100_value))
+		var attack_speed_value: Variant = stats.get(&"attack_speed_per_sec")
+		if typeof(attack_speed_value) == TYPE_FLOAT \
+				or typeof(attack_speed_value) == TYPE_INT:
+			_combat_component.set(&"attack_speed_per_sec", float(attack_speed_value))
+		var attack_range_value: Variant = stats.get(&"attack_range")
+		if typeof(attack_range_value) == TYPE_FLOAT \
+				or typeof(attack_range_value) == TYPE_INT:
+			_combat_component.set(&"attack_range", float(attack_range_value))
 
 
 # === Command queue helpers (per State Machine Contract §2.5) ================

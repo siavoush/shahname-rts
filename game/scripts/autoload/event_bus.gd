@@ -41,6 +41,27 @@ signal unit_health_zero(unit_id: int)
 @warning_ignore("unused_signal")
 signal unit_state_changed(unit_id: int, from_id: StringName, to_id: StringName, tick: int)
 
+# Death event with the full payload future systems need: the dying unit's
+# id, the killer's unit_id (-1 sentinel when no source — death-by-attrition,
+# Farr drain, scripted event), a StringName cause for the F2 overlay /
+# telemetry / Farr-drain conditional (e.g. &"melee_attack",
+# &"farr_drain", &"hero_friendly_fire"), and the world position captured
+# at the moment hp hit 0 (consumed by Phase 5's Yadgar building per
+# 01_CORE_MECHANICS.md §7).
+#
+# Listener-order discipline: this signal will have multiple subscribers
+# (FarrSystem for the worker-killed-idle drain in this same session,
+# SelectionManager to evict freed units, future SelectedUnitPanel /
+# health-bar systems). Per the Phase 1 session 2 cb95d09 lesson —
+# re-entrant signal mutation can produce silent payload-drift bugs — the
+# emit order in HealthComponent is documented to fire AFTER all internal
+# cleanup (the position capture, the hp_x100 latch). Listeners MUST NOT
+# mutate other listeners' state-holders synchronously from the handler;
+# any state mutation should be queued with call_deferred or routed
+# through apply_farr_change (which is itself on-tick safe).
+@warning_ignore("unused_signal")
+signal unit_died(unit_id: int, killer_unit_id: int, cause: StringName, position: Vector3)
+
 
 # ---- Farr signals -----------------------------------------------------------
 # Emitted by FarrSystem.apply_farr_change(). The chokepoint is mandated by
@@ -99,6 +120,7 @@ const _SINK_SIGNALS: Array[StringName] = [
 	&"unit_health_zero",
 	&"unit_state_changed",
 	&"farr_changed",
+	&"unit_died",
 	# Extend as new write-shaped signals are added. Order is not significant.
 ]
 
@@ -159,6 +181,10 @@ func _make_forwarder(sig: StringName, sink: Callable) -> Callable:
 			return func(amount: float, reason: String, source_unit_id: int,
 					farr_after: float, tick: int) -> void:
 				sink.call(sig, [amount, reason, source_unit_id, farr_after, tick])
+		&"unit_died":
+			return func(unit_id: int, killer_unit_id: int, cause: StringName,
+					position: Vector3) -> void:
+				sink.call(sig, [unit_id, killer_unit_id, cause, position])
 		_:
 			push_error("EventBus._make_forwarder: signal '%s' has no forwarder arm" % sig)
 			return Callable()

@@ -59,6 +59,17 @@ var max_hp_x100: int = 0
 ## edge case — for now, once dead, always dead until the unit is freed).
 var _zero_emitted: bool = false
 
+# Captured at the moment hp first reaches 0 (BEFORE the unit is freed). Read
+# by Phase 5's Yadgar building (where heroes died → memorial) per
+# 01_CORE_MECHANICS.md §7. Stays at the death position even after the parent
+# unit is queue_free'd; the Yadgar consumer reads this off the listener-side
+# payload of EventBus.unit_died, not by calling back into the freed component.
+##
+## Default Vector3.ZERO has no special meaning — `_zero_emitted` is the
+## "death has happened" gate that should be checked before treating
+## last_death_position as authoritative.
+var last_death_position: Vector3 = Vector3.ZERO
+
 
 # Public read accessors. These are the boundary where fixed-point becomes
 # float; consumers reading hp / max_hp see floats and can format them for
@@ -95,32 +106,100 @@ func init_max_hp(max_hp_value: float) -> void:
 	_zero_emitted = false
 
 
-## Apply damage. Decreases hp by `amount`, clamped to a non-negative floor.
-## When hp reaches zero, emits EventBus.unit_health_zero(unit_id) exactly
-## once (the latch prevents over-kill double-emit).
+## Apply damage. Float-typed convenience wrapper; converts to fixed-point
+## at the boundary and routes through _apply_damage_x100. Existing callers
+## and tests that work in float units stay on this entry point.
 ##
-## On-tick: routes through _set_sim, which asserts SimClock.is_ticking().
-## Off-tick callers crash with a clear stack trace in debug builds.
+## On-tick: routes through _set_sim (via _apply_damage_x100), which asserts
+## SimClock.is_ticking(). Off-tick callers crash with a clear stack trace
+## in debug builds.
 ##
 ## Parameters:
-##   amount — float, in hp units (e.g., 12.0). Negative values are silently
+##   amount — float, in hp units (e.g., 12.0). Negative values silently
 ##            ignored (use heal() instead — no double-meaning of one method).
-##   _source — the attacker Node, accepted for telemetry symmetry with
-##             apply_farr_change (CLAUDE.md mandate). Currently unused at
-##             this layer; the unit_died event downstream picks up killer
-##             info when CombatSystem ships in Phase 2.
-func take_damage(amount: float, _source: Node) -> void:
+##   source — the attacker Node, accepted for telemetry symmetry with
+##            apply_farr_change (CLAUDE.md mandate). Used downstream to
+##            populate killer_unit_id in the unit_died emit.
+func take_damage(amount: float, source: Node) -> void:
 	if amount <= 0.0:
 		return
 	# Boundary conversion: float → fixed-point. Same rounding rule as
 	# apply_farr_change (deterministic, half-away-from-zero).
 	var delta_x100: int = roundi(amount * 100.0)
-	var new_hp_x100: int = max(0, hp_x100 - delta_x100)
+	_apply_damage_x100(delta_x100, source, &"unspecified")
+
+
+## Apply damage in fixed-point hp units (hp × 100). The CombatComponent's
+## hot path: skips the float→fixed-point conversion the float wrapper does,
+## so the per-attack arithmetic is integer-only.
+##
+## Parameters:
+##   amount_x100 — int, fixed-point. 1000 = 10.0 hp. Non-positive values
+##                 silently ignored.
+##   source — attacker Node (CombatComponent's parent Unit). Used to
+##            populate killer_unit_id on the unit_died emit. May be null.
+##   cause — StringName tag for telemetry / Farr-drain conditional
+##           (e.g. &"melee_attack", &"ranged_attack", &"farr_drain").
+##           Default &"unspecified" lets sites that don't care omit it.
+func take_damage_x100(
+		amount_x100: int,
+		source: Node = null,
+		cause: StringName = &"unspecified"
+) -> void:
+	if amount_x100 <= 0:
+		return
+	_apply_damage_x100(amount_x100, source, cause)
+
+
+# Internal damage chokepoint. All damage paths end here. The death-emit
+# discipline (capture position before emit; emit unit_died LAST) lives
+# here so float and fixed-point callers behave identically.
+#
+# Listener-order discipline (per the cb95d09 lesson, BUILD_LOG 2026-05-04):
+# the unit_died emit fires AFTER all internal mutation completes —
+# hp_x100 is at 0, _zero_emitted is latched, last_death_position is
+# captured. Listeners observe a fully-quiesced HealthComponent state and
+# can safely mutate their own systems. unit_health_zero (the StateMachine
+# death-preempt signal) fires BEFORE unit_died so the FSM transitions
+# to Dying first; unit_died is the broader telemetry/Farr-drain channel.
+func _apply_damage_x100(amount_x100: int, source: Node, cause: StringName) -> void:
+	var new_hp_x100: int = max(0, hp_x100 - amount_x100)
 	_set_sim(&"hp_x100", new_hp_x100)
-	if new_hp_x100 == 0 and not _zero_emitted:
-		# Latch so over-kill ticks don't re-emit.
-		_set_sim(&"_zero_emitted", true)
-		EventBus.unit_health_zero.emit(unit_id)
+	if new_hp_x100 != 0 or _zero_emitted:
+		return
+
+	# Capture the parent's world position BEFORE any consumer can free us.
+	# Yadgar consumers (Phase 5) read this off the unit_died payload, not
+	# by calling back into a possibly-freed HealthComponent.
+	var death_pos: Vector3 = Vector3.ZERO
+	var parent_node: Node = get_parent()
+	if parent_node is Node3D:
+		death_pos = (parent_node as Node3D).global_position
+	_set_sim(&"last_death_position", death_pos)
+
+	# Latch BEFORE emit so a re-entrant emit (an unforeseen consumer that
+	# damages this same unit synchronously from its handler) cannot recurse
+	# through the death path.
+	_set_sim(&"_zero_emitted", true)
+
+	# Resolve killer's unit_id from the source Node (duck-typed; same
+	# pattern as FarrSystem.apply_farr_change).
+	var killer_unit_id: int = -1
+	if source != null and is_instance_valid(source):
+		var uid: Variant = source.get(&"unit_id")
+		if typeof(uid) == TYPE_INT:
+			killer_unit_id = int(uid)
+
+	# Emit ORDER MATTERS — see the listener-order discipline note above.
+	#   1. unit_health_zero — StateMachine death-preempt (Contract §4.2).
+	#      Triggers transition to &"dying" (or queue_free fallback).
+	#   2. unit_died — broader payload for telemetry, FarrSystem drain
+	#      (this session's wave 2A), Yadgar (Phase 5), SelectionManager
+	#      eviction (LATER — currently SelectionManager filters via
+	#      is_instance_valid each frame, but a unit_died-driven prune is a
+	#      LATER optimization).
+	EventBus.unit_health_zero.emit(unit_id)
+	EventBus.unit_died.emit(unit_id, killer_unit_id, cause, death_pos)
 
 
 ## Apply healing. Increases hp by `amount`, clamped to max_hp_x100.
