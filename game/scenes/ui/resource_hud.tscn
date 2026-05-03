@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3 uid="uid://b7shahresourcehud01"]
+[gd_scene load_steps=3 format=3 uid="uid://b7shahresourcehud01"]
 
 [ext_resource type="Script" path="res://scripts/ui/resource_hud.gd" id="1_hud"]
+[ext_resource type="PackedScene" uid="uid://b7shahfarrgauge01" path="res://scenes/ui/farr_gauge.tscn" id="2_gauge"]
 
 [node name="ResourceHUD" type="CanvasLayer"]
 script = ExtResource("1_hud")
@@ -8,7 +9,7 @@ script = ExtResource("1_hud")
 [node name="Margin" type="MarginContainer" parent="."]
 anchors_preset = 10
 anchor_right = 1.0
-offset_bottom = 48.0
+offset_bottom = 80.0
 grow_horizontal = 2
 mouse_filter = 2
 theme_override_constants/margin_left = 16
@@ -31,12 +32,15 @@ layout_mode = 2
 mouse_filter = 2
 text = "Grain: 0"
 
-[node name="FarrLabel" type="Label" parent="Margin/HBox"]
-layout_mode = 2
-mouse_filter = 2
-text = "Farr: 50"
-
 [node name="PopLabel" type="Label" parent="Margin/HBox"]
 layout_mode = 2
 mouse_filter = 2
 text = "Pop: 0/0"
+
+[node name="Spacer" type="Control" parent="Margin/HBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="FarrGauge" parent="Margin/HBox" instance=ExtResource("2_gauge")]
+layout_mode = 2

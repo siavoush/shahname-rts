@@ -1,50 +1,45 @@
 extends CanvasLayer
 ##
-## ResourceHUD — Phase 0 text-only resource readout (top-left).
+## ResourceHUD — top-bar resource readout + FarrGauge.
 ##
-## Per 02_IMPLEMENTATION_PLAN.md Phase 0 (ui-developer) and the kickoff doc:
-## "Coin: 0 | Grain: 0 | FARR: 50 | Pop: 0/0". Text-only by design — the full
-## circular Farr gauge with color thresholds, floating change numbers, and the
-## hero portrait land in Phase 1+ per 01_CORE_MECHANICS.md §11.
+## Phase 0 shipped this as text-only ("Coin: N | Grain: N | Farr: N | Pop: N/N").
+## Phase 1 session 2 wave 1C replaced the text Farr label with the FarrGauge
+## sub-scene (`farr_gauge.tscn`). The gauge owns its own data wiring (signal-
+## driven via EventBus.farr_changed); this script no longer reads or formats
+## Farr.
+##
+## Layout: top bar, `MarginContainer` → `HBoxContainer`:
+##   [Coin] [Grain] [Pop] [Spacer (size_flags_horizontal=EXPAND)] [FarrGauge]
+##
+## Spec §11 anchors the gauge "top-right." The HBox spans the full top bar;
+## an EXPAND-flagged Spacer pushes the gauge to the right edge while
+## Coin/Grain/Pop stay left.
 ##
 ## Reading model — UI off-tick reads only (Sim Contract §1.5):
-##   - We poll FarrSystem and GameState in `_process` every frame. Reads are
-##     unrestricted off-tick; we never write sim state from the HUD.
-##   - The autoloads we read may not exist yet at Phase 0 (FarrSystem ships in
-##     parallel with this work; GameState.player_resources / player_pop ship
-##     later). Every read uses defensive `Engine.has_singleton()` and
-##     `Object.get(&"prop")` patterns so the HUD displays "0" rather than
-##     crashing while gameplay-systems work catches up.
-##   - When the producer autoloads land, no code change here is needed — the
-##     reads start returning real numbers.
+##   - Coin, Grain, Pop are still polled in `_process` (the producer autoloads
+##     ship in Phase 3+; defensive reads tolerate their absence).
+##   - Farr no longer participates in the poll — the gauge subscribes to
+##     EventBus.farr_changed directly and animates on signal.
 ##
 ## Internationalization: every label string is run through `tr()` against
 ## translations/strings.csv. The Persian addition at Tier 2 is a config change,
-## not a refactor (per CLAUDE.md). Numbers are formatted with `%d` on the
-## English side; if a future locale needs different digit shaping, the
-## formatter moves into the translation layer.
-##
-## Aesthetic target for MVP HUD (per CLAUDE.md):
-##   "Coin: 250 | Grain: 180 | FARR: 47 | Pop: 12/30"
-##
-## Layout: top-left corner, `MarginContainer` → `HBoxContainer` of labels.
-## CanvasLayer overlays the 3D scene cleanly without world-space coupling.
+## not a refactor (per CLAUDE.md). The gauge's internal "Farr N" centered
+## label uses tr("UI_FARR") for the same reason.
 
 # === LABEL NODES ============================================================
 # Wired via @onready when the scene loads. Names match the .tscn structure.
+# FarrLabel is gone; the FarrGauge sub-scene replaces it.
 
 @onready var _coin_label: Label = $Margin/HBox/CoinLabel
 @onready var _grain_label: Label = $Margin/HBox/GrainLabel
-@onready var _farr_label: Label = $Margin/HBox/FarrLabel
 @onready var _pop_label: Label = $Margin/HBox/PopLabel
 
 
 # === CONSTANTS ==============================================================
 # Default values when the producer autoload doesn't exist yet. Keeps the HUD
-# rendering coherent during the parallel Phase 0 build. Once FarrSystem +
-# ResourceSystem land, the defensive reads return live values.
+# rendering coherent during the parallel build. Once ResourceSystem +
+# population tracking land, the defensive reads return live values.
 
-const _DEFAULT_FARR: int = 50               # Match 01_CORE_MECHANICS.md §4.1 starting Farr
 const _DEFAULT_COIN: int = 0
 const _DEFAULT_GRAIN: int = 0
 const _DEFAULT_POP: int = 0
@@ -67,15 +62,11 @@ func _process(_dt: float) -> void:
 
 # === RENDERING ==============================================================
 # Re-read every relevant value from the autoloads and write the formatted
-# strings into the four labels. Cheap (O(1) reads, O(1) format) — fine to
-# run every frame at Phase 0. If the formatting cost ever shows up in a
-# profile, switch to event-driven updates via farr_changed / resource_changed
-# signals. Phase 0 prefers the simpler poll model.
+# strings into the three labels. Cheap (O(1) reads, O(1) format).
 
 func _refresh_labels() -> void:
 	_coin_label.text = "%s: %d" % [tr("UI_COIN"), _read_coin()]
 	_grain_label.text = "%s: %d" % [tr("UI_GRAIN"), _read_grain()]
-	_farr_label.text = "%s: %d" % [tr("UI_FARR"), _read_farr_display()]
 	var pop: int = _read_pop()
 	var pop_cap: int = _read_pop_cap()
 	_pop_label.text = "%s: %d/%d" % [tr("UI_POPULATION"), pop, pop_cap]
@@ -85,24 +76,6 @@ func _refresh_labels() -> void:
 # Each reader returns the live value if the autoload + property exist, else
 # the documented default. Pattern centralizes the existence check so the
 # rendering code stays linear.
-
-func _read_farr_display() -> int:
-	# FarrSystem (gameplay-systems' parallel session-4 deliverable) is the
-	# authoritative source. Sim Contract §1.6 mandates integer backing store
-	# (farr_x100) with float conversion at display boundaries. Two read
-	# shapes accepted:
-	#   - `value_farr` (float): the kickoff doc's API name.
-	#   - `farr_for_display()` (func -> float): the Sim Contract §1.6 boundary.
-	# Either works; the HUD shows whichever exists.
-	var farr_node: Node = _autoload_or_null(&"FarrSystem")
-	if farr_node == null:
-		return _DEFAULT_FARR
-	if farr_node.has_method(&"farr_for_display"):
-		return roundi(farr_node.call(&"farr_for_display"))
-	var value_via_get: Variant = farr_node.get(&"value_farr")
-	if value_via_get != null:
-		return roundi(float(value_via_get))
-	return _DEFAULT_FARR
 
 
 func _read_coin() -> int:

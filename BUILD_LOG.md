@@ -788,3 +788,82 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 - **`CanvasLayer` root, not a `Control`.** A `CanvasLayer` overlays the 3D viewport without coupling to the camera or the world. The Phase 1 circular gauge can sit on the same layer; the eventual minimap can use a separate layer. Implementation choice; no behavioral difference at Phase 0.
 - **Polling in `_process`, not `EventBus.farr_changed`-driven.** Polling is simpler, the read cost is O(1), and it works before FarrSystem emits anything. The Phase 1 gauge will subscribe to `farr_changed` for the floating change-number animation per Sim Contract §1.5's queue-then-drain pattern; for the text readout, polling is enough.
 - **Test-time `FarrSystem` mutation through `_farr_x100` directly, not `apply_farr_change`.** The chokepoint asserts `SimClock.is_ticking()` and we don't want to spin the clock for HUD-only tests. Writing the integer-backed store directly is off-tick (test discipline) and bypasses the on-tick assert; `before_each` / `after_each` snapshot and restore the store so other test files aren't affected.
+
+## 2026-05-01 — Phase 1 session 2 wave 1C (ui-developer): Farr gauge polish
+
+**Branch:** `feat/phase-1-session-2`
+
+**Shipped:**
+
+1. **`FarrGauge`** at `game/scenes/ui/farr_gauge.tscn` + `game/scripts/ui/farr_gauge.gd`. Custom `Control` with `_draw()` override — no asset dependency (CLAUDE.md placeholder visuals policy). Replaces the Phase 0 text "Farr: 50" readout in the top HUD.
+   - **Visual fill**: `displayed_farr / tier2_threshold` clamped [0,1], so the meter is full at Farr=40 (kickoff §149). Above Tier 2, the GOLD color band carries the overshoot signal — the fill stays at 1.0.
+   - **Color bands per spec §4.4**: <15 red, 15-40 dim, 40-70 ivory, ≥70 gold. Inclusive lower bound — exactly 15 → dim, exactly 40 → ivory, exactly 70 → gold. Avoids 14.99-vs-15.00 visual jitter at the Kaveh trigger.
+   - **Threshold ticks**: Tier 2 (gold, medium) and Kaveh (red, thick) painted at angular positions per `BalanceData.farr.tier2_threshold` / `kaveh_trigger_threshold`. Per balance-engineer review: gold tick instead of thin ivory because an ivory tick on the ivory band would have visually disappeared.
+   - **Public API**: `target_farr: float`, `displayed_farr: float`, `color_band: StringName` (BAND_RED / BAND_DIM / BAND_IVORY / BAND_GOLD), `fill_ratio: float` (computed getter), `tier2_threshold` / `kaveh_trigger_threshold: float`. Used by tests now; available to the Phase 4 F2 debug overlay.
+   - **Data wiring**: signal-driven. `_ready` connects to `EventBus.farr_changed` and seeds initial state from `FarrSystem.value_farr`. `_exit_tree` disconnects (no ghost connections after scene teardown). Tween 0.20s `TRANS_QUAD EASE_OUT` per signal — no debounce per balance-engineer veto (debouncing would silently drop F2-overlay log entries, breaking CLAUDE.md's "every Farr movement gets logged" mandate).
+   - **`mouse_filter = MOUSE_FILTER_IGNORE`** at the root + every descendant (none in current scene, but tested defensively per session-1's HUD-eats-clicks regression).
+   - **Defensive degradation**: if `FarrSystem` isn't registered (test scenes), falls back to spec default 50.0; if `BalanceData` is missing, falls back to spec defaults (40, 15) for thresholds. Same pattern as `farr_system.gd:67-91`.
+
+2. **`Constants.FARR_MAX = 100.0`** added by balance-engineer in a parallel commit. The gauge references this constant — never hardcodes 100.
+
+3. **HUD layout refactor in `game/scenes/ui/resource_hud.tscn`**: removed `FarrLabel`, added `Spacer` (Control with `size_flags_horizontal=EXPAND`, `mouse_filter=IGNORE`) + `FarrGauge` instance. The HBox is now `[Coin] [Grain] [Pop] [Spacer] [FarrGauge]` — Coin/Grain/Pop stay left, Spacer expands, gauge anchors right per spec §11.
+
+4. **`scripts/ui/resource_hud.gd`**: dropped `_farr_label`, `_DEFAULT_FARR`, `_read_farr_display`, and the `_autoload_or_null` helper (no longer needed — the gauge owns the FarrSystem read). Coin / Grain / Pop polling logic unchanged.
+
+5. **29 new tests** in `game/tests/unit/test_farr_gauge.gd` (replacing 3 dropped FarrLabel-specific tests in `test_resource_hud.gd`):
+   - Scene loads cleanly; root is Control; mouse_filter is IGNORE; descendant mouse_filter recursive check.
+   - Initial seed from FarrSystem.value_farr; defensive fallback to 50.0 when FarrSystem absent (Pending in standard config since FarrSystem is autoloaded).
+   - `EventBus.farr_changed` updates `target_farr`; clamp to [0, FARR_MAX] on out-of-range payloads.
+   - Edge cases: target at exactly 0, exactly FARR_MAX.
+   - Threshold values match `BalanceData.farr.{tier2_threshold,kaveh_trigger_threshold}` exactly.
+   - Tween: `displayed_farr == target_farr` at _ready; tween settles to target after 30 process_frame awaits.
+   - `fill_ratio` at 0, at Tier 2 threshold, above Tier 2 (clamps to 1.0), at midpoint.
+   - `color_band` at every band boundary including the < / ≥ inclusivity check (14.99→red, 15.0→dim, 39.99→dim, 40.0→ivory, 50.0→ivory, 69.99→ivory, 70.0→gold, 100.0→gold).
+   - Signal connection at _ready (count delta = +1); disconnect on tree exit (count returns to baseline; no ghost connections).
+   - End-to-end integration: seed band, drive farr_changed across boundary, assert band flips and tween settles.
+
+6. **`docs/ARCHITECTURE.md` §2**: marked the **Farr gauge** row `✅ Built` with full implementation notes; updated the **Farr HUD readout** row to reflect the wave-1C refactor (Spacer-pushed layout, Farr no longer polled).
+
+**Test-count delta (this agent's contribution):** +29 in `test_farr_gauge.gd`, −3 obsolete tests removed from `test_resource_hud.gd` (the FarrLabel-specific live-read, defensive-default, and per-frame poll tests) replaced with cross-references to their gauge-side equivalents. End-of-wave run shows 446 tests, 443 passing, 3 pending (legitimate skips: navmesh-not-baked-in-headless ×2, FarrSystem-autoload-defensive-fallback ×1). 0 failures.
+
+**Live-game-broken-surface answers (Experiment 01) — refined:**
+
+1. *What state/behavior must work at runtime that no unit test exercises?*
+   The signal-to-redraw chain in a real running scene. Headless tests verify (a) the gauge connects to `EventBus.farr_changed`, (b) `_on_farr_changed` mutates `target_farr` and `color_band`, (c) the tween eventually settles `displayed_farr`. They CANNOT verify: (i) `queue_redraw()` actually causes a repaint when the gauge is visible and the SceneTree isn't paused; (ii) the tween advances at a usable rate in a 60fps live frame loop (in headless GUT the tween settled in ~30 frames; live timing differs); (iii) the descendant mouse_filter recursion catches descendants the scene file might add later. Mitigation: an integration test that loads `main.tscn`, calls `apply_farr_change` inside a `SimClock` tick, advances real frames, and asserts. Not added this wave (would block on synchronous match-harness scene-load sequence); flagged for qa-engineer wave 3.
+
+2. *What can a headless test not detect that the lead would notice in the editor?*
+   - **Arc orientation**: I picked 12-o'clock start sweeping clockwise. Lead may want a different convention (some games start at 9 o'clock or 3 o'clock).
+   - **Color readability**: the placeholder grey terrain may make the dim band hard to see; the red band may compete with combat damage indicators (Phase 2). Visual-only.
+   - **Tween feel**: 0.20s with `EASE_OUT` was tuned for headless GUT timing tolerance, not live feel. Lead may want 0.15s or 0.30s. Trivial to tune via `_TWEEN_DURATION`.
+   - **Numeric label legibility at 1280×720**: ThemeDB.fallback_font at 12pt — may be too small or clipped by the gauge ring.
+   - **Top-right anchoring**: tested via `Spacer` `size_flags_horizontal=EXPAND` in headless, but actual right-edge alignment at 1280×720 / 1920×1080 / 4K is visual-only verification.
+
+3. *What's the minimum interactive smoke test that catches it?*
+   1. Boot game (F5). Verify the gauge renders top-right with ~50% fill, ivory color, both threshold ticks visible (gold at 40-position, red at 15-position).
+   2. Add a temporary debug binding (or use the editor's remote inspector) to call `FarrSystem.apply_farr_change(+10, "smoke", null)` inside a tick. Watch the arc tween up over ~0.2s; verify it crosses to the gold band when value passes 70.
+   3. Drive Farr to exactly 40, exactly 15, and below 15: verify the fill aligns to the corresponding tick and the color band switches accordingly.
+   4. Click-through test: try clicking a worker through the gauge area. Verify the click selects the worker (gauge does NOT swallow the click via `mouse_filter=IGNORE`). Session-1-regression-canary.
+
+**Did not ship** (out of scope per kickoff §149 + balance-engineer review):
+- Below-Kaveh red pulsing animation per spec §4.4 (`<15 red and pulsing`) — DEFERRED to Phase 2. When implemented, the pulse must be driven from a `_process` state flag (`_is_below_kaveh`) NOT from the tween, because the tween finishes but the pulse must keep animating. Documented in source file.
+- Floating reason-text labels per spec §4.4 ("+3 Farr (hero rescued worker)") — DEFERRED to Phase 2. The same `farr_changed` signal already carries the `reason` payload, so a future widget subscribes independently.
+- Threshold-crossing audio cues per spec §4.4 (chime up at 40/70, distant horn down at 15) — DEFERRED to Tier 2 (audio infrastructure not yet present).
+- Integration-style scene-loading test for the signal-to-redraw chain — flagged for qa-engineer wave 3.
+
+**State for next session / waves:**
+- On `feat/phase-1-session-2`. Lint clean, 443 tests passing, 3 pending (legitimate).
+- The gauge is ready to receive Phase 4 Atashkadeh per-tick contributions. **One known concern:** Atashkadeh adds `+0.000556 Farr/tick` (~30 emits/sec at 30Hz). The gauge's 0.20s tween would re-trigger constantly at low amplitude. Per balance-engineer's review, the producer side should batch into one emit per second (or larger) rather than the gauge debouncing. Flagged here so Phase 4 gameplay-systems can plan the batching.
+- F2 debug overlay (Phase 4) can subscribe to the same `EventBus.farr_changed` signal independently — the gauge is not in its read path.
+- The gauge defensive-fallback paths (no FarrSystem autoload, no BalanceData) are tested as Pending because both autoloads are always registered in this project. If a future test scenario tears them down, those Pending tests become reachable assertions.
+- Persian (`fa`) translation column in `strings.csv` is still empty for `UI_FARR` (the only string the gauge uses) — Tier 2 work, no code change needed.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Custom `Control._draw` over `TextureProgressBar`** — implementation choice (no gameplay impact). No sweep-texture asset exists; bootstrapping a placeholder PNG is more friction than 50 lines of `_draw`. Documented in source file.
+- **Visual fill normalized to `tier2_threshold`, not `FARR_MAX`** — kickoff §149 says "fills from 0 to FARR_TIER2_THRESHOLD." Implementation followed; gold band carries overshoot signal. Linter-added tests confirmed this is the intended behavior.
+- **`color_band` updated synchronously in `_on_farr_changed` (off `target_farr`) AND per-tween-step (off interpolated `displayed_farr`)**. The synchronous update lets observers see the new band immediately; the per-step update lets intermediate band crossings during a tween fire the right visual. Both paths converge on the same final value.
+- **Tween duration 0.20s** (down from the 0.25s in the proposal). Headless GUT's frame timing made the integration tween-settles tests flaky at 0.25s. Visually indistinguishable; lead can re-tune via `_TWEEN_DURATION` if desired.
+- **Inclusive-at-lower-bound boundary policy for color bands** — linter-added test docstring specified this. Avoids 14.99-vs-15.00 jitter. Encoded in `_band_for(...)` with `>=` checks descending from the gold threshold.
+- **`_TIER3_VISUAL_THRESHOLD = 70.0` hardcoded in the gauge, not in `FarrConfig`**. Spec §8 lists Tier 3 as post-MVP; `FARR_MAX = 100.0` belongs in `Constants` for the same reason. When Tier 3 ships and 70 becomes a balance knob, it moves to `FarrConfig` then. Citation comment in source.
+- **Removed obsolete `_inject_or_mutate_farr_system` / `_remove_mock_farr_system` helpers** from `test_resource_hud.gd` after dropping the three FarrLabel-specific tests that used them. Coverage moved to `test_farr_gauge.gd`. Cleaner than leaving dead code in place.
