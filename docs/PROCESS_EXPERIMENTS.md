@@ -2,9 +2,9 @@
 title: Process Experiments — Controlled Tests of Studio Process Changes
 type: log
 status: append-only
-version: 1.0.0
+version: 1.1.0
 owner: lead
-summary: Append-only log of controlled experiments on the studio's working process. One entry per experiment — hypothesis, intervention, baseline, metrics, verdict. Prevents process-bloat-by-vibes; every change pays for itself or is dropped.
+summary: Append-only log of controlled experiments on the studio's working process. Plus the Known Godot Pitfalls list — engine foot-guns promoted from experiments. One entry per experiment — hypothesis, intervention, baseline, metrics, verdict. Prevents process-bloat-by-vibes; every change pays for itself or is dropped.
 audience: all
 read_when: kickoff-of-any-implementation-session
 prerequisites: [docs/STUDIO_PROCESS.md, BUILD_LOG.md]
@@ -12,11 +12,11 @@ ssot_for:
   - active and historical process experiments
   - experiment baselines (which sessions are reference data)
   - verdicts on whether process changes were kept, dropped, or modified
+  - Known Godot Pitfalls list (load-bearing engine foot-guns with regression locks)
 references: [docs/STUDIO_PROCESS.md, BUILD_LOG.md, 02_IMPLEMENTATION_PLAN.md]
-tags: [process, experiments, measurement, retro]
+tags: [process, experiments, measurement, retro, pitfalls]
 created: 2026-05-03
-last_updated: 2026-05-03
-# verdict added for Experiment 01 — Kept with refinement
+last_updated: 2026-05-04
 ---
 
 # Process Experiments
@@ -32,6 +32,81 @@ This log enforces three rules:
 3. **Verdict at session close.** Kept (intervention helped, cost justified), dropped (no improvement or net-negative), or modified (helped, but a cheaper variant might do the same).
 
 A single session is N=1. Multiple sessions across a phase give directional signal. The goal isn't statistical significance — it's avoiding the failure mode where ceremony piles up forever because nobody asks "did this help?"
+
+---
+
+## Known Godot Pitfalls
+
+Engine / GDScript foot-guns that have bitten this project in production. Each entry is backed by a specific incident commit and (where possible) a regression-lock test. **Every agent dispatch brief must include this list verbatim** so agents check against it before declaring done. New entries are added by godot-code-reviewer's wave-close audits when sufficient evidence accumulates ("KEEP" in their structured review output). Promoted from candidates to permanent here.
+
+### #1 — Mouse filter on Control nodes
+
+**Mechanism.** `Control.mouse_filter` defaults to `MOUSE_FILTER_STOP` (= 0). Any new HUD-style Control that isn't itself interactive will silently swallow clicks in its rect — cursor falls on the Control, ClickHandler / BoxSelectHandler never sees the event, looks like input is broken.
+
+**Rule.** New decorative HUD Controls (Labels, Containers, Panels, custom `_draw` widgets) must set `mouse_filter = MOUSE_FILTER_IGNORE` (= 2) BOTH in the `.tscn` AND defensively at runtime in `_ready` if generated dynamically. The double-down is belt-and-braces because future scene-file edits don't always preserve property values.
+
+**Canonical incident.** Phase 1 session 1 — HUD `MarginContainer` + Labels (Coin / Grain / Pop / Farr) ate clicks across the top 48 px of the screen. Lead's first interactive test caught it. Fix: commit `c583d48` set `mouse_filter = 2` on every HUD Control.
+
+**Regression coverage.** `tests/integration/test_session_2_double_click_visual.gd` and the panel/overlay test suites assert `mouse_filter == MOUSE_FILTER_IGNORE` on every new Control they ship.
+
+### #2 — FSM / per-tick driver wiring
+
+**Mechanism.** Code inside a `RefCounted` State subclass (e.g., `UnitState_Moving._sim_tick`) only runs when something calls `fsm.tick()`. Tests typically call `fsm.tick(SimClock.SIM_DT)` directly. The live game needs a per-tick driver — a system that listens to `EventBus.sim_phase` and ticks each unit's FSM during the appropriate phase. Without that driver, states are dormant: enter() and exit() fire on transitions but `_sim_tick` is never reached.
+
+**Rule.** Every new state or component that depends on `_sim_tick` to make progress must have a verifiable per-tick driver. Until the proper phase coordinator (e.g., `MovementSystem`, `CombatSystem`) ships, the transitional shape is `Unit._on_sim_phase(phase, _tick)` subscribing to `EventBus.sim_phase` and calling `fsm.tick(SimClock.SIM_DT)` when `phase == &"movement"` (or the relevant phase). Document the LATER coordinator-replacement comment in the source.
+
+**Canonical incident.** Phase 1 session 1 — `UnitState_Moving._sim_tick` polled the path scheduler and stepped position, but nothing in the live scene called `fsm.tick()`. Tests called it directly. Live game silently ignored right-clicks. Fix: commit `c583d48` added `Unit._on_sim_phase` driver.
+
+**Regression coverage.** `tests/integration/test_click_and_move.gd::test_on_sim_phase_drives_fsm_tick` exercises the full chain `EventBus.sim_phase → Unit._on_sim_phase → fsm.tick → state._sim_tick` rather than calling `fsm.tick` directly.
+
+### #3 — Camera basis transform on screen-axis input
+
+**Mechanism.** When the camera rig has a yaw/pitch (e.g., `camera_rig.tscn` has +45° yaw + 55° pitch), screen-axis input (mouse position, edge-pan axis, WASD axis) does NOT translate directly to world axis. Applying a screen-axis vector to `target_position` without rotating through `global_transform.basis` gives motion that drifts relative to where the camera is actually pointing.
+
+**Rule.** Camera-relative motion (pan, edge-pan, screen-zoom-toward-mouse) must rotate the screen-axis vector through the camera rig's `global_transform.basis` before applying to world position. Headless test fixtures usually have identity basis so the bug is invisible there — only the live game with the rig's actual rotation surfaces it.
+
+**Canonical incident.** Phase 1 session 1 — edge-pan moved opposite to the camera-look direction. WASD was correct (sign convention coincidentally aligned for identity basis); edge-pan inverted Y-sign too, so the two paths cancelled. Fix: commit `c583d48` rotates by `global_transform.basis` and aligns edge-pan / WASD sign conventions.
+
+**Regression coverage.** `tests/unit/test_camera_controller.gd` covers the `pan_by` / `compute_edge_pan_axis` math; lead live-test catches direction.
+
+### #4 — Re-entrant signal mutation
+
+**Mechanism.** A handler subscribed to a state-holder's broadcast signal (e.g., `EventBus.selection_changed`) mutates the same state-holder synchronously inside the handler. The mutation triggers nested signal emissions, but Godot's signal-receiver iteration order means the OUTER emit's payload (now stale) is delivered to other receivers AFTER the inner emits unwind. Receivers later in the iteration see the stale payload and undo the inner mutations' work.
+
+**Rule.** Don't mutate a state-holder from inside its own broadcast handler. If you must, defer the mutation via `call_deferred` so it runs after the outer emit fully unwinds. Default: handlers are read-only against the emitter; if you need to mutate, route through a deferred call or a separate signal that fires from a clean stack.
+
+**Canonical incident.** Phase 1 session 2 — `DoubleClickSelect._on_selection_changed` called `SelectionManager.deselect_all` + `add_to_selection` × 5 inside the handler. Inner emits set all 5 SelectableComponents' rings ON; outer emit then continued with stale `[1]` payload, turning 4 of 5 rings OFF. Fix: commit `cb95d09` defers `_expand_to_visible_of_type.call_deferred(target)`.
+
+**Regression coverage.** `tests/integration/test_session_2_double_click_visual.gd::test_signal_driven_double_click_makes_all_rings_visible` reproduces the bug headlessly via real Kargar instances + actual `SelectableComponent` ring assertions.
+
+### #5 — Sibling tree-order load-bearing for `_unhandled_input`
+
+**Mechanism.** When two or more sibling Nodes both implement `_unhandled_input`, Godot delivers the event in **reverse-tree-order** (later siblings first). If both consume the event via `set_input_as_handled()`, only the first one to process it wins. Reordering siblings in the `.tscn` silently changes which handler runs.
+
+**Rule.** Any handler that needs first crack at an event must be placed LATER in sibling order than competing handlers. Document the dependency in the file header and add a regression test asserting the order in `main.tscn`. For more than 2 competing handlers, consider explicit `process_priority` on each, OR a dispatcher Node.
+
+**Canonical incident.** Phase 2 session 1 wave 2B — `AttackMoveHandler` must consume left-press BEFORE `ClickHandler` interprets it as a single-click select, otherwise A+click is silently broken. Order documented in `attack_move_handler.gd` header and `main.tscn` as `... AttackMoveHandler → ClickHandler ...`.
+
+**Regression coverage.** `tests/integration/test_phase_2_session_1_combat.gd::test_main_tscn_attack_move_handler_before_click_handler` and `test_pitfall_5_*` assert `amh.get_index() < ch.get_index()` on the live `main.tscn`.
+
+### #8 — `Node.queue_free.call_deferred()` is double-deferred
+
+**Mechanism.** `node.queue_free()` itself queues the free for end-of-frame. `node.queue_free.call_deferred()` queues `queue_free` for end-of-frame, AND `queue_free` then queues the actual deletion for end-of-NEXT-frame. So tests verifying "node is freed after deferred queue_free" need 2+ `await get_tree().process_frame` calls (unit-test variant) or 3 (integration runner has more pending deferreds in queue).
+
+**Rule.** Use `node.queue_free()` directly when you're already off-tick (signal handlers in non-mutating contexts, `_process`, etc.). Reserve `queue_free.call_deferred()` for cases where you're CERTAIN you're in a tree-mutating context (mid-state-transition like `UnitState_Dying.enter`). When using `.call_deferred()`, tests must `await get_tree().process_frame` AT LEAST TWICE to observe the actual free.
+
+**Canonical incident.** Phase 2 session 1 wave 3 BUG-03 fix — `UnitState_Dying.enter()` calls `ctx.queue_free.call_deferred()` because it's running inside `StateMachine._apply_transition` (a tree-mutating context). The regression test originally awaited only one `process_frame` and reported "unit not freed" — bumped to 2-3 awaits in commit `6590a16`.
+
+**Regression coverage.** `tests/unit/test_unit_state_dying.gd` and `tests/integration/test_phase_2_session_1_combat.gd::test_bug03_dying_state_frees_unit_after_lethal_damage` both await multiple `process_frame` and have inline comments documenting why.
+
+### Candidate / deferred entries (not yet load-bearing)
+
+| Candidate | Status | Reason |
+|---|---|---|
+| #6 — Cause-string suffix conventions are domain language | DEFERRED | Currently one consumer (`_idle_worker` → FarrSystem). Promote when a 2nd suffix ships — `_fleeing` / `_engaged` / `_ranged` will provide the pattern-validation needed. |
+| #7 — Multi-agent shared-tree commit-staging race | KEPT IN PROCESS DOC, not Godot list | This is a process pattern, not engine. Lives in `STUDIO_PROCESS.md` §9 + `Deviation 02`. |
+| #9 — GDScript lambda primitive-int capture-by-value | REJECTED for now | godot-code-reviewer's audit found no evidence in Phase 2 session 1 diff. Re-evaluate if a future wave reproduces. |
+| #10 candidate — MockPathScheduler tick-1 latency vs per-tick reissue starves resolution | DEFERRED | Surfaced during BUG-06 fix. Tests using `MockPathScheduler` with per-tick `request_repath` re-issue (e.g., `UnitState_Attacking._sim_tick` out-of-range branch) will starve path resolution — each new request cancels the prior PENDING. Workaround: in-file `_InstantPathScheduler` synchronous-resolve stub (see `tests/integration/test_phase_2_session_1_combat.gd`). Promote when a 2nd test author hits this independently. |
 
 ## Format for new entries
 
@@ -225,6 +300,59 @@ The intervention's value comes from **structural drift detection**, not from "ca
 - The trial run revealed a **process bug to fix before the formal trial:** the original `arch-reviewer-pr4` instance went idle for ~10 minutes without producing review content; required a direct nudge from the lead via Claude Code's agent-message UI. Hypothesis: read-only reviewer agents (no `SendMessage` in tools) may have ambiguous return-output mechanics. **Mitigation for Phase 2:** add `SendMessage` to both reviewer agents' tool list so they can proactively report.
 - The trial run also revealed the reviewers' value compounds when given the Known Godot Pitfalls list as their checklist. Phase 2's wave-close briefs should include the latest pitfalls list as part of the briefing, not just by reference.
 - Cost-of-measurement: ~20 min lead time per wave (write the briefs, read the reviews, route fixes). Tracked in the metrics table.
+
+### Experiment 03 — Incremental commits + serialized wave-close (2026-05-04)
+
+**Sessions:** Phase 2 session 2 (first formal trial).
+
+**Hypothesis:** Two changes to commit discipline reduce cross-agent shared-tree conflicts (the verification-loop and commit-race patterns from Deviations 01 + 02) without measurable productivity loss:
+
+1. **Per-TDD-cycle commits** — agents commit immediately after each `red → green` cycle (each new test+implementation pair), not at end-of-wave. Reduces working-tree contention; each agent's work is visible in `git log` in real time, so no agent reads "another agent's uncommitted work" in the tree and gets confused.
+2. **Serialized wave-close commits** — when batched commits ARE necessary (e.g., docs aggregator at end of wave), lead nominates a one-at-a-time commit order rather than letting agents race each other. Removes the race condition that produced the misattributed `aa429ef` in Phase 2 session 1.
+
+**Intervention:** Phase 2 session 2 kickoff brief includes both rules verbatim. Each agent dispatch brief includes:
+
+> "Commit per TDD cycle: after each red→green→refactor sequence, run pre-commit gate, stage your specific files, commit. Do NOT batch commits at end-of-wave. End-of-wave should have at most a docs-only commit. If wave-close requires a coordination commit, lead nominates the order."
+
+**Held constant** (NOT changed from Phase 2 session 1):
+- Live-game-broken-surface section per deliverable (Experiment 01 active).
+- Wave-close review by both reviewer agents (Experiment 02 active).
+- Same kickoff doc structure, agent set, TDD discipline, pre-commit gate, file ownership rules.
+
+**Baseline (Phase 2 session 1):**
+
+| Metric | Phase 2 session 1 value |
+|---|---|
+| Verification-loop occurrences | 2+ (wave 1A/1B agents got stuck; recurred in wave-3 bug fix dispatch) |
+| Commit-race incidents (misattributed commits) | 1 (`aa429ef` titled wave-2C, content is wave 2A+2B) |
+| Lead-proxy commits required | 3 (Deviation 01 + 2 small follow-ups for stuck agents) |
+| Cross-agent contamination of docs (BUILD_LOG, ARCHITECTURE) | 4+ minor stomps |
+| Total commits on branch | 23 |
+| Bug-fix dispatches required after wave-close review | 2 (BUG-04, BUG-06) |
+
+**Metrics to capture at session 2 close:**
+
+| Metric | How measured | Baseline | Actual | Δ |
+|---|---|---|---|---|
+| Verification-loop occurrences | Agent reports "task X already shipped, standing down" without committing | 2+ | _TBD_ | _TBD_ |
+| Commit-race incidents | Misattributed commits or commits with cross-agent contamination | 1 | _TBD_ | _TBD_ |
+| Lead-proxy commits required | Lead committed work agents should have committed themselves | 3 | _TBD_ | _TBD_ |
+| Cross-agent docs contamination | Times an agent's `git diff` of BUILD_LOG / ARCHITECTURE included another agent's draft text | 4+ | _TBD_ | _TBD_ |
+| Total commits on branch | Σ commits in `main..HEAD` at session close | 23 | _TBD_ | _TBD_ |
+| Productivity proxy (commits per hour wall-clock) | total commits / kickoff-to-merge wall-clock | _TBD_ | _TBD_ | _TBD_ |
+
+**Verdict criteria:**
+
+- **Kept** if: verification-loop occurrences ≤ 1, AND commit-race incidents = 0, AND lead-proxy commits ≤ 1. The intervention pays for itself when these patterns are clearly suppressed.
+- **Modified** if: incidents reduced but commits-per-hour drops > 30% from baseline (i.e., per-TDD-cycle commits add too much friction). Tune to "commit at meaningful chunks ≥ 1 deliverable" instead of "per TDD cycle."
+- **Dropped** if: incidents unchanged AND productivity drops. Means the discipline isn't the binding constraint — root cause is elsewhere (agent-session-context limits, etc.).
+
+**Verdict:** _TBD — fill at Phase 2 session 2 merge._
+
+**Notes:**
+- Like Experiments 01 and 02, N=1 single session is directional only. Graduates to permanent rule in `STUDIO_PROCESS.md` only after a SECOND confirming session.
+- Risk: per-TDD-cycle commits make `git log` more granular. May produce 30+ commits per wave instead of 5. Feature, not bug — granular commits make `git bisect` viable when a regression sneaks in. But PRs become longer to read.
+- Companion to existing `STUDIO_PROCESS.md` §9 rule (2026-05-01) about pre-commit gate filtering by `git diff --cached --name-only` — that's an automation-side mitigation; this is a discipline-side one. Both should land together.
 
 ## Mid-flight deviations log
 

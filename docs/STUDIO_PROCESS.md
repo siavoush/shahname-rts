@@ -2,7 +2,7 @@
 title: Studio Process — How the Virtual Studio Operates
 type: process
 status: living
-version: 1.1.0
+version: 1.2.0
 owner: team
 summary: Operating contract for multi-agent collaboration — discussion patterns, facilitator role, retro practice, SemVer policy, mode separation, sync log.
 audience: all
@@ -21,7 +21,7 @@ ssot_for:
 references: [MANIFESTO.md, ARCHITECTURE.md]
 tags: [process, syncs, retros, ssot, modes, semver, frontmatter]
 created: 2026-04-30
-last_updated: 2026-05-03
+last_updated: 2026-05-04
 ---
 
 # Studio Process — How the Virtual Studio Operates
@@ -291,9 +291,44 @@ This section accumulates rules added/modified through retros. Each entry is date
   4. Lead reads both reviews. If either has blocking issues, lead routes the fix back to the original agent (or fixes inline if trivial).
   5. Once both verdicts are APPROVE (or all blockers fixed), lead opens the PR with the review summaries in the description.
 
-  **The Known Godot Pitfalls list** in `docs/PROCESS_EXPERIMENTS.md` Experiment 01's verdict section is the godot-code-reviewer's primary checklist. Each entry is backed by a specific commit. New pitfalls discovered in future sessions get appended; the list is the project's institutional memory of "things that look fine but break in the live game."
+  **The Known Godot Pitfalls list** in `docs/PROCESS_EXPERIMENTS.md` (top section, promoted from Experiment 01's growing-list) is the godot-code-reviewer's primary checklist. Each entry is backed by a specific commit. New pitfalls discovered in future sessions get appended; the list is the project's institutional memory of "things that look fine but break in the live game."
 
-  **Why two agents, not one:** their lenses are different. `godot-code-reviewer` asks "is this code correct? does it avoid Godot-engine pitfalls?" `architecture-reviewer` asks "does this code fit the target architecture? does it honor manifesto principles? does it respect the contracts?" The first finds bugs the second wouldn't notice; the second finds drift the first wouldn't notice. Confirmed in the PR #4 trial run — convergent on a few items, but each agent surfaced things the other did not.
+  **Why two agents, not one:** their lenses are different. `godot-code-reviewer` asks "is this code correct? does it avoid Godot-engine pitfalls?" `architecture-reviewer` asks "does this code fit the target architecture? does it honor manifesto principles? does it respect the contracts?" The first finds bugs the second wouldn't notice; the second finds drift the first wouldn't notice. Confirmed in the PR #4 + Phase 2 session 1 trials — convergent on a few items, but each agent surfaced things the other did not.
+
+- *(2026-05-04, post-Phase-2-session-1)* **Anti-loop brief language: every agent dispatch brief includes the explicit commit-discipline cycle.** The verification-loop pattern (Deviation 01) — agents reading their own work in the working tree as "shipped by another agent" and standing down without committing — hit FIVE TIMES in Phase 2 session 1 alone. The four agents who broke the pattern at end-of-session all had this exact language baked into their brief:
+
+  > "Cycle: implement → pre-commit gate → `git diff --staged --stat` shows ONLY your files → commit → `git log -1` confirms your SHA → THEN report back. Don't issue 'task already shipped, standing down' reports. If you think work exists, run `git log` and check author/SHA. Your task list is the authority on what YOU have done — but the SHA in `git log` is the authority on what's COMMITTED."
+
+  **Why added:** the language is observably load-bearing. The first three agents in Phase 2 session 1 wave 1 (gameplay-combat-core, ai-eng-attacking-state, balance-eng-combat-data) all hit the pattern. Adding the explicit cycle to subsequent dispatch briefs (BUG-02 fix, click-tolerance, BUG-06, Farr contrast) produced four clean ships in a row. Cites Manifesto Principle 9 (Automated Enforcement): rules that aren't enforced erode — the discipline must be in the brief, not in folklore.
+
+  **What this rule mandates:** lead's agent dispatch templates (and any kickoff doc that describes per-deliverable workflow) must include the cycle verbatim. New brief shape:
+
+  ```
+  ### Workflow (anti-loop)
+  1. Read the relevant docs.
+  2. Write failing tests first (TDD red).
+  3. Implement.
+  4. Pre-commit gate (lint + GUT) must pass.
+  5. Stage your files explicitly: `git add` per file.
+  6. Run `git diff --staged --stat` — verify ONLY your files.
+  7. Verify `git diff BUILD_LOG.md docs/ARCHITECTURE.md` shows ONLY your additions.
+  8. Commit. Title: descriptive per project convention.
+  9. Run `git log -1 --oneline` — confirm your SHA at HEAD.
+  10. THEN report back.
+  ```
+
+- *(2026-05-04, post-Phase-2-session-1)* **Per-TDD-cycle commits, not end-of-wave batches** (under measurement as Experiment 03). Each agent commits IMMEDIATELY after each `red → green → refactor` cycle (one new test + implementation pair = one commit), NOT at end-of-wave. The end-of-wave coordination commit, if any, is docs-only. **Why added:** Phase 2 session 1's `aa429ef` commit-race (Deviation 02) was caused by three agents each holding ~10 file modifications uncommitted in the shared working tree at end-of-wave; one agent's `git add` swept the others' files into a misattributed commit. Per-TDD commits keep each agent's working set small; cross-agent contamination becomes mathematically harder. **Status:** under controlled measurement as Experiment 03 in `docs/PROCESS_EXPERIMENTS.md`. Graduates to permanent rule after Phase 2 session 2's verdict.
+
+- *(2026-05-04, post-Phase-2-session-1)* **Shared append-only docs (BUILD_LOG.md, ARCHITECTURE.md, etc.) get `git diff` verified before staging.** Before staging any shared doc file, run `git diff <doc-file>` and confirm the diff contains ONLY your additions — no stray text from other agents in flight. If you see cross-agent content in the diff, flag it BEFORE staging (don't `git add` it; coordinate with the lead). **Why added:** in Phase 2 session 1, multiple agents independently observed the cross-contamination pattern (`aa429ef` swept up wave 2A + 2B files because the index contained more than the agent's intent at commit-time). The verification step is cheap (~5 sec); the misattribution is expensive (corrective commits, archaeology rot, manual re-attribution).
+
+- *(2026-05-04, post-Phase-2-session-1)* **Session-close retro is now a structured task, not optional.** At the end of every implementation session (post-merge), lead executes a retro that does five things:
+  1. **Promote Pitfall candidates** — godot-code-reviewer's KEEP-recommended candidates move from Experiment 01 verdict text into the Known Godot Pitfalls list at the top of `PROCESS_EXPERIMENTS.md`. Each promoted entry: name, mechanism, rule, canonical incident commit, regression test reference.
+  2. **Update STUDIO_PROCESS §9** with new active rules (this section).
+  3. **Promote architectural LATER items** from §6 entry prose into a structured `ARCHITECTURE.md` LATER section. Indexed and prioritized rather than scattered.
+  4. **Close / extend / open experiments** per their verdict criteria. Active experiments tagged in `PROCESS_EXPERIMENTS.md`; resolved ones move to the archive section.
+  5. **Draft the next session's kickoff doc** with the latest Known Pitfalls list verbatim, anti-loop brief language baked in, current Deviation count baseline, active Experiment list.
+
+  **Why added:** without a closure step, learnings rot. Pitfall candidates stay scattered in verdict text; experiment outcomes don't propagate to the next kickoff brief; LATER items live as comments in §6 entries instead of an indexed list. By session 5, you'd be re-discovering the same patterns. The retro is ~30 min of doc work and produces compounding returns. Cites Manifesto Principle 10 (Feedback Cycle): "every system has the right to demand its own improvement" — the retro is how the system claims that right.
 
 ---
 
