@@ -1607,3 +1607,44 @@ The existing unit test `test_second_select_same_unit_within_window_triggers_type
 - **80-tick advance budget in the regression test.** Math: closing 5.0 - 1.5 = 3.5 units at move_speed 2.5/sec = ~42 ticks of motion, plus FSM-transition tick + cooldown ticks once in range = ~80 with slack. Documented inline in the test.
 
 **Cross-agent coordination:** no parallel agents — this was a single-fix solo session. Modified files (`unit_state_attacking.gd`, `test_phase_2_session_1_combat.gd`, `BUILD_LOG.md`, `docs/ARCHITECTURE.md`) are explicitly mine and were verified via `git diff --staged --stat` showing only those four entries before commit.
+
+## 2026-05-01 — Phase 2 session 1 post-live-test Farr-gauge contrast fix (ui-developer)
+
+**Branch:** feat/phase-2-session-1
+
+**Shipped:**
+- `game/scripts/ui/farr_gauge.gd` — visual-only contrast fix. Two changes: (1) added a dark semi-transparent backdrop rect (`Color(0.04, 0.05, 0.08, 0.78)`) painted FIRST in `_draw()` so the gauge frames itself as a HUD widget against any underlying terrain; (2) recolored the four band/fill palettes to high-contrast cool-counterpoint hues against the sandy-ochre terrain Color(0.76, 0.69, 0.53). New band palette: `<15` saturated red `(0.85, 0.15, 0.15)`, `15-40` dark slate `(0.20, 0.20, 0.30)`, `40-70` cool blue `(0.20, 0.50, 0.85)` (was warm ivory), `≥70` saturated green `(0.25, 0.85, 0.30)` (was warm gold). Fill arc colors shifted to match (saturated red, light cool grey, bright blue, bright green). Tier 2 threshold tick recolored to blue to align with its band; Kaveh tick stays red. Background ring darkened to `(0.05, 0.05, 0.08, 0.85)` for crisper contrast against the new bright fills. Added `_draw_backdrop()` helper, `_COLOR_BACKDROP`, `_BACKDROP_PADDING` constants. Backdrop is sized to enclose the ring + tick extent + a small padding.
+- No tscn change — backdrop is a `_draw()` rect, not a sibling node, which keeps the scene tree clean and means no new MOUSE_FILTER inheritance to police (Pitfall #1 stays satisfied; the `mouse_filter = MOUSE_FILTER_IGNORE` on the root Control still covers everything since there are no descendant Controls).
+- No test change. Existing 13 tests in `test_farr_gauge.gd` assert against StringName tags (`BAND_RED`, `BAND_DIM`, `BAND_IVORY`, `BAND_GOLD`) and fill_ratio math, NOT against RGB values — by deliberate design (the gauge file's docstring §Color-band classification block calls this out: "implementer can tune the palette without breaking tests"). Verified: 723 / 726 tests passing, 3 pre-existing pending. No new tests warranted — this is a pure visual tune; a snapshot/contrast test would be over-engineering for a placeholder palette.
+
+**Approach picked: backdrop + recolor (both).**
+
+Rationale: the live-test failure mode was readability against the sandy terrain, AND the warm-on-warm color scheme. A backdrop alone fixes the "the gauge fades into the terrain" problem but leaves the bands warm-on-dark, where the dim/grey and ivory bands would still be hard to distinguish from each other. A recolor alone fixes inter-band contrast but leaves the gauge's outer edges blurring into terrain along the threshold-tick ends. Doing both is ~6 lines of incremental code over either approach alone and gives the strongest readability win. Cost was a placeholder color shift away from the original "ivory + gold" warmth — but per the §Color-band classification docstring, those colors were already explicitly tunable and were never gameplay invariants. When real art lands, the palette can return to warm-over-fully-rendered-HUD-frame, and the backdrop becomes a stylized HUD bezel.
+
+**Verification:**
+- 723 / 726 tests passing (3 pending pre-existing — unchanged from prior commit). All 13 farr_gauge tests still green: scene loads, `mouse_filter == IGNORE` (root and descendants), seed-from-FarrSystem, signal updates `target_farr` (clamps high/low), threshold reads from BalanceData, fill ratio at 0/40/100/midpoint, every band classification (0, 14.99, 15, 39.99, 40, 50, 69.99, 70, 100), tween settles, signal-to-band integration (gold + red).
+- `tools/lint_simulation.sh` — OK across L1-L5. No new gameplay constants — color values are visual-only and live in the gauge per the existing docstring policy ("Tunable per balance-engineer / lead live-test feedback — these are visual choices, not gameplay invariants").
+- Pre-commit gate green end-to-end.
+
+**Did not ship:**
+- No changes to `farr_system.gd`, `event_bus.gd`, `balance.tres`, `farr_config.gd`, `constants.gd` — out of scope per the brief, and none were needed (visual-only fix).
+- No changes to band thresholds (`<15`, `15-40`, `40-70`, `≥70`) or threshold tick positions (Tier 2 = 40, Kaveh = 15) — balance-engineer's domain, locked by brief.
+- No changes to gauge size (`_MIN_SIZE = 64×64`), position (set by HUD layout), or `_ARC_RADIUS` / `_ARC_THICKNESS`. Brief: "visual contrast only."
+- No backdrop-as-Panel-node approach. Considered: a sibling `Panel` with a StyleBoxFlat would have given rounded corners and been "more Godot-idiomatic." Rejected because it adds a node to the scene tree (which then needs MOUSE_FILTER_IGNORE policing), introduces a theme-asset dependency, and the readability win over a flat `draw_rect` is purely cosmetic. The placeholder-graphics policy in CLAUDE.md explicitly favors simple shapes — a flat dark rect is exactly that.
+- No pulsing animation for the `<15 red` band (spec §4.4 "<15 red and pulsing") — that's a deferred Phase 2 item per the gauge's existing DEFERRED docstring block; this contrast fix is bounded by the brief.
+
+**State for next session:**
+- The new palette uses cool hues (blue, green) for the "safe" bands. This is a placeholder choice — when real art ships and the HUD has a fully-rendered frame/bezel, the palette can return to the spec's "ivory" and "gold" warm cues without contrast concerns. Documented inline in the new comment block above the band-color constants.
+- Backdrop padding (6px) was tuned to match the tick-extent + a comfortable margin at 64×64 widget size. If the HUD ever scales the gauge up, the constant scales linearly with `_ARC_RADIUS`.
+- The Kaveh tick stays saturated red so it's visually unambiguous as the "danger" line. The Tier 2 tick now matches the blue band — visually announces "you can advance" with the same hue as its band.
+- Live-test next: lead should be able to see Farr drain 50 → 49 against sandy terrain at a glance (the entire reason for this fix). If the green/blue feels jarring relative to the placeholder Iran/Turan unit colors, a one-line tune in the band-color constants is all that's needed.
+
+**Open questions:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Both backdrop + recolor, not one alone.** Rationale above. Lead's brief said "Pick the simplest path — backdrop alone might solve it; band recolor might be enough; both is also fine." I judged "both" the most-readable and the marginal complexity (one helper function, one extra `draw_rect` call) is trivial.
+- **Cool blue (40-70) and cool green (≥70) instead of "saturated warm" alternatives.** The brief listed cool counterpoint hues as suggestion 2; against a warm sandy terrain that's the contrast direction. Saturating the existing warm hues would have improved them slightly but kept the warm-on-warm collision. The semantic shift (gold→green for "high Farr") is mildly unconventional but green-as-good is universal in HUD design (HP bars, status icons), and the green hue is bright enough that Farr-rising to 70+ still feels like an upward, "good" cue.
+- **Backdrop drawn as `draw_rect` (not Panel/StyleBoxFlat).** Adds zero scene-tree nodes, zero MOUSE_FILTER policing burden, zero theme dependencies. Aligned with CLAUDE.md placeholder-graphics policy.
+- **No new tests.** The existing 13 tests already cover the band-tag and fill-ratio contracts the fix preserves. A "contrast assertion" test would have to compare RGB luminance against an expected terrain color, which (a) couples the test to terrain colors I don't own, and (b) the gauge is rendered in a transparent test viewport with no terrain — the test would be vacuous. Visual contrast is a live-test-loop concern; the existing color-band-tag tests cover the logical contract.
+
+**Cross-agent coordination:** no parallel agents — this was a single-fix solo session. Modified files (`game/scripts/ui/farr_gauge.gd`, `BUILD_LOG.md`) are explicitly mine and were verified via `git diff --staged --stat` showing only those two entries before commit.
