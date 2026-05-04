@@ -147,6 +147,11 @@ func process_left_click_hit(hit: Dictionary) -> void:
 		SelectionManager.deselect_all()
 		return
 	var unit: Object = _resolve_unit_from_hit(hit)
+	if unit == null:
+		# Tolerance fallback — terrain hit may still be NEAR a selectable unit.
+		# Visible mesh > collision shape, so a click on a unit's silhouette can
+		# fall through to terrain. SpatialIndex.query_radius rescues those.
+		unit = _resolve_unit_from_tolerance(hit)
 	if unit != null:
 		if DEBUG_LOG_CLICKS:
 			var uid_v: Variant = unit.get(&"unit_id")
@@ -208,6 +213,12 @@ func process_right_click_hit(hit: Dictionary) -> void:
 	# always single-team in MVP — Iran selecting their own; cross-team multi-
 	# select would imply spectator mode which is out of scope for Phase 2).
 	var hit_unit: Object = _resolve_unit_from_hit(hit)
+	if hit_unit == null:
+		# Tolerance fallback: a right-click slightly off-center on an enemy's
+		# silhouette can hit terrain instead of the unit's collision pad. If a
+		# selectable unit lives within Constants.CLICK_TOLERANCE_RADIUS of the
+		# terrain hit, treat the click as if it had hit that unit.
+		hit_unit = _resolve_unit_from_tolerance(hit)
 	if hit_unit != null:
 		var hit_team: int = _read_team(hit_unit)
 		var sel_team: int = _read_team(sel[0])
@@ -320,6 +331,59 @@ func _resolve_unit_from_hit(hit: Dictionary) -> Object:
 			return node
 		node = node.get_parent()
 	return null
+
+
+## Tolerance fallback — when the raycast hit is terrain (no unit resolved),
+## probe the SpatialIndex for selectable units within
+## `Constants.CLICK_TOLERANCE_RADIUS` of the hit position on the XZ plane and
+## return the closest one. Returns null if the hit dict has no `position`
+## (defensive — shouldn't happen for a real raycast hit) or if no unit-shaped
+## node lives within the tolerance ring.
+##
+## Why this exists: visible meshes are larger than collision pads (Piyade
+## visual `0.5×0.7×0.5` vs collision `0.4×0.55×0.4`). A click on the rendered
+## silhouette can miss the collision body and the raycast then strikes the
+## ground beneath/beside it. Without this fallback, RTS players misread the
+## game as broken — clicks they intended for the unit walked the selection
+## past it (bug surfaced in Phase 2 session 1 live-test).
+##
+## SpatialIndex.query_radius returns SpatialAgentComponent nodes (their parent
+## is the unit). We walk each parent through the same `_is_unit_shaped`
+## duck-type as `_resolve_unit_from_hit` to keep the contract identical.
+## XZ-projection is the contract per docs/SIMULATION_CONTRACT.md §3.1; Y is
+## ignored when measuring distance from the hit point.
+func _resolve_unit_from_tolerance(hit: Dictionary) -> Object:
+	if not hit.has(&"position"):
+		return null
+	var hit_pos: Vector3 = hit.get(&"position", Vector3.ZERO)
+	var nearby: Array = SpatialIndex.query_radius(
+		hit_pos, Constants.CLICK_TOLERANCE_RADIUS)
+	if nearby.is_empty():
+		return null
+	var best: Node = null
+	var best_d2: float = INF
+	for agent in nearby:
+		if not is_instance_valid(agent):
+			continue
+		var owner_node: Node = agent.get_parent()
+		if owner_node == null:
+			continue
+		if not _is_unit_shaped(owner_node):
+			continue
+		# XZ-only squared distance — matches SpatialIndex's projection.
+		var op: Vector3 = (owner_node as Node3D).global_position \
+			if owner_node is Node3D else Vector3.ZERO
+		var dx: float = op.x - hit_pos.x
+		var dz: float = op.z - hit_pos.z
+		var d2: float = dx * dx + dz * dz
+		if d2 < best_d2:
+			best_d2 = d2
+			best = owner_node
+	if best != null and DEBUG_LOG_CLICKS:
+		var uid_v: Variant = best.get(&"unit_id")
+		print("[click] tolerance fallback resolved unit id=", uid_v,
+			" at d2=", best_d2, " from hit_pos=", hit_pos)
+	return best
 
 
 ## Duck-type check: is `n` a Unit (or behaves like one)?

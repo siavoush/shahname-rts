@@ -31,6 +31,8 @@ extends GutTest
 const ClickHandlerScript: Script = preload("res://scripts/input/click_handler.gd")
 const SelectableComponentScript: Script = preload(
 	"res://scripts/units/components/selectable_component.gd")
+const SpatialAgentComponentScript: Script = preload(
+	"res://scripts/core/spatial_agent_component.gd")
 
 
 # Fake unit with the duck-typed surface ClickHandler expects. Mirrors the
@@ -62,6 +64,7 @@ var _units: Array = []
 func before_each() -> void:
 	SimClock.reset()
 	SelectionManager.reset()
+	SpatialIndex.reset()
 	handler = ClickHandlerScript.new()
 	add_child_autofree(handler)
 	handler.set_test_mode(true)  # disables _unhandled_input wiring
@@ -74,6 +77,7 @@ func after_each() -> void:
 			u.queue_free()
 	_units.clear()
 	SelectionManager.reset()
+	SpatialIndex.reset()
 	SimClock.reset()
 
 
@@ -88,6 +92,23 @@ func _make_unit(uid: int, team: int = Constants.TEAM_IRAN) -> FakeUnit:
 	u.add_child(sc)
 	u._selectable = sc
 	_units.append(u)
+	return u
+
+
+# Build a fake unit at a specific world position AND register a
+# SpatialAgentComponent child so SpatialIndex.query_radius will see it. Used
+# by the click-tolerance fallback tests — the production path looks up nearby
+# selectable units via the SpatialIndex when a raycast hits terrain.
+func _make_unit_at(
+	uid: int,
+	pos: Vector3,
+	team: int = Constants.TEAM_IRAN,
+) -> FakeUnit:
+	var u: FakeUnit = _make_unit(uid, team)
+	u.global_position = pos
+	var sa: SpatialAgentComponent = SpatialAgentComponentScript.new()
+	sa.team = team
+	u.add_child(sa)  # _ready auto-registers with SpatialIndex
 	return u
 
 
@@ -401,3 +422,137 @@ func test_terrain_collider_does_not_resolve_as_unit() -> void:
 	# No selection should have happened (and the deselect_all path is the
 	# only one that fires — emit_count is verified in test_selection_manager).
 	assert_eq(SelectionManager.selection_size(), 0)
+
+
+# ===========================================================================
+# Click-tolerance fallback (Phase 2 session 1 BUG-05 — live-test)
+# ===========================================================================
+#
+# Bug recap: visible meshes are larger than collision shapes (e.g. Piyade
+# visual `0.5×0.7×0.5` vs collision `0.4×0.55×0.4`). A right-click on the
+# rendered silhouette of an enemy can miss the collision pad and hit terrain
+# beneath/beside it — the click then routes to a Move command instead of an
+# Attack. The fallback: when the raycast hits terrain (not a unit) AND the
+# hit dictionary carries a position, query SpatialIndex within
+# `Constants.CLICK_TOLERANCE_RADIUS` for nearby selectable units. If any
+# match, treat the click as if it had hit the closest one.
+
+func test_right_click_near_enemy_pushes_attack_command_via_tolerance() -> void:
+	# Enemy unit slightly inside the tolerance radius from the terrain hit.
+	# The raycast hits empty ground at hit_pos; the fallback finds the enemy
+	# nearby and routes the click as an Attack (as if it had hit the unit).
+	var selected: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	var enemy_pos: Vector3 = Vector3(0.0, 0.5, 20.0)
+	var enemy: FakeUnit = _make_unit_at(2, enemy_pos, Constants.TEAM_TURAN)
+	SelectionManager.select(selected)
+	# Click ~0.6 world-units off-center on the XZ plane — well inside the
+	# 1.5-unit tolerance, off-center enough to miss a typical 0.4-wide pad.
+	var click_pos: Vector3 = enemy_pos + Vector3(0.6, -0.5, 0.0)
+	handler.process_right_click_hit(_terrain_hit(click_pos))
+	assert_eq(selected._replace_call_count, 1,
+		"right-click NEAR an enemy (within tolerance) must issue an Attack "
+		+ "command via the tolerance fallback")
+	assert_eq(selected._last_replace_kind, Constants.COMMAND_ATTACK)
+	assert_eq(int(selected._last_replace_payload[&"target_unit_id"]), enemy.unit_id,
+		"Attack target must be the nearby enemy resolved by SpatialIndex")
+
+
+func test_left_click_near_friendly_selects_via_tolerance() -> void:
+	# Left-click off-center but within tolerance of a friendly unit must
+	# select that unit instead of falling through to deselect_all.
+	var unit_pos: Vector3 = Vector3(5.0, 0.5, 5.0)
+	var u: FakeUnit = _make_unit_at(7, unit_pos, Constants.TEAM_IRAN)
+	# Pre-select someone else so we can verify the click selects `u` (not just
+	# leaves selection unchanged).
+	var other: FakeUnit = _make_unit(99)
+	SelectionManager.select(other)
+	var click_pos: Vector3 = unit_pos + Vector3(0.7, -0.5, 0.3)
+	handler.process_left_click_hit(_terrain_hit(click_pos))
+	assert_true(SelectionManager.is_selected(u),
+		"left-click within tolerance of a unit must select that unit")
+	assert_false(SelectionManager.is_selected(other),
+		"the previously-selected unit must be replaced (select_only semantics)")
+
+
+func test_right_click_far_from_any_unit_still_issues_move() -> void:
+	# Click well outside the tolerance radius — fallback must be a no-op and
+	# the existing terrain behavior (move command) takes over. Regression
+	# guard: tolerance must not eat the move-to-empty-ground use case.
+	var selected: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	# Enemy parked far away so it is registered but irrelevant to this click.
+	var _enemy: FakeUnit = _make_unit_at(2, Vector3(50.0, 0.5, 50.0), Constants.TEAM_TURAN)
+	SelectionManager.select(selected)
+	var far_target: Vector3 = Vector3(0.0, 0.0, 0.0)
+	handler.process_right_click_hit(_terrain_hit(far_target))
+	assert_eq(selected._replace_call_count, 1,
+		"a click far from any unit must still issue a Move command")
+	assert_eq(selected._last_replace_kind, Constants.COMMAND_MOVE,
+		"far-from-unit clicks fall through to terrain-move behavior")
+
+
+func test_left_click_far_from_any_unit_still_deselects() -> void:
+	# Far-from-unit left-click must continue to deselect — the tolerance
+	# fallback must NOT rescue clicks that genuinely missed everything.
+	var u: FakeUnit = _make_unit_at(1, Vector3(50.0, 0.5, 50.0), Constants.TEAM_IRAN)
+	SelectionManager.select(u)
+	handler.process_left_click_hit(_terrain_hit(Vector3.ZERO))
+	assert_eq(SelectionManager.selection_size(), 0,
+		"left-click far from any unit must still deselect_all")
+
+
+func test_right_click_directly_on_unit_no_regression_from_tolerance() -> void:
+	# Direct hit on the unit (the existing working path): the tolerance
+	# fallback must NOT trigger when _resolve_unit_from_hit already returned
+	# a unit. This is a regression guard for the existing wave-2B behavior.
+	var selected: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	var enemy: FakeUnit = _make_unit_at(2, Vector3(3.0, 0.5, 0.0), Constants.TEAM_TURAN)
+	SelectionManager.select(selected)
+	# Direct hit: _hit() builds a hit dict whose collider IS the enemy unit.
+	handler.process_right_click_hit(_hit(enemy, Vector3(3.0, 0.5, 0.0)))
+	assert_eq(selected._replace_call_count, 1)
+	assert_eq(selected._last_replace_kind, Constants.COMMAND_ATTACK)
+	assert_eq(int(selected._last_replace_payload[&"target_unit_id"]), enemy.unit_id)
+
+
+func test_right_click_tolerance_picks_closest_when_two_units_in_radius() -> void:
+	# Two enemies within tolerance — the closer one (XZ-distance from the
+	# terrain hit) must be the Attack target. Sim Contract §3 specifies the
+	# XZ projection convention.
+	var selected: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	# Closer enemy at distance ~0.4 from the click; farther enemy at ~1.2.
+	var click_pos: Vector3 = Vector3(0.0, 0.0, 0.0)
+	var near_enemy: FakeUnit = _make_unit_at(
+		11, click_pos + Vector3(0.4, 0.5, 0.0), Constants.TEAM_TURAN)
+	var far_enemy: FakeUnit = _make_unit_at(
+		12, click_pos + Vector3(0.0, 0.5, 1.2), Constants.TEAM_TURAN)
+	SelectionManager.select(selected)
+	handler.process_right_click_hit(_terrain_hit(click_pos))
+	assert_eq(selected._replace_call_count, 1)
+	assert_eq(int(selected._last_replace_payload[&"target_unit_id"]),
+		near_enemy.unit_id,
+		"tolerance must pick the closest unit on the XZ plane")
+	# far_enemy is referenced just so the test reads naturally; assert it
+	# wasn't picked.
+	assert_ne(int(selected._last_replace_payload[&"target_unit_id"]),
+		far_enemy.unit_id)
+
+
+func test_click_tolerance_radius_is_configurable_via_constants() -> void:
+	# The fallback must read its radius from Constants — a future tuning
+	# pass that nudges the radius should not require touching click_handler.
+	# This is a contract assertion, not a behavioral one: we place a unit
+	# JUST OUTSIDE the configured radius and assert the fallback misses.
+	var selected: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	var click_pos: Vector3 = Vector3(0.0, 0.0, 0.0)
+	# Place enemy slightly past Constants.CLICK_TOLERANCE_RADIUS so the
+	# fallback declines to rescue this click — the Move command takes over.
+	var enemy_pos: Vector3 = click_pos + Vector3(
+		Constants.CLICK_TOLERANCE_RADIUS + 0.3, 0.5, 0.0)
+	var _enemy: FakeUnit = _make_unit_at(
+		2, enemy_pos, Constants.TEAM_TURAN)
+	SelectionManager.select(selected)
+	handler.process_right_click_hit(_terrain_hit(click_pos))
+	assert_eq(selected._replace_call_count, 1)
+	assert_eq(selected._last_replace_kind, Constants.COMMAND_MOVE,
+		"unit just outside Constants.CLICK_TOLERANCE_RADIUS must NOT trigger "
+		+ "the fallback — sanity that the radius constant is the gate")

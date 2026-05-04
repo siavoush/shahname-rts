@@ -1537,3 +1537,38 @@ The existing unit test `test_second_select_same_unit_within_window_triggers_type
 **Open questions:** none.
 
 **Cross-agent coordination:** my fix is a one-line scene-wiring change. The unstaged `docs/ARCHITECTURE.md` v0.17.3 entry (gameplay-systems' BUG-01+BUG-03 documentation, never committed in `47680cd`) and the test-file refinements that were briefly staged earlier in the session are NOT mine and were left for the lead to handle separately — I staged only my own additions per the anti-race protocol.
+
+## 2026-05-04 — Phase 2 session 1 BUG-05 fix (ai-engineer): click-tolerance fallback
+
+**Branch:** feat/phase-2-session-1
+**Shipped:**
+- `game/scripts/input/click_handler.gd` — new `_resolve_unit_from_tolerance(hit)` helper. Both `process_left_click_hit` and `process_right_click_hit` now invoke it when `_resolve_unit_from_hit` returns null AND the hit dict carries a `position`. Walks `SpatialIndex.query_radius(hit_pos, Constants.CLICK_TOLERANCE_RADIUS)` results, filters parents through the existing `_is_unit_shaped` duck-type check, and returns the closest by XZ-distance. Existing direct-hit and far-from-unit behaviors are bitwise-identical (the fallback is gated on null + has-position).
+- `game/scripts/autoload/constants.gd` — new `# === INPUT ===` section with `CLICK_TOLERANCE_RADIUS = 1.5`. Justification: max-mesh-half-extent (~0.35 for Piyade) plus a forgiveness margin big enough to rescue clicks well inside the visual silhouette but small enough to avoid ghost-targeting in dense engagements. Documented in the source comment.
+- `game/tests/unit/test_click_handler.gd` — 7 new tests (2 fix verification + 4 regression guards + 1 configurability assertion). Helper `_make_unit_at(uid, pos, team)` attaches a real `SpatialAgentComponent` so the test exercises the same `SpatialIndex.query_radius` path as production.
+- `docs/ARCHITECTURE.md` v0.17.6 entry — BUG-05 archaeology with fix rationale, why I rejected the option-1 collision-pad-enlarge alternative, the live-game-broken-surface answers per Experiment 01, and a LATER item reinforcing visual-vs-collision parity once art ships.
+
+**Did not ship:**
+- No changes to `unit.tscn` collision sizes (lead's option (1) was deliberately not chosen).
+- No changes to `attack_move_handler.gd`, `box_select_handler.gd`, `selection_manager.gd`, or anything in `game/scripts/units/` — explicitly out of scope per the brief.
+- No new entries to the Known Godot Pitfalls list — this bug is a UX issue (mesh-vs-collision divergence), not a Godot engine pitfall. Distinguished from cases like signal re-entrancy or sibling tree-order that ARE engine surprises.
+
+**Verification:**
+- 725 / 728 tests passing (3 pending — pre-existing FarrSystem fallback + 2 navmesh-not-ready cases). Baseline 718 → 725 = +7 new tests, all green.
+- `tools/lint_simulation.sh` — OK across L1-L5.
+- Pre-commit gate green end-to-end.
+
+**Why option (2) tolerance fallback over option (1) collision-pad-enlarge.** Lead picked (2) before brief was written; my reasoning for confirming the choice (in case anyone re-litigates): enlarging the CharacterBody3D collision shape ripples into pathfinding clearance (NavigationAgent3D radius), NavigationObstacle3D bake parameters, stacking density, and physical separation between adjacent units. The input-side fallback is contained to one input file and one constant — its blast radius is exactly the click-translation pipeline. When art ships and collision shapes get re-tuned to match real silhouettes, the fallback can stay (now functioning as small-error forgiveness) or be removed (the LATER item).
+
+**State for next session:**
+- Click-tolerance is wired symmetrically across left + right click. Future input handlers (drag-select, attack-move-click) do NOT currently use the fallback — `attack_move_handler.gd` and `box_select_handler.gd` were explicitly out of scope. If feel-testing surfaces the same off-center-miss bug for A+click, the fallback pattern is a copy-paste extension.
+- The radius (1.5) is a UX call. Live-test will tell whether to nudge it. Constant-driven, so a future tune is a one-line change in `constants.gd` with no code edits elsewhere.
+- The SpatialIndex query in this path runs from `_input` (off-tick). Per Sim Contract §3.4 this is safe — query_radius is read-shaped against the most-recently-rebuilt index. No new contract drift.
+
+**Open questions:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Radius value 1.5 (not 1.0 or 2.0).** Justified inline in `constants.gd` and in the BUILD_LOG entry above. Lead may tune from live-test.
+- **No fallback in `attack_move_handler.gd` / `box_select_handler.gd`.** The brief scoped to `click_handler` only; expanding scope would have been a Pitfall #5-style "I touched a file I didn't need to" mistake. If the bug recurs in attack-move feel, that's a separate brief.
+- **DEBUG_LOG_CLICKS prints when the fallback resolves a unit.** One log line per rescued click — helps live-test confirm the path is being exercised. Same on/off knob as the existing click logs.
+
+**Cross-agent coordination:** no parallel agents — this was a single-fix solo session. Modified files (`click_handler.gd`, `constants.gd`, `test_click_handler.gd`, `BUILD_LOG.md`, `docs/ARCHITECTURE.md`) are explicitly mine and were verified via `git diff --staged --stat` showing only those five entries before commit.

@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.17.5
+version: 0.17.6
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -19,7 +19,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
 last_updated: 2026-05-01
-# bumped to v0.17.3 — Phase 2 Session 1 wave 3: BUG-01 + BUG-03 fixes (gameplay-systems)
+# bumped to v0.17.6 — Phase 2 Session 1 post-live-test: BUG-05 click-tolerance fallback (ai-engineer)
 ---
 
 # Architecture — Target Shape and Build State
@@ -924,6 +924,39 @@ Backfilled retroactively per arch-reviewer-phase-2-s1's F-2 finding.
 - **Future caller contract.** Anyone using `set_target` as a "force-fire-immediately" primitive must use `set_target(-1)` first to clear, then `set_target(target_id)`. The idempotency comment in source documents this. Otherwise the `same id` path skips the cooldown reset.
 
 - **Process: lead-deviation (third small one this session).** Surfaced by `gameplay-bug-fixes`'s post-wave-3 retro report; lead made the 3-line fix + 2 regression tests directly rather than spawning yet another agent given the verification-loop and commit-race patterns recurring. Logged in `docs/PROCESS_EXPERIMENTS.md` Deviation 01 (second occurrence) and `47680cd`/`fd7b07b` commit bodies.
+
+---
+
+### v0.17.6 — Phase 2 Session 1 post-live-test (2026-05-04) — ai-engineer (BUG-05 fix: click-tolerance fallback)
+
+- **BUG-05 — right-click on a Turan Piyade silhouette walked the units past the unit instead of attacking it.** Lead's live-test surfaced a UX bug: clicking on the rendered silhouette of a unit can hit terrain when the click lands on the visual mesh but outside the (smaller) collision pad. The Piyade visual is `0.5×0.7×0.5` while its collision shape is `0.4×0.55×0.4` — a click on the visual edge falls through to the ground beneath. `click_handler.gd::_resolve_unit_from_hit` returned null, so the click was treated as a Move command per the existing terrain-fallthrough behavior. Console proof from the live-test: `RIGHT: move command target=(-0.07, -0.000001, 19.96) selected=5` — the `Y=-0.000001` confirms terrain hit at the spawn position of a Turan unit.
+
+- **Fix — robust click-tolerance fallback (lead's option (2)).** When `_resolve_unit_from_hit` returns null AND the hit dictionary carries a `position`, `click_handler` now follows up with `SpatialIndex.query_radius(hit_pos, Constants.CLICK_TOLERANCE_RADIUS)` and walks each agent's parent through the same `_is_unit_shaped` duck-type filter. The closest unit by XZ-distance is treated as if it had been the raycast collider. Routes through the existing team-check / selection logic — no new branching at the call sites in `process_left_click_hit` / `process_right_click_hit`, just a `if unit == null: unit = _resolve_unit_from_tolerance(hit)` line each. The previous lead-decision (option 1: enlarge collision pads) was rejected because changing physics shapes can cascade into pathfinding clearance, NavigationObstacle3D bake parameters, and stacking behavior — the input-side fallback is contained to one input file and one constant.
+
+- **New constant `Constants.CLICK_TOLERANCE_RADIUS = 1.5`.** Sized as max-mesh-half-extent (~0.35 for Piyade) plus a forgiveness margin. Larger values risk "ghost target" clicks in dense engagements where a click on empty ground between units accidentally targets the closest one; smaller values shrink the rescue zone below useful. Lives in a new `# === INPUT ===` section of `constants.gd`. Structural — UX parameter, not a balance knob — so it lives in Constants, not BalanceData.
+
+- **Why the fallback uses XZ-projection (not 3D distance).** Per `docs/SIMULATION_CONTRACT.md` §3.1, the SpatialIndex is a flat grid over the XZ plane; Y is ignored. The closest-unit selection in `_resolve_unit_from_tolerance` uses the same projection so distance comparisons are consistent with the index it queries. A unit elevated 100m on Y is still "near" a click on the ground beneath it for tolerance purposes, but in MVP all units sit at Y≈0.5 so this is a formal-correctness note, not a behavioral one.
+
+- **Seven new tests** in `test_click_handler.gd` cover the rescue cases AND the regression guards:
+  - `test_right_click_near_enemy_pushes_attack_command_via_tolerance` — primary fix verification.
+  - `test_left_click_near_friendly_selects_via_tolerance` — same fallback, left-click branch.
+  - `test_right_click_far_from_any_unit_still_issues_move` — far-click regression guard (move still works).
+  - `test_left_click_far_from_any_unit_still_deselects` — far-click left-side regression (deselect still works).
+  - `test_right_click_directly_on_unit_no_regression_from_tolerance` — direct-hit path unchanged.
+  - `test_right_click_tolerance_picks_closest_when_two_units_in_radius` — XZ-distance tie-break correctness.
+  - `test_click_tolerance_radius_is_configurable_via_constants` — placing a unit just outside the radius asserts the fallback declines (the radius constant is the gate, not a magic number).
+
+- **Test count: 718 → 725 passing (+7).** All asserts pass; lint clean across L1-L5. No existing tests changed behavior.
+
+- **Live-game-broken-surface answers (per Experiment 01 discipline):**
+  1. **What state must work at runtime that no unit test exercises?** The fallback only fires when the SpatialIndex is populated AND the production raycast actually hits terrain. Tests substitute synthetic hit dicts; the live-test path requires a real Camera3D + PhysicsServer + populated SpatialIndex. Smoke test: spawn 1 Iran + 1 Turan, right-click within 1.5 units of the Turan but on terrain — should issue Attack.
+  2. **What can a headless test not detect that the lead would notice in the editor?** The radius value (1.5) is a feel-tuning parameter — only live-clicking will tell whether 1.5 is too generous (ghost targets) or too tight (still feels broken). Tests assert behavior at the boundary; the boundary itself is a UX call.
+  3. **Minimum interactive smoke test.** Boot main scene → right-click on the visual silhouette of an enemy from across the map — Attack issues, units engage. Right-click on empty ground 5m from any unit — Move issues, units walk to the click point. Both must work in the same session.
+
+- **Known Godot Pitfalls list — no new entries.** This bug is an input-feel UX issue (mesh-vs-collision divergence), not a Godot engine pitfall. The existing list (mouse_filter, FSM tick, camera basis, signal re-entrancy, sibling tree-order, double-deferred queue_free) is unchanged.
+
+- **LATER items surfaced (none new, one reinforced):**
+  1. **Selectable-vs-collision parity in unit scenes** — once art ships, collision shapes should match visual silhouettes within a tight margin so the tolerance fallback isn't the load-bearing rescue path. The fallback then becomes a "small-error forgiveness" feature instead of a "click-misses-the-unit" workaround.
 
 ---
 
