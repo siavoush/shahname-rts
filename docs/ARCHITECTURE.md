@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.17.6
+version: 0.18.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -986,6 +986,43 @@ Backfilled retroactively per arch-reviewer-phase-2-s1's F-2 finding.
 - **LATER items surfaced (one new, one reinforced):**
   1. **Per-tick repath throttle in Attacking** (NEW). `Attacking._sim_tick` currently re-issues `request_repath` every tick. At Phase 2's 15-unit cap this is fine; past ~50 simultaneous engaged units the every-tick repath cost will dominate. Switch to a stale-distance threshold (re-request only when target moves more than ε since last request) or a per-N-ticks throttle when unit count grows. Already noted in the Attacking docstring; surfacing here so the planning layer can budget for it.
   2. **CombatSystem / MovementSystem phase coordinators** (REINFORCED). Same item that BUG-01 surfaced. When the coordinators ship, both the in-range `combat._sim_tick` drive AND the out-of-range `movement._sim_tick` drive move out of `Attacking._sim_tick` and into the coordinators' phase iteration. Attacking then only calls `set_target` and `request_repath` (advisory writes). Tracked, not blocking.
+
+---
+
+## 7. LATER items index
+
+Architectural / project-wide deferred work. Each entry has a brief description, the canonical surfacing source (commit + §6 entry), and the priority class:
+- **🔴 Phase-blocking** — must ship before the named phase can complete its milestone. Owns a slot in the implementation plan.
+- **🟡 Scale-blocking** — works fine at MVP scale; visibly fails as unit/building counts grow toward production. Surfaces when N exceeds the empirical threshold.
+- **🟢 Polish** — UX / performance / archaeology improvements. Quality-of-life, not correctness.
+
+Promoted from §6 entry prose at session-close retros so they're indexable rather than scattered. New entries land here as agents surface them; closed entries get struck through with the closing commit SHA.
+
+| # | Item | Class | Surfacing source | Notes |
+|---|---|---|---|---|
+| L1 | **`UnitRegistry` autoload** (id → Node ref dict) | 🟡 | §6 v0.16.0 (CombatComponent) + v0.16.1 (UnitState_Attacking) + v0.17.0 (FarrSystem) | Closes target-lookup cost from O(N) tree-walk to O(1). Triple-LATER — three independent components surfaced the same need. Threshold: N>~100 engaged units. |
+| L2 | **`MovementSystem` phase coordinator** | 🔴 (Phase 4+) | §6 v0.13.1 (Phase 1 session 1) + reinforced by Phase 2 BUG-01 / BUG-06 | Subscribes to `EventBus.sim_phase(&"movement", ...)` and iterates registered MovementComponents. Closes the transitional `Unit._on_sim_phase` driver pattern. Currently movement runs via state-side `_sim_tick` drive calls. |
+| L3 | **`CombatSystem` phase coordinator** | 🔴 (Phase 4+) | §6 v0.17.3 (BUG-01 fix) | Same shape as L2 but for `&"combat"` phase. Closes the §2 phase-order drift where combat damage currently fires during `&"movement"` instead of `&"combat"`. At session-1's 15-unit cap with no ranged units, the impact is invisible — masks itself until Phase 2 session 2's RPS roster. |
+| L4 | **Body-push primitive** (units repel when overlapping) | 🟢 (Phase 3+) | Phase 2 session 1 lead live-test | Currently units use direct `global_position` writes per Sim Contract §4.1, which bypasses physics collision. Result: units stack on shared targets / phase through enemies. Cosmetic at MVP scale; `move_and_slide` integration is the canonical fix. |
+| L5 | **Formation-aware engagement priority** | 🟡 | Phase 2 session 1 kickoff §178, lead live-test | Currently all selected units pile on the same target (`replace_command` per-unit with shared `target_unit_id`). Real RTS pattern: split fire / focus fire / nearest-target heuristics. Visible at 5+ unit engagements; load-bearing in Phase 3+ when armies are larger. |
+| L6 | **Auto-attack stances** (passive / defensive / aggressive) | 🟡 (Phase 6 with AI) | Phase 2 session 1 lead live-test | Currently units only attack on explicit command. Defensive stance (counter-attack when hit) and aggressive stance (auto-engage in range) ship with `DummyAIController` / `TuranController` in Phase 6 because the same target-acquisition primitive serves both player units and AI. |
+| L7 | **`UnitState_AttackMove` engagement priority** | 🟢 | §6 v0.17.1 wave 2B | When AttackMove encounters multiple enemies in `ENGAGE_RADIUS` simultaneously, currently picks the first SpatialIndex result. Closest-enemy tie-breaker is straightforward but adds complexity; defer until 50+ unit battles surface the issue. |
+| L8 | **`Dying` state polish frame** | 🟢 (Phase 5) | §6 v0.17.3 BUG-03 fix | Currently `UnitState_Dying.enter` queues a `queue_free.call_deferred()` immediately. Phase 5's animation pass adds a 1s held-state for sprite swap / particle burst / sink-into-ground before the actual free. |
+| L9 | **`UnitRegistry` for AI command-by-id** | 🟡 (Phase 6 with AI) | §6 v0.16.1 (UnitState_Attacking) | Subset of L1 specific to AI controllers — they need `AIController.command(unit_id, kind, payload)` to issue commands without holding ref-typed unit Nodes (which can become invalid mid-tick). |
+| L10 | **Floating damage numbers** | 🟢 (Phase 5 polish) | Phase 2 session 1 wave 2C kickoff | Numeric `-10` drifting up + fading on each damage hit. Visual feedback for combat reads. Same render path as the future floating Farr-change labels. |
+| L11 | **`unit_health_changed` typed signal** | 🟡 | §6 v0.16.2 (selected-unit panel) + Phase 2 BUG-04 retro | Currently `SelectedUnitPanel` polls `health_component.hp` in `_process` because no per-change signal exists. Adds an event-driven update path; deferred until CombatSystem coordinator (L3) so the signal-emit order is clean. |
+| L12 | **Selectable-vs-collision parity** | 🟢 (when art ships) | Phase 2 session 1 BUG-05 (click-tolerance fallback) | Currently unit collision boxes are smaller than visual mesh (e.g., Piyade visual 0.5×0.7×0.5 vs collision 0.4×0.55×0.4). Drove the BUG-05 click-tolerance fallback. When real art lands, collision shapes should match visual silhouettes within tight margin so the tolerance fallback isn't load-bearing. |
+| L13 | **MatchHarness migration for `test_phase_2_session_1_combat.gd`** | 🟢 (next qa wave) | architecture-reviewer F-3 finding (Phase 2 session 1) | qa wave 3 file uses manual `before_each` setup instead of MatchHarness. Works correctly but doesn't auto-benefit from harness improvements. Migrate in next qa-engineer dispatch. |
+| L14 | **Cause-string suffix taxonomy as Constants** | 🟢 (when 2nd suffix ships) | §6 v0.17.0 + Pitfall #6 candidate | Currently `&"_idle_worker"` is a string literal duplicated at producer (HealthComponent) and consumer (FarrSystem). When a 2nd suffix lands (`_fleeing`, `_engaged`), promote the convention to `Constants.CAUSE_SUFFIX_*` so producer/consumer link is compile-checkable. |
+| L15 | **MovementComponent encapsulation helper** | 🟢 | architecture-reviewer F-5 finding | `UnitState_Attacking` and `UnitState_AttackMove` reach into `_movement._scheduler` and `_movement._request_id` directly (private members) for repath cancel. Should go through a public `MovementComponent.cancel_in_flight_repath()` method. Defer until 3rd state needs the same cleanup. |
+| L16 | **Per-tick repath throttle in Attacking** | 🟡 | §6 v0.17.4 (BUG-06) | `UnitState_Attacking._sim_tick` re-issues `request_repath` every tick. Fine at 15 units; profile at 50+. Stale-distance threshold or per-N-ticks throttle when unit count grows. |
+| L17 | **`F2` Farr log debug overlay** | 🟢 (Phase 4) | CLAUDE.md "debug overlays first-class" + Phase 2 session 1 first Farr drain | Per-tick log of every `EventBus.farr_changed` emit (amount, reason, source_unit_id). Toggleable via F2. Surfaces when Atashkadeh per-tick contributions ship in Phase 4 — debug-overlay observer of the producer-side batching. |
+| L18 | **`F1` pathfinding debug overlay** | 🟢 (Phase 6 with AI) | CLAUDE.md + Phase 1 session 1 | Renders unit waypoint paths in 3D. Currently scaffolded by DebugOverlayManager but no concrete F1 overlay. Surfaces when AI pathfinding becomes the debugging surface that matters. |
+| L19 | **`F3` AI state debug overlay** | 🟢 (Phase 6 with AI) | CLAUDE.md + Phase 6 plan | Renders AI controller state per unit (idle / attacking / fleeing / etc.) as floating text or color-coded silhouettes. Surfaces with `DummyAIController` shipping. |
+
+**How to add to this list:** at session-close retro, scan §6 entries and BUILD_LOG retros for "LATER items surfaced." Promote architectural / scale-blocking ones here with the priority class. Keep §6 entries focused on "what shipped this wave + why"; the LATER index is the cross-wave aggregation.
+
+**How to close:** when a LATER item ships, strike through its row with `~~text~~` and add the closing commit SHA. Don't delete — the archaeology is useful ("we knew about this for 3 phases before we shipped it").
 
 ---
 
