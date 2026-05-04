@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-04
+last_updated: 2026-05-04 (Phase 2 session 1 wave 1A)
 ---
 
 # Build Log
@@ -33,6 +33,234 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 ```
 
 ## Entries
+
+## 2026-05-01 — Phase 2 session 1 wave 3 (gameplay-systems): BUG-01 + BUG-03 fixes
+
+**Branch:** `feat/phase-2-session-1`
+
+**Shipped:**
+
+1. **BUG-01 fix.** `UnitState_Attacking._sim_tick` now drives `combat._sim_tick(dt)` after `combat.set_target(...)` in the in-range branch. Mirrors the `_movement._sim_tick(dt)` pattern UnitState_Moving uses. Damage now fires through the production EventBus chain. Same LATER applies — when CombatSystem phase coordinator ships, the drive call moves out of the state into the coordinator.
+
+2. **BUG-03 fix.** New `UnitState_Dying` at `game/scripts/units/states/unit_state_dying.gd`. id=`&"dying"`, priority=100, interrupt_level=NEVER. enter() calls `ctx.queue_free.call_deferred()` so the SceneTree is mutated AFTER the StateMachine's transition unwinds. Registered idempotently in `Unit._ready` alongside the other states. `StateMachine._on_unit_health_zero` now lands the death-preempt cleanly; killed units are freed within ~2 process_frames (one for the deferred CALL, one for queue_free's own deferral).
+
+3. **qa regression tests flipped from broken-state to correct-state assertions.** `test_bug01_combat_sim_tick_not_driven_by_fsm` → `test_bug01_combat_sim_tick_drives_damage_via_fsm` (asserts HP decreases over 10 ticks via the EventBus chain). `test_bug03_no_dying_state_unit_stays_valid_after_death` → `test_bug03_dying_state_frees_unit_after_lethal_damage` (asserts unit is freed after lethal damage + 3 process_frames).
+
+4. **5 new unit tests** in `test_unit_state_dying.gd` covering id/priority/interrupt_level shape, null/method-less ctx defensive bails, queue_free.call_deferred verification on a real Unit, and the full EventBus.unit_health_zero → StateMachine → UnitState_Dying chain.
+
+**Test-count delta:** 711 → 716 (5 new). Passing: 706 → 711 (the 2 BUG-01/BUG-03 regression tests went green; +5 new dying-state tests; the 3 BUG-02 / pre-existing pending tests stay pending). Lint: 0 violations.
+
+**Live-game-broken-surface answers (Experiment 01):**
+
+1. *State at runtime no unit test exercises:* The full Iran-attacks-Turan-to-death loop in main.tscn — does HP decrease visibly via the EventBus chain (BUG-01) and does the Turan Piyade's box disappear from the scene when it dies (BUG-03)? Unit tests cover the components and the integration test exercises the chain headlessly, but only a live Iran-vs-Turan engagement confirms the visual.
+2. *What headless tests cannot detect:* Whether the unit-disappears-instantly behavior reads as too abrupt to a player. A death animation / sink-into-ground placeholder is a Phase 5 polish item — for now, the unit just vanishes. This may surface in lead live-test as "feels jarring."
+3. *Minimum interactive smoke test:* Box-select an Iran Piyade. Right-click on a Turan Piyade. Watch HP decrease (BUG-01 fix). Wait for kill — Turan should disappear from the scene (BUG-03 fix).
+
+**Known Godot Pitfalls applied:**
+- Pitfall #2 (FSM driver wiring): the BUG-01 fix is exactly an instance of "code inside states only runs when something calls it" — Attacking's _sim_tick must explicitly drive combat._sim_tick the same way Moving drives movement._sim_tick. The pattern is now consistent across the two states.
+- Pitfall #4 (re-entrant signal mutation): `queue_free.call_deferred()` rather than direct `queue_free()` inside enter() — we're inside StateMachine._apply_transition which is itself inside a signal handler (_on_unit_health_zero). Direct free would invalidate `current` while the StateMachine still holds it. Deferring is the canonical fix.
+
+**New Pitfalls candidates:**
+
+- **Pitfall #8 (candidate): `Node.queue_free.call_deferred()` is double-deferred.** The outer call_deferred queues `queue_free` for end-of-frame; queue_free itself queues the actual deletion for end-of-next-frame. Tests that verify "unit is freed after Dying.enter" need TWO `await get_tree().process_frame` calls, not one. The integration-test variant of the same assertion needed THREE frames in practice (test runner backlog). Worth surfacing in the test contract as the canonical "wait for queued free" idiom. A `test_helper_await_node_freed(n)` polling helper would close the cost out at the test layer.
+
+**Decisions made independently:** UnitState_Dying.enter uses `ctx.queue_free.call_deferred()` rather than emitting a `unit_freed_requested` signal back to a coordinator. The deferred call is simpler, doesn't need a new signal, and matches the pattern Godot itself uses for pretty-much-every "kill this node" action. If a future system needs to observe "this unit's state machine entered Dying" it should subscribe to `unit_state_changed` (already emitted by the StateMachine on every transition).
+
+**LATER:** CombatSystem phase coordinator (mirror of MovementSystem coordinator); `set_target` should be made idempotent (currently resets cooldown every call, which means the BUG-01 fix's per-tick `set_target` re-call resets cooldown each tick — works correct enough for damage to fire every tick, but is at odds with the docstring's "called once on entry" intent and also collapses the 30-tick cooldown semantic in the FSM-driven path). Tracked but out-of-scope for this fix dispatch.
+
+---
+
+## 2026-05-01 — Phase 2 session 1 wave 3 (qa-engineer): Integration tests for combat flows
+
+**Branch:** `feat/phase-2-session-1`
+
+**Shipped:**
+
+1. **36 integration tests** in `game/tests/integration/test_phase_2_session_1_combat.gd`. 9 flows: single-attack HP math, range+cooldown timing, right-click-on-enemy dispatch, attack-move FSM, Farr drain worker-killed-idle, HealthBarsOverlay compute_bar_entries, AttackRangeOverlay+F4 toggle, cross-feature smoke (main.tscn structure), and pitfall regression locks #1–#5.
+
+2. **34/36 tests pass.** The 2 failures are intentional regression locks for BUG-02 (see below). No production code modified.
+
+**Did not ship:** A passing `test_main_tscn_attack_move_handler_before_click_handler` — that test intentionally fails until BUG-02 is fixed.
+
+**Test-count delta:** +36. Total: 711 tests. Passing: 706 (3 pre-existing + 2 new BUG-02 locks = 5 failing).
+
+**Bugs found (not fixed — reported for routing):**
+
+- **BUG-01**: `UnitState_Attacking._sim_tick` calls `combat.set_target()` when in range but NEVER calls `combat._sim_tick(dt)`. `EventBus.sim_phase(&"combat")` fires with no listeners. Damage never fires via the production FSM chain. Test: `test_bug01_combat_sim_tick_not_driven_by_fsm`. Fix: `UnitState_Attacking._sim_tick` must call `combat._sim_tick(dt)` after `combat.set_target()`. Owner: **gameplay-systems** (ai-engineer owns the state; the `_sim_tick → component._sim_tick` handoff follows the pattern gameplay-systems established for MovementComponent).
+
+- **BUG-02**: `AttackMoveHandler` node absent from `main.tscn`. Wave-2B shipped the script but the Deviation 02 commit-race left the node unregistered. Two tests will fail until fixed. Fix: Add `AttackMoveHandler` node BEFORE `ClickHandler` in main.tscn with `script = res://scripts/input/attack_move_handler.gd`. Owner: **ai-engineer**.
+
+- **BUG-03**: No `dying` state registered for combat units. `unit.gd._ready()` registers idle/moving/attacking/attack_move but not `dying`. `StateMachine._on_unit_health_zero()` push_errors and returns without calling `queue_free`. Killed units stay as valid instances — attackers never transition back to idle after killing a target. Test: `test_bug03_no_dying_state_unit_stays_valid_after_death`. Fix: Add `UnitState_Dying` to `unit.gd` registration that calls `ctx.queue_free()`. Owner: **gameplay-systems**.
+
+**Technical insight (GDScript Pitfall #6 candidate):** GDScript lambdas capture primitive `int` by value — mutations inside the lambda don't propagate to the outer variable. Signal-counting lambdas must use `Array.append`, not `int += 1`. The test `test_pitfall_4` originally failed with count=0 for this reason; fixed by switching to an Array.
+
+**Lint:** clean (0 violations).
+
+**State for next session:** BUG-01 and BUG-03 are both in gameplay-systems' domain and block a meaningful end-to-end combat loop (damage never fires via FSM; dead units never get freed). BUG-02 is in ai-engineer's domain (main.tscn wiring). All three should be addressed before Phase 2 session 2 begins. The integration tests serve as regression locks — when fixed, the relevant tests turn green.
+
+**Decisions made independently:** Integration test strategy — drive CombatComponent directly via `SimClock._is_ticking` manipulation for all combat-math tests (mirrors existing unit tests), FSM-level tests via `_advance(n)`. This separates the two concerns cleanly without needing to fix BUG-01 first.
+
+---
+
+## 2026-05-04 — Phase 2 session 1 wave 2B (ai-engineer): UnitState_AttackMove + click-handler enemy-right-click + AttackMoveHandler
+
+**Branch:** `feat/phase-2-session-1`. Source code shipped in commit `aa429ef` (bundled with ui-developer's wave 2C — same Pitfall #7 cross-agent commit-race that scrambled wave 2A's attribution). ARCHITECTURE.md retro shipped in commit `4f5c1da`. Code itself is correct; this BUILD_LOG entry retros the wave-2B scope.
+
+**Shipped (code in `aa429ef`, ARCHITECTURE in `4f5c1da`):**
+
+1. **`UnitState_AttackMove`** at `game/scripts/units/states/unit_state_attack_move.gd`. New concrete UnitState. id=`&"attack_move"`, priority=15, interrupt_level=NEVER. enter() reads target Vector3 from `ctx.current_command.payload.target`; `MovementComponent.request_repath(target)`. _sim_tick drives movement; per-tick `SpatialIndex.query_radius_team(self.position, Constants.ENGAGE_RADIUS, OPPOSING_TEAM)` for engage detection. `_opposing_team(self_team)` is binary Iran↔Turan with TEAM_ANY for neutral.
+
+2. **Resume-after-kill mechanic** lives entirely in queue FIFO discipline. When AttackMove discovers an enemy: `Unit.append_command(COMMAND_ATTACK_MOVE, {target: original_target})` to the BACK; `CommandPool.rent` + `command_queue.push_front(attack_cmd)` to the FRONT (canonical AI-panic-insertion per State Machine Contract §2.4 / §2.5); `fsm.transition_to_next` lands in Attacking with the enemy's id stashed on `ctx.current_command`. When Attacking exits (target dead → transition_to_next), the queue's head is the resume-AttackMove. **No "remember target across states" plumbing**.
+
+3. **`click_handler.gd::process_right_click_hit` extended with team-aware unit-hit branch.** Enemy hit (different team than `sel[0].team`) → Attack Command per selected friendly. Same-team hit → no-op (friendly fire / follow / guard semantics later phases — documented choice).
+
+4. **`AttackMoveHandler`** at `game/scripts/input/attack_move_handler.gd`. Sibling of ClickHandler in `main.tscn`, BEFORE ClickHandler in document order so its `_unhandled_input` consumes the click first. KEY_A pending → next left-click consumes; right-click/Escape cancels.
+
+5. **Constants additions**: `Constants.COMMAND_ATTACK_MOVE`, `Constants.STATE_ATTACK_MOVE`. **`StateMachine._COMMAND_KIND_TO_STATE_ID`** gains `&"attack_move" → &"attack_move"`. **`unit.gd`** registers AttackMove alongside Idle/Moving/Attacking. **`main.tscn`** wires AttackMoveHandler.
+
+6. **22 new tests**: test_unit_state_attack_move.gd (11), test_attack_move_handler.gd (7), test_click_handler.gd (+4), test_click_and_move.gd docstring update.
+
+**Test-count delta:** +22. Final after all wave 2 work: 675 tests, 672 passing, 3 risky/pending pre-existing.
+
+**Lint:** clean.
+
+**Live-game-broken-surface answers:** (1) Moving → AttackMove → Attacking → AttackMove resume cycle requires the per-tick spatial-rebuild + the in-tree AttackMoveHandler-before-ClickHandler ordering — the BEFORE-placement is the sole mechanism enforcing click consumption priority (Pitfall #5 candidate). (2) ENGAGE_RADIUS feel; closest-enemy tie-breaking (pile-on); resume-eagerness — all balance/tuning concerns. (3) Box-select 5 Piyade, hold A, click across map past 5 Turan; all 5 walk, engage, kill, resume.
+
+**Pitfalls candidates this wave:**
+- **Pitfall #5 (candidate): Sibling tree order is load-bearing for `_unhandled_input` consumption.** AttackMoveHandler MUST come before ClickHandler in main.tscn for A+click consumption to work; reordering silently breaks it. Symmetric class to cb95d09. Mitigation: explicit InputDispatcher.
+
+**Decisions made independently:** Right-click on friendly = no-op (kickoff "documented choice"); AttackMoveHandler separate Node not flag on click_handler; resume-after-kill via push_front (standard dispatch path); `_opposing_team` flat function (Phase 4+ alliance-table replacement).
+
+**LATER**: Formation engagement priority; stale-distance engage throttle (N>50); A+click force-attack semantic; InputDispatcher (Pitfall #5 mitigation); cursor change while pending; cancel pending on selection change; UnitRegistry autoload.
+
+---
+
+## 2026-05-04 — Phase 2 session 1 wave 2A (gameplay-systems): Piyade + TuranPiyade + first Farr drain
+
+**Branch:** `feat/phase-2-session-1`. Code shipped under commit `aa429ef` (cross-agent contamination during a parallel-wave window — ui-developer's `git commit` swept up the working-tree state which included this wave's already-completed gameplay-systems files; wave 2A code is intact under that SHA, attribution is the only thing scrambled). This BUILD_LOG entry retros the wave-2A scope.
+
+**Shipped (in commit `aa429ef`):**
+
+1. **`Piyade` (Iran foot infantry) unit type** at `game/scripts/units/piyade.gd` and `game/scenes/units/piyade.tscn`. Path-string `extends "res://scripts/units/unit.gd"`. Dual `_init` + `_ready` `unit_type = &"piyade"` write — the `_ready` override fires BEFORE `super._ready()` reads unit_type. Scene inherits unit.tscn, overrides MeshInstance3D mesh (BoxMesh 0.5 × 0.7 × 0.5) and material (Iran-blue albedo `Color(0.3, 0.4, 0.7)`). Stats from BalanceData: max_hp 100, move_speed 2.5, attack_damage_x100 1000, attack_speed_per_sec 1.0, attack_range 1.5.
+
+2. **`TuranPiyade` (first Turan unit)** at `game/scripts/units/turan_piyade.gd` and `game/scenes/units/turan_piyade.tscn`. Same shape as Piyade but `unit_type = &"turan_piyade"` and Turan-red albedo `Color(0.7, 0.3, 0.3)`. Same dimensions as Iran Piyade (mirror-combat archetype — only color differs).
+
+3. **`main.gd::_spawn_starting_kargars` renamed to `_spawn_starting_units`**, extended to spawn 5 Kargar (IDs 1..5) + 5 Iran Piyade (IDs 6..10) + 5 Turan Piyade (IDs 11..15). Z-axis gap >20 units between Iran and Turan means right-click engagements walk a meaningful distance.
+
+4. **First Farr drain (worker-killed-idle, -1 Farr)** per `01_CORE_MECHANICS.md` §4. Cause-string strategy (c) per kickoff: HealthComponent's death emit augments the cause with `_idle_worker` suffix when the dying unit is a Kargar AND its FSM is in `&"idle"`. FarrSystem's new `_on_unit_died` listener parses `String(cause).ends_with("_idle_worker")` and calls `apply_farr_change(-1.0, "worker_killed_idle", null)`. Listener confines itself to apply_farr_change only (cb95d09 re-entrancy guard).
+
+5. **CombatComponent now passes `&"melee_attack"` as cause** (was `&"unspecified"` default). One-line change.
+
+6. **+32 new tests across 4 files:** `test_piyade.gd` (13), `test_turan_piyade.gd` (13), `test_farr_drain.gd` (6). `test_match_start_spawn.gd` updated 5 → 16.
+
+**Test count:** suite-wide 651 passing + 3 pre-existing pending. Lint: 0 violations.
+
+**Cause-string strategy choice (a/b/c) + rationale:** Picked **(c) per kickoff direction.** (a) extending the unit_died signature requires 3 cross-domain coordination points. (b) FarrSystem-side metadata Dictionary has lifetime concerns. (c) is purely additive — uses an existing signal field, no new state, forward-extensible (future drains use suffixes like `_fleeing`, `_engaged` for hero drains per §4).
+
+**Live-game-broken-surface answers (Experiment 01):**
+
+1. *State at runtime no unit test exercises:* The cross-system signal chain HealthComponent → unit_died → FarrSystem → apply_farr_change → farr_changed → FarrGauge. Listener-order is engine-defined; the re-entrancy guard pattern (only apply_farr_change from listener) is what makes this safe.
+2. *What headless tests cannot detect:* Whether -1 Farr per worker FEELS impactful. Whether Iran-blue / Turan-red color contrast reads cleanly against sandy terrain.
+3. *Minimum interactive smoke test (post-wave-2B click_handler wiring):* Lead spawns 5/5/5 roster (already wired). Selects an Iran Piyade, right-clicks across map onto a Turan Piyade — Iran walks >20 units, transitions into Attacking, both sides' HP drains. Lead has Turan Piyade attack idle Iran Kargar — Kargar dies → Farr 50→49.
+
+**New Pitfalls candidates:**
+
+- **Pitfall #6 (candidate): Cause-string suffix conventions are domain language, not free-form telemetry.** New suffixes need explicit producer-side discipline AND consumer-side parser updates.
+
+- **Pitfall #7 (candidate, surfaced this session): Multi-agent shared-tree commit race.** Multiple Claude Code agents working in the same git working tree can `git add` AND `git commit` each other's working-tree changes. Worse: another agent's `Write` tool against a shared doc file can wipe your unstaged edits. Mitigation: (1) verify `git diff --staged --stat` IMMEDIATELY before `git commit` AND `git log -1 --stat` after; (2) for shared docs, prefer commit-and-move-on over speculative edits; (3) destructive resets get denied — safest recovery is a follow-up "retro" commit referencing the existing SHA.
+
+**Open questions:** none. Friendly-fire policy (DoD §10) remains owned by wave 2B.
+
+**Decisions made independently:**
+
+- **Cause-string suffix is `_idle_worker`** (leading underscore convention).
+- **FarrSystem listener passes null for source_unit.** Killer Node passthrough requires UnitRegistry (LATER).
+- **`reset()` re-arms the listener idempotently.**
+- **CombatComponent's cause hard-coded to `&"melee_attack"`.**
+
+**LATER items:**
+
+1. **`UnitRegistry` autoload.** Triple-LATER (CombatComponent target lookup, Attacking state target lookup, FarrSystem killer Node resolution).
+2. **`cause` taxonomy enum in Constants.**
+3. **F2 overlay (Farr log).**
+4. **Friendly-fire policy.**
+5. **Killer Node passthrough via UnitRegistry.**
+
+**Coordination notes:**
+
+- `health_component.gd` extended ONLY in the augmenter block.
+- `combat_component.gd` changed in exactly one line.
+- `farr_system.gd` got the `_on_unit_died` listener + `_ready` connect + `reset` re-arm.
+- `unit.gd`, `unit.tscn`, `event_bus.gd` UNTOUCHED.
+
+---
+
+## 2026-05-04 — Phase 2 session 1 wave 1A (gameplay-systems): CombatComponent + HealthComponent death capture
+
+**Branch:** `feat/phase-2-session-1`
+
+**Shipped:**
+
+1. **`CombatComponent`** at `game/scripts/units/components/combat_component.gd`. SimNode (path-string base) holding `attack_damage_x100: int`, `attack_speed_per_sec: float`, `attack_range: float` plus internal `_target_unit_id` and `_attack_cooldown_ticks`. `set_target(uid)` resets cooldown so the first tick after engagement fires (single-tick attack on engagement). `_sim_tick(dt)` order: cooldown decrement → no-target shortcut → target resolution (via injected `target_lookup_callable` test seam, with a tree-walk fallback in production) → XZ-only range check → cooldown gate → fire via `target.get_health().take_damage_x100(attack_damage_x100, get_parent())` and reset cooldown to `roundi(SIM_HZ / attack_speed_per_sec)`. Defensive freed-target safe-clear (sets `_target_unit_id = -1`, no crash).
+
+2. **`HealthComponent` extended** with `take_damage_x100(amount_x100: int, source: Node = null, cause: StringName = &"unspecified")` — the fixed-point hot path CombatComponent uses. Both float `take_damage` and the new fixed-point path converge in private `_apply_damage_x100`. Captures `last_death_position: Vector3` from the parent's `global_position` BEFORE any signal fires (Yadgar consumer in Phase 5 reads off the listener-side `unit_died` payload, not the freed component). Resolves `killer_unit_id` from `source.unit_id` duck-typed (`-1` sentinel when null/missing). Emit ORDER pinned: `unit_health_zero` FIRST (FSM death-preempt per State Machine Contract §4.2), then `unit_died(unit_id, killer_unit_id, cause, position)`. Single `_zero_emitted` latch covers both.
+
+3. **`EventBus.unit_died` signal declared** with `(unit_id: int, killer_unit_id: int, cause: StringName, position: Vector3)` payload. Added to `_SINK_SIGNALS` allowlist with the matching `_make_forwarder` arm — Phase 6 MatchLogger will sink it automatically. Comment block above the declaration warns listeners against synchronous cross-listener mutation (cb95d09 lesson preserved).
+
+4. **`unit.tscn` updated** to instance CombatComponent as a sibling of MovementComponent. Every Unit composes one; Kargar's `attack_damage_x100 = 0` (set by balance-engineer wave 1C) makes the attack tick a no-op (the call hits `take_damage_x100(0, ...)` which short-circuits on the non-positive amount check). Composition shape is uniform so subclass scripts don't need scene edits.
+
+5. **`Unit._apply_balance_data_defaults` reads three new combat fields** (`attack_damage_x100` TYPE_INT, `attack_speed_per_sec` TYPE_FLOAT/INT, `attack_range` TYPE_FLOAT/INT) from `BalanceData.units[unit_type]`, alongside the existing `max_hp` and `move_speed` reads. Defensive — missing fields keep CombatComponent defaults.
+
+6. **17 new tests** (test_combat_component.gd: 11, test_health_component.gd: +6 = 23 total). Combat coverage: HP decrement on attack, fixed-point exact arithmetic (1255 → exactly 1255 hp_x100 reduction), cooldown formula at 1.0/2.0 atk/s, rapid-fire blocked, fires again after cooldown elapses, out-of-range blocked, range XZ-only ignoring Y, target=-1 no-op, set_target stores id, freed-target safe-clear. Health additions: `take_damage_x100` decrements/ignores-non-positive, `last_death_position` captured before emit, `unit_died` payload (id, killer, cause, position), no double-emit on overkill, `unit_health_zero` fires BEFORE `unit_died`.
+
+**Test-count delta:** +17 (535 → 578 if you account for the 26 added by ai-engineer's parallel wave 1B + balance-engineer's wave 1C; my +17 is the gameplay-systems contribution). Final: 578 tests, 575 passing, 3 risky/pending pre-existing.
+
+**Lint:** `tools/lint_simulation.sh` reports OK (0 violations across L1-L5). `take_damage_x100` and `set_target` method names avoid the L1 `apply_*` pattern. The fixed-point arithmetic uses `roundi` (deterministic half-away-from-zero) per Sim Contract §1.6.
+
+**Live-game-broken-surface answers (Experiment 01) — refined:**
+
+1. *State/behavior that must work at runtime that no unit test exercises:* The `_sim_tick` driver chain — `EventBus.sim_phase(&"movement", _)` → `Unit._on_sim_phase` → `fsm.tick(SIM_DT)` → `UnitState_Attacking._sim_tick` (ai-engineer wave 1B) → `combat._sim_tick`. Headless tests drive `combat._sim_tick` directly; the live game routes through the state. If the state never reaches the component (state ID typo, FSM transition failure, component missing on a freshly-spawned unit), combat silently never fires — no crash, just units that walk to each other and don't attack. Lead's smoke test catches this — 5v5 mirror combat with HP visibly draining on both sides verifies the chain end-to-end. Also: signal listener order on `unit_died`. Phase 2 session 1 wires FarrSystem (wave 2A) and could later wire SelectionManager + SelectedUnitPanel. The handler order isn't deterministic across signal connection times — each handler must mutate ONLY its own state (this is what we documented inline in event_bus.gd).
+
+2. *What headless tests cannot detect that the lead would notice in the editor:* Combat *feel* — does an attack at range = 1.5 look right for melee? Are 30-tick cooldowns appropriate so 100 HP vs 10 damage resolves in ~10 seconds, not 2 or 60? Whether a unit's silhouette "freezes" mid-step when it transitions from Moving → Attacking (the cooldown reset on engagement was deliberate to avoid wind-up but might feel jerky). Whether the death position capture is visually anchored (Phase 5 Yadgar will reveal this — the position is fully correct in the payload but Yadgar's renderer might add visual offset). Whether two Iran Piyade attacking the same Turan target both fire on the same tick (deterministic per the StateMachine sort order) and whether that double-tap feels right or chaotic.
+
+3. *Minimum interactive smoke test that catches it:* Lead spawns 5 Iran Piyade and 5 Turan Piyade (Phase 2 session 1 wave 2A will wire the Turan_Piyade unit). Selects all 5 Iran. Right-clicks a Turan (wave 2B click-handler wiring lands separately). Watches: Iran walks to Turan, transitions to Attacking, HP visibly decrements on both sides (current state/behavior must work at runtime), one side wins in 5-15s (combat feel — passing this is the calibration target). Console shows no errors. F2 overlay (Phase 4) would show `unit_died` events landing with `cause = &"unspecified"` and the correct `position`. Running the same 5v5 with friendly fire would reveal whether the cause field needs richer values (e.g., `&"hero_friendly_fire"` per `01_CORE_MECHANICS.md` §4) — currently all attacks emit `&"unspecified"` unless the caller sets one explicitly.
+
+**New Pitfalls candidates (for Experiment 01's Known Godot Pitfalls list):**
+
+- **Pitfall #5 (candidate): Node3D position writes before `add_child_autofree`.** Adding to a tree initializes `global_transform`; setting `global_position` before is in-tree triggers `Condition '!is_inside_tree()' is true. Returning: Transform3D()` and the position effectively doesn't take. Already documented for `farr_gauge` in v0.14.5 but bit me again here when writing CombatComponent tests. The fix is `add_child_autofree(node) ; node.global_position = ...`. Worth promoting from "session-2 lesson" to a permanent Pitfalls list entry — it's a class of bug, not a one-off.
+
+- **Pitfall #6 (candidate): `queue_free` is deferred; tests that need synchronous death use `free()`.** A test that `queue_free`s a node and then ticks the simulation in the same frame still has the node alive (queue_free runs at end-of-frame). For deterministic "freed mid-tick" tests, `node.free()` is the synchronous primitive — but using both (queue_free THEN free) double-frees in some Godot versions. Pinned in `test_combat_component.gd::test_freed_target_clears_target_id` with a comment.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none. Pure infrastructure work against shipped contracts and pre-filled kickoff briefs.
+
+**Decisions made independently** (per CLAUDE.md Escalation rule #1):
+
+- **Target lookup is a `Callable` injection seam, not a registry autoload.** The kickoff §2 deliverable 1 left this open: "use SpatialIndex or a unit registry — if no registry exists, this is the trigger to add one." Wave 1A picks the simplest path: `target_lookup_callable: Callable` (defaulting to a tree-walk fallback). At session-1's 15-unit cap an O(N) tree-walk per missed lookup is microseconds. The registry autoload is a LATER item (one autoload covers both CombatComponent and ai-engineer's UnitState_Attacking, both of which flagged the same need).
+
+- **Cooldown stored as integer ticks, not float seconds.** The kickoff brief said "fixed-point — count down ticks; cleaner than float math when SimClock.SIM_HZ is integer 30." Confirmed: integer arithmetic, exact comparison-against-zero, replays bitwise-deterministic across platforms. The `attack_speed_per_sec` parameter stays float (cooldown denominator) because the rounded boundary conversion happens once at engagement, not every tick.
+
+- **Single `_apply_damage_x100` chokepoint, two public entry points.** `take_damage(float, source)` (legacy, no cause) and `take_damage_x100(int, source, cause)` (Phase 2). Both converge in the private chokepoint so the death-emit discipline is identical regardless of entry. Adding a `cause` parameter to the float path would have broken Phase 1 callers (kargar tests, integration tests); the dual-entry shape avoids that.
+
+- **`unit_health_zero` BEFORE `unit_died`.** Two different audiences and lifetimes — `unit_health_zero` is FSM-internal (Contract §4.2 mandates it triggers Dying transition); `unit_died` is the broader sim/UI/telemetry channel. Order is pinned so any `unit_died` listener that wants to read FSM state via `is_dying()` sees a transitioned unit. Documented inline in source.
+
+- **Both signals latched on the same `_zero_emitted` flag.** Over-kill ticks emit neither. Without this, sustained DoT (Phase 6 burning, Phase 7 status effects) past the moment of death would re-trigger Yadgar placements and Farr drains.
+
+**LATER items** (flagged for future waves):
+
+1. **`UnitRegistry` autoload (id → ref dict).** Replaces production tree-walk lookup with O(1) when N>~100. Both CombatComponent and UnitState_Attacking need this; one autoload covers both. ~10 LOC: register/unregister hooks in `Unit._ready`/`_exit_tree`.
+2. **CombatSystem phase coordinator.** Same shape as future MovementSystem coordinator (§6 v0.10.0). When it ships, UnitState_Attacking drops the explicit `combat._sim_tick(dt)` drive call; the coordinator iterates registered components in `unit_id` order during the `combat` phase.
+3. **Cleanup the `has_method(&"take_damage_x100")` guard** in CombatComponent. Was defensive when CombatComponent shipped before HealthComponent's chokepoint; now always-true.
+4. **Phase 5 `Dying` state.** Currently units transition to Dying via the FSM death-preempt only if a Dying state is registered; otherwise the unit queue_frees. Phase 5's polish frame (1s death animation) ships a real Dying state — at that point register it on Unit's base or per-subclass.
+5. **Float `take_damage` deprecation.** All Phase 2+ damage flows through `take_damage_x100`; the float wrapper exists only for legacy callers. If those migrate, the float path can be removed entirely.
+6. **`cause` taxonomy.** Currently sites pass `&"unspecified"` from CombatComponent's default. A small enum constant set in Constants.gd (`CAUSE_MELEE_ATTACK`, `CAUSE_RANGED_ATTACK`, `CAUSE_FARR_DRAIN`, `CAUSE_HERO_FRIENDLY_FIRE`, …) would let FarrSystem branch deterministically on the StringName. Lands when the first non-unspecified consumer ships — the FarrSystem worker-killed-idle drain (wave 2A this session) is the first.
+
+**Coordination notes (cross-agent contamination guard from session 2 lesson):**
+
+- `unit.gd` was edited in **only** the `_apply_balance_data_defaults` method per kickoff scope. AI-engineer's wave 1B parallel work added `_combat_component`, `get_combat()`, and `_UnitStateAttackingScript` references; these landed cleanly because we touched non-overlapping line ranges. Verified via `git diff game/scripts/units/unit.gd` showing only my balance-defaults block as additions.
+- `event_bus.gd` got the new `unit_died` declaration + sink registration. Verified diff scope.
+- `docs/ARCHITECTURE.md` had a §2 row inserted (CombatComponent + EventBus.unit_died) and a §6 v0.16.0 entry. Frontmatter `version` bumped from 0.14.5 → 0.16.0. AI-engineer's UnitState_Attacking row landed in the same wave; balance-engineer's v0.15.0 entry already existed when we started. Cross-agent diffs verified clean.
+
+---
 
 ## 2026-05-01 — Phase 1 session 2 wave 3 (qa-engineer): integration tests — session-2 flows
 
@@ -1185,3 +1413,238 @@ The existing unit test `test_second_select_same_unit_within_window_triggers_type
 - **Updated `test_second_select_same_unit_within_window_triggers_type_select` to `await` instead of removing it.** The test still validates the user-facing contract: "second click on same unit within window expands selection." The implementation detail (synchronous vs. deferred) is hidden behind the await — same shape as the existing `test_session_2_panel.gd` tests that await a process_frame after `add_to_selection`.
 
 - **Did NOT add a "pending expansion target" field to the detector** even though it would let the test skip the await. The deferred call is fire-and-forget; adding an observable field only to satisfy a test would be premature complexity (and the `await` is a more honest representation of the production timing anyway).
+
+---
+
+## 2026-05-01 — Phase 2 session 1 wave 1C (balance-engineer): BalanceData combat fields
+
+**Branch:** `feat/phase-2-session-1`
+
+**Shipped:**
+- Three new `UnitStats` fields: `attack_damage_x100: int = 0`, `attack_speed_per_sec: float = 1.0` (both new); `attack_range: float = 1.5` was pre-existing from Phase 0.
+- `balance.tres` updated: kargar has `attack_damage_x100 = 0`, `attack_speed_per_sec = 1.0`, `attack_range = 0.0`. Iran piyade: `max_hp = 100.0`, `attack_damage_x100 = 1000`, `attack_speed_per_sec = 1.0`, `attack_range = 1.5`. New `turan_piyade` entry mirrors Iran piyade exactly.
+- `Constants.ENGAGE_RADIUS = 4.0` under new `# === COMBAT ===` section.
+- `validate_hard()` extended with three new invariants: `attack_damage_x100 >= 0`, `attack_speed_per_sec > 0` (prevents divide-by-zero in cooldown calc), `attack_range >= 0`.
+- `validate_soft()` extended with high-value warnings: >10000 damage, >100 attack speed, >50 attack range.
+- `test_balance_data.gd`: 8 new tests covering the new schema fields, all 3 unit entries, and the 3 new `validate_hard()` rejection paths. 37/37 passed.
+- `docs/ARCHITECTURE.md` §6 v0.15.0 entry added.
+
+**Did not ship:** RPS effectiveness matrix entries for Turan Piyade (ships Phase 2 session 2 with full unit roster). Kamandar combat fields (also session 2 — intentionally left with defaults).
+
+**Live-game-broken-surface (wave-1C):**
+1. *What state/behavior must work at runtime that no unit test exercises?* Values must be readable via `BalanceData.units[unit_type]` at unit `_ready`. Verify this read seam works for `&"turan_piyade"` — it will fail loudly at first spawn if a key is mistyped. The `constants_version` stamp was also updated so match logs are identifiable.
+2. *What can a headless test not detect that the lead would notice in the editor?* Whether 6 hits to kill a Kargar (10 dmg/hit × 6 = 60 HP) feels too fast or too slow in live play. Whether a 10-second Piyade-vs-Piyade mirror combat (100 HP ÷ 10 dmg/s) feels like a meaningful fight or is too drawn-out.
+3. *What's the minimum interactive smoke test that catches it?* Lead's wave-2B+ in-game combat test. Combat values editable in `balance.tres` without code change.
+
+**Known Godot Pitfalls checklist (per Experiment 01):** Pitfalls 1–4 (mouse filter, FSM wiring, camera basis, re-entrant signals) are N/A for pure data work. No new pitfalls surfaced.
+
+**State for next session:** wave-1C is complete. `turan_piyade` is in `balance.tres` but the `turan_piyade.tscn` scene and `turan_piyade.gd` script are gameplay-systems wave-2A territory — unit data is ready for them to consume. `ENGAGE_RADIUS` is in Constants for the ai-engineer's `UnitState_AttackMove` to use in wave-2B.
+
+**Open questions:** none for balance. Piyade `max_hp` changed from Phase 0's 120 to session-1 spec's 100; if any test outside `test_balance_data.gd` was asserting 120, it should be updated (search for `120.0` in unit tests).
+
+## 2026-05-03 — Phase 2 session 1 wave 2C (ui-developer): floating health bars + F4 attack-range overlay
+
+**Branch:** `feat/phase-2-session-1`
+
+**Shipped:**
+
+1. **`HealthBarsOverlay`** at `game/scripts/ui/health_bars_overlay.gd` + `game/scenes/ui/health_bars_overlay.tscn`. A single fullscreen `Control` overlay that renders floating HP bars above every damaged on-screen unit. Each frame `_process` walks every Iran/Turan unit (linear scene tree walk — same pattern as `box_select_handler._gather_candidate_units`), projects through the live Camera3D, computes color-band tag + width, and queue_redraws. `_draw` paints horizontal bars (4 px tall, padded background, color-coded fill) at the projected positions with `_BAR_HEIGHT_OFFSET = 30 px` above each unit. Color-band thresholds match kickoff §2 (8) exactly: > 70% green, 30%-70% yellow, < 30% red — boundary policy is **inclusive at the yellow band's bounds** (exactly 70% / 30% are yellow), avoiding combat-flicker. Width by `unit_type`: kargar 32 px (small), piyade / turan_piyade 48 px (medium), default fallback medium. Hidden when HP is full (clean visual default — closes the session-2 polish nit where the panel HP bar was full-red regardless of HP). `compute_bar_entries(units, project_unit_callable)` is the public test seam — same shape as `box_select_handler.box_select_units`. Method names avoid `apply_*` (lint rule L1 forbids in `_process` files).
+
+2. **`AttackRangeOverlay`** at `game/scripts/ui/overlays/attack_range_overlay.gd` + `game/scenes/ui/overlays/attack_range_overlay.tscn`. F4 debug overlay drawing attack-range circles around each currently-selected unit. Subscribes to `EventBus.selection_changed` in `_ready`, refreshes `_entries` from `SelectionManager.selected_units` on each broadcast (read-only — Pitfall #4 audit point passed). Registers under `Constants.OVERLAY_KEY_F4` via `DebugOverlayManager.register_overlay(self)`; `_exit_tree` symmetrically disconnects + unregisters. `_draw` samples `_CIRCLE_SAMPLES = 48` points around each circle in world space (XZ ring at Y=0.05, slightly above ground for no z-fight), unprojects each through the live Camera3D, and draws a polyline connecting them. Color: `Color(1.0, 0.85, 0.2, 0.55)` (warm gold, semi-transparent). Boots invisible — F4 keypress is the only show-path. Defensive: skips units without `CombatComponent`, units with `attack_range == 0` (Kargars), freed units between broadcasts.
+
+3. **`game/scenes/main.tscn`** — both overlays wired as children under `Main`, sibling to the existing `ResourceHUD` / `SelectedUnitPanel` / `ClickHandler` / etc.
+
+**Test-count delta:** +34 (`tests/unit/test_health_bars_overlay.gd` 20 + `tests/unit/test_attack_range_overlay.gd` 14). All pass headless. Pre-merge total: 675 tests, 672 passing, 3 pending (pre-existing FarrSystem fallback + navmesh-not-ready × 2). Lint clean across L1-L5.
+
+**Implementation choices (per CLAUDE.md "Escalation" rule #1):**
+
+- **Health bars: kickoff option (b), single Control overlay over per-unit Sprite3D-Viewport.** The kickoff explicitly authorized either approach; (b) was picked for scale-friendliness — one `_draw` call regardless of unit count (vs. one Viewport allocation per unit). Per-unit Viewport is heavy at 50+ units (Godot 4 guidance); single-overlay's only cost is "the entire overlay redraws when ANY unit's HP changes," which at session-1's 15-unit cap is invisible. Documented in the source.
+
+- **Attack-range overlay: Control + projected circle, NOT Node3D + cylinder.** Kickoff brief preferred 3D ("circles in world space stay correct under camera moves"). However: `DebugOverlayManager.register_overlay(key, overlay: Control)` is statically typed against `Control`, and `toggle_overlay` does `_overlays[key] as Control` (returns null for a Node3D — F4 toggle would silently no-op). The wave 2C brief explicitly forbids modifying `debug_overlay_manager.gd` ("touch only via public API"). Per-frame screen projection of N circle samples via `Camera3D.unproject_position` produces visually identical results under any camera move. Documented in the source AND surfaces a new Pitfall candidate (see below).
+
+- **Color-band boundary policy: inclusive at yellow's bounds.** Exactly 70% → yellow, exactly 30% → yellow. Avoids combat-flicker at HP threshold values. Mirrors `farr_gauge.gd`'s color-band convention. Tests assert on stable `BAND_*` StringName tags, not RGB values, so the implementer can tune the palette without breaking tests.
+
+- **`_gather_candidate_units` is permissive (BOTH teams).** Iran AND Turan units get HP bars — a Turan Piyade taking damage from your Piyade should also show its HP draining (combat-feel signal). Intentional vs. `box_select_handler`'s Iran-only filter (correct for SELECTION but wrong for HP-bar VISIBILITY). At Phase 4 (fog of war), this filter will likely tighten to "all teams the player has visibility on."
+
+**Live-game-broken-surface answers (Experiment 01 — refined):**
+
+*HealthBarsOverlay (deliverable 8):*
+
+1. *What state/behavior must work at runtime that no unit test exercises?* The Camera3D unproject_position projection against the live camera. Tests inject a closure; production resolves the camera via `get_viewport().get_camera_3d()` each frame. If the camera rig re-parents (future cinematic), that lookup must keep working. `is_position_behind` filter handles units behind the camera (rare at top-down, possible during free camera). Per-frame cost at 50+ units — at session-1 scale (10 units) the linear walk is invisible; profile when N>50.
+2. *What can a headless test not detect that the lead would notice in the editor?* Bar width readability at default zoom — 32 / 48 px chosen for visibility without overpowering unit silhouettes. Vertical offset `_BAR_HEIGHT_OFFSET = 30 px` tuned for Piyade cubes ~1.0 tall at default isometric distance; cavalry / heroes (Phase 5) may need a per-unit-type offset. Color-band feel: green→yellow→red is the MVP convention; lead may want a smoother gradient (5-line refactor of `_color_for_band`). Whether the bars compete visually with the SelectedUnitPanel or FarrGauge at 1920×1080.
+3. *What's the minimum interactive smoke test that catches it?* Lead's Piyade attacks a Turan Piyade → bar fades green → yellow → red as combat proceeds → bar disappears when target dies. At full HP (boot), no bars visible — clean default.
+
+*AttackRangeOverlay (deliverable 9):*
+
+1. *What state/behavior must work at runtime that no unit test exercises?* The F4 toggle path through `DebugOverlayManager._unhandled_input`. Headless tests register and call `handle_function_key` directly; live mode requires `process_mode = ALWAYS` (already set in Phase 0) and that no other `_unhandled_input` listener earlier in the tree intercepts F4. Symptom of a regression would be "F4 does nothing" with no error. Pitfall #4 — verified handler is read-only by inspection.
+2. *What can a headless test not detect that the lead would notice in the editor?* Whether the circle's color (gold, alpha 0.55) reads as "this is a debug visualization" vs. "this is a gameplay element." Whether the circle is drawn AT the unit's feet (Y=0.05 above ground) or floating awkwardly. At extreme zoom-out, sampled circle vertices would be sparse enough to look polygonal — `_CIRCLE_SAMPLES = 48` smooth at default zoom; tunable.
+3. *What's the minimum interactive smoke test that catches it?* Lead selects 5 Iran Piyade, hits F4 → 5 gold circles on the ground around them, radius 1.5 (matches BalanceData attack_range). Lead hits F4 again → circles disappear. Lead deselects → next F4 press shows nothing.
+
+**Known Godot Pitfalls checklist (per Experiment 01 — refined):**
+
+1. **Mouse filter on Control nodes (Pitfall #1).** ✅ Both overlays set `mouse_filter = MOUSE_FILTER_IGNORE` in BOTH the .tscn AND defensively in `_ready`. Belt-and-braces against editor accidents that flip the .tscn back to STOP. Two new regression-guard tests assert the runtime invariant.
+2. **FSM / per-tick driver wiring (Pitfall #2).** N/A — UI overlays use `_process` polling per Sim Contract §1.5. No tick driver involved.
+3. **Camera basis transform on screen-axis input (Pitfall #3).** N/A — overlays read FROM the camera (project-to-screen), don't write to it.
+4. **Re-entrant signal mutation (Pitfall #4).** ✅ AttackRangeOverlay's `handle_selection_changed` is read-only — walks `SelectionManager.selected_units` and stashes entries; never calls SelectionManager mutators. Verified by code inspection AND captured in a CRITICAL block-comment above the handler. Joins `selected_unit_panel.gd` (read-only) and `double_click_select.gd` (defers via `call_deferred`) as the third concrete `selection_changed` consumer to ship cleanly with the cb95d09 lesson.
+
+**New Pitfall candidate surfaced — Pitfall #5 (proposed):**
+
+> **API parameter narrowing in registries can force visual approach changes downstream.** When a registry/manager accepts overlays/widgets/handlers under a statically-typed parameter (`Control`, `Sprite2D`, etc.), consumers that prefer a different node class must either (a) wrap their preferred class in a thin proxy of the registered type, OR (b) re-implement the semantics inside the accepted type (as wave 2C did with the screen-projected circle). The cost is silent — `as Control` returns null for a Node3D and `toggle_overlay` becomes a no-op with no error. Mitigation: registries should accept the broadest base class their toggle/lookup logic actually uses (e.g., `CanvasItem` if `visible` is the only property accessed; `Node` if even broader).
+>
+> Originating incident: AttackRangeOverlay (wave 2C) wanted Node3D + cylinder per the kickoff brief; `DebugOverlayManager.register_overlay` rejected it; switched to Control + projected polyline. Recommend this entry land in `docs/PROCESS_EXPERIMENTS.md` Experiment 01's pitfalls list once the lead confirms.
+
+**Did not ship** (out of scope per kickoff §2):
+- Floating damage numbers — Phase 5 polish.
+- Tweened bar fade on damage (currently the bar pops to its new ratio instantly each frame). LATER item.
+- Spatial-query gathering for HP bars at high unit counts (Phase 4+ when N>50).
+- Per-unit-type bar offset for cavalry / heroes (Phase 5).
+
+**State for next session / waves:**
+
+- All 34 of my tests pass headless alongside the rest of the project's 675 total. Lint clean.
+- F4 overlay registration is idempotent (DebugOverlayManager re-register replaces) so a future scene reload in editor works without bookkeeping.
+- The `compute_bar_entries` and `handle_selection_changed` test seams parallel `box_select_handler.box_select_units` — same closure-injection pattern. If a future change adds a fourth Camera3D-projection consumer, hoist the projection helper into a shared utility (currently three independent inlinings; the shape is the same enough to warrant a helper at consumer #4).
+- Visual feel knobs the lead may want to tune after live-test: HP bar `_BAR_HEIGHT_OFFSET` (30 px), bar widths (32 / 48 px), color palette in `_color_for_band` (3 constants), F4 circle alpha (0.55), `_CIRCLE_SAMPLES` (48), `_CIRCLE_GROUND_Y` (0.05). All commented as tunable in the source.
+
+**Open questions:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+
+- **Color-band thresholds inclusive at yellow's bounds (exactly 70% → yellow, exactly 30% → yellow).** Boundary policy choice; mirrors `farr_gauge.gd`. Avoids combat-flicker at threshold HP values.
+- **Width fallback for unknown unit_type → medium (48 px).** Safer default than throwing; future unit types (Kamandar, Savar, Asb-savar) get sensible bars on first integration.
+- **F4 overlay starts hidden.** Kickoff §2 (9): "Hits F4 → circles render" implies the toggle is the show-path, not the boot state.
+- **Permissive team filter for HP bars.** Both Iran and Turan damaged units show bars (combat-feel signal). Documented in source.
+- **F4 attack-range Control + projection over Node3D + cylinder.** API constraint forced this; documented thoroughly in source and ARCHITECTURE.md §6 v0.16.2 entry.
+- **Pitfall #5 surfaced as candidate, not committed to PROCESS_EXPERIMENTS.md.** Lead's call whether the pattern is N=1 (just this incident) or warrants a list entry.
+- **No new keys in `translations/strings.csv`.** Both overlays are pure visual (no labels — bars, circles only). i18n table stays untouched.
+
+**Cross-agent coordination:** wave 2A (gameplay-piyade-and-drain — Iran/Turan Piyade + farr drain), wave 2B (ai-eng — UnitState_AttackMove + AttackMoveHandler) ran in parallel with my wave 2C work. `main.tscn` was the contention point: the wave 2B agent added `AttackMoveHandler` while I added `HealthBarsOverlay` + `AttackRangeOverlay`. To avoid cross-contamination, I committed only my own additions to main.tscn (the two overlay nodes + their two `[ext_resource]` declarations); the wave 2B agent's `AttackMoveHandler` remains in the working tree for them to commit separately. This keeps `git log` traceability clean per the kickoff coordination rule ("verify `git diff --staged` shows only your files").
+
+## 2026-05-01 — Phase 2 session 1 BUG-02 fix (ai-engineer)
+
+**Branch:** feat/phase-2-session-1
+**Shipped:**
+- `main.tscn` now wires `AttackMoveHandler` as a sibling Node under `Main`, placed IMMEDIATELY BEFORE `ClickHandler` so reverse-tree-order `_unhandled_input` delivery reaches it first when A+click is pending. The wiring restores what wave 2B (`ai-eng-attack-input`) authored but lost in Deviation 02's parallel-agent commit-staging race. Pitfall #5 (sibling tree-order is load-bearing) was the recognition framework.
+- Two `pending(...)` regression locks in `test_phase_2_session_1_combat.gd` (`test_main_tscn_attack_move_handler_before_click_handler` and `test_pitfall_5_attack_move_handler_before_click_handler_standalone`) flipped to passing assertions. The BUG-02 status comment block at the top of the test file updated to FIXED.
+
+**Did not ship:** nothing — the brief was scoped tight to the wiring + test flip.
+
+**State for next session:**
+- Test count: 716 → 718 passing. No new tests added; two pending locks went green.
+- A+click attack-move is now end-to-end: select Piyade → press A → left-click ground → all selected Piyade walk toward target via `Constants.COMMAND_ATTACK_MOVE`, engaging any enemy en route via `UnitState_AttackMove`.
+- Verified live in headless GUT: scene loads, AttackMoveHandler is at index 4 (before ClickHandler at index 5) — Pitfall #5 ordering invariant holds.
+
+**Open questions:** none.
+
+**Cross-agent coordination:** my fix is a one-line scene-wiring change. The unstaged `docs/ARCHITECTURE.md` v0.17.3 entry (gameplay-systems' BUG-01+BUG-03 documentation, never committed in `47680cd`) and the test-file refinements that were briefly staged earlier in the session are NOT mine and were left for the lead to handle separately — I staged only my own additions per the anti-race protocol.
+
+## 2026-05-04 — Phase 2 session 1 BUG-05 fix (ai-engineer): click-tolerance fallback
+
+**Branch:** feat/phase-2-session-1
+**Shipped:**
+- `game/scripts/input/click_handler.gd` — new `_resolve_unit_from_tolerance(hit)` helper. Both `process_left_click_hit` and `process_right_click_hit` now invoke it when `_resolve_unit_from_hit` returns null AND the hit dict carries a `position`. Walks `SpatialIndex.query_radius(hit_pos, Constants.CLICK_TOLERANCE_RADIUS)` results, filters parents through the existing `_is_unit_shaped` duck-type check, and returns the closest by XZ-distance. Existing direct-hit and far-from-unit behaviors are bitwise-identical (the fallback is gated on null + has-position).
+- `game/scripts/autoload/constants.gd` — new `# === INPUT ===` section with `CLICK_TOLERANCE_RADIUS = 1.5`. Justification: max-mesh-half-extent (~0.35 for Piyade) plus a forgiveness margin big enough to rescue clicks well inside the visual silhouette but small enough to avoid ghost-targeting in dense engagements. Documented in the source comment.
+- `game/tests/unit/test_click_handler.gd` — 7 new tests (2 fix verification + 4 regression guards + 1 configurability assertion). Helper `_make_unit_at(uid, pos, team)` attaches a real `SpatialAgentComponent` so the test exercises the same `SpatialIndex.query_radius` path as production.
+- `docs/ARCHITECTURE.md` v0.17.6 entry — BUG-05 archaeology with fix rationale, why I rejected the option-1 collision-pad-enlarge alternative, the live-game-broken-surface answers per Experiment 01, and a LATER item reinforcing visual-vs-collision parity once art ships.
+
+**Did not ship:**
+- No changes to `unit.tscn` collision sizes (lead's option (1) was deliberately not chosen).
+- No changes to `attack_move_handler.gd`, `box_select_handler.gd`, `selection_manager.gd`, or anything in `game/scripts/units/` — explicitly out of scope per the brief.
+- No new entries to the Known Godot Pitfalls list — this bug is a UX issue (mesh-vs-collision divergence), not a Godot engine pitfall. Distinguished from cases like signal re-entrancy or sibling tree-order that ARE engine surprises.
+
+**Verification:**
+- 725 / 728 tests passing (3 pending — pre-existing FarrSystem fallback + 2 navmesh-not-ready cases). Baseline 718 → 725 = +7 new tests, all green.
+- `tools/lint_simulation.sh` — OK across L1-L5.
+- Pre-commit gate green end-to-end.
+
+**Why option (2) tolerance fallback over option (1) collision-pad-enlarge.** Lead picked (2) before brief was written; my reasoning for confirming the choice (in case anyone re-litigates): enlarging the CharacterBody3D collision shape ripples into pathfinding clearance (NavigationAgent3D radius), NavigationObstacle3D bake parameters, stacking density, and physical separation between adjacent units. The input-side fallback is contained to one input file and one constant — its blast radius is exactly the click-translation pipeline. When art ships and collision shapes get re-tuned to match real silhouettes, the fallback can stay (now functioning as small-error forgiveness) or be removed (the LATER item).
+
+**State for next session:**
+- Click-tolerance is wired symmetrically across left + right click. Future input handlers (drag-select, attack-move-click) do NOT currently use the fallback — `attack_move_handler.gd` and `box_select_handler.gd` were explicitly out of scope. If feel-testing surfaces the same off-center-miss bug for A+click, the fallback pattern is a copy-paste extension.
+- The radius (1.5) is a UX call. Live-test will tell whether to nudge it. Constant-driven, so a future tune is a one-line change in `constants.gd` with no code edits elsewhere.
+- The SpatialIndex query in this path runs from `_input` (off-tick). Per Sim Contract §3.4 this is safe — query_radius is read-shaped against the most-recently-rebuilt index. No new contract drift.
+
+**Open questions:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Radius value 1.5 (not 1.0 or 2.0).** Justified inline in `constants.gd` and in the BUILD_LOG entry above. Lead may tune from live-test.
+- **No fallback in `attack_move_handler.gd` / `box_select_handler.gd`.** The brief scoped to `click_handler` only; expanding scope would have been a Pitfall #5-style "I touched a file I didn't need to" mistake. If the bug recurs in attack-move feel, that's a separate brief.
+- **DEBUG_LOG_CLICKS prints when the fallback resolves a unit.** One log line per rescued click — helps live-test confirm the path is being exercised. Same on/off knob as the existing click logs.
+
+**Cross-agent coordination:** no parallel agents — this was a single-fix solo session. Modified files (`click_handler.gd`, `constants.gd`, `test_click_handler.gd`, `BUILD_LOG.md`, `docs/ARCHITECTURE.md`) are explicitly mine and were verified via `git diff --staged --stat` showing only those five entries before commit.
+
+## 2026-05-01 — Phase 2 session 1 BUG-06 fix (ai-engineer): drive movement._sim_tick from Attacking out-of-range branch
+
+**Branch:** feat/phase-2-session-1
+
+**Shipped:**
+- `game/scripts/units/states/unit_state_attacking.gd` — out-of-range branch in `_sim_tick` now drives `_movement._sim_tick(dt)` after `request_repath(target_pos)`. Mirrors the in-range branch's `combat._sim_tick(dt)` drive. Without this, the per-tick repath request was issued but never polled or executed, so right-clicking a far-away enemy was a no-op (FSM transitioned to Attacking, units stayed put). Same architectural shape as BUG-01 — code inside states only runs when something calls it. The `has_method(&"_sim_tick")` guard mirrors the in-range combat drive's defensive check so test stubs without `_sim_tick` keep working.
+- `game/tests/integration/test_phase_2_session_1_combat.gd` — one new regression test `test_bug06_attacking_drives_movement_when_out_of_range`. Spawns Iran at origin and Turan at `Vector3(5, 0, 0)` (well outside attack_range 1.5), issues `replace_command(COMMAND_ATTACK)`, advances 80 ticks via the real EventBus chain, and asserts (a) attacker moves > 0.5 units from start, (b) distance-to-target decreases by ≥ 0.5, (c) target HP drops after closing the gap. Test uses an in-file `_InstantPathScheduler` stub (subclass of `IPathScheduler`) that resolves `request_repath` synchronously to READY — same shape as the production `NavigationAgentPathScheduler`. The default `MockPathScheduler` resolves on `requested_tick + 1`, which is incompatible with Attacking's per-tick re-issue pattern (each new request cancels the prior PENDING before the mock's resolution boundary). Documented in the test's preamble comment.
+- `docs/ARCHITECTURE.md` v0.17.7 entry — BUG-06 archaeology, why prior tests missed it, the instant-scheduler stub rationale, the AttackMove parallel verification (no fix needed there), live-game-broken-surface answers, and two LATER items (per-tick repath throttle for >50 engaged units; CombatSystem/MovementSystem phase coordinators).
+
+**Did not ship:**
+- No changes to `unit_state_attack_move.gd` despite the architectural parallel. Read the file as part of the fix-scope check: it already drives `_movement._sim_tick(dt)` unconditionally in `_sim_tick` (line 174) because attack-move's primary mode IS movement. AttackMove also issues `request_repath` ONCE in `enter()` (not per-tick like Attacking), so the mock-resolution semantics that bit Attacking don't apply. Flagged for the lead per the brief; no fix dispatched.
+- No changes to `combat_component.gd`, `movement_component.gd`, `unit.gd`, or anything in `input/` / `ui/` — explicitly out of scope per the brief.
+- No new entries to the Known Godot Pitfalls list. BUG-06 is another instance of Pitfall #2 (FSM driver wiring), not a new pitfall — same lesson, reinforced.
+
+**Verification:**
+- 723 / 726 tests passing (3 pending — pre-existing FarrSystem fallback + 2 navmesh-not-ready cases). Baseline 725 → 726 = +1 new test, green. Existing 725 still pass.
+- `tools/lint_simulation.sh` — OK across L1-L5.
+- Pre-commit gate green end-to-end.
+- BUG-06 specific assertions (from test output): attacker moved 3.58 units (start=(0,0,0) → end=(3.58, 0, 0)), distance to target closed 5.00 → 1.42, target HP dropped 10000 → 8000.
+
+**State for next session:**
+- Right-click-on-out-of-range-enemy now works end-to-end via the standard production EventBus chain. Live smoke test: select a Piyade, right-click a Turan across the map, Piyade walks over and engages.
+- The `_InstantPathScheduler` test stub is local to `test_phase_2_session_1_combat.gd` (in-file class). If other test files need synchronous path resolution they should NOT copy-paste; surface it as a shared test helper instead. This is a deliberate scope-containment choice for the fix dispatch.
+- Per-tick `request_repath` is documented intent in `unit_state_attacking.gd` (moving-target tracking). At Phase 2's 15-unit cap the cost is fine. Past ~50 engaged units this becomes a hot spot — LATER item is a stale-distance threshold or per-N-ticks throttle. Tracked in v0.17.7 and the Attacking docstring.
+- Same "drive call moves into the phase coordinator" LATER item from BUG-01 still applies — when CombatSystem and MovementSystem coordinators ship, both `combat._sim_tick` and `movement._sim_tick` drives move out of `Attacking._sim_tick` and into their respective phase iterations. Attacking then only calls advisory writes (`set_target`, `request_repath`).
+
+**Open questions:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **`_InstantPathScheduler` as an in-file class on the test, not a shared helper.** The brief said "tiny fix, don't refactor unrelated code." Promoting the stub to a shared helper would be premature abstraction; if a second test needs the same shape, that's the moment to extract. Today, only BUG-06 needs it.
+- **Test name `test_bug06_attacking_drives_movement_when_out_of_range`** matches the existing BUG-01 / BUG-03 naming convention (`test_bug0N_<short_description>`) and is placed adjacent to the BUG-01 test for symmetry per the brief.
+- **80-tick advance budget in the regression test.** Math: closing 5.0 - 1.5 = 3.5 units at move_speed 2.5/sec = ~42 ticks of motion, plus FSM-transition tick + cooldown ticks once in range = ~80 with slack. Documented inline in the test.
+
+**Cross-agent coordination:** no parallel agents — this was a single-fix solo session. Modified files (`unit_state_attacking.gd`, `test_phase_2_session_1_combat.gd`, `BUILD_LOG.md`, `docs/ARCHITECTURE.md`) are explicitly mine and were verified via `git diff --staged --stat` showing only those four entries before commit.
+
+## 2026-05-01 — Phase 2 session 1 post-live-test Farr-gauge contrast fix (ui-developer)
+
+**Branch:** feat/phase-2-session-1
+
+**Shipped:**
+- `game/scripts/ui/farr_gauge.gd` — visual-only contrast fix. Two changes: (1) added a dark semi-transparent backdrop rect (`Color(0.04, 0.05, 0.08, 0.78)`) painted FIRST in `_draw()` so the gauge frames itself as a HUD widget against any underlying terrain; (2) recolored the four band/fill palettes to high-contrast cool-counterpoint hues against the sandy-ochre terrain Color(0.76, 0.69, 0.53). New band palette: `<15` saturated red `(0.85, 0.15, 0.15)`, `15-40` dark slate `(0.20, 0.20, 0.30)`, `40-70` cool blue `(0.20, 0.50, 0.85)` (was warm ivory), `≥70` saturated green `(0.25, 0.85, 0.30)` (was warm gold). Fill arc colors shifted to match (saturated red, light cool grey, bright blue, bright green). Tier 2 threshold tick recolored to blue to align with its band; Kaveh tick stays red. Background ring darkened to `(0.05, 0.05, 0.08, 0.85)` for crisper contrast against the new bright fills. Added `_draw_backdrop()` helper, `_COLOR_BACKDROP`, `_BACKDROP_PADDING` constants. Backdrop is sized to enclose the ring + tick extent + a small padding.
+- No tscn change — backdrop is a `_draw()` rect, not a sibling node, which keeps the scene tree clean and means no new MOUSE_FILTER inheritance to police (Pitfall #1 stays satisfied; the `mouse_filter = MOUSE_FILTER_IGNORE` on the root Control still covers everything since there are no descendant Controls).
+- No test change. Existing 13 tests in `test_farr_gauge.gd` assert against StringName tags (`BAND_RED`, `BAND_DIM`, `BAND_IVORY`, `BAND_GOLD`) and fill_ratio math, NOT against RGB values — by deliberate design (the gauge file's docstring §Color-band classification block calls this out: "implementer can tune the palette without breaking tests"). Verified: 723 / 726 tests passing, 3 pre-existing pending. No new tests warranted — this is a pure visual tune; a snapshot/contrast test would be over-engineering for a placeholder palette.
+
+**Approach picked: backdrop + recolor (both).**
+
+Rationale: the live-test failure mode was readability against the sandy terrain, AND the warm-on-warm color scheme. A backdrop alone fixes the "the gauge fades into the terrain" problem but leaves the bands warm-on-dark, where the dim/grey and ivory bands would still be hard to distinguish from each other. A recolor alone fixes inter-band contrast but leaves the gauge's outer edges blurring into terrain along the threshold-tick ends. Doing both is ~6 lines of incremental code over either approach alone and gives the strongest readability win. Cost was a placeholder color shift away from the original "ivory + gold" warmth — but per the §Color-band classification docstring, those colors were already explicitly tunable and were never gameplay invariants. When real art lands, the palette can return to warm-over-fully-rendered-HUD-frame, and the backdrop becomes a stylized HUD bezel.
+
+**Verification:**
+- 723 / 726 tests passing (3 pending pre-existing — unchanged from prior commit). All 13 farr_gauge tests still green: scene loads, `mouse_filter == IGNORE` (root and descendants), seed-from-FarrSystem, signal updates `target_farr` (clamps high/low), threshold reads from BalanceData, fill ratio at 0/40/100/midpoint, every band classification (0, 14.99, 15, 39.99, 40, 50, 69.99, 70, 100), tween settles, signal-to-band integration (gold + red).
+- `tools/lint_simulation.sh` — OK across L1-L5. No new gameplay constants — color values are visual-only and live in the gauge per the existing docstring policy ("Tunable per balance-engineer / lead live-test feedback — these are visual choices, not gameplay invariants").
+- Pre-commit gate green end-to-end.
+
+**Did not ship:**
+- No changes to `farr_system.gd`, `event_bus.gd`, `balance.tres`, `farr_config.gd`, `constants.gd` — out of scope per the brief, and none were needed (visual-only fix).
+- No changes to band thresholds (`<15`, `15-40`, `40-70`, `≥70`) or threshold tick positions (Tier 2 = 40, Kaveh = 15) — balance-engineer's domain, locked by brief.
+- No changes to gauge size (`_MIN_SIZE = 64×64`), position (set by HUD layout), or `_ARC_RADIUS` / `_ARC_THICKNESS`. Brief: "visual contrast only."
+- No backdrop-as-Panel-node approach. Considered: a sibling `Panel` with a StyleBoxFlat would have given rounded corners and been "more Godot-idiomatic." Rejected because it adds a node to the scene tree (which then needs MOUSE_FILTER_IGNORE policing), introduces a theme-asset dependency, and the readability win over a flat `draw_rect` is purely cosmetic. The placeholder-graphics policy in CLAUDE.md explicitly favors simple shapes — a flat dark rect is exactly that.
+- No pulsing animation for the `<15 red` band (spec §4.4 "<15 red and pulsing") — that's a deferred Phase 2 item per the gauge's existing DEFERRED docstring block; this contrast fix is bounded by the brief.
+
+**State for next session:**
+- The new palette uses cool hues (blue, green) for the "safe" bands. This is a placeholder choice — when real art ships and the HUD has a fully-rendered frame/bezel, the palette can return to the spec's "ivory" and "gold" warm cues without contrast concerns. Documented inline in the new comment block above the band-color constants.
+- Backdrop padding (6px) was tuned to match the tick-extent + a comfortable margin at 64×64 widget size. If the HUD ever scales the gauge up, the constant scales linearly with `_ARC_RADIUS`.
+- The Kaveh tick stays saturated red so it's visually unambiguous as the "danger" line. The Tier 2 tick now matches the blue band — visually announces "you can advance" with the same hue as its band.
+- Live-test next: lead should be able to see Farr drain 50 → 49 against sandy terrain at a glance (the entire reason for this fix). If the green/blue feels jarring relative to the placeholder Iran/Turan unit colors, a one-line tune in the band-color constants is all that's needed.
+
+**Open questions:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Both backdrop + recolor, not one alone.** Rationale above. Lead's brief said "Pick the simplest path — backdrop alone might solve it; band recolor might be enough; both is also fine." I judged "both" the most-readable and the marginal complexity (one helper function, one extra `draw_rect` call) is trivial.
+- **Cool blue (40-70) and cool green (≥70) instead of "saturated warm" alternatives.** The brief listed cool counterpoint hues as suggestion 2; against a warm sandy terrain that's the contrast direction. Saturating the existing warm hues would have improved them slightly but kept the warm-on-warm collision. The semantic shift (gold→green for "high Farr") is mildly unconventional but green-as-good is universal in HUD design (HP bars, status icons), and the green hue is bright enough that Farr-rising to 70+ still feels like an upward, "good" cue.
+- **Backdrop drawn as `draw_rect` (not Panel/StyleBoxFlat).** Adds zero scene-tree nodes, zero MOUSE_FILTER policing burden, zero theme dependencies. Aligned with CLAUDE.md placeholder-graphics policy.
+- **No new tests.** The existing 13 tests already cover the band-tag and fill-ratio contracts the fix preserves. A "contrast assertion" test would have to compare RGB luminance against an expected terrain color, which (a) couples the test to terrain colors I don't own, and (b) the gauge is rendered in a transparent test viewport with no terrain — the test would be vacuous. Visual contrast is a live-test-loop concern; the existing color-band-tag tests cover the logical contract.
+
+**Cross-agent coordination:** no parallel agents — this was a single-fix solo session. Modified files (`game/scripts/ui/farr_gauge.gd`, `BUILD_LOG.md`) are explicitly mine and were verified via `git diff --staged --stat` showing only those two entries before commit.

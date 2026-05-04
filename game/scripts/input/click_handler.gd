@@ -147,6 +147,11 @@ func process_left_click_hit(hit: Dictionary) -> void:
 		SelectionManager.deselect_all()
 		return
 	var unit: Object = _resolve_unit_from_hit(hit)
+	if unit == null:
+		# Tolerance fallback — terrain hit may still be NEAR a selectable unit.
+		# Visible mesh > collision shape, so a click on a unit's silhouette can
+		# fall through to terrain. SpatialIndex.query_radius rescues those.
+		unit = _resolve_unit_from_tolerance(hit)
 	if unit != null:
 		if DEBUG_LOG_CLICKS:
 			var uid_v: Variant = unit.get(&"unit_id")
@@ -181,6 +186,16 @@ func _handle_right_click(screen_pos: Vector2) -> void:
 ## If no units are selected, no-op (the caller's _handle_right_click also
 ## short-circuits, but this method is defensive so direct test calls behave
 ## the same way as the input-driven path).
+##
+## Dispatch table (Phase 2 session 1 wave 2B):
+##   - hit empty / no selection → no-op.
+##   - hit is a Unit AND hit_unit.team != selected_team → Attack Command per
+##     selected unit. Payload carries target_unit_id; UnitState_Attacking
+##     resolves the live ref via scene-tree walk.
+##   - hit is a Unit AND hit_unit.team == selected_team → no-op (friendly
+##     fire / follow / guard are later phases — documented choice).
+##   - hit is terrain (collider isn't unit-shaped) → group-move dispatch via
+##     GroupMoveController (existing wave 2C behavior).
 func process_right_click_hit(hit: Dictionary) -> void:
 	var sel: Array = SelectionManager.selected_units
 	if sel.is_empty():
@@ -193,14 +208,46 @@ func process_right_click_hit(hit: Dictionary) -> void:
 		if DEBUG_LOG_CLICKS:
 			print("[click] RIGHT: no raycast hit → no-op")
 		return
-	# If the hit is a unit, this is the attack-move case — Phase 2. For wave 2
-	# we ignore unit hits on right-click. (Right-clicking a friendly unit might
-	# eventually become "follow" or "guard"; right-clicking an enemy is the
-	# attack target. Both are out of scope here.)
+	# Branch on hit-unit team relative to the selection's team. The reference
+	# team is read off the first selected unit's `team` field (selection is
+	# always single-team in MVP — Iran selecting their own; cross-team multi-
+	# select would imply spectator mode which is out of scope for Phase 2).
 	var hit_unit: Object = _resolve_unit_from_hit(hit)
+	if hit_unit == null:
+		# Tolerance fallback: a right-click slightly off-center on an enemy's
+		# silhouette can hit terrain instead of the unit's collision pad. If a
+		# selectable unit lives within Constants.CLICK_TOLERANCE_RADIUS of the
+		# terrain hit, treat the click as if it had hit that unit.
+		hit_unit = _resolve_unit_from_tolerance(hit)
 	if hit_unit != null:
+		var hit_team: int = _read_team(hit_unit)
+		var sel_team: int = _read_team(sel[0])
+		if hit_team != sel_team:
+			# Enemy: dispatch Attack command per selected unit.
+			var target_uid_v: Variant = hit_unit.get(&"unit_id")
+			if target_uid_v == null or typeof(target_uid_v) != TYPE_INT:
+				if DEBUG_LOG_CLICKS:
+					print("[click] RIGHT: enemy hit but unit_id missing/typed wrong → no-op")
+				return
+			var target_uid: int = int(target_uid_v)
+			if DEBUG_LOG_CLICKS:
+				print("[click] RIGHT: attack command target_unit_id=",
+					target_uid, " selected=", sel.size())
+			# Per-unit dispatch: UnitState_Attacking handles target resolution
+			# + range checks. Group formation engagement priority (split fire,
+			# focus fire) is Phase 3+ — for now every selected friendly attacks
+			# the same target.
+			for u in sel:
+				if u != null and is_instance_valid(u):
+					u.replace_command(
+						Constants.COMMAND_ATTACK,
+						{&"target_unit_id": target_uid},
+					)
+			return
+		# Friendly: no-op. Follow / guard / friendly-fire are later phases.
 		if DEBUG_LOG_CLICKS:
-			print("[click] RIGHT: hit unit (attack-move is Phase 2) → no-op")
+			print("[click] RIGHT: hit friendly unit (same team=",
+				sel_team, ") → no-op")
 		return
 	var target: Vector3 = hit.get(&"position", Vector3.ZERO)
 	if DEBUG_LOG_CLICKS:
@@ -211,6 +258,18 @@ func process_right_click_hit(hit: Dictionary) -> void:
 	# Unit.replace_command(&"move", {target}) per live unit (is_instance_valid
 	# filtered).
 	_GroupMove.dispatch_group_move(sel, target)
+
+
+## Read the `team` field off a Unit-shaped Node, defaulting to TEAM_NEUTRAL
+## when the field is missing. Same defensive pattern as _is_unit_shaped's
+## duck-typing — avoids an `is Unit` check that would re-introduce the
+## class_name registry race.
+func _read_team(unit: Object) -> int:
+	if unit == null:
+		return Constants.TEAM_NEUTRAL
+	if not (&"team" in unit):
+		return Constants.TEAM_NEUTRAL
+	return int(unit.get(&"team"))
 
 
 # ============================================================================
@@ -272,6 +331,59 @@ func _resolve_unit_from_hit(hit: Dictionary) -> Object:
 			return node
 		node = node.get_parent()
 	return null
+
+
+## Tolerance fallback — when the raycast hit is terrain (no unit resolved),
+## probe the SpatialIndex for selectable units within
+## `Constants.CLICK_TOLERANCE_RADIUS` of the hit position on the XZ plane and
+## return the closest one. Returns null if the hit dict has no `position`
+## (defensive — shouldn't happen for a real raycast hit) or if no unit-shaped
+## node lives within the tolerance ring.
+##
+## Why this exists: visible meshes are larger than collision pads (Piyade
+## visual `0.5×0.7×0.5` vs collision `0.4×0.55×0.4`). A click on the rendered
+## silhouette can miss the collision body and the raycast then strikes the
+## ground beneath/beside it. Without this fallback, RTS players misread the
+## game as broken — clicks they intended for the unit walked the selection
+## past it (bug surfaced in Phase 2 session 1 live-test).
+##
+## SpatialIndex.query_radius returns SpatialAgentComponent nodes (their parent
+## is the unit). We walk each parent through the same `_is_unit_shaped`
+## duck-type as `_resolve_unit_from_hit` to keep the contract identical.
+## XZ-projection is the contract per docs/SIMULATION_CONTRACT.md §3.1; Y is
+## ignored when measuring distance from the hit point.
+func _resolve_unit_from_tolerance(hit: Dictionary) -> Object:
+	if not hit.has(&"position"):
+		return null
+	var hit_pos: Vector3 = hit.get(&"position", Vector3.ZERO)
+	var nearby: Array = SpatialIndex.query_radius(
+		hit_pos, Constants.CLICK_TOLERANCE_RADIUS)
+	if nearby.is_empty():
+		return null
+	var best: Node = null
+	var best_d2: float = INF
+	for agent in nearby:
+		if not is_instance_valid(agent):
+			continue
+		var owner_node: Node = agent.get_parent()
+		if owner_node == null:
+			continue
+		if not _is_unit_shaped(owner_node):
+			continue
+		# XZ-only squared distance — matches SpatialIndex's projection.
+		var op: Vector3 = (owner_node as Node3D).global_position \
+			if owner_node is Node3D else Vector3.ZERO
+		var dx: float = op.x - hit_pos.x
+		var dz: float = op.z - hit_pos.z
+		var d2: float = dx * dx + dz * dz
+		if d2 < best_d2:
+			best_d2 = d2
+			best = owner_node
+	if best != null and DEBUG_LOG_CLICKS:
+		var uid_v: Variant = best.get(&"unit_id")
+		print("[click] tolerance fallback resolved unit id=", uid_v,
+			" at d2=", best_d2, " from hit_pos=", hit_pos)
+	return best
 
 
 ## Duck-type check: is `n` a Unit (or behaves like one)?

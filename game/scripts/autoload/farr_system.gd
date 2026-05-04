@@ -54,6 +54,14 @@ var value_farr: float:
 
 func _ready() -> void:
 	_load_starting_value_from_balance_data()
+	# Subscribe to unit_died for the worker-killed-idle drain (Phase 2
+	# session 1 wave 2A deliverable 10). The listener is the only place
+	# that mutates Farr from cross-system state; per the cb95d09 lesson
+	# (BUILD_LOG 2026-05-04), it confines itself to apply_farr_change —
+	# the documented chokepoint — and does NOT touch any state-holder
+	# that has its own unit_died listener.
+	if not EventBus.unit_died.is_connected(_on_unit_died):
+		EventBus.unit_died.connect(_on_unit_died)
 
 
 # Defensive load: balance-engineer ships BalanceData.tres in this same wave.
@@ -163,6 +171,55 @@ func reset() -> void:
 		float(target_x100) / 100.0,
 		SimClock.tick,
 	)
+
+	# Re-arm the unit_died subscription. _ready connected it once on
+	# autoload init; if a test or harness called reset() and the listener
+	# is somehow disconnected (e.g., because this autoload was reloaded
+	# in an unusual flow), restore it. Idempotent — connect only if not
+	# already connected.
+	if not EventBus.unit_died.is_connected(_on_unit_died):
+		EventBus.unit_died.connect(_on_unit_died)
+
+
+# Listener for EventBus.unit_died. Implements the worker-killed-idle Farr
+# drain (-1 Farr) per 01_CORE_MECHANICS.md §4 + 02d_PHASE_2_KICKOFF.md §2
+# deliverable 10.
+#
+# Cause-string convention (per the kickoff brief, strategy (c)):
+# HealthComponent's death emit augments the cause with an "_idle_worker"
+# suffix when the dying unit is a Kargar AND its FSM is in &"idle". We
+# detect that suffix here. The convention is forward-extensible — other
+# "X killed Y in state Z" drains can use suffixes like "_fleeing",
+# "_engaged" without extending the signal signature.
+#
+# Re-entrancy guard (cb95d09 lesson): this handler MUST only call
+# apply_farr_change. Any state-holder mutation here would risk the
+# re-entrant signal pattern that bit DoubleClickSelect → SelectionManager.
+# apply_farr_change emits farr_changed (a different signal); nothing in
+# the unit_died listener chain reads farr_changed in a way that would
+# loop back.
+#
+# Source-Node lookup: the signal carries killer_unit_id (int), not a Node
+# reference. apply_farr_change accepts a Node (for telemetry symmetry with
+# the rest of the chokepoint API) — we pass null here and accept that the
+# F2 overlay log entry will show source_unit_id = -1 instead of the
+# killer's actual id. Routing the killer Node through here would require
+# a UnitRegistry lookup (LATER per BUILD_LOG 2026-05-04). For the live-
+# game smoke test (DoD §11) the lead sees the gauge tween; the source
+# id in the F2 log is a polish item.
+func _on_unit_died(_unit_id: int, _killer_unit_id: int,
+		cause: StringName, _position: Vector3) -> void:
+	# Parse the cause string. The "_idle_worker" suffix is the canonical
+	# marker (HealthComponent set it when conditions matched). Use String
+	# conversion + ends_with so the parser tolerates any base cause
+	# prefix ("melee_attack_idle_worker", future "ranged_attack_idle_worker"
+	# from Kamandar damage, etc.).
+	if not String(cause).ends_with("_idle_worker"):
+		return
+	# This emit happens during a sim tick (HealthComponent.take_damage_x100
+	# is on-tick by Sim Contract §1.3). apply_farr_change asserts on-tick
+	# so we're safe.
+	apply_farr_change(-1.0, "worker_killed_idle", null)
 
 
 func apply_farr_change(amount: float, reason: String, source_unit: Node) -> void:

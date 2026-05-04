@@ -253,14 +253,18 @@ func test_on_sim_phase_only_fires_on_movement_phase() -> void:
 
 
 # ============================================================================
-# 3. Right-click on a unit is a no-op (Phase 2 attack-move out of scope)
+# 3. Right-click on a same-team unit is a no-op
 # ============================================================================
 
-## Integration check: right-clicking a unit collider must not issue a Move command.
+## Integration check: right-clicking a same-team unit collider must not issue
+## a command (friendly fire / follow / guard semantics are later phases).
 ##
-## Already covered in test_click_handler.gd with FakeUnit. This integration
-## version uses real Kargar instances to confirm the duck-type resolver works
-## with the actual Unit shape (replace_command + command_queue present).
+## Phase 2 session 1 wave 2B made right-click-on-unit team-aware:
+##   - hit_unit.team != selected_team → Attack Command (covered in
+##     test_click_handler.gd::test_right_click_on_enemy_unit_pushes_attack_command).
+##   - hit_unit.team == selected_team → no-op (this test).
+## Both Kargars default to TEAM_NEUTRAL when spawned via _spawn_kargar without
+## an explicit team override — matching same-team => no-op.
 func test_right_click_on_unit_is_noop_integration() -> void:
 	_kargar = _spawn_kargar(Vector3.ZERO)
 	_kargar2 = _spawn_kargar(Vector3(5.0, 0.0, 0.0))
@@ -272,7 +276,9 @@ func test_right_click_on_unit_is_noop_integration() -> void:
 	add_child_autofree(handler)
 	handler.set_test_mode(true)
 
-	# Synthetic hit where the collider IS a real unit (_kargar2).
+	# Synthetic hit where the collider IS a real unit (_kargar2). Both kargars
+	# share team = TEAM_NEUTRAL (default), so the right-click is a same-team
+	# friendly hit — must be a no-op.
 	var hit: Dictionary = {
 		&"collider": _kargar2,
 		&"position": _kargar2.global_position,
@@ -280,10 +286,10 @@ func test_right_click_on_unit_is_noop_integration() -> void:
 	}
 	handler.process_right_click_hit(hit)
 
-	# _kargar must NOT have received a Move command — it stays in Idle.
+	# _kargar must NOT have received any command — it stays in Idle.
 	assert_eq(_kargar.fsm.current.id, &"idle",
-		"right-click on a unit must not issue a Move command to selected units "
-		+ "(Phase 2 attack-move is not yet implemented)")
+		"right-click on a same-team unit must not issue any command to "
+		+ "selected units (friendly fire / follow / guard are later phases)")
 
 
 # ============================================================================

@@ -122,25 +122,45 @@ const _ARC_THICKNESS: float = 6.0
 const _CENTER_OFFSET: Vector2 = Vector2(32.0, 32.0)
 const _MIN_SIZE: Vector2 = Vector2(64.0, 64.0)
 
-# Color bands (per spec §4.4)
-const _COLOR_BAND_RED: Color = Color(0.7, 0.18, 0.18, 0.25)        # <15
-const _COLOR_BAND_DIM: Color = Color(0.55, 0.55, 0.6, 0.18)        # 15-40
-const _COLOR_BAND_IVORY: Color = Color(0.95, 0.92, 0.78, 0.25)     # 40-70
-const _COLOR_BAND_GOLD: Color = Color(1.0, 0.85, 0.35, 0.30)       # ≥70
+# Color bands (per spec §4.4).
+# Phase 2 session 1 post-live-test recolor: prior palette (warm reds + ivory +
+# gold) blended with the sandy-ochre terrain Color(0.76, 0.69, 0.53). Lead
+# could not visually confirm a Farr drain (50→49) at a glance. New palette
+# uses cool-counterpoint hues for the safe bands (blue 40-70, green ≥70) and
+# saturated/dark-slate for the danger bands so contrast holds against warm
+# terrain. Semantic intent preserved: red still = danger, the bright/saturated
+# "high" colors still read as "good." The shift from gold→green for Tier 3 and
+# ivory→blue for Tier 2 is a placeholder choice; once real art lands the
+# palette can return to warm hues over a fully-rendered HUD frame.
+const _COLOR_BAND_RED: Color = Color(0.85, 0.15, 0.15, 0.40)       # <15
+const _COLOR_BAND_DIM: Color = Color(0.20, 0.20, 0.30, 0.50)       # 15-40
+const _COLOR_BAND_IVORY: Color = Color(0.20, 0.50, 0.85, 0.45)     # 40-70
+const _COLOR_BAND_GOLD: Color = Color(0.25, 0.85, 0.30, 0.45)      # ≥70
 
 # Foreground arc colors (the moving fill). Brightness shifts as displayed_farr
 # crosses bands. Per balance-engineer's "linear interpolation, no bias curve"
-# approval — simple band lookup, no gradient.
-const _COLOR_FILL_RED: Color = Color(0.95, 0.25, 0.20)
-const _COLOR_FILL_DIM: Color = Color(0.7, 0.7, 0.75)
-const _COLOR_FILL_IVORY: Color = Color(0.95, 0.92, 0.78)
-const _COLOR_FILL_GOLD: Color = Color(1.0, 0.85, 0.35)
-const _COLOR_RING_BG: Color = Color(0.15, 0.15, 0.17, 0.55)
-const _COLOR_LABEL: Color = Color(0.95, 0.95, 0.92)
+# approval — simple band lookup, no gradient. Saturated cool/danger hues so
+# the moving fill stands out against the sandy terrain (and the dark
+# backdrop panel below it).
+const _COLOR_FILL_RED: Color = Color(1.0, 0.25, 0.20)
+const _COLOR_FILL_DIM: Color = Color(0.75, 0.78, 0.85)
+const _COLOR_FILL_IVORY: Color = Color(0.35, 0.65, 1.0)
+const _COLOR_FILL_GOLD: Color = Color(0.35, 1.0, 0.40)
+const _COLOR_RING_BG: Color = Color(0.05, 0.05, 0.08, 0.85)
+const _COLOR_LABEL: Color = Color(1.0, 1.0, 0.95)
 
-# Threshold tick colors (per balance-engineer's prominence guidance).
-const _COLOR_TIER2_TICK: Color = Color(1.0, 0.85, 0.35)            # gold
-const _COLOR_KAVEH_TICK: Color = Color(0.95, 0.20, 0.18)           # red
+# Backdrop panel — a small dark rounded rectangle painted BEHIND the ring so
+# the gauge reads as a HUD widget regardless of underlying terrain (sandy,
+# grassy, future map themes). Cheapest possible visual containment per the
+# kickoff brief: no scene-tree change, no asset, just an extra draw call.
+const _COLOR_BACKDROP: Color = Color(0.04, 0.05, 0.08, 0.78)
+const _BACKDROP_PADDING: float = 6.0
+
+# Threshold tick colors (per balance-engineer's prominence guidance). Tier 2
+# tick recolored to match the new ivory→blue band so the "you can advance"
+# cue still aligns visually with its band; Kaveh tick stays saturated red.
+const _COLOR_TIER2_TICK: Color = Color(0.45, 0.75, 1.0)            # blue
+const _COLOR_KAVEH_TICK: Color = Color(1.0, 0.25, 0.20)            # red
 const _TICK_LENGTH_OUTSIDE: float = 4.0
 const _TICK_LENGTH_INSIDE: float = 4.0
 const _TICK_THICKNESS_TIER2: float = 2.0
@@ -301,6 +321,13 @@ func _apply_displayed_farr(new_value: float) -> void:
 # === RENDERING ==============================================================
 
 func _draw() -> void:
+	# Backdrop — dark semi-transparent rect framing the whole widget. Painted
+	# first so every other draw call lands on top. Without this, the gauge
+	# competed with whatever terrain happened to be under it (sandy ochre in
+	# Phase 2 was the failure mode); with it, the gauge reads as a HUD
+	# widget regardless of underlying world color.
+	_draw_backdrop()
+
 	# Background ring — the unfilled track.
 	draw_arc(_CENTER_OFFSET, _ARC_RADIUS, _ARC_START_ANGLE,
 		_ARC_START_ANGLE + _ARC_FULL_SWEEP, 64, _COLOR_RING_BG, _ARC_THICKNESS)
@@ -329,6 +356,15 @@ func _draw() -> void:
 	# Numeric label — center of the gauge. Keeps the Phase 0 readout's
 	# debugging utility visible. Translation key UI_FARR (no new keys needed).
 	_draw_numeric_label()
+
+
+func _draw_backdrop() -> void:
+	# Backdrop sized to enclose the ring + ticks (which extend
+	# _TICK_LENGTH_OUTSIDE past the radius), with a small padding margin.
+	var half_extent: float = _ARC_RADIUS + _TICK_LENGTH_OUTSIDE + _BACKDROP_PADDING
+	var top_left: Vector2 = _CENTER_OFFSET - Vector2(half_extent, half_extent)
+	var rect: Rect2 = Rect2(top_left, Vector2(half_extent * 2.0, half_extent * 2.0))
+	draw_rect(rect, _COLOR_BACKDROP, true)
 
 
 func _draw_color_bands() -> void:

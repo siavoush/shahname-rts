@@ -124,6 +124,7 @@ const SPATIAL_CELL_SIZE: float = 8.0
 const STATE_IDLE: StringName = &"idle"
 const STATE_MOVING: StringName = &"moving"
 const STATE_ATTACKING: StringName = &"attacking"
+const STATE_ATTACK_MOVE: StringName = &"attack_move"
 const STATE_GATHERING: StringName = &"gathering"
 const STATE_CONSTRUCTING: StringName = &"constructing"
 const STATE_CASTING: StringName = &"casting"
@@ -135,6 +136,7 @@ const STATE_DYING: StringName = &"dying"
 
 const COMMAND_MOVE: StringName = &"move"
 const COMMAND_ATTACK: StringName = &"attack"
+const COMMAND_ATTACK_MOVE: StringName = &"attack_move"
 const COMMAND_GATHER: StringName = &"gather"
 const COMMAND_BUILD: StringName = &"build"
 const COMMAND_ABILITY: StringName = &"ability"
@@ -200,6 +202,36 @@ const GROUP_MOVE_OFFSET_RADIUS: float = 2.0
 # Lives here, not in FarrConfig, because no balance pass should ever change it.
 
 const FARR_MAX: float = 100.0
+
+
+# === COMBAT ==================================================================
+# Distance within which an attack-moving unit auto-engages a visible enemy.
+# Sized to be larger than the longest melee attack range (1.5) so units engage
+# before they're already at the enemy's feet, but smaller than typical visual
+# screen distance so they don't engage off-path-of-travel. 4.0 = ~2.7× max
+# melee range. Tuned later when ranged units (Kamandar) ship in session 2.
+const ENGAGE_RADIUS: float = 4.0
+
+
+# === INPUT ===================================================================
+# Click-tolerance fallback radius used by ClickHandler. When a left/right click
+# raycast hits TERRAIN (not a unit) we follow up with
+# `SpatialIndex.query_radius(hit_pos, CLICK_TOLERANCE_RADIUS)` for selectable
+# units. If the closest result lies within tolerance, the click is treated as
+# if it had hit that unit. Lets clicks slightly off-center on a unit's
+# silhouette still target the unit instead of falling through to a move/deselect
+# command — fixes the live-test bug where a right-click on a Turan Piyade
+# silhouette walked the click point past the unit's collision box (collision
+# box `0.4×0.55×0.4` is smaller than the visual mesh `0.5×0.7×0.5`, so a click
+# on the visual edge can hit terrain instead of the body).
+#
+# Sized as max-mesh-half-extent (~0.35 for Piyade visual) + a forgiveness
+# margin so a click well inside the visual silhouette but missing the collision
+# pad is rescued, while clicks farther than ~half-a-tile fall through cleanly
+# to the existing terrain behavior. Larger values risk "ghost target" clicks
+# in dense engagements; smaller values shrink the rescue zone below useful.
+# Structural — the radius is a UX parameter, not a balance knob.
+const CLICK_TOLERANCE_RADIUS: float = 1.5
 
 
 # === DEBUG OVERLAY KEYS ======================================================

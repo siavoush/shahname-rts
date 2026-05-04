@@ -185,13 +185,107 @@ Both reviewers ran against PR #4 after the lead had already live-tested and the 
 
 - **Dropped** if: reviewers consistently produce zero actionable findings AND token cost exceeds 25% of session spend, OR they produce noise that wastes lead time without preventing drift.
 
-**Verdict:** _TBD — fill at Phase 2 session 1 merge._
+**Verdict:** **KEPT WITH REFINEMENT.**
+
+Filled at Phase 2 session 1 wave-close (2026-05-03), post-reviewer-dispatch, pre-merge.
+
+**Metrics captured:**
+
+| Metric | How measured | Baseline (sess. 2) | Actual (Phase 2 sess. 1) | Δ |
+|---|---|---|---|---|
+| Live-game bugs found at boot | Lead live-test | 1 | 0 (qa caught 4 first) | −100% |
+| Bugs caught at wave-close review | Reviewer findings flagged blocking/actionable | n/a | 0 blocking + 5 actionable docs/contract findings | new metric |
+| Bugs caught by qa wave 3 (BEFORE reviewers) | qa report bug count | 0 (caught nothing lead missed) | 4 (BUG-01..04 — 3 production, 1 derivative) | +400% |
+| Manifesto/contract findings | architecture-reviewer findings | 0 | 6 (F-1..F-6 in architecture-reviewer's review) | new metric |
+| Refactor candidates surfaced | reviewers' "next-session priority" list | 2 | 5 (UnitRegistry triple-LATER, CombatSystem coordinator, suffix Constants, encapsulation helper, MatchHarness migration) | +150% |
+| Test count delta | Σ tests added | +37 | +176 (542→718) | +376% |
+| Time kickoff → merge | Wall clock | ~3h | ~5h+ (multiple bug-fix cycles + 2 deviations) | +67% |
+| Reviewer token cost | Σ task notification totals (review-only dispatches) | n/a (informal trial) | TBD — recover from logs | new metric |
+| Lead's review-processing time | Wall clock to read both reviews + route fixes | n/a | ~30 min | new metric |
+
+**Verdict justification:**
+
+The wave-close review **did** add structural value the lead's live-test wouldn't surface — specifically:
+1. **arch-reviewer's F-1 + F-2** (missing §6 entries for BUG-01+03 and BUG-04 fixes) preserve archaeology that future sessions need. The lead noticed the v0.17.3 hole during commit history audits but the architecture-reviewer's structured grade caught BOTH F-1 and F-2 before merge.
+2. **godot-code-reviewer's BUG-04 verification** (three-trace audit: same-target / new-target / freed-target) confirmed the fix didn't introduce a new bug — that's a level of static-analysis rigor the lead's live-test cannot match.
+3. **5 candidate Pitfalls evaluated with calibrated KEEP/DEFER/REJECT decisions** — godot-code-reviewer correctly distinguished engine pitfalls (#5 sibling tree-order, #8 double-deferred queue_free) from process patterns (#7 commit-race) and rejected unsupported claims (#9 lambda capture). This is exactly the lens the wave-close review was designed to provide.
+4. **arch-reviewer's contract-fit findings** caught the §2 phase-order drift (combat in movement phase) explicitly — a real but acknowledged-as-LATER architectural deviation.
+
+The intervention's value comes from **structural drift detection**, not from "catching a bug the lead would have missed at boot." Phase 2 session 1's bugs (BUG-01..04) were caught by qa wave 3's integration tests, not by either reviewer. But the reviewers caught the v0.17.3/v0.17.5 §6 documentation holes that would have rotted the project's archaeology over multiple phases.
+
+**Refinement applied to the intervention going forward:**
+
+- **Reviewer briefs must include the explicit §6 entry checklist.** The reviewer-brief-side checklist works; the agent-brief-side reminder ("write a §6 entry per non-trivial deliverable") is observably insufficient when agents fall into the verification-loop pattern. The reviewer should be the second line of defense for archaeology.
+- **`SendMessage` in reviewer tool list confirmed working.** Both reviewers proactively returned their structured output via SendMessage; no idle-without-content failures repeated from the informal trial. Mitigation from Experiment 02's setup is validated.
+
+**Status:** **Kept after one formal session.** Per the original notes, graduates to permanent rule in `STUDIO_PROCESS.md` only after a SECOND confirming session (Phase 2 session 2). The session-2 trial will measure: do the reviewers continue to surface ≥1 actionable archaeological/contract finding per session?
 
 **Notes:**
 - Like Experiment 01, N=1 single session is directional only. Graduates to permanent rule after second confirming session.
 - The trial run revealed a **process bug to fix before the formal trial:** the original `arch-reviewer-pr4` instance went idle for ~10 minutes without producing review content; required a direct nudge from the lead via Claude Code's agent-message UI. Hypothesis: read-only reviewer agents (no `SendMessage` in tools) may have ambiguous return-output mechanics. **Mitigation for Phase 2:** add `SendMessage` to both reviewer agents' tool list so they can proactively report.
 - The trial run also revealed the reviewers' value compounds when given the Known Godot Pitfalls list as their checklist. Phase 2's wave-close briefs should include the latest pitfalls list as part of the briefing, not just by reference.
 - Cost-of-measurement: ~20 min lead time per wave (write the briefs, read the reviews, route fixes). Tracked in the metrics table.
+
+## Mid-flight deviations log
+
+Per the discipline rule, deviations from the documented studio process (kickoff doc, STUDIO_PROCESS §9, ongoing experiments) are allowed when running into a known wall, but must be explicit and logged.
+
+### Deviation 01 — lead committed wave-1A + wave-1B on behalf of stuck agents (2026-05-03, Phase 2 session 1)
+
+**Trigger:** `gameplay-combat-core` (subagent_type=gameplay-systems, name=gameplay-combat-core) entered a verification loop after completing implementation work in the shared working tree. Each subsequent task on their list looked at the file already in the tree and reported "task already shipped by another agent, standing down" — when in fact the work was theirs from earlier in the same session, just uncommitted. Three rounds of explicit lead messaging ("this is YOUR work, please commit") failed to break the loop. `ai-eng-attacking-state` had similar behavior (work in tree, never reached the commit step).
+
+**Process expectation violated:** kickoff doc §5 "End of session: Lead live-tests before PR" — but agents are supposed to commit their own work first. STUDIO_PROCESS §9 (2026-05-01) "verify git tree at session close" requires a tree to verify — agents weren't producing one.
+
+**Deviation:** lead manually staged and committed wave-1A's gameplay-combat-core work and wave-1B's ai-eng-attacking-state work as a bundled commit (`81cf42a`), with body crediting both agents for authorship and tagging the commit as a mid-flight deviation. balance-engineer's wave-1C work (`a2b444f`) was committed by the agent themselves cleanly — no deviation there.
+
+**Cost avoided:** continued waste of conversation rounds messaging stuck agents. Each "task already shipped, standing down" message + lead nudge cycle was costing ~5 turns. Without the deviation, work in the tree would have been blocked indefinitely or required a fresh agent spawn (which costs more tokens than just committing).
+
+**Cost paid:**
+- **Cleaner attribution loss:** the `81cf42a` commit credits two agents in one commit body, not the standard one-agent-per-commit shape. Future archaeologists reading `git log` see "lead committed two agents' work" as an outlier vs. the standard pattern. Mitigated by explicit body documentation.
+- **Experiment 01 (live-game-broken-surface) data quality dent:** the deviation may correlate with the agent verification-loop bug in some way — was the loop a side effect of agents trying to apply the live-game-broken-surface section to too many tasks and getting confused about state? Need to verify in the session-close retro. Don't conflate the symptoms.
+- **Experiment 02 (wave-close review) trial setup:** the wave-close review is supposed to happen AFTER all wave commits land, BEFORE PR. The lead-deviation commits land on the branch normally; wave-close review still runs against the branch. So this doesn't break Experiment 02's setup, but it does muddy the "agents are responsible for their own commits" assumption built into the agent dispatch process.
+
+**Resolution / mitigation for future:**
+- **Fold into the next agent-dispatch brief**: explicitly tell each agent that they are responsible for committing their own work BEFORE standing down. Add "if you find work in the tree that you don't recognize, run `git diff` to verify whether it's yours from earlier in the session — your task list is the authority on what you've done."
+- **Investigate root cause**: the verification loop pattern is likely a fundamental Claude Code agent confusion about session continuity. May be worth a separate Experiment 03 on commit-discipline patterns once the current Experiments 01 and 02 close.
+- **Recurring problem:** session 2 had a similar shared-tree-coordination problem (different mechanism: agents stepped on each other's docs). This is the second session this class of issue has surfaced. Tagging as a recurring pattern worth its own study.
+
+**Verdict on the deviation itself:** appropriate for the situation but indicative of a process gap that should be closed in Phase 2 session 2's kickoff brief.
+
+### Deviation 02 — parallel-agent commit-staging race produced a misattributed commit (2026-05-03, Phase 2 session 1 wave 2)
+
+**Trigger:** three wave-2 agents (`gameplay-piyade-and-drain`, `ai-eng-attack-input`, `ui-dev-health-and-overlay`) running in parallel each modified shared files (`main.tscn`, `BUILD_LOG.md`, `docs/ARCHITECTURE.md`) AND wrote their own files. Each agent's editor / linter kept re-asserting their changes into the working tree. ui-dev-health-and-overlay was first to attempt commit:
+1. Staged 9 of their own files. Verified `git diff --staged --stat` showed only theirs.
+2. Between the verification and the actual commit, parallel agents' background writes restored more files into the index.
+3. The pre-commit hook committed what was in the index at commit-time — which included gameplay-piyade-and-drain's wave-2A files AND ai-eng-attack-input's wave-2B files alongside / instead of ui-dev's wave-2C.
+4. Result: commit `aa429ef` has the title `feat(ui): floating health bars + F4 attack-range overlay — Phase 2 session 1 wave 2C` but its content is the wave 2A + 2B work (Piyade, Turan_Piyade, Farr drain, attack-move handler, UnitState_AttackMove, click_handler enemy-right-click branch).
+5. ui-dev-health-and-overlay caught the discrepancy post-commit, made a corrective commit `c203dfe` with their actual wave-2C deliverables and a clear note in the body explaining what happened. They tried `git reset --soft HEAD~1` to amend the misattributed commit but the action was sandbox-denied as destructive.
+
+**Process expectation violated:**
+- STUDIO_PROCESS §9 (2026-05-01) "verify git tree at session close, not just lint + tests" — the lead-side equivalent of `git diff --staged --stat` JUST BEFORE commit was not enforceable across parallel-agent boundaries. The tree changes between verification and commit.
+- STUDIO_PROCESS §9 (2026-05-01) "Pre-commit gate must filter to tracked files when N agents run in parallel" — was already a known LATER item; this incident is the second occurrence (first was Phase 0 session 4 wave 1). Still not implemented.
+- Implicit but unstated rule: "atomic commits per agent." The race violates this even though no agent intended to.
+
+**Deviation:** lead is logging the issue and standing down agents whose work landed in the misattributed commit. NOT rewriting history (would require destructive `git reset` / `git rebase` and is contained to local branch — but per discipline rule, deviations are painful and serious; we don't compound by adding history rewrite). The commit log will permanently show the misattribution; the corrective commit `c203dfe` documents it in its body. Future readers of `git log` will see both commits and understand the race.
+
+**Cost avoided:**
+- Avoided destructive `git reset --hard` / `git rebase -i` operations that could have lost wave-2C work entirely under tooling error.
+- Avoided multi-round agent coordination ("you commit first, no you commit first") which was already the failure mode.
+
+**Cost paid:**
+- Permanent ugly archaeology in `git log` — `aa429ef`'s commit message lies about its content. Mitigated by `c203dfe`'s body explanation, but a future agent reading just `git log --oneline` will be confused.
+- The wave 2A and wave 2B agents have ambiguous "did I commit or not" state — needs explicit lead messaging to release them. Adds ~5 turns of cleanup messaging.
+- `BUILD_LOG.md` and `docs/ARCHITECTURE.md` entries from wave 2A and 2B are NOT in `aa429ef` — they were in the working tree at commit time but didn't make it into the index. They're shipped via `c203dfe` (which had the wave-2C agent's docs additions only). The wave 2A and 2B retro entries are LOST FROM HISTORY unless reconstructed.
+
+**Resolution / mitigation for future:**
+- **Implement the LATER item from STUDIO_PROCESS §9 (2026-05-01):** pre-commit gate must filter to tracked files via `git diff --cached --name-only`. Already documented; long overdue.
+- **Add to wave brief template:** "before staging, freeze the working tree by signaling other agents to pause. After staging, run `git diff --staged --stat` AND `git diff --stat` (the unstaged-but-modified set should not include any of YOUR files). Commit immediately."
+- **Better: serialize wave-end commits.** Instead of N agents committing in parallel, lead nominates an order at wave-close. Each agent commits, signals done, next agent commits. Costs a few turns of coordination but eliminates the race entirely.
+- **Best (long-term):** each agent commits IMMEDIATELY after completing each TDD red→green cycle, not at end-of-wave. By the time wave-close happens, only docs need committing. The agent gameplay-combat-core's own retrospective from Deviation 01 made this exact point.
+
+**Pattern recognition:** this is the THIRD session this class of cross-agent shared-tree issue has surfaced (session 2 had docs-stomp; this session has Deviation 01 verification-loop AND Deviation 02 commit-race). The pattern is now load-bearing enough to warrant its own experiment in a future session — Experiment 03: incremental commits + serialized wave-close. Promote when current Experiments 01/02 close.
+
+**Verdict on the deviation itself:** appropriate. Rewriting history would have introduced more risk than the misattribution itself. The commit log will live with the lie; the in-line body of `c203dfe` and this Deviation 02 entry are the explanatory record.
 
 ## Resolved experiments (archive)
 

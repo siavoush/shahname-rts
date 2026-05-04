@@ -55,6 +55,7 @@ var _history_capacity: int = Constants.STATE_MACHINE_HISTORY_SIZE_UNIT
 const _COMMAND_KIND_TO_STATE_ID: Dictionary = {
 	&"move": &"moving",
 	&"attack": &"attacking",
+	&"attack_move": &"attack_move",  # Phase 2 session 1 wave 2B
 	&"gather": &"gathering",
 	&"build": &"moving",        # build → walk to site → constructing (rider)
 	&"ability": &"casting",

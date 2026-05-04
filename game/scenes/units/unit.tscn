@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3 uid="uid://shahnameh_unit_base"]
+[gd_scene load_steps=11 format=3 uid="uid://shahnameh_unit_base"]
 
 ; unit.tscn — base Unit scene template per
 ; docs/STATE_MACHINE_CONTRACT.md §5.1 + 02b_PHASE_1_KICKOFF.md §2 (1).
@@ -25,6 +25,7 @@
 [ext_resource type="Script" path="res://scripts/units/components/movement_component.gd" id="3_movement"]
 [ext_resource type="Script" path="res://scripts/units/components/selectable_component.gd" id="4_selectable"]
 [ext_resource type="Script" path="res://scripts/core/spatial_agent_component.gd" id="5_spatial"]
+[ext_resource type="Script" path="res://scripts/units/components/combat_component.gd" id="6_combat"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_1"]
 ; Worker silhouette: small, cube-like. Scale at the MeshInstance3D level
@@ -74,6 +75,16 @@ script = ExtResource("2_health")
 ; Unit._ready from BalanceData.units[unit_type].move_speed. The path
 ; scheduler is pulled from PathSchedulerService.scheduler at _ready.
 script = ExtResource("3_movement")
+
+[node name="CombatComponent" type="Node" parent="."]
+; CombatComponent extends SimNode. attack_damage_x100, attack_speed_per_sec,
+; and attack_range are initialized in Unit._ready from BalanceData.units[unit_type].
+; A Kargar has attack_damage_x100 = 0 (workers don't attack); the component
+; still ships on every Unit so combat-capable subclasses (Piyade, Hero, ...)
+; don't need a scene-tree edit per concrete unit type. UnitState_Attacking
+; (ai-engineer's wave 1B) drives this component's _sim_tick directly until
+; the future CombatSystem phase coordinator ships.
+script = ExtResource("6_combat")
 
 [node name="SelectableComponent" type="Node" parent="."]
 ; SelectableComponent extends SimNode. The selection ring is auto-created
