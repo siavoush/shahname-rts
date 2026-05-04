@@ -174,8 +174,21 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 		# Step 3: out of range — walk toward target. Re-issue each tick so a
 		# moving target stays tracked. The scheduler cancels prior in-flight
 		# requests internally on each new request, so this is safe.
+		# Drive movement._sim_tick so the path is actually consumed and the
+		# unit's global_position advances toward the target. Without this
+		# drive call, request_repath fires every tick but MovementComponent
+		# never polls the result or steps the position — same architectural
+		# shape as BUG-01 (UnitState_Attacking owned set_target but not the
+		# combat._sim_tick drive). LATER: when the MovementSystem phase
+		# coordinator ships, it iterates registered MovementComponents in
+		# the &"movement" phase and the explicit drive moves out of this
+		# state — same refactor shape as the BUG-01 CombatSystem coordinator
+		# note above. Defensive has_method guard mirrors the in-range
+		# combat._sim_tick branch so test stubs without _sim_tick don't crash.
 		if _movement != null:
 			_movement.request_repath(target_pos)
+			if _movement.has_method(&"_sim_tick"):
+				_movement._sim_tick(dt)
 		return
 
 	# Step 4: in range — stop driving movement, hand off to CombatComponent.

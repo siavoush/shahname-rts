@@ -203,6 +203,127 @@ func test_bug01_combat_sim_tick_drives_damage_via_fsm() -> void:
 
 
 # ============================================================================
+# BUG-06 regression-lock — Attacking drives MovementComponent when out of range
+# ============================================================================
+# After the Phase 2 session 1 fix (ai-engineer), UnitState_Attacking._sim_tick
+# drives _movement._sim_tick(dt) after request_repath in the OUT-OF-RANGE
+# branch — mirroring the in-range branch's combat._sim_tick(dt) drive. Without
+# this drive, the unit issues a path request every tick but never polls the
+# result or steps its position, so right-clicking a far-away enemy was a no-op.
+#
+# Test pattern: spawn attacker at origin, target outside attack_range, drive
+# ticks via the real EventBus chain, assert the attacker's global_position
+# advances toward the target (closes the gap) and eventually damage fires
+# once it lands in range.
+#
+# Why an instant-resolve scheduler:
+#   The default MockPathScheduler resolves on `requested_tick + 1`. Attacking
+#   re-issues request_repath every tick (per its docstring — moving-target
+#   tracking), which cancels the prior PENDING request before mock's
+#   resolution boundary, starving any path. The PRODUCTION
+#   NavigationAgentPathScheduler resolves SYNCHRONOUSLY (sees-line query),
+#   which is the live-game contract. We stub a synchronous mock here so the
+#   test exercises the same shape as production. This is a documented Phase 2
+#   constraint; the per-tick-throttle is a Phase 3+ refactor.
+#
+# If this test ever fails again, BUG-06 has regressed OR the per-tick re-issue
+# logic in Attacking._sim_tick has lost its drive call.
+
+# Tiny in-file scheduler that resolves request_repath synchronously to READY
+# with a straight-line two-waypoint path. Mirrors the live
+# NavigationAgentPathScheduler shape (path returns READY same tick), without
+# requiring a baked navmesh in headless tests.
+class _InstantPathScheduler extends "res://scripts/core/path_scheduler.gd":
+	var _next_id: int = 1
+	var _requests: Dictionary = {}
+
+	func request_repath(unit_id: int, from: Vector3, to: Vector3, priority: int) -> int:
+		var rid: int = _next_id
+		_next_id += 1
+		var wps: PackedVector3Array = PackedVector3Array()
+		wps.append(from)
+		wps.append(to)
+		_requests[rid] = {
+			&"unit_id": unit_id,
+			&"priority": priority,
+			&"state": PathState.READY,
+			&"waypoints": wps,
+		}
+		return rid
+
+	func poll_path(request_id: int) -> Dictionary:
+		if not _requests.has(request_id):
+			return {&"state": PathState.FAILED, &"waypoints": PackedVector3Array()}
+		var entry: Dictionary = _requests[request_id]
+		return {
+			&"state": int(entry[&"state"]),
+			&"waypoints": entry[&"waypoints"],
+		}
+
+	func cancel_repath(request_id: int) -> void:
+		if not _requests.has(request_id):
+			return
+		var entry: Dictionary = _requests[request_id]
+		if int(entry[&"state"]) == PathState.READY:
+			entry[&"state"] = PathState.CANCELLED
+
+
+func test_bug06_attacking_drives_movement_when_out_of_range() -> void:
+	# Swap in the instant scheduler so request_repath resolves same-tick (the
+	# live NavigationAgentPathScheduler contract). See note above.
+	var instant: Variant = _InstantPathScheduler.new()
+	PathSchedulerService.set_scheduler(instant)
+
+	_iran = _spawn_iran(Vector3.ZERO)
+	# Place Turan WAY outside attack_range (1.5). The attacker must walk
+	# toward Turan before any damage can land.
+	_turan = _spawn_turan(Vector3(5.0, 0.0, 0.0))
+	# Re-inject the instant scheduler over the per-spawn mock injection.
+	_iran.get_movement()._scheduler = instant
+
+	var start_pos: Vector3 = _iran.global_position
+	var target_pos: Vector3 = _turan.global_position
+	var initial_dist: float = start_pos.distance_to(target_pos)
+	var initial_hp_x100: int = int(_turan.get_health().hp_x100)
+
+	# Issue the Attack command via the standard player path.
+	_iran.replace_command(Constants.COMMAND_ATTACK,
+		{&"target_unit_id": int(_turan.unit_id)})
+
+	# Advance enough ticks for the attacker to close 5.0 - 1.5 = 3.5 units at
+	# move_speed 2.5/sec → ~42 ticks of motion. 80 ticks gives slack for the
+	# initial-FSM-transition tick + a few attack-cooldown ticks once in range.
+	_advance(80)
+
+	var end_pos: Vector3 = _iran.global_position
+	var end_dist: float = end_pos.distance_to(target_pos)
+
+	# Primary assertion: attacker MOVED. Without the drive call, end_pos
+	# would still be at origin.
+	assert_lt(end_pos.distance_to(start_pos), initial_dist + 0.01,
+		"sanity: attacker did not teleport past target")
+	assert_gt(end_pos.distance_to(start_pos), 0.5,
+		"BUG-06 regression-lock: attacker MUST move toward out-of-range target "
+		+ "via _movement._sim_tick drive call (start=%s end=%s)"
+		% [str(start_pos), str(end_pos)])
+
+	# Secondary assertion: gap to target closed.
+	assert_lt(end_dist, initial_dist - 0.5,
+		"BUG-06: distance to target must decrease (initial=%.2f end=%.2f)"
+		% [initial_dist, end_dist])
+
+	# Tertiary assertion: once in range, damage lands. Confirms the full
+	# walk-then-attack chain works end-to-end.
+	var hp_after: int = int(_turan.get_health().hp_x100)
+	assert_lt(hp_after, initial_hp_x100,
+		"BUG-06: attacker must land at least one hit after closing the gap "
+		+ "(initial_hp=%d after=%d)" % [initial_hp_x100, hp_after])
+
+	# Restore the default mock scheduler so subsequent tests behave normally.
+	PathSchedulerService.set_scheduler(_mock)
+
+
+# ============================================================================
 # Flow 1: Single-attack flow (via direct combat drive — bypasses BUG-01)
 # ============================================================================
 

@@ -1572,3 +1572,38 @@ The existing unit test `test_second_select_same_unit_within_window_triggers_type
 - **DEBUG_LOG_CLICKS prints when the fallback resolves a unit.** One log line per rescued click — helps live-test confirm the path is being exercised. Same on/off knob as the existing click logs.
 
 **Cross-agent coordination:** no parallel agents — this was a single-fix solo session. Modified files (`click_handler.gd`, `constants.gd`, `test_click_handler.gd`, `BUILD_LOG.md`, `docs/ARCHITECTURE.md`) are explicitly mine and were verified via `git diff --staged --stat` showing only those five entries before commit.
+
+## 2026-05-01 — Phase 2 session 1 BUG-06 fix (ai-engineer): drive movement._sim_tick from Attacking out-of-range branch
+
+**Branch:** feat/phase-2-session-1
+
+**Shipped:**
+- `game/scripts/units/states/unit_state_attacking.gd` — out-of-range branch in `_sim_tick` now drives `_movement._sim_tick(dt)` after `request_repath(target_pos)`. Mirrors the in-range branch's `combat._sim_tick(dt)` drive. Without this, the per-tick repath request was issued but never polled or executed, so right-clicking a far-away enemy was a no-op (FSM transitioned to Attacking, units stayed put). Same architectural shape as BUG-01 — code inside states only runs when something calls it. The `has_method(&"_sim_tick")` guard mirrors the in-range combat drive's defensive check so test stubs without `_sim_tick` keep working.
+- `game/tests/integration/test_phase_2_session_1_combat.gd` — one new regression test `test_bug06_attacking_drives_movement_when_out_of_range`. Spawns Iran at origin and Turan at `Vector3(5, 0, 0)` (well outside attack_range 1.5), issues `replace_command(COMMAND_ATTACK)`, advances 80 ticks via the real EventBus chain, and asserts (a) attacker moves > 0.5 units from start, (b) distance-to-target decreases by ≥ 0.5, (c) target HP drops after closing the gap. Test uses an in-file `_InstantPathScheduler` stub (subclass of `IPathScheduler`) that resolves `request_repath` synchronously to READY — same shape as the production `NavigationAgentPathScheduler`. The default `MockPathScheduler` resolves on `requested_tick + 1`, which is incompatible with Attacking's per-tick re-issue pattern (each new request cancels the prior PENDING before the mock's resolution boundary). Documented in the test's preamble comment.
+- `docs/ARCHITECTURE.md` v0.17.7 entry — BUG-06 archaeology, why prior tests missed it, the instant-scheduler stub rationale, the AttackMove parallel verification (no fix needed there), live-game-broken-surface answers, and two LATER items (per-tick repath throttle for >50 engaged units; CombatSystem/MovementSystem phase coordinators).
+
+**Did not ship:**
+- No changes to `unit_state_attack_move.gd` despite the architectural parallel. Read the file as part of the fix-scope check: it already drives `_movement._sim_tick(dt)` unconditionally in `_sim_tick` (line 174) because attack-move's primary mode IS movement. AttackMove also issues `request_repath` ONCE in `enter()` (not per-tick like Attacking), so the mock-resolution semantics that bit Attacking don't apply. Flagged for the lead per the brief; no fix dispatched.
+- No changes to `combat_component.gd`, `movement_component.gd`, `unit.gd`, or anything in `input/` / `ui/` — explicitly out of scope per the brief.
+- No new entries to the Known Godot Pitfalls list. BUG-06 is another instance of Pitfall #2 (FSM driver wiring), not a new pitfall — same lesson, reinforced.
+
+**Verification:**
+- 723 / 726 tests passing (3 pending — pre-existing FarrSystem fallback + 2 navmesh-not-ready cases). Baseline 725 → 726 = +1 new test, green. Existing 725 still pass.
+- `tools/lint_simulation.sh` — OK across L1-L5.
+- Pre-commit gate green end-to-end.
+- BUG-06 specific assertions (from test output): attacker moved 3.58 units (start=(0,0,0) → end=(3.58, 0, 0)), distance to target closed 5.00 → 1.42, target HP dropped 10000 → 8000.
+
+**State for next session:**
+- Right-click-on-out-of-range-enemy now works end-to-end via the standard production EventBus chain. Live smoke test: select a Piyade, right-click a Turan across the map, Piyade walks over and engages.
+- The `_InstantPathScheduler` test stub is local to `test_phase_2_session_1_combat.gd` (in-file class). If other test files need synchronous path resolution they should NOT copy-paste; surface it as a shared test helper instead. This is a deliberate scope-containment choice for the fix dispatch.
+- Per-tick `request_repath` is documented intent in `unit_state_attacking.gd` (moving-target tracking). At Phase 2's 15-unit cap the cost is fine. Past ~50 engaged units this becomes a hot spot — LATER item is a stale-distance threshold or per-N-ticks throttle. Tracked in v0.17.7 and the Attacking docstring.
+- Same "drive call moves into the phase coordinator" LATER item from BUG-01 still applies — when CombatSystem and MovementSystem coordinators ship, both `combat._sim_tick` and `movement._sim_tick` drives move out of `Attacking._sim_tick` and into their respective phase iterations. Attacking then only calls advisory writes (`set_target`, `request_repath`).
+
+**Open questions:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **`_InstantPathScheduler` as an in-file class on the test, not a shared helper.** The brief said "tiny fix, don't refactor unrelated code." Promoting the stub to a shared helper would be premature abstraction; if a second test needs the same shape, that's the moment to extract. Today, only BUG-06 needs it.
+- **Test name `test_bug06_attacking_drives_movement_when_out_of_range`** matches the existing BUG-01 / BUG-03 naming convention (`test_bug0N_<short_description>`) and is placed adjacent to the BUG-01 test for symmetry per the brief.
+- **80-tick advance budget in the regression test.** Math: closing 5.0 - 1.5 = 3.5 units at move_speed 2.5/sec = ~42 ticks of motion, plus FSM-transition tick + cooldown ticks once in range = ~80 with slack. Documented inline in the test.
+
+**Cross-agent coordination:** no parallel agents — this was a single-fix solo session. Modified files (`unit_state_attacking.gd`, `test_phase_2_session_1_combat.gd`, `BUILD_LOG.md`, `docs/ARCHITECTURE.md`) are explicitly mine and were verified via `git diff --staged --stat` showing only those four entries before commit.
