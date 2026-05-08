@@ -34,6 +34,55 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-08 — Phase 2 session 2 wave 3 (qa-engineer): integration tests for full RPS roster + live combat chain
+
+**Branch:** `feat/phase-2-session-2`
+
+**Shipped:**
+
+1. **`tests/integration/test_phase_2_session_2_rps_combat.gd` — 17 new integration tests.** Covers the live-game-broken-surface for waves 1+2: every test drives real unit scenes via the production EventBus chain (Unit._on_sim_phase → CombatComponent._sim_tick → CombatMatrix.get_multiplier() → take_damage_x100).
+
+2. **RPS triangle 1v1 outcomes (5 tests).** Piyade>Savar (1.5×, ~300 ticks to Savar HP=0), Savar>Kamandar (2.0×, ~99 ticks to Kamandar HP=0), Kamandar>Piyade at 6.0 range (1.5× accumulated advantage, Piyade HP=0), AsbSavar>Piyade held at range (1.2×, Piyade HP=0), Turan-mirror pair (TuranPiyade>TuranSavar, symmetric 1.5× fold). Death detected via `hp_x100 ≤ 0` — `queue_free.call_deferred` defers free to process_frame which doesn't run inside `_test_run_tick` loops.
+
+3. **Turan-fold correctness via live chain (1 test).** Iran pair and Turan pair advance in parallel; HP drops must match within 100 x100. Catches raw-dict-access regression (would produce 1.0× instead of 1.5×, visible as 1000 vs 1500 damage).
+
+4. **33-unit match-start roster verification (4 tests).** All unit_types non-empty (dual-init guard), 6 wave-2B types × 3 each, correct team assignment per type, unit_id sequence 1..33.
+
+5. **Kiting-math correctness (2 tests).** AsbSavar fires before Piyade closes melee distance analytically (1+ shot in the close window); second-shot timing verified at tick 55 (50-tick cooldown).
+
+6. **Cross-feature 5v5 RPS smoke (1 test).** main.tscn load → 5 Iran Piyade focus-fire on 3 Turan Savar → at least 1 Savar reaches HP=0 within 600 ticks → at least 1 Piyade still alive. Full EventBus chain exercised.
+
+7. **CombatComponent live-path audit (4 tests).** Kamandar 1.5×, Savar 2.0×, TuranKamandar Turan-fold 1.5×, AsbSavar 1.2× — all from real unit scenes + real balance.tres, exact HP assertions after first hit.
+
+8. **`docs/ARCHITECTURE.md` updated.** §2 new row for Phase 2 session 2 wave 3 integration tests. §6 v0.18.2 entry with full coverage summary + death-detection pattern note.
+
+**Test-count delta:** 879 → 896 (+17 net). 893 passing, 3 pre-existing pending (FarrSystem fallback, navmap-not-ready, navmesh-not-ready). Lint clean (0 violations).
+
+**Files created:**
+- `game/tests/integration/test_phase_2_session_2_rps_combat.gd` (17 tests)
+
+**Files modified:**
+- `docs/ARCHITECTURE.md` (§2 new row + §6 v0.18.2 entry)
+- `BUILD_LOG.md` (this entry)
+
+**Did not ship:**
+- Did NOT modify any game script or scene (wave 1+2 scope, settled).
+- Did NOT add new scenarios to `tests/harness/scenarios.gd` — the RPS combat tests spawn units directly per the live-scene-spawn pattern, not via MatchHarness scenarios (MatchHarness is heavier infrastructure; direct spawn is more legible for outcome tests).
+- Did NOT add a MatchHarness helper for hp-death-detection — the pattern is documented in §6 v0.18.2 for future reference.
+
+**Live-game-broken-surface (Experiment 01):**
+1. *Runtime state no unit test exercises:* Real `CombatComponent._sim_tick` driven by real `Unit._on_sim_phase` listening to real `EventBus.sim_phase` from real `SimClock`, with real `BalanceData.combat.get_multiplier()`. Every test in this file exercises the FULL chain from BalanceData → scaled damage → HP decrement.
+2. *Headless can't detect:* Battle FEEL (1.5× decisive vs marginal), visual clustering of unit groups, selection ergonomics at scale. Not headless concerns.
+3. *Min interactive smoke analog:* Cross-feature test (5 Iran Piyade vs 3 Turan Savar) is the headless equivalent of the lead's DoD §3 scenario.
+
+**Key design finding — death detection pattern:**
+`queue_free.call_deferred()` defers node free to end-of-frame; `_test_run_tick()` loops don't run process_frame so `is_instance_valid(unit)` stays true after `hp_x100=0`. All outcome tests in this file use `hp_x100 ≤ 0` for death detection. Documented in ARCHITECTURE.md §6 v0.18.2 for future tests.
+
+**Known Godot Pitfalls applied:**
+- **#7 (shared-doc staging race):** `git diff docs/ARCHITECTURE.md` + `git diff BUILD_LOG.md` confirmed only my additions before staging.
+
+**Open questions / state for next session:** none. Wave 3 integration tests lock in the waves 1+2 live-combat behaviors headlessly. Reviewer agents (Experiment 02) should look for: (a) any test that passes vacuously (unit didn't move/attack), (b) whether 600-tick budget in the cross-feature smoke is generous enough.
+
 ## 2026-05-08 — Phase 2 session 2 wave 2B (gameplay-systems): match-start spawn extended to full Phase 2 RPS roster (33 units)
 
 **Branch:** `feat/phase-2-session-2`
