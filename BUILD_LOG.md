@@ -34,6 +34,73 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-08 — Phase 2 session 2 wave 2A (gameplay-systems): RPS multiplier integration in CombatComponent
+
+**Branch:** `feat/phase-2-session-2`
+
+**Shipped:**
+
+1. **CombatComponent now scales `attack_damage_x100` by the RPS multiplier at the live damage-fire site.** Per `02e_PHASE_2_SESSION_2_KICKOFF.md` §2 deliverable 5. The `_sim_tick` step 6 (take_damage fire) looks up `combat_matrix.get_multiplier(attacker_unit_type, target.unit_type)`, multiplies into `attack_damage_x100`, rounds to int via `roundi`, and passes the SCALED amount to `take_damage_x100`. The float multiplier never lands on a SimNode field — Sim Contract §1.6 forbids storing the float; the local Variant slot is fine because it doesn't survive the tick.
+
+2. **Two new CombatComponent fields: `attacker_unit_type: StringName` and `combat_matrix: Resource`.** Both defaulted to neutral (`&""` and `null`) so unwired test fixtures still pass — get_multiplier returns 1.0 for unknown attacker types, and a null matrix short-circuits to unscaled 1.0× neutral.
+
+3. **`Unit._apply_balance_data_defaults` now wires the new fields.** Sets `_combat_component.attacker_unit_type` from the parent's `unit_type` (`&"piyade"`, `&"savar"`, `&"turan_piyade"`, ...) and `_combat_component.combat_matrix` from `BalanceData.combat`. Defensive `is Resource` guard on the matrix.
+
+4. **CRITICAL — uses `get_multiplier()` not raw `effectiveness[atk][def]` dict access.** This is the load-bearing constraint balance-engineer's wave-1B report flagged. `get_multiplier()` does Turan-mirror folding (strips `"turan_"` prefix, special-cases `"turan_asb_savar"` → `"asb_savar_kamandar"`). Raw dict access bypasses this and Turan units silently deal wrong damage in-game while headless tests pass. The integration test `test_turan_piyade_vs_turan_savar_folds_to_1_5x` asserts the fold reaches the live damage site as a regression lock.
+
+5. **9 new tests in `tests/integration/test_rps_matrix_integration.gd`.** Coverage: Piyade vs Savar at 1.5×, Savar vs Kamandar at 2.0×, Turan-fold parity (Turan_Piyade vs Turan_Savar same as Iran→Iran), unknown-pair default 1.0×, missing-matrix default 1.0×, exact rounding (1255 × 1.5 → roundi → 1883), neutral pair (1.0×) leaves base damage unchanged, plus a live-EventBus-chain integration smoke that walks the full BalanceData → Unit → CombatComponent → matrix → take_damage_x100 path with real Piyade and Savar scenes.
+
+**Test-count delta:** 850 → 858 (+8). 855 passing, 3 pre-existing pending (FarrSystem fallback, navmap-not-ready, navmesh-not-ready). Lint clean (`tools/lint_simulation.sh` — 0 violations).
+
+**Files modified:**
+- `game/scripts/units/components/combat_component.gd` (added two fields + multiplier lookup at step 6 fire site)
+- `game/scripts/units/unit.gd` (extended `_apply_balance_data_defaults` to wire the two new fields)
+- `game/tests/integration/test_rps_matrix_integration.gd` (new file, 9 tests)
+- `docs/ARCHITECTURE.md` (§2 CombatComponent row updated; new §6 v0.18.0 entry)
+- `BUILD_LOG.md` (this entry)
+
+**Did not ship:**
+- Did NOT modify `game/data/balance.tres` or `game/data/sub_resources/combat_matrix.gd` (wave-1B's domain — the matrix and the `get_multiplier` API are settled).
+- Did NOT modify any `game/scripts/units/<unit>.gd` files (waves 1A/1C settled; the multiplier wiring is component-local).
+- Did NOT modify `game/scripts/main.gd` (wave 2B's domain — extending `_spawn_starting_units` for new unit types).
+- Did NOT add cause-string differentiation per attacker type (still `&"melee_attack"` for everyone — see LATER below).
+- Did NOT add a ranged-vs-melee distinction at the damage path level (the multiplier IS the discriminator for damage scaling; visible projectile entities are Phase 5+).
+
+**Live-game-broken-surface answers (Experiment 01):**
+
+1. *Runtime state no unit test exercises:* The matrix being wired at the LIVE damage-fire site, not just the unit-fixture site. The integration test `test_live_piyade_vs_savar_scales_damage_via_eventbus_chain` closes this — it spawns real Piyade + Savar scenes, dispatches a real Attack command via `Unit.replace_command`, advances real ticks via `EventBus.sim_phase`, and asserts the post-attack HP equals `savar_max_hp_x100 - roundi(piyade_damage_x100 * 1.5)`. If anyone breaks the wiring (forgets to set `attacker_unit_type` from Unit, forgets to assign `combat_matrix`, or "optimizes" to raw dict access bypassing Turan fold), this test trips.
+
+2. *Headless tests can't detect:* Battle FEEL — does Piyade vs Savar at 1.5× feel decisive in 5v5? Does Savar vs Kamandar at 2.0× feel like a true counter or "slightly more damage"? Tunable via `balance.tres` `combat_mtx.effectiveness` without code changes. The matrix's hard cap of 5.0× leaves headroom; the current values (1.5 / 2.0 / 0.7 / 0.5 / 1.2) are first-pass starting points per kickoff §2 item 5.
+
+3. *Minimum interactive smoke test:* Lead pits 5 Piyade vs 5 Savar — Piyade should win cleanly (1.5× advantage compounded across attackers). Then 5 Savar vs 5 Kamandar — Savar should curb-stomp (2.0×). Then 3 Asb-savar vs 5 Piyade — Asb-savar should kite from range 7.0 (Piyade can't close to melee 1.5 fast enough at speed 2.5; the 1.2× multiplier vs Piyade compounds the kiting advantage).
+
+**Known Godot Pitfalls applied:**
+
+- **Pitfall #1 (mouse_filter):** N/A — no new Control nodes.
+- **Pitfall #2 (FSM / per-tick driver wiring):** the multiplier lookup runs inside `_sim_tick`, which is driven by `UnitState_Attacking._sim_tick` per the BUG-01 fix. The integration test exercises the full chain so a missing drive call would be caught.
+- **Pitfall #3 (camera basis):** N/A — no input handling.
+- **Pitfall #4 (re-entrant signal mutation):** N/A — no new signal handlers.
+- **Pitfall #5 (sibling tree-order):** N/A — no new `_unhandled_input`.
+- **Pitfall #7 (multi-agent shared-tree commit-staging race):** I am the only active gameplay-systems agent on this branch this wave. Pre-commit `git diff --staged --stat` will be checked to ensure only my files land. If a fellow agent surfaces in parallel, will follow the documented "scramble, intent intact" pattern.
+- **Pitfall #8 (queue_free.call_deferred double-defer):** N/A — no new freeing logic.
+
+**LATER items added/touched:**
+
+- **L3 (CombatSystem phase coordinator)** — same impact pattern as before. The multiplier lookup fits naturally into the future coordinator's `&"combat"` phase iteration. No code change needed at the coordinator's landing — the lookup is component-local.
+- **NEW LATER candidate** — *Cause-string differentiation by attacker type.* All attacks still pass `&"melee_attack"` regardless of attacker class. When ranged units land on the live damage path with projectile entities (Phase 5+), the cause string should differentiate (`&"ranged_attack"` / `&"horse_archer_attack"`) so FarrDrain / Yadgar / future cause-driven mechanics can route on the actual semantic. The matrix multiplier IS the discriminator for damage scaling and that's enough for now, but cause-string semantics drift. Not promoted to L# — single consumer (FarrDrain).
+- **NEW LATER candidate** — *Pre-cache target_unit_type read.* `target.get(&"unit_type")` runs every fired tick. At session-2's small unit count this is fine; at Phase 3+ scales (50+ engaged units) caching the StringName on `set_target` is an obvious optimization. Not promoted — measurement-driven; revisit if combat-tick profiling shows it.
+
+**Coordination notes:**
+
+- I am the **wave 2A agent** (gameplay-systems instance). My single deliverable is RPS matrix integration in CombatComponent. Wave 2B (separate agent) owns extending `_spawn_starting_units` in `main.gd` to spawn the new unit types.
+- The matrix is wave-1B's domain (balance-engineer); my wave reads it, never writes. The matrix's `get_multiplier()` API was specifically built for this consumer per its docstring.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+
+- Float multiplier stored in a local `Variant`/`float` slot inside `_sim_tick` (not on a SimNode field) — Sim Contract §1.6 only restricts persistent SimNode fields; tick-local locals are fine. Same pattern as the existing range-check's `dist_sq: float` local.
+- `target.get(&"unit_type")` via Variant + typeof check rather than typed access — registry-race convention; some test fixtures use bare Node3D stubs that don't have `unit_type` declared. Defaulting to `&""` makes the lookup forward-compatible.
+- Defensive null-matrix path returns 1.0× rather than crashing, so wave-1A unit-test fixtures (which pre-date these fields) keep passing without modification. Documented in source comments.
+
 ## 2026-05-08 — Phase 2 session 2 wave 1C (gameplay-systems): AsbSavarKamandar + Turan_Asb_Savar
 
 **Branch:** `feat/phase-2-session-2`
