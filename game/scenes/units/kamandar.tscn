@@ -1,0 +1,63 @@
+[gd_scene load_steps=5 format=3 uid="uid://shahnameh_kamandar_unit"]
+
+; kamandar.tscn — Kamandar (Iran archer / ranged infantry) scene.
+;
+; Source: 01_CORE_MECHANICS.md §6 — "Kamandar (archer) — ranged infantry.
+; Glass cannon: high damage at range, low HP, slow attack speed."
+;
+; Pattern: scene inheritance via instance=ExtResource("path_to_unit.tscn").
+; Same shape as kargar.tscn / piyade.tscn — overrides only the
+; MeshInstance3D's mesh + material plus the root's script. CombatComponent
+; etc. all inherit from the unit.tscn template.
+;
+; Visual placeholder per CLAUDE.md "colored shapes only" policy:
+;   - Cylinder, height 0.9, radius 0.25. TALL and NARROW — silhouette reads
+;     as "the bow guy" against the cube Piyade (0.5×0.7×0.5) and the squat
+;     Kargar cylinder (0.7 tall × 0.7 wide). The taller-than-Piyade height
+;     suggests a soldier with bow drawn upward; the narrow radius suggests
+;     a lighter-armored archer rather than the spear-and-shield Piyade.
+;     Per kickoff §2 deliverable 1.
+;   - Iran-blue darker variant Color(0.20, 0.30, 0.55) — saturated blue
+;     distinct from Piyade's brighter (0.3, 0.4, 0.7), Kargar's sandy brown
+;     (0.65, 0.5, 0.3), AND clearly cool-counterpoint to the sandy terrain
+;     (the Phase 2 session 1 Farr-gauge contrast incident is the canonical
+;     case for "cool against sandy"). The DARKER variant signals
+;     "specialist combat unit" within the Iran palette.
+
+[ext_resource type="PackedScene" uid="uid://shahnameh_unit_base" path="res://scenes/units/unit.tscn" id="1_unit_template"]
+[ext_resource type="Script" path="res://scripts/units/kamandar.gd" id="2_kamandar"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_kamandar"]
+; Tall-narrow archer silhouette. Top and bottom radius equal (true cylinder,
+; not a cone). Height 0.9 = +0.2 vs Kargar's 0.7 = +0.3 vs Piyade's box
+; height 0.7 — meaningfully taller. Radius 0.25 = -0.10 vs Kargar's 0.35,
+; making the figure visibly slimmer. Concrete numbers picked to read at the
+; default isometric camera distance and stay distinguishable in cluster
+; combat (see live-game-broken-surface answer #2).
+top_radius = 0.25
+bottom_radius = 0.25
+height = 0.9
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_kamandar"]
+; Iran-blue DARKER variant. Saturated enough to read against the sandy
+; terrain (Phase 2 session 1 Farr-gauge contrast lesson — cool counterpoint
+; to warm sand) but darker than Piyade's (0.3, 0.4, 0.7) so the two Iran
+; combat unit types are silhouette-AND-color distinguishable on a busy
+; battlefield. CLAUDE.md placeholder policy — pick a color that
+; communicates "Iran specialist combat unit" at a glance.
+albedo_color = Color(0.20, 0.30, 0.55, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — same simple lit pipeline as the
+                  ; rest of the placeholder units; consistency for placeholders.
+
+
+; Inherit the Unit scene template; override only what differs.
+[node name="Kamandar" instance=ExtResource("1_unit_template")]
+script = ExtResource("2_kamandar")
+
+[node name="MeshInstance3D" parent="." index="0"]
+; Override the base Unit's BoxMesh (0.5×0.6×0.5) with the Kamandar
+; tall-narrow cylinder. Y-offset matches half-height (0.45) so the cylinder
+; base sits ON the terrain plane (consistent with the unit.tscn convention).
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, 0)
+mesh = SubResource("CylinderMesh_kamandar")
+material_override = SubResource("StandardMaterial3D_kamandar")
