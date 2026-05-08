@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.18.0
+version: 0.18.2
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -18,8 +18,8 @@ ssot_for:
 references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md, RESOURCE_NODE_CONTRACT.md, AI_DIFFICULTY.md, ../02_IMPLEMENTATION_PLAN.md, STUDIO_PROCESS.md]
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
-last_updated: 2026-05-01
-# bumped to v0.17.8 — Phase 2 Session 2 wave 1B: BalanceData 6 new unit types + RPS matrix (balance-engineer)
+last_updated: 2026-05-08
+# bumped to v0.18.2 — Phase 2 Session 2 close (wave 3 + reviewer-pair APPROVE)
 ---
 
 # Architecture — Target Shape and Build State
