@@ -34,6 +34,65 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-08 — Phase 2 session 2 wave 1C (gameplay-systems): AsbSavarKamandar + Turan_Asb_Savar
+
+**Branch:** `feat/phase-2-session-2`
+
+**Shipped (2 unit types, ranged + cavalry hybrid archetype):**
+
+1. **Iran AsbSavarKamandar (horse archer).** `class_name AsbSavarKamandar` at `game/scripts/units/asb_savar_kamandar.gd` + scene at `game/scenes/units/asb_savar_kamandar.tscn` + 14 tests in `game/tests/unit/test_asb_savar_kamandar.gd`. Elongated BoxMesh `Vector3(0.6, 0.5, 0.9)` — depth (Z) > width (X) > height (Y); the load-bearing visual cue is "elongated horse-archer footprint", NOT just a bigger Piyade. Iran-blue darker hue `Color(0.18, 0.28, 0.50)` — within the Iran-ranged sub-palette near Kamandar's `(0.20, 0.30, 0.55)`. unit_type = &"asb_savar_kamandar" (full compound key; matches the Iran name "اسب‌سوار کماندار" — mounted archer). Stats wire through BalanceData (max_hp 100 Tier-1-equiv, move_speed 4.0, attack_damage_x100 1300, attack_speed_per_sec 0.6, attack_range 7.0). Commit `3fefeea`.
+
+2. **TuranAsbSavar (Turan horse archer mirror).** `class_name TuranAsbSavar` at `game/scripts/units/turan_asb_savar.gd` + scene + 13 tests in `game/tests/unit/test_turan_asb_savar.gd`. Same dimensions as Iran AsbSavarKamandar (mirror combat). Turan-red `Color(0.55, 0.18, 0.18)` — distinct from other Turan unit colors; the slight green-tint difference from TuranKamandar's pure red signals "horse-archer" within the Turan specialist sub-palette. **unit_type = &"turan_asb_savar" — SHORTENED key vs Iran's compound** per `balance.tres` line 184 comment; the "kamandar" suffix is understood from context for Turan units. RPS matrix lookup folds: `_resolve_key("turan_asb_savar")` → strip prefix → `"asb_savar"` → `_turan_base_to_iran_key("asb_savar")` → `"asb_savar_kamandar"` row. Commit pending this entry.
+
+Both follow the canonical pattern session 1 established for Piyade / TuranPiyade and wave 1A established for Kamandar / Savar / TuranKamandar / TuranSavar:
+- `extends "res://scripts/units/unit.gd"` path-string base (class_name registry-race dodge per ARCHITECTURE.md §6 v0.4.0).
+- `class_name <Name>` declaration for runtime `is <Name>` checks.
+- Dual `_init` AND `_ready` `unit_type` write (Godot scene-instantiation order clobbers _init's @export between steps 1 and 3).
+- `_ready` override fires BEFORE `super._ready()` so `Unit._apply_balance_data_defaults` reads the correct unit_type when looking up BalanceData.
+
+**Test-count delta:** 824 → 850 (+27; +14 Iran + +13 Turan; 824 baseline includes wave 1A's TuranSavar that landed under `3fefeea`).
+
+**Did not ship:**
+- Did NOT modify `game/data/balance.tres` (already populated by balance-engineer wave 1B).
+- Did NOT modify `game/scripts/main.gd` (wave 2B owns extending `_spawn_starting_units`).
+- Did NOT modify `game/scripts/units/components/combat_component.gd` (wave 2A owns RPS matrix integration).
+- Did NOT modify `kamandar.gd` / `savar.gd` / `turan_kamandar.gd` / `turan_savar.gd` (wave 1A's domain).
+- Did NOT add kiting AI (Phase 6 with `DummyAIController` per `02_IMPLEMENTATION_PLAN.md` §169).
+- Did NOT add Tier-2 stat buff (Phase 4 when tech tier ships).
+
+**Live-game-broken-surface answers (Experiment 01):**
+
+For **AsbSavarKamandar / TuranAsbSavar (ranged + cavalry hybrid pair)**:
+1. *Runtime state no unit test exercises:* Mesh override actually swapping from base BoxMesh (0.5×0.6×0.5) to my elongated BoxMesh (0.6×0.5×0.9) in a real scene-instantiation. The `unit_type=&"asb_savar_kamandar"` / `&"turan_asb_savar"` assignment surviving the @export reset between `_init` and `_ready` (the dual-init pattern was load-bearing in session 1 v0.17.0 — same Pitfall here). Iran-vs-Turan unit_type asymmetry (compound vs shortened key) silently dropping BalanceData lookup back to component defaults if someone "fixes" the Turan key.
+2. *Headless tests can't detect:* Silhouette readability — Asb-savar should distinguish from Savar (foot cavalry, wider-square) and Kamandar (foot archer, tall narrow cylinder) at default zoom. Color clash with sandy terrain (Phase 2 session 1 Farr-gauge contrast lesson — cool blue / saturated red against warm sand). Whether the elongation-as-cue reads at the elevated isometric camera distance (Z-axis is what the camera sees most clearly when units are moving along their forward axis).
+3. *Minimum interactive smoke test:* Lead spawns 3 Asb-savar vs 5 Turan Piyade. Asb-savar fires from range 7.0 (per BalanceData), Piyade can't close manually since kiting AI isn't shipping until Phase 6. The combat math working IS the test (HP bars decrement on Piyade from 7m away). The RPS matrix multiplier 1.2× vs piyade kicks in at wave 2A integration; this wave's contribution is the unit reading the correct attack_range from BalanceData and CombatComponent firing through the existing UnitState_Attacking pipeline.
+
+**Known Godot Pitfalls applied:**
+- Pitfall #2 (FSM driver wiring): inherited from base `Unit._on_sim_phase` driver — no new state-tick code.
+- Pitfall #5 (sibling tree-order): N/A (no `_unhandled_input`).
+- **Pitfall #7 (multi-agent shared-tree commit-staging race) RECURRED.** Despite explicit `git add` of only my 3 files for the AsbSavarKamandar commit and `git diff --staged --stat` confirming only those 3, the commit `3fefeea` included wave 1A's `turan_savar.gd`, `turan_savar.tscn`, `test_turan_savar.gd` (all untracked at stage-time) PLUS BUILD_LOG.md PLUS docs/ARCHITECTURE.md modifications. Hypothesis: wave 1A's session re-wrote those files between my `git diff --staged --stat` check and the commit-write; the commit-write picked up the working-tree state at that moment, not the staged set from minutes earlier. **Third occurrence in this project** (session 1 `aa429ef`, session 2 `cac29cc` were prior). Documented in detail in ARCHITECTURE.md §6 v0.17.9.
+
+**Coordination notes:**
+
+- I am the **wave 1C agent** (per kickoff §3 — separate gameplay-systems instance from wave 1A's Kamandar/Savar work). My deliverables are deliverable 3 (Asb-savar Kamandar) + the Asb-savar mirror part of deliverable 4. Wave 1A's agent owns Kamandar/Savar + their Turan mirrors. Wave 1B (balance-engineer) populated the `balance.tres` entries my scripts read.
+
+- This wave's commit `3fefeea` carries wave 1A's TuranSavar deliverable as collateral via Pitfall #7. Wave 1A's BUILD_LOG entry (above this one) describes their full 4-unit deliverable; their TuranSavar-specific shipping went through this commit due to the staging race. Intent intact, attribution scrambled.
+
+**State for next session:** Wave 1C is complete. The full Phase 2 session 2 unit roster is now shipped:
+- Iran: Piyade (session 1), Kamandar (wave 1A), Savar (wave 1A), AsbSavarKamandar (wave 1C). Kargar (Phase 1).
+- Turan: TuranPiyade (session 1), TuranKamandar (wave 1A → cac29cc), TuranSavar (wave 1A → 3fefeea), TuranAsbSavar (wave 1C → this entry's commit).
+
+Wave 2A (CombatComponent RPS matrix integration) and wave 2B (`_spawn_starting_units` extension to put the new roster on the map) are next. Both can read these unit types via the standard `unit.tscn` inheritance and BalanceData lookup paths.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+- AsbSavarKamandar uses `class_name AsbSavarKamandar` (full compound, matching the Iran name) while TuranAsbSavar uses `class_name TuranAsbSavar` (shortened, matching the balance.tres key convention). Both class names match their respective unit_type keys for symmetry.
+- Y-offset 0.25 on the elongated mesh (lower than Piyade's 0.35 / Savar's 0.30) because the box bottom must sit on the terrain plane and the half-height for `0.5` Y is `0.25`.
+- Color palette per kickoff suggestion: Iran `Color(0.18, 0.28, 0.50)` (within ranged sub-palette), Turan `Color(0.55, 0.18, 0.18)` (specialist sub-palette).
+
+---
+
 ## 2026-05-08 — Phase 2 session 2 wave 1A (gameplay-systems): Kamandar + Savar + Turan_Kamandar + Turan_Savar
 
 **Branch:** `feat/phase-2-session-2`
