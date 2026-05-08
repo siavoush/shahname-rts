@@ -1648,3 +1648,50 @@ Rationale: the live-test failure mode was readability against the sandy terrain,
 - **No new tests.** The existing 13 tests already cover the band-tag and fill-ratio contracts the fix preserves. A "contrast assertion" test would have to compare RGB luminance against an expected terrain color, which (a) couples the test to terrain colors I don't own, and (b) the gauge is rendered in a transparent test viewport with no terrain — the test would be vacuous. Visual contrast is a live-test-loop concern; the existing color-band-tag tests cover the logical contract.
 
 **Cross-agent coordination:** no parallel agents — this was a single-fix solo session. Modified files (`game/scripts/ui/farr_gauge.gd`, `BUILD_LOG.md`) are explicitly mine and were verified via `git diff --staged --stat` showing only those two entries before commit.
+
+---
+
+## 2026-05-08 — Phase 2 session 2 wave 1B (balance-engineer): BalanceData 6 new unit types + RPS effectiveness matrix
+
+**Branch:** `feat/phase-2-session-2`
+
+**Shipped:**
+
+1. **`CombatMatrix.get_multiplier()` API** added to `game/data/sub_resources/combat_matrix.gd`. Canonical lookup for wave 2A's CombatComponent integration. Implements Turan mirror folding: strips `"turan_"` prefix before dict lookup so Turan unit types resolve to their Iran base-type row. `"turan_asb_savar"` maps to `"asb_savar_kamandar"` via `_turan_base_to_iran_key`. Default 1.0 for missing pairs (forward-compat). Wave 2A CombatComponent MUST call `get_multiplier()` — raw `effectiveness` dict access bypasses the folding.
+
+2. **6 new UnitStats entries** in `game/data/balance.tres`. Unit dict: 4 → 9 entries. `load_steps` 23 → 28. Entries added:
+   - `kamandar` (completed — previously lacked Phase 2 combat fields): max_hp=60, move_speed=2.5, attack_damage_x100=1500, attack_speed_per_sec=0.7, attack_range=8.0
+   - `savar`: max_hp=150, move_speed=4.5, attack_damage_x100=1200, attack_speed_per_sec=0.9, attack_range=1.8
+   - `asb_savar_kamandar`: max_hp=100, move_speed=4.0, attack_damage_x100=1300, attack_speed_per_sec=0.6, attack_range=7.0
+   - `turan_kamandar`, `turan_savar`, `turan_asb_savar`: mirror stats (identical combat numbers; Turan-type unit_type keys for visual differentiation)
+
+3. **Full 16-cell RPS matrix** in `combat_mtx.effectiveness`. Phase 0 stub (3 partial rows) replaced with 4×4 base-type table. Key multipliers: piyade vs savar 1.5×, kamandar vs piyade 1.5×, savar vs kamandar 2.0×, asb_savar vs savar 0.5×. All tunable via `balance.tres` without code changes.
+
+4. **76 new tests** total: `test_combat_matrix.gd` (new, 60 tests) + 16 new tests in `test_balance_data.gd` section 6. All covering the new API, all 16 RPS cells, Turan folding, unknown-pair defaults, mirror assertions, and sanity checks. `validate_hard()` pass confirmed with full matrix.
+
+**Test-count delta:** 726 → 782 passing (+56 new tests passing; 3 pre-existing pending tests unchanged). Lint: 0 violations.
+
+**Did not ship:** Nothing deferred. Wave 1B scope is complete.
+
+**Commits:**
+- `8343d1d` — CombatMatrix.get_multiplier() API + 60 coverage tests (Experiment 03: one TDD cycle per commit)
+- `743898a` — 6 new UnitStats entries + full 16-cell RPS matrix
+
+**Folding choice for Turan mirrors:** FOLDED. See §6 v0.17.8 in ARCHITECTURE.md for full rationale and design documentation.
+
+**Live-game-broken-surface answers (Experiment 01):**
+1. `balance.tres` CombatMatrix must serialize/deserialize correctly through the production resource loader. Tests verify the full round-trip (load via `ResourceLoader.load` + call `get_multiplier`). Wave 2A CombatComponent must call `get_multiplier()`, NOT `effectiveness[atk][def]` directly — the latter bypasses Turan folding.
+2. Battle feel: does 1.5× Piyade vs Savar feel decisive to the lead in a 5v5? 2.0× Savar vs Kamandar should be very one-sided. These are starting points — lead tunes `balance.tres` without code changes.
+3. Minimum smoke test: wave 2A consumer ships. Lead pits 5 Iran Piyade vs 5 Turan Savar; Piyade should win. Reverse for each RPS pair.
+
+**Decisions made independently** (per CLAUDE.md escalation rule #1):
+- **Turan mirror folding (FOLDED not DUPLICATED):** 16-cell dict vs 36-cell. No gameplay implication — both approaches produce identical multiplier values for all unit pairs at Phase 2. Folded is simpler and extensible. Documented in `combat_matrix.gd` header and `balance.tres` comment block.
+- **`turan_asb_savar` key (not `turan_asb_savar_kamandar`):** Matches kickoff doc's `&"turan_asb_savar"`. The "kamandar" suffix is implied. Shorter key reduces verbosity in unit_type lookups. `_turan_base_to_iran_key` handles the asymmetric name mapping.
+- **balance.tres kamandar fix (completed from Phase 0 stub to full Phase 2 spec):** The old stub had legacy `damage`/`attack_speed_ticks` fields only; missing `attack_damage_x100` and `attack_speed_per_sec` made Kamandar a non-attacking unit. Completed to spec values. No design decision needed — the kickoff doc specifies the values.
+
+**Open questions:** None added to QUESTIONS_FOR_DESIGN.md.
+
+**State for next session:**
+- Wave 2A (CombatComponent RPS matrix integration): consume `BalanceData.combat.get_multiplier(attacker.unit_type, target.unit_type)` in `CombatComponent._sim_tick`'s damage-fire step. Multiply into `attack_damage_x100` at fire-time. Do NOT use raw `effectiveness` dict access — Turan folding requires the method.
+- Wave 2B (main.gd spawn expansion): extend `_spawn_starting_units` to spawn 1-2 of each new Turan type (turan_kamandar, turan_savar, turan_asb_savar) at the opposite map corner.
+- Wave 1C (Asb-savar + Turan Asb-savar unit scripts): balance.tres already has `asb_savar_kamandar` and `turan_asb_savar` entries with full stats. Unit scripts consume these via `_apply_balance_data_defaults`.

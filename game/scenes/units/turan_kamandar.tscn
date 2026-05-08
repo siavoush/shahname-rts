@@ -1,0 +1,57 @@
+[gd_scene load_steps=5 format=3 uid="uid://shahnameh_turan_kamandar_unit"]
+
+; turan_kamandar.tscn — TuranKamandar (Turan archer / ranged infantry) scene.
+;
+; Source: 01_CORE_MECHANICS.md §6 (archer archetype) + §11 (Turan faction
+; red palette). Per 02e_PHASE_2_SESSION_2_KICKOFF.md §2 deliverable 4:
+; mirror of Iran Kamandar — same archetype, same stats, different team
+; color. The visual half of the Iran-vs-Turan team split for the ranged
+; specialist.
+;
+; Pattern: scene inheritance via instance=ExtResource("path_to_unit.tscn").
+; Same shape as turan_piyade.tscn / kamandar.tscn — overrides only the
+; MeshInstance3D's mesh + material plus the root's script.
+;
+; Visual placeholder per CLAUDE.md "colored shapes only" policy:
+;   - CylinderMesh, height 0.9, radius 0.25 — IDENTICAL dimensions to
+;     Iran Kamandar (mirror combat: same archetype silhouette). Only the
+;     team color differs.
+;   - Turan-red darker variant Color(0.55, 0.15, 0.15) — saturated red
+;     distinct from Iran-blue Kamandar (0.20, 0.30, 0.55) and from the
+;     Turan_Piyade brighter (0.7, 0.3, 0.3). The DARKER red is the
+;     Turan analog of Iran Kamandar's darker-blue specialist cue.
+
+[ext_resource type="PackedScene" uid="uid://shahnameh_unit_base" path="res://scenes/units/unit.tscn" id="1_unit_template"]
+[ext_resource type="Script" path="res://scripts/units/turan_kamandar.gd" id="2_turan_kamandar"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_turan_kamandar"]
+; Same dimensions as Iran Kamandar (height 0.9, radius 0.25). Mirror
+; combat means same silhouette — only team color differs. If/when RPS
+; gets faction-asymmetric stats (later phases when the design chat
+; green-lights), the mesh size could differ to signal that visually.
+top_radius = 0.25
+bottom_radius = 0.25
+height = 0.9
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_turan_kamandar"]
+; Turan-red darker variant. Saturated enough to read against the sandy
+; terrain (Phase 2 session 1 contrast lesson) and clearly distinct from
+; the Iran-blue Kamandar. The DARKER red within the Turan palette is the
+; analog of Kamandar's darker-blue: signals "specialist Turan combat unit"
+; vs. the brighter Turan_Piyade core infantry.
+albedo_color = Color(0.55, 0.15, 0.15, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — same simple lit pipeline as the
+                  ; rest of the placeholder units; consistency for placeholders.
+
+
+; Inherit the Unit scene template; override only what differs.
+[node name="TuranKamandar" instance=ExtResource("1_unit_template")]
+script = ExtResource("2_turan_kamandar")
+
+[node name="MeshInstance3D" parent="." index="0"]
+; Override the base Unit's BoxMesh (0.5×0.6×0.5) with the TuranKamandar
+; tall-narrow cylinder (mirror Iran Kamandar). Y-offset matches half-height
+; (0.45) so the cylinder base sits ON the terrain plane.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, 0)
+mesh = SubResource("CylinderMesh_turan_kamandar")
+material_override = SubResource("StandardMaterial3D_turan_kamandar")
