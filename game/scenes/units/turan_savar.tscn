@@ -1,0 +1,54 @@
+[gd_scene load_steps=5 format=3 uid="uid://shahnameh_turan_savar_unit"]
+
+; turan_savar.tscn — TuranSavar (Turan cavalry) scene.
+;
+; Source: 01_CORE_MECHANICS.md §6 (cavalry archetype) + §11 (Turan faction
+; red palette). Per 02e_PHASE_2_SESSION_2_KICKOFF.md §2 deliverable 4:
+; mirror of Iran Savar — same archetype, same stats, different team color.
+;
+; Pattern: scene inheritance via instance=ExtResource("path_to_unit.tscn").
+; Same shape as turan_piyade.tscn / turan_kamandar.tscn / savar.tscn —
+; overrides only the MeshInstance3D's mesh + material plus the root's
+; script.
+;
+; Visual placeholder per CLAUDE.md "colored shapes only" policy:
+;   - BoxMesh, size Vector3(0.7, 0.6, 0.7) — IDENTICAL dimensions to Iran
+;     Savar (mirror combat: same archetype silhouette). Wider than Piyade
+;     in both horizontal axes; the heavier mounted-cavalry footprint.
+;   - Turan-red deeper-saturated Color(0.65, 0.15, 0.15) — saturated dark
+;     red, distinct from Iran-blue Savar (0.15, 0.25, 0.65), from
+;     Turan_Piyade's brighter (0.7, 0.3, 0.3), AND from TuranKamandar's
+;     darker (0.55, 0.15, 0.15). The deep-red cue at a glance: "this is
+;     the heavy elite Turan combat unit" — mirror to Savar's deep-blue
+;     within the Iran palette.
+
+[ext_resource type="PackedScene" uid="uid://shahnameh_unit_base" path="res://scenes/units/unit.tscn" id="1_unit_template"]
+[ext_resource type="Script" path="res://scripts/units/turan_savar.gd" id="2_turan_savar"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_turan_savar"]
+; Same dimensions as Iran Savar (Vector3(0.7, 0.6, 0.7)). Mirror combat:
+; same silhouette, only team color differs.
+size = Vector3(0.7, 0.6, 0.7)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_turan_savar"]
+; Turan-red deeper saturated. Saturated enough to read against the sandy
+; terrain (Phase 2 session 1 contrast lesson) AND distinguishable from
+; Turan_Piyade (0.7, 0.3, 0.3) by being deeper, AND from TuranKamandar
+; (0.55, 0.15, 0.15) by being more saturated. The deep-red cue is the
+; Turan analog of Savar's deep-blue: "heavy elite cavalry."
+albedo_color = Color(0.65, 0.15, 0.15, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — same simple lit pipeline as the
+                  ; rest of the placeholder units; consistency for placeholders.
+
+
+; Inherit the Unit scene template; override only what differs.
+[node name="TuranSavar" instance=ExtResource("1_unit_template")]
+script = ExtResource("2_turan_savar")
+
+[node name="MeshInstance3D" parent="." index="0"]
+; Override the base Unit's BoxMesh (0.5×0.6×0.5) with the TuranSavar wider
+; box (mirror Iran Savar). Y-offset matches half-height (0.30) so the box
+; bottom sits ON the terrain plane.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.30, 0)
+mesh = SubResource("BoxMesh_turan_savar")
+material_override = SubResource("StandardMaterial3D_turan_savar")

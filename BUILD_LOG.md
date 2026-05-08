@@ -34,6 +34,76 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-08 — Phase 2 session 2 wave 1A (gameplay-systems): Kamandar + Savar + Turan_Kamandar + Turan_Savar
+
+**Branch:** `feat/phase-2-session-2`
+
+**Shipped (4 unit types, all on the same Piyade/TuranPiyade inheritance pattern from session 1 v0.17.0):**
+
+1. **Iran Kamandar (archer, ranged).** `class_name Kamandar` at `game/scripts/units/kamandar.gd` + scene at `game/scenes/units/kamandar.tscn` + 13 tests in `game/tests/unit/test_kamandar.gd`. Tall-narrow CylinderMesh (h=0.9, r=0.25) — the bow-guy silhouette distinct from Piyade's box and Kargar's squat cylinder. Iran-blue darker variant `Color(0.20, 0.30, 0.55)`. unit_type = &"kamandar". Stats wire through BalanceData. Commit `6683d26`.
+
+2. **Iran Savar (cavalry, melee).** `class_name Savar` at `game/scripts/units/savar.gd` + scene + 13 tests in `game/tests/unit/test_savar.gd`. Wider BoxMesh `Vector3(0.7, 0.6, 0.7)` — heavier mounted-cavalry footprint. Iran-blue deeper-saturated `Color(0.15, 0.25, 0.65)` — distinct from Piyade's lighter and Kamandar's muted. unit_type = &"savar". Commit `d2bc9b9`.
+
+3. **TuranKamandar (Turan archer mirror).** `class_name TuranKamandar` at `game/scripts/units/turan_kamandar.gd` + scene + 13 tests. Same dimensions as Iran Kamandar (mirror combat). Turan-red darker variant `Color(0.55, 0.15, 0.15)`. unit_type = &"turan_kamandar". **Commit `cac29cc` (Pitfall #7 attribution scramble — see Coordination notes below).**
+
+4. **TuranSavar (Turan cavalry mirror).** `class_name TuranSavar` at `game/scripts/units/turan_savar.gd` + scene + 13 tests. Same dimensions as Iran Savar (mirror combat). Turan-red deeper-saturated `Color(0.65, 0.15, 0.15)`. unit_type = &"turan_savar". Commit pending this entry.
+
+All four follow the canonical pattern session 1 established for Piyade / TuranPiyade:
+- `extends "res://scripts/units/unit.gd"` path-string base (class_name registry-race dodge per ARCHITECTURE.md §6 v0.4.0).
+- `class_name <Name>` declaration for runtime `is <Name>` checks.
+- Dual `_init` AND `_ready` `unit_type` write (Godot scene-instantiation order clobbers _init's @export between steps 1 and 3).
+- `_ready` override fires BEFORE `super._ready()` so `Unit._apply_balance_data_defaults` reads the correct unit_type when looking up BalanceData.
+
+**Test-count delta:** 774 → 824 (+50; 13 per unit × 4 = 52, minus 2 that show as Risky/Pending in the env-specific GUT count). Passing: 771 → 821 baseline assumption.
+
+**Did not ship:**
+- Did NOT modify `game/data/balance.tres`, `game/scripts/units/asb_savar_kamandar.gd`, `game/scripts/main.gd`, `game/scripts/units/components/combat_component.gd`, `piyade.gd`, `turan_piyade.gd`, `kargar.gd`, `unit.gd`. These are explicitly out of scope per the wave-1A brief (1B/1C/2A/2B owners).
+- Did NOT add Asb-savar Kamandar (gameplay-systems wave 1C parallel agent — note `test_asb_savar_kamandar.gd` appearing in untracked files is wave-1C agent's work).
+- Did NOT extend `_spawn_starting_units` in `main.gd` (wave 2B).
+- Did NOT integrate the RPS effectiveness multiplier into `CombatComponent._sim_tick` (wave 2A).
+
+**Live-game-broken-surface answers (Experiment 01):**
+
+For **Kamandar / TuranKamandar (ranged archer pair)**:
+1. *Runtime-only state:* The mesh override actually swaps from BoxMesh→CylinderMesh in a real scene (tests verify mesh class but not visual rendering). The `unit_type=&"kamandar"` / `&"turan_kamandar"` assignment surviving the @export reset between `_init` and `_ready` (the dual-init pattern was load-bearing in session 1 v0.17.0 — same Pitfall here).
+2. *Headless-undetectable:* Silhouette readability vs Piyade and Kargar at default zoom — cylinder height 0.9 vs Piyade's box 0.7 vs Kargar's cylinder 0.7 should be distinguishable, but only live-test confirms. Color clash with sandy terrain — Iran-blue darker `(0.20, 0.30, 0.55)` and Turan-red darker `(0.55, 0.15, 0.15)` chosen as cool/warm-saturated counterpoints to sandy terrain per the Phase 2 session 1 Farr-gauge contrast incident. Whether tall-narrow shape reads as "ranged" without label.
+3. *Minimum interactive smoke test:* Lead spawns N Kamandar, right-clicks an enemy across the map. Combat fires from BalanceData attack_range (~8m); units do NOT walk into melee. Same for TuranKamandar with TEAM_TURAN.
+
+For **Savar / TuranSavar (cavalry pair)**:
+1. *Runtime-only state:* mesh override BoxMesh dimensions changing from 0.5×0.6×0.5 to 0.7×0.6×0.7 in a real scene. unit_type assignment surviving the dual-init pattern.
+2. *Headless-undetectable:* Whether the wider footprint (Vector3 0.7 vs Piyade's 0.5) reads as "cavalry" at default iso camera distance, or whether the boxes look interchangeable. Color saturation gradient (Kamandar darkest → Piyade lightest → Savar deepest within Iran palette; same for Turan red gradient) — this is a "can the lead tell which is which at battle scale" question that needs live-test. Whether the cavalry-fast move_speed feels "charge-y" vs Piyade's plodding 2.5.
+3. *Minimum interactive smoke test:* Lead spawns N Savar, right-clicks an enemy across the map. Savar charges noticeably faster than Piyade, closes to ~1.8m melee range, attacks. RPS makes Savar vs Kamandar a clear win (2.0× cav-charge-vs-archer multiplier from balance-engineer wave 1B).
+
+**Known Godot Pitfalls applied:**
+- **Pitfall #2 (FSM driver wiring):** N/A this wave — no new states; states are inherited from base Unit registration.
+- **Dual-init pattern (session 1 v0.17.0 lesson):** Every concrete unit type sets `unit_type` in BOTH `_init` AND `_ready` BEFORE `super._ready()`. Repeated four times across this wave; the pattern is the Pitfall #6-style domain-language convention for concrete unit types.
+- **Pitfall #7 (multi-agent shared-tree commit race):** Triggered TWICE this session — see Coordination notes below.
+
+**Coordination notes (cross-agent contamination):**
+
+- **Commit `cac29cc` from balance-engineer's docs commit swept up THIS agent's untracked `turan_kamandar.gd` / `turan_kamandar.tscn` / `test_turan_kamandar.gd` files.** Same Pitfall #7 pattern as session 1's `aa429ef`. The TuranKamandar code is intact and correct in `cac29cc`; only the SHA attribution is scrambled. Per the session-1 retro precedent, history was NOT rewritten; this BUILD_LOG entry retros the attribution. The mitigation guidance in PROCESS_EXPERIMENTS.md (verify `git diff --staged --stat` immediately before `git commit`, and `git log -1 --stat` after commit) was followed by THIS agent — the contamination happened on the OTHER agent's side. The cross-agent guarantee requires both agents to follow it, which is why this remains a recurring class of incident under Experiment 03.
+
+- **Independent `test_asb_savar_kamandar.gd` was created by gameplay-systems wave-1C parallel agent (asb_savar_kamandar work). Not touched by THIS wave-1A agent's commits.**
+
+**State for next session (waves 1C / 2A / 2B):**
+
+- All four unit types in this wave have:
+  - .gd script with class_name and dual-init unit_type pattern
+  - .tscn scene inheriting unit.tscn with mesh + material override
+  - 13-test test file using the BalanceData-runtime-read pattern (verifies wiring not numbers)
+  - ARCHITECTURE.md §2 row marking ✅ Built
+- Wave 2A's `CombatComponent._sim_tick` integration of the RPS multiplier can read `attacker.unit_type` and `target.unit_type` directly off the Unit nodes; both fields are reliably populated via the dual-init pattern.
+- Wave 2B's `main.gd::_spawn_starting_units` extension can preload these scenes and instance them under Main/World; the spawn helper signature is the same as the existing Kargar / Piyade / TuranPiyade spawns.
+- Wave 1C's Asb-savar Kamandar will follow this same template (extends unit.gd path-string, class_name, dual-init unit_type, .tscn override, 13-ish tests).
+
+**Open questions:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Tests verify WIRING (read balance.tres at test-time and compare components), not NUMBERS (don't pin specific HP / damage / range values).** This decouples gameplay-systems wave-1A from balance-engineer wave-1B's number tuning. When balance-engineer adjusts numbers in wave-1B's commit, no test churn here. Two archetype-invariant assertions are pinned (Kamandar/TuranKamandar attack_range >= 5.0; Savar/TuranSavar move_speed > 2.5 AND attack_range < 5.0) — these are STRUCTURAL invariants of the unit archetype (a melee unit with attack_range = 9.0 isn't a melee unit anymore), not balance numbers.
+- **Kamandar height 0.9 / radius 0.25 (per kickoff §2 deliverable 1's exact spec).** Lead specified these dimensions in the brief.
+- **Savar size Vector3(0.7, 0.6, 0.7) (per kickoff §2 deliverable 2's exact spec).** Lead specified these dimensions in the brief.
+- **Color values per kickoff §2's exact specs:** Kamandar `Color(0.20, 0.30, 0.55)`, Savar `Color(0.15, 0.25, 0.65)`, TuranKamandar `Color(0.55, 0.15, 0.15)`, TuranSavar `Color(0.65, 0.15, 0.15)`. Color contrast tests (red vs blue dominance, contrast threshold > 0.3 for Savar / > 0.4 for TuranSavar) allow tuning within the palette family without test churn.
+
 ## 2026-05-01 — Phase 2 session 1 wave 3 (gameplay-systems): BUG-01 + BUG-03 fixes
 
 **Branch:** `feat/phase-2-session-1`
