@@ -34,6 +34,67 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-08 — Phase 2 session 2 wave 2B (gameplay-systems): match-start spawn extended to full Phase 2 RPS roster (33 units)
+
+**Branch:** `feat/phase-2-session-2`
+
+**Shipped:**
+
+1. **`main.gd::_spawn_starting_units` extended to 33 units.** Per `02e_PHASE_2_SESSION_2_KICKOFF.md` §2 deliverables 1-4 + DoD §3 (the RPS scenarios in the live game). The leading 5 Kargar + 5 Iran Piyade + 5 Turan Piyade sequence is unchanged so previous live-test muscle memory still works; the helper appends six new trios (Kamandar, Savar, AsbSavarKamandar on Iran; TuranKamandar, TuranSavar, TuranAsbSavar on Turan) for a total of 33 starting units. Spawn-order determinism preserved: Kargar 1..5 → Iran Piyade 6..10 → Turan Piyade 11..15 → Kamandar 16..18 → Savar 19..21 → AsbSavar 22..24 → TuranKamandar 25..27 → TuranSavar 28..30 → TuranAsbSavar 31..33.
+
+2. **Six new spawn-position consts in `main.gd`.** All Iran trios at Z<0; all Turan trios at Z>0; Iran↔Turan Z gap ≥ 24 units so even Asb-savar's 7.0 attack range still requires a meaningful walk to engage. Within each side: Kamandar NW corner (X≈-9, Z≈-12 / +24), Savar NE corner (X≈+9), AsbSavar S/N-center (X≈0, Z≈-15 / +27). Trio-internal spacing 1.5 units (matches Piyade-line spacing) so a tight box-select drag lands one cluster cleanly.
+
+3. **No new Constants in `constants.gd`.** Match-start spawn positions are main.gd's own match-config knob, same place Phase 1 session 1's Kargar positions and Phase 2 session 1's Piyade positions live (per the kickoff brief).
+
+4. **`tests/unit/test_match_start_spawn.gd` extended.** From 17 to 33 tests:
+   * Per-new-type position-array shape (3 entries each, 6 new tests).
+   * Pairwise-distinct positions per array (6 new tests).
+   * Iran-trios-Z-negative + Turan-trios-Z-positive invariant (1 new test, covers all 6 new arrays).
+   * Per-type spawn-count assertions (3 each, 6 new tests).
+   * Team mirror to SpatialAgentComponent for both Iran and Turan new types (2 new tests).
+   * Full unit_id ordering 1..33 (existing test rewritten — 9 sub-assertions now).
+   * Plus the existing 15 tests (Kargar/Piyade/TuranPiyade) refactored to share `_assert_position_array_size` / `_assert_pairwise_distinct` / `_count_children` / `_assert_all_team` / `_collect_sorted_ids` helpers.
+
+5. **`tests/integration/test_phase_2_session_1_combat.gd::test_main_tscn_spawns_15_units_correct_teams`** renamed to `test_main_tscn_spawns_33_units_correct_teams` and updated invariants from 15/10/5 to 33/19/14 (Iran=5 Kargar+5 Piyade+9 new; Turan=5 Piyade+9 new). Mechanical follow-on — the cross-feature smoke pins the spawn count as canonical invariant; leaving it at 15 would have locked the project into an outdated reality.
+
+**Test-count delta:** 858 → 879 (+21 net). 876 passing, 3 pre-existing pending (FarrSystem fallback, navmap-not-ready, navmesh-not-ready). Lint clean (`tools/lint_simulation.sh` — 0 violations).
+
+**Files modified:**
+- `game/scripts/main.gd` (added 6 preloads, 6 new const arrays, 6 new spawn loops; updated module docstring + `_spawn_starting_units` docstring)
+- `game/tests/unit/test_match_start_spawn.gd` (33 tests, refactored shared helpers)
+- `game/tests/integration/test_phase_2_session_1_combat.gd` (renamed + updated cross-feature smoke for 33/19/14)
+- `docs/ARCHITECTURE.md` (§2 Match-start-spawn row updated; new §6 v0.18.1 entry)
+- `BUILD_LOG.md` (this entry)
+
+**Did not ship:**
+- Did NOT modify any unit script or scene (wave-1 scope, settled).
+- Did NOT modify `combat_component.gd` or any other component (wave-2A scope, settled).
+- Did NOT modify `balance.tres` or any data file.
+- Did NOT touch `main.tscn`'s sibling order or any Control nodes (Pitfalls #5 / #1 N/A).
+- Did NOT extract a per-type cluster-spawn helper. The repeated `for pos in <const>: _spawn_unit(<scene>, pos, <team>)` blocks make the spawn-id ordering inline-readable next to each block; promote the helper when a 3rd extension lands.
+
+**Live-game-broken-surface (Experiment 01) — refined answers:**
+
+1. *Runtime state no unit test exercises:* Each new unit instantiates correctly via `<Type>.tscn` PackedScene load + `Node3D` add_child. The dual-init unit_type pattern (each subclass sets unit_type in BOTH `_init` AND `_ready` BEFORE `super._ready()`) survives the @export reset between phases — wave-1A through wave-1C tests already verify each subclass independently, wave-2B trusts that surface. Team set BEFORE add_child so SpatialAgentComponent's `_ready` mirrors the right value (the `_assert_all_team` helper re-asserts this for each new type at spawn-test time).
+
+2. *Headless can't detect:* Visual readability — does the layout READ as Iran-column-vs-Turan-column at default zoom? Do trios of 3 stand visually apart from the Piyade line of 5? The Z-staggering (Kamandar/Savar at Z≈-12 vs Piyade at Z=-8 gives front/back separation; AsbSavar at Z≈-15 sits behind both) and the X-spread between corner trios (NW at X=-9, NE at X=+9) prevents cluster overlap. Color contrast against sandy terrain (Phase 2 session 1 Farr-gauge contrast lesson) is preserved by each subclass's scene-side material — wave-1A through wave-1C addressed this at the per-unit level.
+
+3. *Min interactive smoke test:* Lead boots, sees 33 units split into two visible columns. Box-selects Iran Kamandar trio, right-clicks far Turan Savar trio: Kamandar fires from range, Savar charges in, Savar wins (anti-archer 2.0× × 3 attackers vs 3 fragile archers compounds). Then 5 Piyade vs 5 Savar (1.5×, Piyade should win). Then 3 Asb-savar vs 5 Piyade (kiting at range 7.0 vs Piyade 1.5 + 1.2× anti-infantry; Asb-savar should win without being touched if microed). All three kickoff DoD scenarios (items 3, 4, 5) are now interactively testable.
+
+**Known Godot Pitfalls applied:**
+- **#7 (multi-agent shared-tree commit-staging race):** wave-2B is a single-agent deliverable on `feat/phase-2-session-2`; no parallel agent on the branch. Pre-staging `git diff --staged --stat` showed only my files.
+- **#5 (sibling tree-order load-bearing):** N/A — wave-2B does not modify `main.tscn`'s sibling order.
+- **#1 (mouse_filter on Control nodes):** N/A — wave-2B does not add new Control nodes.
+- **#2 (FSM / per-tick driver wiring):** N/A — spawn is off-tick scene-boot work.
+
+**LATER candidates (NEW):**
+- *Spawn-config-as-data when match types diverge.* When match types diverge (skirmish / 1v1 ladder / tutorial scenarios in Phase 5+), extract spawn positions to a `match_setup.tres` resource keyed by scenario id, attached as a child of Main in main.tscn. Threshold: when ≥ 2 distinct spawn layouts ship. Not promoted to L# — single-scenario for now.
+- *Per-type cluster-spawn helper.* The 9 explicit per-type spawn blocks could compact into a tuple-driven loop. Declined for now because the explicit blocks document the spawn-id ordering inline. Promote when a 3rd extension lands.
+
+**Experiment 03 (per-TDD-cycle commits) discipline:** wave-2B is one atomic deliverable (extend the spawn helper), not a multi-cycle feature. Single commit covers test + impl + docs together — cleaner than splitting "test commit" from "impl commit" when the impl is ~30 lines of preloads + array consts + spawn loops. Per the kickoff brief: "single (or two) commits."
+
+**Open questions / state for next session:** none. Wave-2B is mechanical roster extension; the RPS triangle is now interactively testable per the kickoff DoD §3. Reviewer agents (Experiment 02) should look for: (a) does the geometry actually read as two opposing armies in the live game?, (b) any test-count shrinkage from the helper-extraction refactor that lost coverage?
+
 ## 2026-05-08 — Phase 2 session 2 wave 2A (gameplay-systems): RPS multiplier integration in CombatComponent
 
 **Branch:** `feat/phase-2-session-2`
