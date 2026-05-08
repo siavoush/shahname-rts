@@ -465,3 +465,178 @@ func test_validate_hard_rejects_negative_attack_range() -> void:
 	var errors: Array = _balance.call(&"validate_hard")
 	assert_gt(errors.size(), 0,
 		"validate_hard() must catch negative attack_range")
+
+
+# ---------------------------------------------------------------------------
+# 6. Phase 2 session 2 — new combat unit types (wave 1B)
+# ---------------------------------------------------------------------------
+
+func test_phase2s2_unit_types_present() -> void:
+	# All 6 new unit types from wave 1B must be in the units dict.
+	assert_not_null(_balance)
+	var units: Dictionary = _balance.get(&"units")
+	assert_true(units.has(&"kamandar"), "units must include 'kamandar' (Iran archer)")
+	assert_true(units.has(&"savar"), "units must include 'savar' (Iran cavalry)")
+	assert_true(units.has(&"asb_savar_kamandar"),
+		"units must include 'asb_savar_kamandar' (Iran horse archer)")
+	assert_true(units.has(&"turan_kamandar"), "units must include 'turan_kamandar'")
+	assert_true(units.has(&"turan_savar"), "units must include 'turan_savar'")
+	assert_true(units.has(&"turan_asb_savar"), "units must include 'turan_asb_savar'")
+
+
+func test_kamandar_stats_match_spec() -> void:
+	# Phase 2 session 2 kickoff §2 item 1 stat spec.
+	assert_not_null(_balance)
+	var units: Dictionary = _balance.get(&"units")
+	var k: Resource = units.get(&"kamandar")
+	assert_not_null(k, "kamandar entry must exist")
+	assert_almost_eq(float(k.get(&"max_hp")), 60.0, 1e-4,
+		"kamandar.max_hp must be 60.0 (glass cannon)")
+	assert_almost_eq(float(k.get(&"move_speed")), 2.5, 1e-4,
+		"kamandar.move_speed must be 2.5")
+	assert_eq(int(k.get(&"attack_damage_x100")), 1500,
+		"kamandar.attack_damage_x100 must be 1500 (= 15.0 dmg)")
+	assert_almost_eq(float(k.get(&"attack_speed_per_sec")), 0.7, 1e-4,
+		"kamandar.attack_speed_per_sec must be 0.7 (slow bow draw)")
+	assert_almost_eq(float(k.get(&"attack_range")), 8.0, 1e-4,
+		"kamandar.attack_range must be 8.0 (long ranged)")
+
+
+func test_savar_stats_match_spec() -> void:
+	# Phase 2 session 2 kickoff §2 item 2 stat spec.
+	assert_not_null(_balance)
+	var units: Dictionary = _balance.get(&"units")
+	var s: Resource = units.get(&"savar")
+	assert_not_null(s, "savar entry must exist")
+	assert_almost_eq(float(s.get(&"max_hp")), 150.0, 1e-4,
+		"savar.max_hp must be 150.0 (tanky cavalry)")
+	assert_almost_eq(float(s.get(&"move_speed")), 4.5, 1e-4,
+		"savar.move_speed must be 4.5 (cavalry fast)")
+	assert_eq(int(s.get(&"attack_damage_x100")), 1200,
+		"savar.attack_damage_x100 must be 1200 (= 12.0 dmg)")
+	assert_almost_eq(float(s.get(&"attack_speed_per_sec")), 0.9, 1e-4,
+		"savar.attack_speed_per_sec must be 0.9")
+	assert_almost_eq(float(s.get(&"attack_range")), 1.8, 1e-4,
+		"savar.attack_range must be 1.8 (mounted reach, slightly longer than piyade)")
+
+
+func test_asb_savar_kamandar_stats_match_spec() -> void:
+	# Phase 2 session 2 kickoff §2 item 3 stat spec.
+	assert_not_null(_balance)
+	var units: Dictionary = _balance.get(&"units")
+	var a: Resource = units.get(&"asb_savar_kamandar")
+	assert_not_null(a, "asb_savar_kamandar entry must exist")
+	assert_almost_eq(float(a.get(&"max_hp")), 100.0, 1e-4,
+		"asb_savar_kamandar.max_hp must be 100.0")
+	assert_almost_eq(float(a.get(&"move_speed")), 4.0, 1e-4,
+		"asb_savar_kamandar.move_speed must be 4.0")
+	assert_eq(int(a.get(&"attack_damage_x100")), 1300,
+		"asb_savar_kamandar.attack_damage_x100 must be 1300")
+	assert_almost_eq(float(a.get(&"attack_speed_per_sec")), 0.6, 1e-4,
+		"asb_savar_kamandar.attack_speed_per_sec must be 0.6 (slower on horseback)")
+	assert_almost_eq(float(a.get(&"attack_range")), 7.0, 1e-4,
+		"asb_savar_kamandar.attack_range must be 7.0 (slightly less than foot kamandar)")
+
+
+func test_turan_kamandar_mirrors_iran_kamandar() -> void:
+	# Turan mirror: all combat stats must be identical to Iran kamandar.
+	assert_not_null(_balance)
+	var units: Dictionary = _balance.get(&"units")
+	var iran: Resource = units.get(&"kamandar")
+	var turan: Resource = units.get(&"turan_kamandar")
+	assert_not_null(iran)
+	assert_not_null(turan)
+	assert_almost_eq(float(turan.get(&"max_hp")), float(iran.get(&"max_hp")), 1e-4,
+		"turan_kamandar.max_hp must mirror kamandar")
+	assert_almost_eq(float(turan.get(&"move_speed")), float(iran.get(&"move_speed")), 1e-4,
+		"turan_kamandar.move_speed must mirror kamandar")
+	assert_eq(int(turan.get(&"attack_damage_x100")), int(iran.get(&"attack_damage_x100")),
+		"turan_kamandar.attack_damage_x100 must mirror kamandar")
+	assert_almost_eq(float(turan.get(&"attack_speed_per_sec")),
+		float(iran.get(&"attack_speed_per_sec")), 1e-4,
+		"turan_kamandar.attack_speed_per_sec must mirror kamandar")
+	assert_almost_eq(float(turan.get(&"attack_range")), float(iran.get(&"attack_range")), 1e-4,
+		"turan_kamandar.attack_range must mirror kamandar")
+
+
+func test_turan_savar_mirrors_iran_savar() -> void:
+	assert_not_null(_balance)
+	var units: Dictionary = _balance.get(&"units")
+	var iran: Resource = units.get(&"savar")
+	var turan: Resource = units.get(&"turan_savar")
+	assert_not_null(iran)
+	assert_not_null(turan)
+	assert_almost_eq(float(turan.get(&"max_hp")), float(iran.get(&"max_hp")), 1e-4,
+		"turan_savar.max_hp must mirror savar")
+	assert_almost_eq(float(turan.get(&"move_speed")), float(iran.get(&"move_speed")), 1e-4,
+		"turan_savar.move_speed must mirror savar")
+	assert_eq(int(turan.get(&"attack_damage_x100")), int(iran.get(&"attack_damage_x100")),
+		"turan_savar.attack_damage_x100 must mirror savar")
+	assert_almost_eq(float(turan.get(&"attack_speed_per_sec")),
+		float(iran.get(&"attack_speed_per_sec")), 1e-4,
+		"turan_savar.attack_speed_per_sec must mirror savar")
+	assert_almost_eq(float(turan.get(&"attack_range")), float(iran.get(&"attack_range")), 1e-4,
+		"turan_savar.attack_range must mirror savar")
+
+
+func test_turan_asb_savar_mirrors_iran_asb_savar_kamandar() -> void:
+	assert_not_null(_balance)
+	var units: Dictionary = _balance.get(&"units")
+	var iran: Resource = units.get(&"asb_savar_kamandar")
+	var turan: Resource = units.get(&"turan_asb_savar")
+	assert_not_null(iran)
+	assert_not_null(turan)
+	assert_almost_eq(float(turan.get(&"max_hp")), float(iran.get(&"max_hp")), 1e-4,
+		"turan_asb_savar.max_hp must mirror asb_savar_kamandar")
+	assert_almost_eq(float(turan.get(&"move_speed")), float(iran.get(&"move_speed")), 1e-4,
+		"turan_asb_savar.move_speed must mirror asb_savar_kamandar")
+	assert_eq(int(turan.get(&"attack_damage_x100")), int(iran.get(&"attack_damage_x100")),
+		"turan_asb_savar.attack_damage_x100 must mirror asb_savar_kamandar")
+	assert_almost_eq(float(turan.get(&"attack_speed_per_sec")),
+		float(iran.get(&"attack_speed_per_sec")), 1e-4,
+		"turan_asb_savar.attack_speed_per_sec must mirror asb_savar_kamandar")
+	assert_almost_eq(float(turan.get(&"attack_range")), float(iran.get(&"attack_range")), 1e-4,
+		"turan_asb_savar.attack_range must mirror asb_savar_kamandar")
+
+
+func test_kamandar_is_ranged_savar_is_melee() -> void:
+	# Sanity: kamandar attack_range > 1.5 (ranged); savar attack_range <= 2.0 (melee)
+	assert_not_null(_balance)
+	var units: Dictionary = _balance.get(&"units")
+	var kami: Resource = units.get(&"kamandar")
+	var savar: Resource = units.get(&"savar")
+	assert_gt(float(kami.get(&"attack_range")), 1.5,
+		"kamandar must have ranged attack_range > 1.5")
+	assert_lt(float(savar.get(&"attack_range")), 3.0,
+		"savar must have melee attack_range < 3.0")
+
+
+func test_savar_is_faster_than_piyade() -> void:
+	# Cavalry must out-run infantry — essential for RPS mechanics
+	assert_not_null(_balance)
+	var units: Dictionary = _balance.get(&"units")
+	var savar: Resource = units.get(&"savar")
+	var piyade: Resource = units.get(&"piyade")
+	assert_gt(float(savar.get(&"move_speed")), float(piyade.get(&"move_speed")),
+		"savar.move_speed must be > piyade.move_speed (cavalry must be faster)")
+
+
+func test_savar_is_tankier_than_kamandar() -> void:
+	# Heavy cavalry vs glass cannon archer — essential for RPS cost-effectiveness
+	assert_not_null(_balance)
+	var units: Dictionary = _balance.get(&"units")
+	var savar: Resource = units.get(&"savar")
+	var kami: Resource = units.get(&"kamandar")
+	assert_gt(float(savar.get(&"max_hp")), float(kami.get(&"max_hp")),
+		"savar.max_hp must be > kamandar.max_hp (tanky cavalry vs glass cannon archer)")
+
+
+func test_combat_matrix_is_populated_not_empty() -> void:
+	# After wave 1B, the combat matrix must not be empty.
+	assert_not_null(_balance)
+	var combat: Resource = _balance.get(&"combat")
+	var effectiveness: Dictionary = combat.get(&"effectiveness")
+	assert_false(effectiveness.is_empty(),
+		"combat.effectiveness must be populated with RPS matrix (wave 1B)")
+	assert_gt(effectiveness.size(), 0,
+		"combat.effectiveness must have at least one attacker row")
