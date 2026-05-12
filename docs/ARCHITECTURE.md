@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.18.2
+version: 0.19.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -18,8 +18,8 @@ ssot_for:
 references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md, RESOURCE_NODE_CONTRACT.md, AI_DIFFICULTY.md, ../02_IMPLEMENTATION_PLAN.md, STUDIO_PROCESS.md]
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
-last_updated: 2026-05-08
-# bumped to v0.18.2 — Phase 2 Session 2 close (wave 3 + reviewer-pair APPROVE)
+last_updated: 2026-05-12
+# bumped to v0.19.0 — Phase 2 Session 2 retro (L13 escalated, L20/L21 new — Pitfall #7 SSOT)
 ---
 
 # Architecture — Target Shape and Build State
@@ -1183,13 +1183,15 @@ Promoted from §6 entry prose at session-close retros so they're indexable rathe
 | L10 | **Floating damage numbers** | 🟢 (Phase 5 polish) | Phase 2 session 1 wave 2C kickoff | Numeric `-10` drifting up + fading on each damage hit. Visual feedback for combat reads. Same render path as the future floating Farr-change labels. |
 | L11 | **`unit_health_changed` typed signal** | 🟡 | §6 v0.16.2 (selected-unit panel) + Phase 2 BUG-04 retro | Currently `SelectedUnitPanel` polls `health_component.hp` in `_process` because no per-change signal exists. Adds an event-driven update path; deferred until CombatSystem coordinator (L3) so the signal-emit order is clean. |
 | L12 | **Selectable-vs-collision parity** | 🟢 (when art ships) | Phase 2 session 1 BUG-05 (click-tolerance fallback) | Currently unit collision boxes are smaller than visual mesh (e.g., Piyade visual 0.5×0.7×0.5 vs collision 0.4×0.55×0.4). Drove the BUG-05 click-tolerance fallback. When real art lands, collision shapes should match visual silhouettes within tight margin so the tolerance fallback isn't load-bearing. |
-| L13 | **MatchHarness migration for `test_phase_2_session_1_combat.gd`** | 🟢 (next qa wave) | architecture-reviewer F-3 finding (Phase 2 session 1) | qa wave 3 file uses manual `before_each` setup instead of MatchHarness. Works correctly but doesn't auto-benefit from harness improvements. Migrate in next qa-engineer dispatch. |
+| L13 | **MatchHarness migration for `test_phase_2_session_1_combat.gd` AND `test_phase_2_session_2_rps_combat.gd`** | 🔴 (Phase 3 pre-flight blocker) | architecture-reviewer F-3 (Phase 2 sess 1) + arch-reviewer-p2s2 escalation (Phase 2 sess 2) | **ESCALATED 2026-05-12.** Was 🟢 "next qa wave's cleanup" after Phase 2 session 1. Phase 2 session 2's wave-3 file (`test_phase_2_session_2_rps_combat.gd`) extended the MatchHarness-bypass pattern rather than closing it — manual `before_each` autoload bookkeeping. Two integration files bypassing the contract is precedent-setting drift; future qa work will follow it. arch-reviewer-p2s2 framing: drift is now "self-propagating across waves." Promote from "🟢 polish" to "🔴 Phase 3 pre-flight blocker" — close before Phase 3 wave-3 ships and adds a third file. |
 | L14 | **Cause-string suffix taxonomy as Constants** | 🟢 (when 2nd suffix ships) | §6 v0.17.0 + Pitfall #6 candidate | Currently `&"_idle_worker"` is a string literal duplicated at producer (HealthComponent) and consumer (FarrSystem). When a 2nd suffix lands (`_fleeing`, `_engaged`), promote the convention to `Constants.CAUSE_SUFFIX_*` so producer/consumer link is compile-checkable. |
 | L15 | **MovementComponent encapsulation helper** | 🟢 | architecture-reviewer F-5 finding | `UnitState_Attacking` and `UnitState_AttackMove` reach into `_movement._scheduler` and `_movement._request_id` directly (private members) for repath cancel. Should go through a public `MovementComponent.cancel_in_flight_repath()` method. Defer until 3rd state needs the same cleanup. |
 | L16 | **Per-tick repath throttle in Attacking** | 🟡 | §6 v0.17.4 (BUG-06) | `UnitState_Attacking._sim_tick` re-issues `request_repath` every tick. Fine at 15 units; profile at 50+. Stale-distance threshold or per-N-ticks throttle when unit count grows. |
 | L17 | **`F2` Farr log debug overlay** | 🟢 (Phase 4) | CLAUDE.md "debug overlays first-class" + Phase 2 session 1 first Farr drain | Per-tick log of every `EventBus.farr_changed` emit (amount, reason, source_unit_id). Toggleable via F2. Surfaces when Atashkadeh per-tick contributions ship in Phase 4 — debug-overlay observer of the producer-side batching. |
 | L18 | **`F1` pathfinding debug overlay** | 🟢 (Phase 6 with AI) | CLAUDE.md + Phase 1 session 1 | Renders unit waypoint paths in 3D. Currently scaffolded by DebugOverlayManager but no concrete F1 overlay. Surfaces when AI pathfinding becomes the debugging surface that matters. |
 | L19 | **`F3` AI state debug overlay** | 🟢 (Phase 6 with AI) | CLAUDE.md + Phase 6 plan | Renders AI controller state per unit (idle / attacking / fleeing / etc.) as floating text or color-coded silhouettes. Surfaces with `DummyAIController` shipping. |
+| L20 | **Pitfall #7 mitigation needs single owning surface** | 🔴 (Open Space sync, Phase 2→3 transition) | arch-reviewer-pr9 SSOT-in-spirit framing (Phase 2 sess 2 close) | **NEW 2026-05-12.** Three confirmed cross-agent commit-staging race occurrences across two sessions (`aa429ef`, `cac29cc`, `3fefeea`). Mitigation hypothesis (worktree-per-agent vs commit-serialization vs explicit per-file staging) is distributed across BUILD_LOG line 322 + ARCHITECTURE.md §6 v0.17.9 + STUDIO_PROCESS.md §9 + four other places — currently "correct everywhere, owns nowhere." Promote to single owning surface: either a top-level §7-style entry on the project root OR a dedicated `docs/PITFALLS.md`. Pin the mitigation options + decision criteria at ONE location so a future agent reads ONE thing and understands the structural recommendation. Closes via Open Space sync between Phase 2 close and Phase 3 kickoff. |
+| L21 | **`docs/PITFALLS.md` as project-level top-level pitfall doc** | 🟡 (when 3rd Pitfall-class concept emerges) | arch-reviewer-pr9 framing (Phase 2 sess 2 close) | **NEW 2026-05-12.** Currently engine-level Pitfalls live in `docs/PROCESS_EXPERIMENTS.md` Known Godot Pitfalls section (engine foot-guns); process-level Pitfalls (Pitfall #7 cross-agent commit-race) live in `STUDIO_PROCESS.md` §9; some hybrid (the queue_free + _test_run_tick interaction) crosses both. When a third hybrid concept emerges, the cross-doc navigation becomes painful — promote to a single `docs/PITFALLS.md` that indexes by class (engine / process / hybrid). Defer until concrete third instance. |
 
 **How to add to this list:** at session-close retro, scan §6 entries and BUILD_LOG retros for "LATER items surfaced." Promote architectural / scale-blocking ones here with the priority class. Keep §6 entries focused on "what shipped this wave + why"; the LATER index is the cross-wave aggregation.
 

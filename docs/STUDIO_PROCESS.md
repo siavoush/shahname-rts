@@ -2,7 +2,7 @@
 title: Studio Process — How the Virtual Studio Operates
 type: process
 status: living
-version: 1.2.0
+version: 1.3.0
 owner: team
 summary: Operating contract for multi-agent collaboration — discussion patterns, facilitator role, retro practice, SemVer policy, mode separation, sync log.
 audience: all
@@ -21,7 +21,7 @@ ssot_for:
 references: [MANIFESTO.md, ARCHITECTURE.md]
 tags: [process, syncs, retros, ssot, modes, semver, frontmatter]
 created: 2026-04-30
-last_updated: 2026-05-04
+last_updated: 2026-05-12
 ---
 
 # Studio Process — How the Virtual Studio Operates
@@ -329,6 +329,16 @@ This section accumulates rules added/modified through retros. Each entry is date
   5. **Draft the next session's kickoff doc** with the latest Known Pitfalls list verbatim, anti-loop brief language baked in, current Deviation count baseline, active Experiment list.
 
   **Why added:** without a closure step, learnings rot. Pitfall candidates stay scattered in verdict text; experiment outcomes don't propagate to the next kickoff brief; LATER items live as comments in §6 entries instead of an indexed list. By session 5, you'd be re-discovering the same patterns. The retro is ~30 min of doc work and produces compounding returns. Cites Manifesto Principle 10 (Feedback Cycle): "every system has the right to demand its own improvement" — the retro is how the system claims that right.
+
+- *(2026-05-12, post-Phase-2-session-2)* **Wave-close review is now PERMANENT (Experiment 02 graduated).** Two confirming sessions (Phase 1 sess 2 + Phase 2 sess 2). Every wave-close, lead dispatches `godot-code-reviewer` and `architecture-reviewer` in parallel BEFORE PR creation. Both produce structured review output. Blocking issues route back to original agents; non-blocking suggestions and nits go in the PR description. **Reviewers also post their full structured review as a GitHub PR comment via `gh pr review --comment` so the review trail is discoverable inline in the GitHub UI**, not just in agent chat / PR description. **Convergent findings — items flagged independently by both reviewers — auto-promote to LATER index items at the next retro.** Cites Manifesto Principle 1 (Truth-Seeking) and Principle 10 (Feedback Cycle).
+
+- *(2026-05-12, post-Phase-2-session-2)* **Per-TDD-cycle commits + anti-loop brief language are PERMANENT (Experiment 03 graduated for sequential single-agent waves).** Verification-loop occurrences dropped from 2+ to 0 across Phase 2 session 2; lead-proxy commits dropped from 3 to 0. The anti-loop cycle (implement → pre-commit gate → `git diff --staged --stat` confirms only your files → commit → `git log -1` confirms SHA → THEN report back) is observably load-bearing for sequential single-agent dispatches. **All agent briefs include the cycle verbatim.** Per-TDD-cycle commits (commit per `red → green → refactor` pair, NOT batched at end-of-wave) suppress cross-agent contamination for sequential waves.
+
+- *(2026-05-12, post-Phase-2-session-2)* **Parallel-agent wave-close commit serialization is INSUFFICIENT and needs a structural fix (Experiment 04 forthcoming).** Phase 2 session 2's wave 1 had three parallel agents staging concurrently; the per-TDD-cycle discipline did NOT suppress the commit-race (`cac29cc` swept TuranKamandar; `3fefeea` swept TuranSavar — Pitfall #7's 2nd and 3rd occurrences). The race occurs at commit-write time when one agent's pre-commit gate (~2 min test runner) lets another agent's working-tree state mature into the commit. **Discipline-side mitigation alone is insufficient for parallel-agent waves.** Two structural alternatives queued for Open Space sync between Phase 2 close and Phase 3 kickoff:
+  1. **Worktree-per-agent** (preferred per arch-reviewer-p2s2) — each parallel agent operates in `git worktree add` directory, sharing `.git` but with independent working trees. Eliminates the race.
+  2. **Lead-orchestrated commit serialization** — agents request a commit-window-of-one from lead before staging; lead grants windows sequentially. No infrastructure change.
+
+  Until Open Space resolves: **prefer sequential single-agent waves over parallel-agent waves when wave deliverables would otherwise share docs (`BUILD_LOG.md`, `ARCHITECTURE.md`)**. Phase 2 session 2's waves 2A / 2B / 3 (sequential) all shipped clean; wave 1's parallel-three stomped twice.
 
 ---
 
