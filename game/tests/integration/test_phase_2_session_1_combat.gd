@@ -967,7 +967,13 @@ func test_attack_range_overlay_updates_on_selection_change() -> void:
 # Flow 8: Cross-feature smoke tests
 # ============================================================================
 
-func test_main_tscn_spawns_15_units_correct_teams() -> void:
+func test_main_tscn_spawns_33_units_correct_teams() -> void:
+	# Phase 2 session 2 wave 2B extended the match-start roster. Updated
+	# invariants:
+	#   Iran  = 5 Kargar + 5 Piyade + 3 Kamandar + 3 Savar + 3 AsbSavar = 19
+	#   Turan = 5 Piyade + 3 Kamandar + 3 Savar + 3 AsbSavar          = 14
+	#   Total = 33
+	# See main.gd::_spawn_starting_units for the canonical sequence.
 	var main_node: Node = MainScene.instantiate()
 	add_child_autofree(main_node)
 	await get_tree().process_frame
@@ -975,8 +981,8 @@ func test_main_tscn_spawns_15_units_correct_teams() -> void:
 	var all_units: Array = []
 	_collect_unit_shaped_nodes(main_node, all_units)
 
-	assert_eq(all_units.size(), 15,
-		"main.tscn must spawn exactly 15 units (5 Kargar + 5 Iran Piyade + 5 Turan Piyade)")
+	assert_eq(all_units.size(), 33,
+		"main.tscn must spawn exactly 33 units (5 Kargar + 5 Iran Piyade + 5 Turan Piyade + 3×6 wave-2B types)")
 
 	var iran_count: int = 0
 	var turan_count: int = 0
@@ -987,8 +993,8 @@ func test_main_tscn_spawns_15_units_correct_teams() -> void:
 		elif t == Constants.TEAM_TURAN:
 			turan_count += 1
 
-	assert_eq(iran_count, 10, "10 units must be on TEAM_IRAN")
-	assert_eq(turan_count, 5, "5 units must be on TEAM_TURAN")
+	assert_eq(iran_count, 19, "19 units must be on TEAM_IRAN (5 Kargar + 5 Piyade + 3×3 new types)")
+	assert_eq(turan_count, 14, "14 units must be on TEAM_TURAN (5 Piyade + 3×3 new types)")
 
 
 func test_main_tscn_has_health_bars_overlay() -> void:

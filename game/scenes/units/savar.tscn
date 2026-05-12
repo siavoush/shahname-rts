@@ -1,0 +1,58 @@
+[gd_scene load_steps=5 format=3 uid="uid://shahnameh_savar_unit"]
+
+; savar.tscn — Savar (Iran cavalry) scene.
+;
+; Source: 01_CORE_MECHANICS.md §6 — "Savar (cavalry) — heavy mounted
+; infantry. Counters Kamandar (charges through arrow range to melee),
+; countered by Piyade."
+;
+; Pattern: scene inheritance via instance=ExtResource("path_to_unit.tscn").
+; Same shape as kargar.tscn / piyade.tscn / kamandar.tscn — overrides only
+; the MeshInstance3D's mesh + material plus the root's script.
+;
+; Visual placeholder per CLAUDE.md "colored shapes only" policy:
+;   - Box (cube), 0.7 wide × 0.6 tall × 0.7 deep — WIDER than Piyade's
+;     0.5×0.7×0.5 in horizontal footprint (the horse-plus-rider takes more
+;     ground than foot infantry) but slightly SHORTER in height (0.6 vs
+;     0.7). The visual reads as "a wider, more massive figure" — exactly
+;     the cavalry cue. Per kickoff §2 deliverable 2.
+;   - Iran-blue deeper-saturated Color(0.15, 0.25, 0.65) — saturated blue
+;     distinct from Piyade's lighter (0.3, 0.4, 0.7) and Kamandar's
+;     muted-darker (0.20, 0.30, 0.55). The deep saturation signals
+;     "heavy elite combat" within the Iran palette. Cool counterpoint to
+;     the sandy terrain (Phase 2 session 1 contrast lesson).
+
+[ext_resource type="PackedScene" uid="uid://shahnameh_unit_base" path="res://scenes/units/unit.tscn" id="1_unit_template"]
+[ext_resource type="Script" path="res://scripts/units/savar.gd" id="2_savar"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_savar"]
+; Heavier cavalry silhouette. 0.7 × 0.6 × 0.7 — wider than Piyade
+; (0.5×0.7×0.5) in BOTH horizontal axes (the horse-plus-rider footprint),
+; slightly shorter in height (0.6 vs 0.7) so the figure reads as more
+; ground-hugging / heavier rather than taller. Concrete numbers picked
+; per kickoff §2 deliverable 2.
+size = Vector3(0.7, 0.6, 0.7)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_savar"]
+; Iran-blue deeper saturated. Saturated enough to read against the sandy
+; terrain (Phase 2 session 1 Farr-gauge contrast lesson — cool counterpoint
+; to warm sand) AND distinguishable from Piyade's lighter (0.3, 0.4, 0.7)
+; by being deeper/darker, AND from Kamandar's (0.20, 0.30, 0.55) by being
+; more saturated (closer to pure Iran-blue rather than muted). The deep-blue
+; cue at a glance: "this is the heavy elite Iran combat unit."
+albedo_color = Color(0.15, 0.25, 0.65, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — same simple lit pipeline as the
+                  ; rest of the placeholder units; consistency for placeholders.
+
+
+; Inherit the Unit scene template; override only what differs.
+[node name="Savar" instance=ExtResource("1_unit_template")]
+script = ExtResource("2_savar")
+
+[node name="MeshInstance3D" parent="." index="0"]
+; Override the base Unit's BoxMesh (0.5×0.6×0.5) with the Savar wider box
+; (0.7×0.6×0.7). Y-offset matches half-height (0.30) so the box-bottom
+; sits ON the terrain plane (consistent with the unit.tscn convention).
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.30, 0)
+mesh = SubResource("BoxMesh_savar")
+material_override = SubResource("StandardMaterial3D_savar")

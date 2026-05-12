@@ -344,6 +344,14 @@ func _apply_balance_data_defaults() -> void:
 		if typeof(attack_range_value) == TYPE_FLOAT \
 				or typeof(attack_range_value) == TYPE_INT:
 			_combat_component.set(&"attack_range", float(attack_range_value))
+		# Phase 2 session 2 wave 2A — propagate this unit's type and the
+		# CombatMatrix so CombatComponent._sim_tick can scale damage by the
+		# RPS multiplier at damage-fire time. Defensive: missing matrix is
+		# tolerated (CombatComponent treats it as 1.0× neutral).
+		_combat_component.set(&"attacker_unit_type", unit_type)
+		var combat_matrix: Variant = bd.get(&"combat")
+		if combat_matrix is Resource:
+			_combat_component.set(&"combat_matrix", combat_matrix)
 
 
 # === Command queue helpers (per State Machine Contract §2.5) ================

@@ -73,6 +73,30 @@ var attack_speed_per_sec: float = 1.0
 # §1.6 ("Position, velocity, and other per-frame physics state stay float").
 var attack_range: float = 1.5
 
+# attacker_unit_type: StringName — the OWNING unit's type identifier
+# (e.g., &"piyade", &"savar", &"turan_kamandar"). Read by the RPS multiplier
+# lookup at damage-fire time. Set by Unit._apply_balance_data_defaults from
+# the parent Unit's `unit_type` field. Defaults to &"" — get_multiplier()
+# treats an unknown attacker as 1.0× (forward-compat / pre-wired tests).
+#
+# Phase 2 session 2 wave 2A — see 02e_PHASE_2_SESSION_2_KICKOFF.md §2 item 5.
+var attacker_unit_type: StringName = &""
+
+# combat_matrix: CombatMatrix Resource (untyped slot to avoid the project-wide
+# class_name registry race documented in docs/ARCHITECTURE.md §6 v0.4.0).
+# Set by Unit._apply_balance_data_defaults to BalanceData.combat. Read at
+# damage-fire time via combat_matrix.get_multiplier(attacker_type, target_type).
+#
+# CRITICAL — MUST call get_multiplier(...) NOT raw effectiveness[atk][def] dict
+# access. get_multiplier() does Turan-mirror folding (strips "turan_" prefix,
+# special-cases "turan_asb_savar" → "asb_savar_kamandar"). Raw dict access
+# bypasses the fold and Turan units deal wrong damage in-game while headless
+# tests pass. Flagged as the Live-game-broken-surface for this wave.
+#
+# Defaults to null — _sim_tick treats a missing matrix as 1.0× neutral so the
+# wave-1A unit-test fixtures (which pre-date this field) still pass.
+var combat_matrix: Resource = null
+
 
 # === Internal state =========================================================
 
@@ -177,13 +201,37 @@ func _sim_tick(_dt: float) -> void:
 		_set_sim(&"_target_unit_id", -1)
 		return
 	if health.has_method(&"take_damage_x100"):
+		# RPS multiplier lookup (Phase 2 session 2 wave 2A — see kickoff §2
+		# item 5). attacker_unit_type is set by Unit._apply_balance_data_defaults
+		# from the parent Unit's `unit_type`; target_unit_type is read from the
+		# resolved target Node3D. Both default to &"" if missing — get_multiplier
+		# returns 1.0 for unknown pairs so unwired test fixtures still fire damage.
+		#
+		# CRITICAL — call get_multiplier(...) NOT effectiveness[atk][def] raw
+		# dict access. get_multiplier folds the "turan_" prefix; raw access
+		# silently misses Turan units and they deal wrong damage in the live
+		# game. Flagged in the wave-2A kickoff brief as the load-bearing
+		# Live-game-broken-surface for this integration.
+		var scaled_damage_x100: int = attack_damage_x100
+		if combat_matrix != null and combat_matrix.has_method(&"get_multiplier"):
+			var target_unit_type: StringName = &""
+			var raw_target_type: Variant = target.get(&"unit_type")
+			if typeof(raw_target_type) == TYPE_STRING_NAME:
+				target_unit_type = raw_target_type
+			elif typeof(raw_target_type) == TYPE_STRING:
+				target_unit_type = StringName(raw_target_type)
+			var multiplier: float = float(combat_matrix.call(
+				&"get_multiplier", attacker_unit_type, target_unit_type))
+			# Round to int — Sim Contract §1.6 forbids storing the float on a
+			# SimNode field. The local Variant slot above is fine (non-state).
+			scaled_damage_x100 = roundi(float(attack_damage_x100) * multiplier)
 		# Pass &"melee_attack" as the cause. HealthComponent's death emit
 		# augments this with "_idle_worker" if the dying unit is a Kargar
 		# in idle (Phase 2 session 1 wave 2A deliverable 10). Future
 		# ranged units (Kamandar, ...) will pass &"ranged_attack" from
 		# their own combat path — a CombatComponent-level "kind" flag is
 		# a LATER refactor when the second cause source ships.
-		health.call(&"take_damage_x100", attack_damage_x100, get_parent(), &"melee_attack")
+		health.call(&"take_damage_x100", scaled_damage_x100, get_parent(), &"melee_attack")
 	# Cooldown reset. roundi enforces the deterministic rounding rule
 	# called out in Sim Contract §1.6.
 	var cooldown: int = roundi(float(SimClock.SIM_HZ) / attack_speed_per_sec)

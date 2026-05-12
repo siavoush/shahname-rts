@@ -16,7 +16,7 @@
 ; constants_version: manual stamp for this session. qa-engineer will wire
 ; file-hash auto-derivation in wave 2 (MatchHarness). See TESTING_CONTRACT.md §2.3.
 
-[gd_resource type="Resource" script_class="BalanceData" load_steps=23 format=3 uid="uid://balance_data_main"]
+[gd_resource type="Resource" script_class="BalanceData" load_steps=28 format=3 uid="uid://balance_data_main"]
 
 [ext_resource type="Script" path="res://data/balance_data.gd" id="1_balancedata"]
 [ext_resource type="Script" path="res://data/sub_resources/unit_stats.gd" id="2_unitstats"]
@@ -85,20 +85,121 @@ production_ticks = 600
 attack_damage_x100 = 1000
 attack_speed_per_sec = 1.0
 
-; Kamandar (archer) — 01_CORE_MECHANICS.md §6
-; Ranged infantry. Strong vs piyade (kamandar > piyade in RPS triangle).
-; Weak in melee — lower HP than piyade; relies on range.
+; Kamandar (Iran archer) — 01_CORE_MECHANICS.md §6, Phase 2 session 2 wave 1B
+; Ranged infantry. Glass cannon — high per-hit damage, low HP, slow attack.
+; RPS role: kamandar > piyade (archers shred infantry at range).
+;           savar > kamandar (cavalry charges close range gap fast).
+; attack_damage_x100 = 1500 → 15.0 dmg/hit at 0.7 attacks/sec = 10.5 DPS
+; Kills Piyade (100 HP) in ~9.5s solo. Piyade kills Kamandar (60 HP) in 6.0s.
+; With 1.5× matrix multiplier vs piyade: effective 1575 x100 = 22.5 DPS → Piyade dies ~4.4s
 [sub_resource type="Resource" id="unit_kamandar"]
 script = ExtResource("2_unitstats")
-max_hp = 80.0
-damage = 10.0
-attack_speed_ticks = 40
+max_hp = 60.0
+damage = 15.0
+attack_speed_ticks = 43
 attack_range = 8.0
-move_speed = 2.8
+move_speed = 2.5
 population_cost = 1
 coin_cost = 60
 grain_cost = 15
 production_ticks = 720
+attack_damage_x100 = 1500
+attack_speed_per_sec = 0.7
+
+; Savar (Iran cavalry) — 01_CORE_MECHANICS.md §6, Phase 2 session 2 wave 1B
+; Heavy mounted infantry. Tanky, fast, strong per-hit.
+; RPS role: savar > kamandar (cavalry charge closes range quickly).
+;           piyade > savar (massed spears stop horses — 0.7× savar vs piyade).
+; attack_damage_x100 = 1200 → 12.0 dmg/hit at 0.9 attacks/sec = 10.8 DPS
+; Kills Kamandar (60 HP) in ~5.6s but takes 2.0× multiplier damage from savar charge
+[sub_resource type="Resource" id="unit_savar"]
+script = ExtResource("2_unitstats")
+max_hp = 150.0
+damage = 12.0
+attack_speed_ticks = 33
+attack_range = 1.8
+move_speed = 4.5
+population_cost = 1
+coin_cost = 75
+grain_cost = 20
+production_ticks = 900
+attack_damage_x100 = 1200
+attack_speed_per_sec = 0.9
+
+; Asb-savar Kamandar (Iran horse archer) — 01_CORE_MECHANICS.md §6, Phase 2 session 2 wave 1B
+; Combined mounted archer. Mobile, ranged, but vulnerable to sustained melee.
+; RPS role: asb_savar_kamandar has 1.2× vs piyade (kiting); 0.5× vs savar (outrun but can't
+;           outlast sustained cavalry engagement); neutral vs kamandar foot archers.
+; attack_damage_x100 = 1300 → 13.0 dmg/hit at 0.6 attacks/sec = 7.8 DPS
+; Tier 1-equivalent — rebalanced upward when Tier 2 tech ships (Phase 4).
+; Kiting AI (move-fire-move) NOT in session 2; deferred to Phase 6 DummyAIController.
+[sub_resource type="Resource" id="unit_asb_savar_kamandar"]
+script = ExtResource("2_unitstats")
+max_hp = 100.0
+damage = 13.0
+attack_speed_ticks = 50
+attack_range = 7.0
+move_speed = 4.0
+population_cost = 1
+coin_cost = 80
+grain_cost = 20
+production_ticks = 1080
+attack_damage_x100 = 1300
+attack_speed_per_sec = 0.6
+
+; Turan_Kamandar (Turan archer) — mirror of Iran Kamandar for Phase 2 session 2.
+; RPS folding: combat_matrix lookup strips "turan_" prefix; same matrix row as kamandar.
+; Separate unit_type key allows visual/color differentiation (Turan-red palette).
+[sub_resource type="Resource" id="unit_turan_kamandar"]
+script = ExtResource("2_unitstats")
+max_hp = 60.0
+damage = 15.0
+attack_speed_ticks = 43
+attack_range = 8.0
+move_speed = 2.5
+population_cost = 1
+coin_cost = 60
+grain_cost = 15
+production_ticks = 720
+attack_damage_x100 = 1500
+attack_speed_per_sec = 0.7
+
+; Turan_Savar (Turan cavalry) — mirror of Iran Savar for Phase 2 session 2.
+; RPS folding: combat_matrix strips "turan_" prefix; same matrix row as savar.
+[sub_resource type="Resource" id="unit_turan_savar"]
+script = ExtResource("2_unitstats")
+max_hp = 150.0
+damage = 12.0
+attack_speed_ticks = 33
+attack_range = 1.8
+move_speed = 4.5
+population_cost = 1
+coin_cost = 75
+grain_cost = 20
+production_ticks = 900
+attack_damage_x100 = 1200
+attack_speed_per_sec = 0.9
+
+; Turan_Asb_Savar (Turan horse archer) — mirror of Iran Asb-savar Kamandar.
+; Key is &"turan_asb_savar" (shorter than Iran's compound name).
+; RPS folding: _resolve_key("turan_asb_savar") → strips prefix → "asb_savar" →
+;   _turan_base_to_iran_key("asb_savar") → &"asb_savar_kamandar" row.
+; Rationale for shortened key: avoids &"turan_asb_savar_kamandar" verbosity;
+;   the "kamandar" suffix is understood from context. Documented here and in
+;   combat_matrix.gd::_turan_base_to_iran_key for future maintainers.
+[sub_resource type="Resource" id="unit_turan_asb_savar"]
+script = ExtResource("2_unitstats")
+max_hp = 100.0
+damage = 13.0
+attack_speed_ticks = 50
+attack_range = 7.0
+move_speed = 4.0
+population_cost = 1
+coin_cost = 80
+grain_cost = 20
+production_ticks = 1080
+attack_damage_x100 = 1300
+attack_speed_per_sec = 0.6
 
 ; =========================================================================
 ; Building stats sub-resources
@@ -195,21 +296,50 @@ gain_hero_spares_enemy = 5.0
 
 [sub_resource type="Resource" id="combat_mtx"]
 script = ExtResource("5_combatmatrix")
+; Rock-paper-scissors effectiveness matrix — Phase 2 session 2 wave 1B
+; Source: 02e_PHASE_2_SESSION_2_KICKOFF.md §2 item 5
+; Spec: 01_CORE_MECHANICS.md §6 "piyade > savar > kamandar > piyade"
+;
+; Only Iran base-type rows are stored (4×4 = 16 cells).
+; Turan mirror types fold at lookup time via CombatMatrix.get_multiplier()
+; which strips the "turan_" prefix — see combat_matrix.gd for details.
+;
+; Row interpretation (attacker → target):
+;   piyade:             neutral vs piyade, neutral vs kamandar, 1.5× vs savar (anti-cav), neutral vs asb-savar
+;   kamandar:           1.5× vs piyade (archers vs infantry), neutral vs kamandar, 0.7× vs savar (can't stop charge), 0.7× vs asb-savar
+;   savar:              0.7× vs piyade (spears stop horses), 2.0× vs kamandar (decisive cavalry charge), neutral vs savar, neutral vs asb-savar
+;   asb_savar_kamandar: 1.2× vs piyade (kiting), neutral vs kamandar, 0.5× vs savar (outrun but can't outlast), neutral vs asb-savar
+;
+; Design rationale:
+;   1.5× piyade>savar: 5 Piyade vs 5 Savar should converge in ~8s (Piyade wins).
+;   2.0× savar>kamandar: decisive cavalry charge; Savar wins even with fewer numbers.
+;   1.5× kamandar>piyade: archers at range shred slow infantry; range gate required.
+;   0.5× asb_savar>savar: horse archers can kite but lose prolonged melee vs heavy cav.
+;   All values are starting points; lead tunes via this file without code changes.
 effectiveness = {
 &"piyade": {
 &"piyade": 1.0,
-&"kamandar": 0.75,
-&"kargar": 1.2
+&"kamandar": 1.0,
+&"savar": 1.5,
+&"asb_savar_kamandar": 1.0
 },
 &"kamandar": {
 &"piyade": 1.5,
 &"kamandar": 1.0,
-&"kargar": 1.0
+&"savar": 0.7,
+&"asb_savar_kamandar": 0.7
 },
-&"kargar": {
-&"piyade": 0.5,
-&"kamandar": 0.5,
-&"kargar": 1.0
+&"savar": {
+&"piyade": 0.7,
+&"kamandar": 2.0,
+&"savar": 1.0,
+&"asb_savar_kamandar": 1.0
+},
+&"asb_savar_kamandar": {
+&"piyade": 1.2,
+&"kamandar": 1.0,
+&"savar": 0.5,
+&"asb_savar_kamandar": 1.0
 }
 }
 
@@ -265,12 +395,17 @@ hard_attack_army_threshold = 16
 
 [resource]
 script = ExtResource("1_balancedata")
-constants_version = "2026-05-01-phase-2-session-1-combat"
+constants_version = "2026-05-08-phase-2-session-2-rps-roster"
 units = {
 &"kargar": SubResource("unit_kargar"),
 &"piyade": SubResource("unit_piyade"),
+&"turan_piyade": SubResource("unit_turan_piyade"),
 &"kamandar": SubResource("unit_kamandar"),
-&"turan_piyade": SubResource("unit_turan_piyade")
+&"savar": SubResource("unit_savar"),
+&"asb_savar_kamandar": SubResource("unit_asb_savar_kamandar"),
+&"turan_kamandar": SubResource("unit_turan_kamandar"),
+&"turan_savar": SubResource("unit_turan_savar"),
+&"turan_asb_savar": SubResource("unit_turan_asb_savar")
 }
 buildings = {
 &"throne": SubResource("bldg_throne"),

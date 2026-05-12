@@ -1,0 +1,80 @@
+[gd_scene load_steps=5 format=3 uid="uid://shahnameh_asb_savar_kamandar_unit"]
+
+; asb_savar_kamandar.tscn — AsbSavarKamandar (Iran horse archer) scene.
+;
+; Source: 01_CORE_MECHANICS.md §6 — "Asb-savar Kamandar (horse archer) —
+; ranged + cavalry hybrid. The unit that makes kiting AI a real problem."
+; Plus 02_IMPLEMENTATION_PLAN.md §169 (ship Phase 2 to expose the combat
+; math for kiting; Tier-2 stat rebalance lands Phase 4).
+;
+; Pattern: scene inheritance via instance=ExtResource("path_to_unit.tscn").
+; Same shape as kargar.tscn / piyade.tscn / kamandar.tscn / savar.tscn —
+; overrides only the MeshInstance3D's mesh + material plus the root's
+; script. CombatComponent etc. all inherit from the unit.tscn template.
+;
+; Visual placeholder per CLAUDE.md "colored shapes only" policy:
+;   - Box, ELONGATED Vector3(0.6, 0.5, 0.9) — the depth-axis (Z) is the
+;     longest dimension, NOT the height. This reads as "the horse-archer
+;     silhouette" — a horse + rider takes a long-shaped footprint, not a
+;     square one. Critically distinct from:
+;       Piyade (0.5×0.7×0.5 — tall cube, square footprint)
+;       Savar  (0.7×0.6×0.7 — wider near-square, the heavy-cav cue)
+;       Kamandar (cylinder height 0.9 radius 0.25 — tall narrow vertical)
+;     Per kickoff §2 (3): "elongated cube/rectangle, slightly larger than
+;     Asb-savar (foot) but recognizable as ranged." We've translated
+;     "elongated" to "depth > width" to make the silhouette readable
+;     in the elevated isometric view (the Z dimension is what the camera
+;     sees most clearly when the unit is moving along its forward axis).
+;     Per kickoff §1 live-game-broken-surface: silhouette readability —
+;     Asb-savar should distinguish from Savar (foot cavalry — wider square)
+;     and Kamandar (foot archer — tall narrow). The elongation does that.
+;   - Iran-blue darker hue Color(0.18, 0.28, 0.50) — saturated blue distinct
+;     from Piyade's brighter (0.3, 0.4, 0.7), Kamandar's (0.20, 0.30, 0.55),
+;     Savar's (0.15, 0.25, 0.65), AND clearly cool-counterpoint to the
+;     sandy terrain (the Phase 2 session 1 Farr-gauge contrast incident
+;     is the canonical case for "cool against sandy"). The DARKER hue
+;     signals "specialist Iran combat unit" within the Iran palette.
+;     Note the proximity to Kamandar's (0.20, 0.30, 0.55) — these two
+;     ranged Iran units are intentionally similar in palette to read as
+;     "the ranged sub-faction"; the silhouette difference (cylinder vs
+;     elongated box) carries the unit-type discrimination.
+
+[ext_resource type="PackedScene" uid="uid://shahnameh_unit_base" path="res://scenes/units/unit.tscn" id="1_unit_template"]
+[ext_resource type="Script" path="res://scripts/units/asb_savar_kamandar.gd" id="2_asb_savar_kamandar"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_asb_savar_kamandar"]
+; Elongated horse-archer silhouette. 0.6 × 0.5 × 0.9 — depth (Z) > width (X) >
+; height (Y). The asymmetry is the load-bearing visual cue: "this is the
+; mounted archer" reads at default isometric camera distance because the
+; unit's footprint is a clear rectangle (long axis) rather than a square
+; (Savar) or vertical line (Kamandar). Concrete numbers from kickoff §2 (3).
+size = Vector3(0.6, 0.5, 0.9)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_asb_savar_kamandar"]
+; Iran-blue DARKER HUE. Saturated enough to read against the sandy terrain
+; (Phase 2 session 1 Farr-gauge contrast lesson — cool counterpoint to warm
+; sand) AND positioned within the Iran palette as another "specialist" unit
+; (compared to Piyade's lighter (0.3, 0.4, 0.7) "core infantry" hue). The
+; visual sub-grouping with Kamandar's (0.20, 0.30, 0.55) is intentional —
+; both are ranged units; the silhouette (elongated box vs tall cylinder)
+; carries the unit-type difference. CLAUDE.md placeholder policy — pick a
+; color that communicates "Iran specialist combat unit" at a glance.
+albedo_color = Color(0.18, 0.28, 0.50, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — same simple lit pipeline as the
+                  ; rest of the placeholder units; consistency for placeholders.
+
+
+; Inherit the Unit scene template; override only what differs.
+[node name="AsbSavarKamandar" instance=ExtResource("1_unit_template")]
+script = ExtResource("2_asb_savar_kamandar")
+
+[node name="MeshInstance3D" parent="." index="0"]
+; Override the base Unit's BoxMesh (0.5×0.6×0.5) with the Asb-savar
+; elongated box (0.6×0.5×0.9). Y-offset matches half-height (0.25) so the
+; box-bottom sits ON the terrain plane (consistent with the unit.tscn
+; convention). Note the lower Y-offset compared to Piyade (0.35) and Savar
+; (0.30) — the Asb-savar is shorter in height (0.5 vs 0.7 / 0.6) because
+; the long axis carries the silhouette, not the height.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25, 0)
+mesh = SubResource("BoxMesh_asb_savar_kamandar")
+material_override = SubResource("StandardMaterial3D_asb_savar_kamandar")

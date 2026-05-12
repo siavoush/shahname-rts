@@ -34,6 +34,316 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-08 — Phase 2 session 2 wave 3 (qa-engineer): integration tests for full RPS roster + live combat chain
+
+**Branch:** `feat/phase-2-session-2`
+
+**Shipped:**
+
+1. **`tests/integration/test_phase_2_session_2_rps_combat.gd` — 17 new integration tests.** Covers the live-game-broken-surface for waves 1+2: every test drives real unit scenes via the production EventBus chain (Unit._on_sim_phase → CombatComponent._sim_tick → CombatMatrix.get_multiplier() → take_damage_x100).
+
+2. **RPS triangle 1v1 outcomes (5 tests).** Piyade>Savar (1.5×, ~300 ticks to Savar HP=0), Savar>Kamandar (2.0×, ~99 ticks to Kamandar HP=0), Kamandar>Piyade at 6.0 range (1.5× accumulated advantage, Piyade HP=0), AsbSavar>Piyade held at range (1.2×, Piyade HP=0), Turan-mirror pair (TuranPiyade>TuranSavar, symmetric 1.5× fold). Death detected via `hp_x100 ≤ 0` — `queue_free.call_deferred` defers free to process_frame which doesn't run inside `_test_run_tick` loops.
+
+3. **Turan-fold correctness via live chain (1 test).** Iran pair and Turan pair advance in parallel; HP drops must match within 100 x100. Catches raw-dict-access regression (would produce 1.0× instead of 1.5×, visible as 1000 vs 1500 damage).
+
+4. **33-unit match-start roster verification (4 tests).** All unit_types non-empty (dual-init guard), 6 wave-2B types × 3 each, correct team assignment per type, unit_id sequence 1..33.
+
+5. **Kiting-math correctness (2 tests).** AsbSavar fires before Piyade closes melee distance analytically (1+ shot in the close window); second-shot timing verified at tick 55 (50-tick cooldown).
+
+6. **Cross-feature 5v5 RPS smoke (1 test).** main.tscn load → 5 Iran Piyade focus-fire on 3 Turan Savar → at least 1 Savar reaches HP=0 within 600 ticks → at least 1 Piyade still alive. Full EventBus chain exercised.
+
+7. **CombatComponent live-path audit (4 tests).** Kamandar 1.5×, Savar 2.0×, TuranKamandar Turan-fold 1.5×, AsbSavar 1.2× — all from real unit scenes + real balance.tres, exact HP assertions after first hit.
+
+8. **`docs/ARCHITECTURE.md` updated.** §2 new row for Phase 2 session 2 wave 3 integration tests. §6 v0.18.2 entry with full coverage summary + death-detection pattern note.
+
+**Test-count delta:** 879 → 896 (+17 net). 893 passing, 3 pre-existing pending (FarrSystem fallback, navmap-not-ready, navmesh-not-ready). Lint clean (0 violations).
+
+**Files created:**
+- `game/tests/integration/test_phase_2_session_2_rps_combat.gd` (17 tests)
+
+**Files modified:**
+- `docs/ARCHITECTURE.md` (§2 new row + §6 v0.18.2 entry)
+- `BUILD_LOG.md` (this entry)
+
+**Did not ship:**
+- Did NOT modify any game script or scene (wave 1+2 scope, settled).
+- Did NOT add new scenarios to `tests/harness/scenarios.gd` — the RPS combat tests spawn units directly per the live-scene-spawn pattern, not via MatchHarness scenarios (MatchHarness is heavier infrastructure; direct spawn is more legible for outcome tests).
+- Did NOT add a MatchHarness helper for hp-death-detection — the pattern is documented in §6 v0.18.2 for future reference.
+
+**Live-game-broken-surface (Experiment 01):**
+1. *Runtime state no unit test exercises:* Real `CombatComponent._sim_tick` driven by real `Unit._on_sim_phase` listening to real `EventBus.sim_phase` from real `SimClock`, with real `BalanceData.combat.get_multiplier()`. Every test in this file exercises the FULL chain from BalanceData → scaled damage → HP decrement.
+2. *Headless can't detect:* Battle FEEL (1.5× decisive vs marginal), visual clustering of unit groups, selection ergonomics at scale. Not headless concerns.
+3. *Min interactive smoke analog:* Cross-feature test (5 Iran Piyade vs 3 Turan Savar) is the headless equivalent of the lead's DoD §3 scenario.
+
+**Key design finding — death detection pattern:**
+`queue_free.call_deferred()` defers node free to end-of-frame; `_test_run_tick()` loops don't run process_frame so `is_instance_valid(unit)` stays true after `hp_x100=0`. All outcome tests in this file use `hp_x100 ≤ 0` for death detection. Documented in ARCHITECTURE.md §6 v0.18.2 for future tests.
+
+**Known Godot Pitfalls applied:**
+- **#7 (shared-doc staging race):** `git diff docs/ARCHITECTURE.md` + `git diff BUILD_LOG.md` confirmed only my additions before staging.
+
+**Open questions / state for next session:** none. Wave 3 integration tests lock in the waves 1+2 live-combat behaviors headlessly. Reviewer agents (Experiment 02) should look for: (a) any test that passes vacuously (unit didn't move/attack), (b) whether 600-tick budget in the cross-feature smoke is generous enough.
+
+## 2026-05-08 — Phase 2 session 2 wave 2B (gameplay-systems): match-start spawn extended to full Phase 2 RPS roster (33 units)
+
+**Branch:** `feat/phase-2-session-2`
+
+**Shipped:**
+
+1. **`main.gd::_spawn_starting_units` extended to 33 units.** Per `02e_PHASE_2_SESSION_2_KICKOFF.md` §2 deliverables 1-4 + DoD §3 (the RPS scenarios in the live game). The leading 5 Kargar + 5 Iran Piyade + 5 Turan Piyade sequence is unchanged so previous live-test muscle memory still works; the helper appends six new trios (Kamandar, Savar, AsbSavarKamandar on Iran; TuranKamandar, TuranSavar, TuranAsbSavar on Turan) for a total of 33 starting units. Spawn-order determinism preserved: Kargar 1..5 → Iran Piyade 6..10 → Turan Piyade 11..15 → Kamandar 16..18 → Savar 19..21 → AsbSavar 22..24 → TuranKamandar 25..27 → TuranSavar 28..30 → TuranAsbSavar 31..33.
+
+2. **Six new spawn-position consts in `main.gd`.** All Iran trios at Z<0; all Turan trios at Z>0; Iran↔Turan Z gap ≥ 24 units so even Asb-savar's 7.0 attack range still requires a meaningful walk to engage. Within each side: Kamandar NW corner (X≈-9, Z≈-12 / +24), Savar NE corner (X≈+9), AsbSavar S/N-center (X≈0, Z≈-15 / +27). Trio-internal spacing 1.5 units (matches Piyade-line spacing) so a tight box-select drag lands one cluster cleanly.
+
+3. **No new Constants in `constants.gd`.** Match-start spawn positions are main.gd's own match-config knob, same place Phase 1 session 1's Kargar positions and Phase 2 session 1's Piyade positions live (per the kickoff brief).
+
+4. **`tests/unit/test_match_start_spawn.gd` extended.** From 17 to 33 tests:
+   * Per-new-type position-array shape (3 entries each, 6 new tests).
+   * Pairwise-distinct positions per array (6 new tests).
+   * Iran-trios-Z-negative + Turan-trios-Z-positive invariant (1 new test, covers all 6 new arrays).
+   * Per-type spawn-count assertions (3 each, 6 new tests).
+   * Team mirror to SpatialAgentComponent for both Iran and Turan new types (2 new tests).
+   * Full unit_id ordering 1..33 (existing test rewritten — 9 sub-assertions now).
+   * Plus the existing 15 tests (Kargar/Piyade/TuranPiyade) refactored to share `_assert_position_array_size` / `_assert_pairwise_distinct` / `_count_children` / `_assert_all_team` / `_collect_sorted_ids` helpers.
+
+5. **`tests/integration/test_phase_2_session_1_combat.gd::test_main_tscn_spawns_15_units_correct_teams`** renamed to `test_main_tscn_spawns_33_units_correct_teams` and updated invariants from 15/10/5 to 33/19/14 (Iran=5 Kargar+5 Piyade+9 new; Turan=5 Piyade+9 new). Mechanical follow-on — the cross-feature smoke pins the spawn count as canonical invariant; leaving it at 15 would have locked the project into an outdated reality.
+
+**Test-count delta:** 858 → 879 (+21 net). 876 passing, 3 pre-existing pending (FarrSystem fallback, navmap-not-ready, navmesh-not-ready). Lint clean (`tools/lint_simulation.sh` — 0 violations).
+
+**Files modified:**
+- `game/scripts/main.gd` (added 6 preloads, 6 new const arrays, 6 new spawn loops; updated module docstring + `_spawn_starting_units` docstring)
+- `game/tests/unit/test_match_start_spawn.gd` (33 tests, refactored shared helpers)
+- `game/tests/integration/test_phase_2_session_1_combat.gd` (renamed + updated cross-feature smoke for 33/19/14)
+- `docs/ARCHITECTURE.md` (§2 Match-start-spawn row updated; new §6 v0.18.1 entry)
+- `BUILD_LOG.md` (this entry)
+
+**Did not ship:**
+- Did NOT modify any unit script or scene (wave-1 scope, settled).
+- Did NOT modify `combat_component.gd` or any other component (wave-2A scope, settled).
+- Did NOT modify `balance.tres` or any data file.
+- Did NOT touch `main.tscn`'s sibling order or any Control nodes (Pitfalls #5 / #1 N/A).
+- Did NOT extract a per-type cluster-spawn helper. The repeated `for pos in <const>: _spawn_unit(<scene>, pos, <team>)` blocks make the spawn-id ordering inline-readable next to each block; promote the helper when a 3rd extension lands.
+
+**Live-game-broken-surface (Experiment 01) — refined answers:**
+
+1. *Runtime state no unit test exercises:* Each new unit instantiates correctly via `<Type>.tscn` PackedScene load + `Node3D` add_child. The dual-init unit_type pattern (each subclass sets unit_type in BOTH `_init` AND `_ready` BEFORE `super._ready()`) survives the @export reset between phases — wave-1A through wave-1C tests already verify each subclass independently, wave-2B trusts that surface. Team set BEFORE add_child so SpatialAgentComponent's `_ready` mirrors the right value (the `_assert_all_team` helper re-asserts this for each new type at spawn-test time).
+
+2. *Headless can't detect:* Visual readability — does the layout READ as Iran-column-vs-Turan-column at default zoom? Do trios of 3 stand visually apart from the Piyade line of 5? The Z-staggering (Kamandar/Savar at Z≈-12 vs Piyade at Z=-8 gives front/back separation; AsbSavar at Z≈-15 sits behind both) and the X-spread between corner trios (NW at X=-9, NE at X=+9) prevents cluster overlap. Color contrast against sandy terrain (Phase 2 session 1 Farr-gauge contrast lesson) is preserved by each subclass's scene-side material — wave-1A through wave-1C addressed this at the per-unit level.
+
+3. *Min interactive smoke test:* Lead boots, sees 33 units split into two visible columns. Box-selects Iran Kamandar trio, right-clicks far Turan Savar trio: Kamandar fires from range, Savar charges in, Savar wins (anti-archer 2.0× × 3 attackers vs 3 fragile archers compounds). Then 5 Piyade vs 5 Savar (1.5×, Piyade should win). Then 3 Asb-savar vs 5 Piyade (kiting at range 7.0 vs Piyade 1.5 + 1.2× anti-infantry; Asb-savar should win without being touched if microed). All three kickoff DoD scenarios (items 3, 4, 5) are now interactively testable.
+
+**Known Godot Pitfalls applied:**
+- **#7 (multi-agent shared-tree commit-staging race):** wave-2B is a single-agent deliverable on `feat/phase-2-session-2`; no parallel agent on the branch. Pre-staging `git diff --staged --stat` showed only my files.
+- **#5 (sibling tree-order load-bearing):** N/A — wave-2B does not modify `main.tscn`'s sibling order.
+- **#1 (mouse_filter on Control nodes):** N/A — wave-2B does not add new Control nodes.
+- **#2 (FSM / per-tick driver wiring):** N/A — spawn is off-tick scene-boot work.
+
+**LATER candidates (NEW):**
+- *Spawn-config-as-data when match types diverge.* When match types diverge (skirmish / 1v1 ladder / tutorial scenarios in Phase 5+), extract spawn positions to a `match_setup.tres` resource keyed by scenario id, attached as a child of Main in main.tscn. Threshold: when ≥ 2 distinct spawn layouts ship. Not promoted to L# — single-scenario for now.
+- *Per-type cluster-spawn helper.* The 9 explicit per-type spawn blocks could compact into a tuple-driven loop. Declined for now because the explicit blocks document the spawn-id ordering inline. Promote when a 3rd extension lands.
+
+**Experiment 03 (per-TDD-cycle commits) discipline:** wave-2B is one atomic deliverable (extend the spawn helper), not a multi-cycle feature. Single commit covers test + impl + docs together — cleaner than splitting "test commit" from "impl commit" when the impl is ~30 lines of preloads + array consts + spawn loops. Per the kickoff brief: "single (or two) commits."
+
+**Open questions / state for next session:** none. Wave-2B is mechanical roster extension; the RPS triangle is now interactively testable per the kickoff DoD §3. Reviewer agents (Experiment 02) should look for: (a) does the geometry actually read as two opposing armies in the live game?, (b) any test-count shrinkage from the helper-extraction refactor that lost coverage?
+
+## 2026-05-08 — Phase 2 session 2 wave 2A (gameplay-systems): RPS multiplier integration in CombatComponent
+
+**Branch:** `feat/phase-2-session-2`
+
+**Shipped:**
+
+1. **CombatComponent now scales `attack_damage_x100` by the RPS multiplier at the live damage-fire site.** Per `02e_PHASE_2_SESSION_2_KICKOFF.md` §2 deliverable 5. The `_sim_tick` step 6 (take_damage fire) looks up `combat_matrix.get_multiplier(attacker_unit_type, target.unit_type)`, multiplies into `attack_damage_x100`, rounds to int via `roundi`, and passes the SCALED amount to `take_damage_x100`. The float multiplier never lands on a SimNode field — Sim Contract §1.6 forbids storing the float; the local Variant slot is fine because it doesn't survive the tick.
+
+2. **Two new CombatComponent fields: `attacker_unit_type: StringName` and `combat_matrix: Resource`.** Both defaulted to neutral (`&""` and `null`) so unwired test fixtures still pass — get_multiplier returns 1.0 for unknown attacker types, and a null matrix short-circuits to unscaled 1.0× neutral.
+
+3. **`Unit._apply_balance_data_defaults` now wires the new fields.** Sets `_combat_component.attacker_unit_type` from the parent's `unit_type` (`&"piyade"`, `&"savar"`, `&"turan_piyade"`, ...) and `_combat_component.combat_matrix` from `BalanceData.combat`. Defensive `is Resource` guard on the matrix.
+
+4. **CRITICAL — uses `get_multiplier()` not raw `effectiveness[atk][def]` dict access.** This is the load-bearing constraint balance-engineer's wave-1B report flagged. `get_multiplier()` does Turan-mirror folding (strips `"turan_"` prefix, special-cases `"turan_asb_savar"` → `"asb_savar_kamandar"`). Raw dict access bypasses this and Turan units silently deal wrong damage in-game while headless tests pass. The integration test `test_turan_piyade_vs_turan_savar_folds_to_1_5x` asserts the fold reaches the live damage site as a regression lock.
+
+5. **9 new tests in `tests/integration/test_rps_matrix_integration.gd`.** Coverage: Piyade vs Savar at 1.5×, Savar vs Kamandar at 2.0×, Turan-fold parity (Turan_Piyade vs Turan_Savar same as Iran→Iran), unknown-pair default 1.0×, missing-matrix default 1.0×, exact rounding (1255 × 1.5 → roundi → 1883), neutral pair (1.0×) leaves base damage unchanged, plus a live-EventBus-chain integration smoke that walks the full BalanceData → Unit → CombatComponent → matrix → take_damage_x100 path with real Piyade and Savar scenes.
+
+**Test-count delta:** 850 → 858 (+8). 855 passing, 3 pre-existing pending (FarrSystem fallback, navmap-not-ready, navmesh-not-ready). Lint clean (`tools/lint_simulation.sh` — 0 violations).
+
+**Files modified:**
+- `game/scripts/units/components/combat_component.gd` (added two fields + multiplier lookup at step 6 fire site)
+- `game/scripts/units/unit.gd` (extended `_apply_balance_data_defaults` to wire the two new fields)
+- `game/tests/integration/test_rps_matrix_integration.gd` (new file, 9 tests)
+- `docs/ARCHITECTURE.md` (§2 CombatComponent row updated; new §6 v0.18.0 entry)
+- `BUILD_LOG.md` (this entry)
+
+**Did not ship:**
+- Did NOT modify `game/data/balance.tres` or `game/data/sub_resources/combat_matrix.gd` (wave-1B's domain — the matrix and the `get_multiplier` API are settled).
+- Did NOT modify any `game/scripts/units/<unit>.gd` files (waves 1A/1C settled; the multiplier wiring is component-local).
+- Did NOT modify `game/scripts/main.gd` (wave 2B's domain — extending `_spawn_starting_units` for new unit types).
+- Did NOT add cause-string differentiation per attacker type (still `&"melee_attack"` for everyone — see LATER below).
+- Did NOT add a ranged-vs-melee distinction at the damage path level (the multiplier IS the discriminator for damage scaling; visible projectile entities are Phase 5+).
+
+**Live-game-broken-surface answers (Experiment 01):**
+
+1. *Runtime state no unit test exercises:* The matrix being wired at the LIVE damage-fire site, not just the unit-fixture site. The integration test `test_live_piyade_vs_savar_scales_damage_via_eventbus_chain` closes this — it spawns real Piyade + Savar scenes, dispatches a real Attack command via `Unit.replace_command`, advances real ticks via `EventBus.sim_phase`, and asserts the post-attack HP equals `savar_max_hp_x100 - roundi(piyade_damage_x100 * 1.5)`. If anyone breaks the wiring (forgets to set `attacker_unit_type` from Unit, forgets to assign `combat_matrix`, or "optimizes" to raw dict access bypassing Turan fold), this test trips.
+
+2. *Headless tests can't detect:* Battle FEEL — does Piyade vs Savar at 1.5× feel decisive in 5v5? Does Savar vs Kamandar at 2.0× feel like a true counter or "slightly more damage"? Tunable via `balance.tres` `combat_mtx.effectiveness` without code changes. The matrix's hard cap of 5.0× leaves headroom; the current values (1.5 / 2.0 / 0.7 / 0.5 / 1.2) are first-pass starting points per kickoff §2 item 5.
+
+3. *Minimum interactive smoke test:* Lead pits 5 Piyade vs 5 Savar — Piyade should win cleanly (1.5× advantage compounded across attackers). Then 5 Savar vs 5 Kamandar — Savar should curb-stomp (2.0×). Then 3 Asb-savar vs 5 Piyade — Asb-savar should kite from range 7.0 (Piyade can't close to melee 1.5 fast enough at speed 2.5; the 1.2× multiplier vs Piyade compounds the kiting advantage).
+
+**Known Godot Pitfalls applied:**
+
+- **Pitfall #1 (mouse_filter):** N/A — no new Control nodes.
+- **Pitfall #2 (FSM / per-tick driver wiring):** the multiplier lookup runs inside `_sim_tick`, which is driven by `UnitState_Attacking._sim_tick` per the BUG-01 fix. The integration test exercises the full chain so a missing drive call would be caught.
+- **Pitfall #3 (camera basis):** N/A — no input handling.
+- **Pitfall #4 (re-entrant signal mutation):** N/A — no new signal handlers.
+- **Pitfall #5 (sibling tree-order):** N/A — no new `_unhandled_input`.
+- **Pitfall #7 (multi-agent shared-tree commit-staging race):** I am the only active gameplay-systems agent on this branch this wave. Pre-commit `git diff --staged --stat` will be checked to ensure only my files land. If a fellow agent surfaces in parallel, will follow the documented "scramble, intent intact" pattern.
+- **Pitfall #8 (queue_free.call_deferred double-defer):** N/A — no new freeing logic.
+
+**LATER items added/touched:**
+
+- **L3 (CombatSystem phase coordinator)** — same impact pattern as before. The multiplier lookup fits naturally into the future coordinator's `&"combat"` phase iteration. No code change needed at the coordinator's landing — the lookup is component-local.
+- **NEW LATER candidate** — *Cause-string differentiation by attacker type.* All attacks still pass `&"melee_attack"` regardless of attacker class. When ranged units land on the live damage path with projectile entities (Phase 5+), the cause string should differentiate (`&"ranged_attack"` / `&"horse_archer_attack"`) so FarrDrain / Yadgar / future cause-driven mechanics can route on the actual semantic. The matrix multiplier IS the discriminator for damage scaling and that's enough for now, but cause-string semantics drift. Not promoted to L# — single consumer (FarrDrain).
+- **NEW LATER candidate** — *Pre-cache target_unit_type read.* `target.get(&"unit_type")` runs every fired tick. At session-2's small unit count this is fine; at Phase 3+ scales (50+ engaged units) caching the StringName on `set_target` is an obvious optimization. Not promoted — measurement-driven; revisit if combat-tick profiling shows it.
+
+**Coordination notes:**
+
+- I am the **wave 2A agent** (gameplay-systems instance). My single deliverable is RPS matrix integration in CombatComponent. Wave 2B (separate agent) owns extending `_spawn_starting_units` in `main.gd` to spawn the new unit types.
+- The matrix is wave-1B's domain (balance-engineer); my wave reads it, never writes. The matrix's `get_multiplier()` API was specifically built for this consumer per its docstring.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+
+- Float multiplier stored in a local `Variant`/`float` slot inside `_sim_tick` (not on a SimNode field) — Sim Contract §1.6 only restricts persistent SimNode fields; tick-local locals are fine. Same pattern as the existing range-check's `dist_sq: float` local.
+- `target.get(&"unit_type")` via Variant + typeof check rather than typed access — registry-race convention; some test fixtures use bare Node3D stubs that don't have `unit_type` declared. Defaulting to `&""` makes the lookup forward-compatible.
+- Defensive null-matrix path returns 1.0× rather than crashing, so wave-1A unit-test fixtures (which pre-date these fields) keep passing without modification. Documented in source comments.
+
+## 2026-05-08 — Phase 2 session 2 wave 1C (gameplay-systems): AsbSavarKamandar + Turan_Asb_Savar
+
+**Branch:** `feat/phase-2-session-2`
+
+**Shipped (2 unit types, ranged + cavalry hybrid archetype):**
+
+1. **Iran AsbSavarKamandar (horse archer).** `class_name AsbSavarKamandar` at `game/scripts/units/asb_savar_kamandar.gd` + scene at `game/scenes/units/asb_savar_kamandar.tscn` + 14 tests in `game/tests/unit/test_asb_savar_kamandar.gd`. Elongated BoxMesh `Vector3(0.6, 0.5, 0.9)` — depth (Z) > width (X) > height (Y); the load-bearing visual cue is "elongated horse-archer footprint", NOT just a bigger Piyade. Iran-blue darker hue `Color(0.18, 0.28, 0.50)` — within the Iran-ranged sub-palette near Kamandar's `(0.20, 0.30, 0.55)`. unit_type = &"asb_savar_kamandar" (full compound key; matches the Iran name "اسب‌سوار کماندار" — mounted archer). Stats wire through BalanceData (max_hp 100 Tier-1-equiv, move_speed 4.0, attack_damage_x100 1300, attack_speed_per_sec 0.6, attack_range 7.0). Commit `3fefeea`.
+
+2. **TuranAsbSavar (Turan horse archer mirror).** `class_name TuranAsbSavar` at `game/scripts/units/turan_asb_savar.gd` + scene + 13 tests in `game/tests/unit/test_turan_asb_savar.gd`. Same dimensions as Iran AsbSavarKamandar (mirror combat). Turan-red `Color(0.55, 0.18, 0.18)` — distinct from other Turan unit colors; the slight green-tint difference from TuranKamandar's pure red signals "horse-archer" within the Turan specialist sub-palette. **unit_type = &"turan_asb_savar" — SHORTENED key vs Iran's compound** per `balance.tres` line 184 comment; the "kamandar" suffix is understood from context for Turan units. RPS matrix lookup folds: `_resolve_key("turan_asb_savar")` → strip prefix → `"asb_savar"` → `_turan_base_to_iran_key("asb_savar")` → `"asb_savar_kamandar"` row. Commit pending this entry.
+
+Both follow the canonical pattern session 1 established for Piyade / TuranPiyade and wave 1A established for Kamandar / Savar / TuranKamandar / TuranSavar:
+- `extends "res://scripts/units/unit.gd"` path-string base (class_name registry-race dodge per ARCHITECTURE.md §6 v0.4.0).
+- `class_name <Name>` declaration for runtime `is <Name>` checks.
+- Dual `_init` AND `_ready` `unit_type` write (Godot scene-instantiation order clobbers _init's @export between steps 1 and 3).
+- `_ready` override fires BEFORE `super._ready()` so `Unit._apply_balance_data_defaults` reads the correct unit_type when looking up BalanceData.
+
+**Test-count delta:** 824 → 850 (+27; +14 Iran + +13 Turan; 824 baseline includes wave 1A's TuranSavar that landed under `3fefeea`).
+
+**Did not ship:**
+- Did NOT modify `game/data/balance.tres` (already populated by balance-engineer wave 1B).
+- Did NOT modify `game/scripts/main.gd` (wave 2B owns extending `_spawn_starting_units`).
+- Did NOT modify `game/scripts/units/components/combat_component.gd` (wave 2A owns RPS matrix integration).
+- Did NOT modify `kamandar.gd` / `savar.gd` / `turan_kamandar.gd` / `turan_savar.gd` (wave 1A's domain).
+- Did NOT add kiting AI (Phase 6 with `DummyAIController` per `02_IMPLEMENTATION_PLAN.md` §169).
+- Did NOT add Tier-2 stat buff (Phase 4 when tech tier ships).
+
+**Live-game-broken-surface answers (Experiment 01):**
+
+For **AsbSavarKamandar / TuranAsbSavar (ranged + cavalry hybrid pair)**:
+1. *Runtime state no unit test exercises:* Mesh override actually swapping from base BoxMesh (0.5×0.6×0.5) to my elongated BoxMesh (0.6×0.5×0.9) in a real scene-instantiation. The `unit_type=&"asb_savar_kamandar"` / `&"turan_asb_savar"` assignment surviving the @export reset between `_init` and `_ready` (the dual-init pattern was load-bearing in session 1 v0.17.0 — same Pitfall here). Iran-vs-Turan unit_type asymmetry (compound vs shortened key) silently dropping BalanceData lookup back to component defaults if someone "fixes" the Turan key.
+2. *Headless tests can't detect:* Silhouette readability — Asb-savar should distinguish from Savar (foot cavalry, wider-square) and Kamandar (foot archer, tall narrow cylinder) at default zoom. Color clash with sandy terrain (Phase 2 session 1 Farr-gauge contrast lesson — cool blue / saturated red against warm sand). Whether the elongation-as-cue reads at the elevated isometric camera distance (Z-axis is what the camera sees most clearly when units are moving along their forward axis).
+3. *Minimum interactive smoke test:* Lead spawns 3 Asb-savar vs 5 Turan Piyade. Asb-savar fires from range 7.0 (per BalanceData), Piyade can't close manually since kiting AI isn't shipping until Phase 6. The combat math working IS the test (HP bars decrement on Piyade from 7m away). The RPS matrix multiplier 1.2× vs piyade kicks in at wave 2A integration; this wave's contribution is the unit reading the correct attack_range from BalanceData and CombatComponent firing through the existing UnitState_Attacking pipeline.
+
+**Known Godot Pitfalls applied:**
+- Pitfall #2 (FSM driver wiring): inherited from base `Unit._on_sim_phase` driver — no new state-tick code.
+- Pitfall #5 (sibling tree-order): N/A (no `_unhandled_input`).
+- **Pitfall #7 (multi-agent shared-tree commit-staging race) RECURRED.** Despite explicit `git add` of only my 3 files for the AsbSavarKamandar commit and `git diff --staged --stat` confirming only those 3, the commit `3fefeea` included wave 1A's `turan_savar.gd`, `turan_savar.tscn`, `test_turan_savar.gd` (all untracked at stage-time) PLUS BUILD_LOG.md PLUS docs/ARCHITECTURE.md modifications. Hypothesis: wave 1A's session re-wrote those files between my `git diff --staged --stat` check and the commit-write; the commit-write picked up the working-tree state at that moment, not the staged set from minutes earlier. **Third occurrence in this project** (session 1 `aa429ef`, session 2 `cac29cc` were prior). Documented in detail in ARCHITECTURE.md §6 v0.17.9.
+
+**Coordination notes:**
+
+- I am the **wave 1C agent** (per kickoff §3 — separate gameplay-systems instance from wave 1A's Kamandar/Savar work). My deliverables are deliverable 3 (Asb-savar Kamandar) + the Asb-savar mirror part of deliverable 4. Wave 1A's agent owns Kamandar/Savar + their Turan mirrors. Wave 1B (balance-engineer) populated the `balance.tres` entries my scripts read.
+
+- This wave's commit `3fefeea` carries wave 1A's TuranSavar deliverable as collateral via Pitfall #7. Wave 1A's BUILD_LOG entry (above this one) describes their full 4-unit deliverable; their TuranSavar-specific shipping went through this commit due to the staging race. Intent intact, attribution scrambled.
+
+**State for next session:** Wave 1C is complete. The full Phase 2 session 2 unit roster is now shipped:
+- Iran: Piyade (session 1), Kamandar (wave 1A), Savar (wave 1A), AsbSavarKamandar (wave 1C). Kargar (Phase 1).
+- Turan: TuranPiyade (session 1), TuranKamandar (wave 1A → cac29cc), TuranSavar (wave 1A → 3fefeea), TuranAsbSavar (wave 1C → this entry's commit).
+
+Wave 2A (CombatComponent RPS matrix integration) and wave 2B (`_spawn_starting_units` extension to put the new roster on the map) are next. Both can read these unit types via the standard `unit.tscn` inheritance and BalanceData lookup paths.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+- AsbSavarKamandar uses `class_name AsbSavarKamandar` (full compound, matching the Iran name) while TuranAsbSavar uses `class_name TuranAsbSavar` (shortened, matching the balance.tres key convention). Both class names match their respective unit_type keys for symmetry.
+- Y-offset 0.25 on the elongated mesh (lower than Piyade's 0.35 / Savar's 0.30) because the box bottom must sit on the terrain plane and the half-height for `0.5` Y is `0.25`.
+- Color palette per kickoff suggestion: Iran `Color(0.18, 0.28, 0.50)` (within ranged sub-palette), Turan `Color(0.55, 0.18, 0.18)` (specialist sub-palette).
+
+---
+
+## 2026-05-08 — Phase 2 session 2 wave 1A (gameplay-systems): Kamandar + Savar + Turan_Kamandar + Turan_Savar
+
+**Branch:** `feat/phase-2-session-2`
+
+**Shipped (4 unit types, all on the same Piyade/TuranPiyade inheritance pattern from session 1 v0.17.0):**
+
+1. **Iran Kamandar (archer, ranged).** `class_name Kamandar` at `game/scripts/units/kamandar.gd` + scene at `game/scenes/units/kamandar.tscn` + 13 tests in `game/tests/unit/test_kamandar.gd`. Tall-narrow CylinderMesh (h=0.9, r=0.25) — the bow-guy silhouette distinct from Piyade's box and Kargar's squat cylinder. Iran-blue darker variant `Color(0.20, 0.30, 0.55)`. unit_type = &"kamandar". Stats wire through BalanceData. Commit `6683d26`.
+
+2. **Iran Savar (cavalry, melee).** `class_name Savar` at `game/scripts/units/savar.gd` + scene + 13 tests in `game/tests/unit/test_savar.gd`. Wider BoxMesh `Vector3(0.7, 0.6, 0.7)` — heavier mounted-cavalry footprint. Iran-blue deeper-saturated `Color(0.15, 0.25, 0.65)` — distinct from Piyade's lighter and Kamandar's muted. unit_type = &"savar". Commit `d2bc9b9`.
+
+3. **TuranKamandar (Turan archer mirror).** `class_name TuranKamandar` at `game/scripts/units/turan_kamandar.gd` + scene + 13 tests. Same dimensions as Iran Kamandar (mirror combat). Turan-red darker variant `Color(0.55, 0.15, 0.15)`. unit_type = &"turan_kamandar". **Commit `cac29cc` (Pitfall #7 attribution scramble — see Coordination notes below).**
+
+4. **TuranSavar (Turan cavalry mirror).** `class_name TuranSavar` at `game/scripts/units/turan_savar.gd` + scene + 13 tests. Same dimensions as Iran Savar (mirror combat). Turan-red deeper-saturated `Color(0.65, 0.15, 0.15)`. unit_type = &"turan_savar". **Commit `3fefeea` (Pitfall #7 attribution scramble — gameplay-systems wave-1C agent's commit swept up this wave-1A agent's untracked TuranSavar files; second cross-agent contamination this session).**
+
+All four follow the canonical pattern session 1 established for Piyade / TuranPiyade:
+- `extends "res://scripts/units/unit.gd"` path-string base (class_name registry-race dodge per ARCHITECTURE.md §6 v0.4.0).
+- `class_name <Name>` declaration for runtime `is <Name>` checks.
+- Dual `_init` AND `_ready` `unit_type` write (Godot scene-instantiation order clobbers _init's @export between steps 1 and 3).
+- `_ready` override fires BEFORE `super._ready()` so `Unit._apply_balance_data_defaults` reads the correct unit_type when looking up BalanceData.
+
+**Test-count delta:** 774 → 824 (+50; 13 per unit × 4 = 52, minus 2 that show as Risky/Pending in the env-specific GUT count). Passing: 771 → 821 baseline assumption.
+
+**Did not ship:**
+- Did NOT modify `game/data/balance.tres`, `game/scripts/units/asb_savar_kamandar.gd`, `game/scripts/main.gd`, `game/scripts/units/components/combat_component.gd`, `piyade.gd`, `turan_piyade.gd`, `kargar.gd`, `unit.gd`. These are explicitly out of scope per the wave-1A brief (1B/1C/2A/2B owners).
+- Did NOT add Asb-savar Kamandar (gameplay-systems wave 1C parallel agent — note `test_asb_savar_kamandar.gd` appearing in untracked files is wave-1C agent's work).
+- Did NOT extend `_spawn_starting_units` in `main.gd` (wave 2B).
+- Did NOT integrate the RPS effectiveness multiplier into `CombatComponent._sim_tick` (wave 2A).
+
+**Live-game-broken-surface answers (Experiment 01):**
+
+For **Kamandar / TuranKamandar (ranged archer pair)**:
+1. *Runtime-only state:* The mesh override actually swaps from BoxMesh→CylinderMesh in a real scene (tests verify mesh class but not visual rendering). The `unit_type=&"kamandar"` / `&"turan_kamandar"` assignment surviving the @export reset between `_init` and `_ready` (the dual-init pattern was load-bearing in session 1 v0.17.0 — same Pitfall here).
+2. *Headless-undetectable:* Silhouette readability vs Piyade and Kargar at default zoom — cylinder height 0.9 vs Piyade's box 0.7 vs Kargar's cylinder 0.7 should be distinguishable, but only live-test confirms. Color clash with sandy terrain — Iran-blue darker `(0.20, 0.30, 0.55)` and Turan-red darker `(0.55, 0.15, 0.15)` chosen as cool/warm-saturated counterpoints to sandy terrain per the Phase 2 session 1 Farr-gauge contrast incident. Whether tall-narrow shape reads as "ranged" without label.
+3. *Minimum interactive smoke test:* Lead spawns N Kamandar, right-clicks an enemy across the map. Combat fires from BalanceData attack_range (~8m); units do NOT walk into melee. Same for TuranKamandar with TEAM_TURAN.
+
+For **Savar / TuranSavar (cavalry pair)**:
+1. *Runtime-only state:* mesh override BoxMesh dimensions changing from 0.5×0.6×0.5 to 0.7×0.6×0.7 in a real scene. unit_type assignment surviving the dual-init pattern.
+2. *Headless-undetectable:* Whether the wider footprint (Vector3 0.7 vs Piyade's 0.5) reads as "cavalry" at default iso camera distance, or whether the boxes look interchangeable. Color saturation gradient (Kamandar darkest → Piyade lightest → Savar deepest within Iran palette; same for Turan red gradient) — this is a "can the lead tell which is which at battle scale" question that needs live-test. Whether the cavalry-fast move_speed feels "charge-y" vs Piyade's plodding 2.5.
+3. *Minimum interactive smoke test:* Lead spawns N Savar, right-clicks an enemy across the map. Savar charges noticeably faster than Piyade, closes to ~1.8m melee range, attacks. RPS makes Savar vs Kamandar a clear win (2.0× cav-charge-vs-archer multiplier from balance-engineer wave 1B).
+
+**Known Godot Pitfalls applied:**
+- **Pitfall #2 (FSM driver wiring):** N/A this wave — no new states; states are inherited from base Unit registration.
+- **Dual-init pattern (session 1 v0.17.0 lesson):** Every concrete unit type sets `unit_type` in BOTH `_init` AND `_ready` BEFORE `super._ready()`. Repeated four times across this wave; the pattern is the Pitfall #6-style domain-language convention for concrete unit types.
+- **Pitfall #7 (multi-agent shared-tree commit race):** Triggered TWICE this session — see Coordination notes below.
+
+**Coordination notes (cross-agent contamination):**
+
+- **Commit `cac29cc` from balance-engineer's docs commit swept up THIS agent's untracked `turan_kamandar.gd` / `turan_kamandar.tscn` / `test_turan_kamandar.gd` files.** Same Pitfall #7 pattern as session 1's `aa429ef`. The TuranKamandar code is intact and correct in `cac29cc`; only the SHA attribution is scrambled. Per the session-1 retro precedent, history was NOT rewritten; this BUILD_LOG entry retros the attribution. The mitigation guidance in PROCESS_EXPERIMENTS.md (verify `git diff --staged --stat` immediately before `git commit`, and `git log -1 --stat` after commit) was followed by THIS agent — the contamination happened on the OTHER agent's side. The cross-agent guarantee requires both agents to follow it, which is why this remains a recurring class of incident under Experiment 03.
+
+- **Commit `3fefeea` from gameplay-systems wave-1C agent's commit swept up THIS agent's untracked `turan_savar.gd` / `turan_savar.tscn` / `test_turan_savar.gd` files AND this BUILD_LOG.md / docs/ARCHITECTURE.md edits.** Second Pitfall #7 incident this session (third project-wide after `aa429ef` in session 1 and `cac29cc` earlier this session). The wave-1C agent's commit message itself acknowledges they intended to defer doc updates but their staging swept everything in. TuranSavar code intact and correct in `3fefeea`; my BUILD_LOG entry and ARCHITECTURE rows for both TuranKamandar AND TuranSavar landed in that SHA. Net result: 4 unit-type files all in HEAD, docs all in HEAD, but the commit-attribution graph shows wave-1A's TuranKamandar in `cac29cc` (balance-eng wave-1B docs commit), wave-1A's TuranSavar in `3fefeea` (gameplay-systems wave-1C feature commit). The pattern is repeating and stable — a structural artifact of three parallel agents writing to the same git working tree simultaneously. Pitfall #7's mitigation needs sharper enforcement: lead may need to either (a) serialize parallel agents through git worktrees per-agent, (b) require explicit `git add <file> <file>` per-agent (no `git add -A` ever), or (c) reposition wave coordination as serialized rather than parallel. Open question for the session-close retro.
+
+- **Independent `test_asb_savar_kamandar.gd` and `asb_savar_kamandar.gd`/`asb_savar_kamandar.tscn` were created by gameplay-systems wave-1C parallel agent.** Not touched by THIS wave-1A agent's edits. The wave-1C work is correctly attributed to commit `3fefeea` (where it was actually authored).
+
+- **Independent `test_asb_savar_kamandar.gd` was created by gameplay-systems wave-1C parallel agent (asb_savar_kamandar work). Not touched by THIS wave-1A agent's commits.**
+
+**State for next session (waves 1C / 2A / 2B):**
+
+- All four unit types in this wave have:
+  - .gd script with class_name and dual-init unit_type pattern
+  - .tscn scene inheriting unit.tscn with mesh + material override
+  - 13-test test file using the BalanceData-runtime-read pattern (verifies wiring not numbers)
+  - ARCHITECTURE.md §2 row marking ✅ Built
+- Wave 2A's `CombatComponent._sim_tick` integration of the RPS multiplier can read `attacker.unit_type` and `target.unit_type` directly off the Unit nodes; both fields are reliably populated via the dual-init pattern.
+- Wave 2B's `main.gd::_spawn_starting_units` extension can preload these scenes and instance them under Main/World; the spawn helper signature is the same as the existing Kargar / Piyade / TuranPiyade spawns.
+- Wave 1C's Asb-savar Kamandar will follow this same template (extends unit.gd path-string, class_name, dual-init unit_type, .tscn override, 13-ish tests).
+
+**Open questions:** none.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1):
+- **Tests verify WIRING (read balance.tres at test-time and compare components), not NUMBERS (don't pin specific HP / damage / range values).** This decouples gameplay-systems wave-1A from balance-engineer wave-1B's number tuning. When balance-engineer adjusts numbers in wave-1B's commit, no test churn here. Two archetype-invariant assertions are pinned (Kamandar/TuranKamandar attack_range >= 5.0; Savar/TuranSavar move_speed > 2.5 AND attack_range < 5.0) — these are STRUCTURAL invariants of the unit archetype (a melee unit with attack_range = 9.0 isn't a melee unit anymore), not balance numbers.
+- **Kamandar height 0.9 / radius 0.25 (per kickoff §2 deliverable 1's exact spec).** Lead specified these dimensions in the brief.
+- **Savar size Vector3(0.7, 0.6, 0.7) (per kickoff §2 deliverable 2's exact spec).** Lead specified these dimensions in the brief.
+- **Color values per kickoff §2's exact specs:** Kamandar `Color(0.20, 0.30, 0.55)`, Savar `Color(0.15, 0.25, 0.65)`, TuranKamandar `Color(0.55, 0.15, 0.15)`, TuranSavar `Color(0.65, 0.15, 0.15)`. Color contrast tests (red vs blue dominance, contrast threshold > 0.3 for Savar / > 0.4 for TuranSavar) allow tuning within the palette family without test churn.
+
 ## 2026-05-01 — Phase 2 session 1 wave 3 (gameplay-systems): BUG-01 + BUG-03 fixes
 
 **Branch:** `feat/phase-2-session-1`
@@ -1648,3 +1958,50 @@ Rationale: the live-test failure mode was readability against the sandy terrain,
 - **No new tests.** The existing 13 tests already cover the band-tag and fill-ratio contracts the fix preserves. A "contrast assertion" test would have to compare RGB luminance against an expected terrain color, which (a) couples the test to terrain colors I don't own, and (b) the gauge is rendered in a transparent test viewport with no terrain — the test would be vacuous. Visual contrast is a live-test-loop concern; the existing color-band-tag tests cover the logical contract.
 
 **Cross-agent coordination:** no parallel agents — this was a single-fix solo session. Modified files (`game/scripts/ui/farr_gauge.gd`, `BUILD_LOG.md`) are explicitly mine and were verified via `git diff --staged --stat` showing only those two entries before commit.
+
+---
+
+## 2026-05-08 — Phase 2 session 2 wave 1B (balance-engineer): BalanceData 6 new unit types + RPS effectiveness matrix
+
+**Branch:** `feat/phase-2-session-2`
+
+**Shipped:**
+
+1. **`CombatMatrix.get_multiplier()` API** added to `game/data/sub_resources/combat_matrix.gd`. Canonical lookup for wave 2A's CombatComponent integration. Implements Turan mirror folding: strips `"turan_"` prefix before dict lookup so Turan unit types resolve to their Iran base-type row. `"turan_asb_savar"` maps to `"asb_savar_kamandar"` via `_turan_base_to_iran_key`. Default 1.0 for missing pairs (forward-compat). Wave 2A CombatComponent MUST call `get_multiplier()` — raw `effectiveness` dict access bypasses the folding.
+
+2. **6 new UnitStats entries** in `game/data/balance.tres`. Unit dict: 4 → 9 entries. `load_steps` 23 → 28. Entries added:
+   - `kamandar` (completed — previously lacked Phase 2 combat fields): max_hp=60, move_speed=2.5, attack_damage_x100=1500, attack_speed_per_sec=0.7, attack_range=8.0
+   - `savar`: max_hp=150, move_speed=4.5, attack_damage_x100=1200, attack_speed_per_sec=0.9, attack_range=1.8
+   - `asb_savar_kamandar`: max_hp=100, move_speed=4.0, attack_damage_x100=1300, attack_speed_per_sec=0.6, attack_range=7.0
+   - `turan_kamandar`, `turan_savar`, `turan_asb_savar`: mirror stats (identical combat numbers; Turan-type unit_type keys for visual differentiation)
+
+3. **Full 16-cell RPS matrix** in `combat_mtx.effectiveness`. Phase 0 stub (3 partial rows) replaced with 4×4 base-type table. Key multipliers: piyade vs savar 1.5×, kamandar vs piyade 1.5×, savar vs kamandar 2.0×, asb_savar vs savar 0.5×. All tunable via `balance.tres` without code changes.
+
+4. **76 new tests** total: `test_combat_matrix.gd` (new, 60 tests) + 16 new tests in `test_balance_data.gd` section 6. All covering the new API, all 16 RPS cells, Turan folding, unknown-pair defaults, mirror assertions, and sanity checks. `validate_hard()` pass confirmed with full matrix.
+
+**Test-count delta:** 726 → 782 passing (+56 new tests passing; 3 pre-existing pending tests unchanged). Lint: 0 violations.
+
+**Did not ship:** Nothing deferred. Wave 1B scope is complete.
+
+**Commits:**
+- `8343d1d` — CombatMatrix.get_multiplier() API + 60 coverage tests (Experiment 03: one TDD cycle per commit)
+- `743898a` — 6 new UnitStats entries + full 16-cell RPS matrix
+
+**Folding choice for Turan mirrors:** FOLDED. See §6 v0.17.8 in ARCHITECTURE.md for full rationale and design documentation.
+
+**Live-game-broken-surface answers (Experiment 01):**
+1. `balance.tres` CombatMatrix must serialize/deserialize correctly through the production resource loader. Tests verify the full round-trip (load via `ResourceLoader.load` + call `get_multiplier`). Wave 2A CombatComponent must call `get_multiplier()`, NOT `effectiveness[atk][def]` directly — the latter bypasses Turan folding.
+2. Battle feel: does 1.5× Piyade vs Savar feel decisive to the lead in a 5v5? 2.0× Savar vs Kamandar should be very one-sided. These are starting points — lead tunes `balance.tres` without code changes.
+3. Minimum smoke test: wave 2A consumer ships. Lead pits 5 Iran Piyade vs 5 Turan Savar; Piyade should win. Reverse for each RPS pair.
+
+**Decisions made independently** (per CLAUDE.md escalation rule #1):
+- **Turan mirror folding (FOLDED not DUPLICATED):** 16-cell dict vs 36-cell. No gameplay implication — both approaches produce identical multiplier values for all unit pairs at Phase 2. Folded is simpler and extensible. Documented in `combat_matrix.gd` header and `balance.tres` comment block.
+- **`turan_asb_savar` key (not `turan_asb_savar_kamandar`):** Matches kickoff doc's `&"turan_asb_savar"`. The "kamandar" suffix is implied. Shorter key reduces verbosity in unit_type lookups. `_turan_base_to_iran_key` handles the asymmetric name mapping.
+- **balance.tres kamandar fix (completed from Phase 0 stub to full Phase 2 spec):** The old stub had legacy `damage`/`attack_speed_ticks` fields only; missing `attack_damage_x100` and `attack_speed_per_sec` made Kamandar a non-attacking unit. Completed to spec values. No design decision needed — the kickoff doc specifies the values.
+
+**Open questions:** None added to QUESTIONS_FOR_DESIGN.md.
+
+**State for next session:**
+- Wave 2A (CombatComponent RPS matrix integration): consume `BalanceData.combat.get_multiplier(attacker.unit_type, target.unit_type)` in `CombatComponent._sim_tick`'s damage-fire step. Multiply into `attack_damage_x100` at fire-time. Do NOT use raw `effectiveness` dict access — Turan folding requires the method.
+- Wave 2B (main.gd spawn expansion): extend `_spawn_starting_units` to spawn 1-2 of each new Turan type (turan_kamandar, turan_savar, turan_asb_savar) at the opposite map corner.
+- Wave 1C (Asb-savar + Turan Asb-savar unit scripts): balance.tres already has `asb_savar_kamandar` and `turan_asb_savar` entries with full stats. Unit scripts consume these via `_apply_balance_data_defaults`.

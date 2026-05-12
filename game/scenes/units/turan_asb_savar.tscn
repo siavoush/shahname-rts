@@ -1,0 +1,63 @@
+[gd_scene load_steps=5 format=3 uid="uid://shahnameh_turan_asb_savar_unit"]
+
+; turan_asb_savar.tscn — TuranAsbSavar (Turan horse archer) scene.
+;
+; Source: 01_CORE_MECHANICS.md §6 (units) + §11 (Turan faction red palette).
+; Per 02e_PHASE_2_SESSION_2_KICKOFF.md §2 deliverable 4: mirror of Iran
+; Asb-savar Kamandar — same archetype, same stats, different team color.
+; The visual half of the Iran-vs-Turan team split for the horse-archer
+; archetype.
+;
+; Pattern: scene inheritance via instance=ExtResource("path_to_unit.tscn").
+; Same shape as kargar.tscn / piyade.tscn / kamandar.tscn / savar.tscn /
+; turan_piyade.tscn / asb_savar_kamandar.tscn — overrides only the
+; MeshInstance3D's mesh + material plus the root's script.
+;
+; Visual placeholder per CLAUDE.md "colored shapes only" policy:
+;   - Box, IDENTICAL elongated Vector3(0.6, 0.5, 0.9) to Iran Asb-savar
+;     Kamandar — same silhouette communicates "same archetype, opposing
+;     team" (mirror combat). The Z-axis (depth) is the longest dimension
+;     on both sides; only team color differs. If/when faction-asymmetric
+;     stats ship (Phase 2 session 3+ or Phase 4 tech tier 2 buffs), the
+;     mesh size could differ to signal that visually.
+;   - Turan-red Color(0.55, 0.18, 0.18) — saturated red, distinct from
+;     Iran-blue Asb-savar's (0.18, 0.28, 0.50) AND from the other Turan
+;     unit colors (Turan_Piyade brighter (0.7, 0.3, 0.3), TuranKamandar
+;     darker (0.55, 0.15, 0.15), TuranSavar deeper (0.65, 0.15, 0.15)).
+;     Per kickoff §2 (3): "Same shape; Turan-red palette (e.g., Color(0.55,
+;     0.18, 0.18))." The slight green-tint difference from TuranKamandar's
+;     pure (0.55, 0.15, 0.15) signals "horse-archer" within the Turan
+;     specialist sub-palette. CLAUDE.md placeholder policy.
+
+[ext_resource type="PackedScene" uid="uid://shahnameh_unit_base" path="res://scenes/units/unit.tscn" id="1_unit_template"]
+[ext_resource type="Script" path="res://scripts/units/turan_asb_savar.gd" id="2_turan_asb_savar"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_turan_asb_savar"]
+; Same dimensions as Iran Asb-savar Kamandar (0.6 × 0.5 × 0.9). Mirror
+; combat — same elongated horse-archer silhouette; only team color differs.
+size = Vector3(0.6, 0.5, 0.9)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_turan_asb_savar"]
+; Turan red. Saturated enough to read against the sandy terrain (Phase 2
+; session 1 Farr-gauge contrast lesson — warm red against warm sand needs
+; saturation to stay legible) and clearly distinct from the Iran-blue
+; Asb-savar Kamandar AND from the other Turan unit colors. CLAUDE.md
+; placeholder policy — pick a color that communicates "Turan specialist
+; combat unit" at a glance.
+albedo_color = Color(0.55, 0.18, 0.18, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — same simple lit pipeline as the
+                  ; rest of the placeholder units; consistency for placeholders.
+
+
+; Inherit the Unit scene template; override only what differs.
+[node name="TuranAsbSavar" instance=ExtResource("1_unit_template")]
+script = ExtResource("2_turan_asb_savar")
+
+[node name="MeshInstance3D" parent="." index="0"]
+; Override the base Unit's BoxMesh (0.5×0.6×0.5) with the Turan Asb-savar
+; elongated box (0.6×0.5×0.9) — mirror of Iran Asb-savar Kamandar so the
+; silhouette match communicates "same archetype, opposing team." Y-offset
+; matches half-height (0.25); same as Iran Asb-savar Kamandar.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25, 0)
+mesh = SubResource("BoxMesh_turan_asb_savar")
+material_override = SubResource("StandardMaterial3D_turan_asb_savar")
