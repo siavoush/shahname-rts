@@ -99,6 +99,22 @@ Engine / GDScript foot-guns that have bitten this project in production. Each en
 
 **Regression coverage.** `tests/unit/test_unit_state_dying.gd` and `tests/integration/test_phase_2_session_1_combat.gd::test_bug03_dying_state_frees_unit_after_lethal_damage` both await multiple `process_frame` and have inline comments documenting why.
 
+### #11 — `queue_free.call_deferred()` never resolves inside `SimClock._test_run_tick()` integration loops
+
+**Mechanism.** Distinct from #8. #8 covers the unit-test case where deferred frees need 2+ `await get_tree().process_frame` calls. **In integration tests that drive ticks via `SimClock._test_run_tick()` in a tight loop**, NO `process_frame` happens between iterations — the loop is synchronous from Godot's perspective. The deferred free is enqueued but NEVER fires. So `is_instance_valid(unit)` stays `true` indefinitely after `hp_x100 ≤ 0`, even after the Dying state has called `queue_free.call_deferred()`.
+
+Tests that use `is_instance_valid(unit)` as a death-detection predicate inside a `_test_run_tick` loop will hang forever (or until the loop-tick cap), because the unit appears alive even though its HP is zero and its FSM is in Dying state.
+
+**Rule.** In integration tests using `SimClock._test_run_tick()` loops, **never use `is_instance_valid(unit)` as a combat-outcome predicate.** Use end-state predicates the simulation actually produces synchronously:
+- `int(unit.get_health().hp_x100) <= 0` — HP-based death detection. The HealthComponent's `_set_sim` writes `hp_x100` before queueing the death, so this becomes true the same tick.
+- `unit.fsm.current.id == &"dying"` — FSM-state-based detection.
+
+Document the choice in the test file header so future readers don't re-derive it.
+
+**Canonical incident.** Phase 2 session 2 wave 3 (qa-engineer) — initial draft of `test_phase_2_session_2_rps_combat.gd` used `is_instance_valid(unit)` for 6 of 17 RPS-outcome tests. All 6 hung at the tick-cap. Fix: switched to `hp_x100 ≤ 0` synchronous check. Surfaced again independently by `godot-reviewer-p2s2` (suggestion S4), `arch-reviewer-p2s2`, and confirmed by `godot-reviewer-pr9` in PR-attached review. Documented in ARCHITECTURE.md §6 v0.18.2.
+
+**Regression coverage.** `tests/integration/test_phase_2_session_2_rps_combat.gd` file header docs the pattern explicitly. Future combat-outcome tests should reference this as the canonical example.
+
 ### Candidate / deferred entries (not yet load-bearing)
 
 | Candidate | Status | Reason |
@@ -293,13 +309,24 @@ The intervention's value comes from **structural drift detection**, not from "ca
 - **Reviewer briefs must include the explicit §6 entry checklist.** The reviewer-brief-side checklist works; the agent-brief-side reminder ("write a §6 entry per non-trivial deliverable") is observably insufficient when agents fall into the verification-loop pattern. The reviewer should be the second line of defense for archaeology.
 - **`SendMessage` in reviewer tool list confirmed working.** Both reviewers proactively returned their structured output via SendMessage; no idle-without-content failures repeated from the informal trial. Mitigation from Experiment 02's setup is validated.
 
-**Status:** **Kept after one formal session.** Per the original notes, graduates to permanent rule in `STUDIO_PROCESS.md` only after a SECOND confirming session (Phase 2 session 2). The session-2 trial will measure: do the reviewers continue to surface ≥1 actionable archaeological/contract finding per session?
+**Status:** **GRADUATED to permanent rule after Phase 2 session 2 confirming trial (2026-05-12).**
 
-**Notes:**
-- Like Experiment 01, N=1 single session is directional only. Graduates to permanent rule after second confirming session.
-- The trial run revealed a **process bug to fix before the formal trial:** the original `arch-reviewer-pr4` instance went idle for ~10 minutes without producing review content; required a direct nudge from the lead via Claude Code's agent-message UI. Hypothesis: read-only reviewer agents (no `SendMessage` in tools) may have ambiguous return-output mechanics. **Mitigation for Phase 2:** add `SendMessage` to both reviewer agents' tool list so they can proactively report.
-- The trial run also revealed the reviewers' value compounds when given the Known Godot Pitfalls list as their checklist. Phase 2's wave-close briefs should include the latest pitfalls list as part of the briefing, not just by reference.
-- Cost-of-measurement: ~20 min lead time per wave (write the briefs, read the reviews, route fixes). Tracked in the metrics table.
+**Phase 2 session 2 verdict (2nd formal trial — closure data):**
+
+| Metric | Session 1 trial baseline | Phase 2 sess 2 trial | Δ |
+|---|---|---|---|
+| Both reviewers return APPROVE | Yes | Yes | unchanged |
+| Bugs found by reviewers that lead's live-test would have missed | 6 (F-1..F-6 LATER items) | 4 (S1..S4 + 4 nits per godot-reviewer) | comparable |
+| Cross-reviewer convergent findings | 2 (§1.5 tween tension; cross-agent doc-stomp) | 3 (HP-death detection pattern; SSOT-in-spirit Pitfall #7; L13 escalation) | +1 |
+| Reproducibility across fresh instances | Not measured | **Confirmed via PR #9 second pass** — same APPROVE, comparable density (4/4 vs 4/4, plus convergent escalations) | NEW DATA |
+| Cost-of-measurement | ~20 min lead time | ~25 min lead time (added PR-attached posting) | +25% |
+
+**Second-trial-specific findings beyond first-trial findings:**
+- **PR-attached review pattern works.** Reviewers can post via `gh pr review --comment` using their `Bash` tool access. Reviews are now discoverable inline in the GitHub UI alongside the diff. Adds ~5 min per reviewer but produces persistent archaeological trail outside agent chat.
+- **Reproducibility across fresh instances is real.** Two fresh instances on identical PR content returned matching verdicts (APPROVE) and comparable finding density (4 non-blocking + 4 nits each), with each surfacing 2-3 items the other did not. The reviewer-pair pattern is not lottery-dependent.
+- **Convergent findings escalate themselves.** Items both reviewers flag independently (HP-death detection, Pitfall #7 SSOT) have higher promotion priority than single-reviewer findings.
+
+**Promoted permanent rule (added to STUDIO_PROCESS.md §9 2026-05-12):** Every wave-close, lead dispatches both reviewer agents in parallel BEFORE PR creation. Reviewers post their full structured review via `gh pr review --comment` for GitHub-native archaeological trail. Convergent findings (flagged by both reviewers independently) auto-promote to LATER index items at next retro.
 
 ### Experiment 03 — Incremental commits + serialized wave-close (2026-05-04)
 
@@ -330,27 +357,35 @@ The intervention's value comes from **structural drift detection**, not from "ca
 | Total commits on branch | 23 |
 | Bug-fix dispatches required after wave-close review | 2 (BUG-04, BUG-06) |
 
-**Metrics to capture at session 2 close:**
+**Phase 2 session 2 closure data (2026-05-12):**
 
 | Metric | How measured | Baseline | Actual | Δ |
 |---|---|---|---|---|
-| Verification-loop occurrences | Agent reports "task X already shipped, standing down" without committing | 2+ | _TBD_ | _TBD_ |
-| Commit-race incidents | Misattributed commits or commits with cross-agent contamination | 1 | _TBD_ | _TBD_ |
-| Lead-proxy commits required | Lead committed work agents should have committed themselves | 3 | _TBD_ | _TBD_ |
-| Cross-agent docs contamination | Times an agent's `git diff` of BUILD_LOG / ARCHITECTURE included another agent's draft text | 4+ | _TBD_ | _TBD_ |
-| Total commits on branch | Σ commits in `main..HEAD` at session close | 23 | _TBD_ | _TBD_ |
-| Productivity proxy (commits per hour wall-clock) | total commits / kickoff-to-merge wall-clock | _TBD_ | _TBD_ | _TBD_ |
+| Verification-loop occurrences | Agent reports "task already shipped, standing down" without committing | 2+ | **0** | **−100%** |
+| Commit-race incidents | Misattributed commits or commits with cross-agent contamination | 1 | **2** (`cac29cc`, `3fefeea` — both in wave 1) | **+100%** |
+| Lead-proxy commits required | Lead committed work agents should have committed themselves | 3 | **0** | **−100%** |
+| Cross-agent docs contamination | Times an agent's `git diff` of BUILD_LOG / ARCHITECTURE included another agent's draft text | 4+ | 2 (folded into the 2 commit-race incidents above) | comparable |
+| Total commits on branch | Σ commits in `main..HEAD` | 23 | 12 | smaller scope |
+| Bug-fix dispatches after wave-close | (new metric) | 2 (BUG-04, BUG-06) | **0** | **−100%** |
 
-**Verdict criteria:**
+**Verdict: MODIFIED.**
 
-- **Kept** if: verification-loop occurrences ≤ 1, AND commit-race incidents = 0, AND lead-proxy commits ≤ 1. The intervention pays for itself when these patterns are clearly suppressed.
-- **Modified** if: incidents reduced but commits-per-hour drops > 30% from baseline (i.e., per-TDD-cycle commits add too much friction). Tune to "commit at meaningful chunks ≥ 1 deliverable" instead of "per TDD cycle."
-- **Dropped** if: incidents unchanged AND productivity drops. Means the discipline isn't the binding constraint — root cause is elsewhere (agent-session-context limits, etc.).
+**Reasoning:**
 
-**Verdict:** _TBD — fill at Phase 2 session 2 merge._
+The intervention has TWO mechanisms with very different verdicts:
+
+1. **Per-TDD-cycle commits + anti-loop brief language: KEPT (permanent rule).** Verification-loop occurrences dropped from 2+ to 0. Lead-proxy commits dropped from 3 to 0. Four sequential single-agent waves (1B, 2A, 2B, 3) ALL shipped clean. The anti-loop cycle (implement → gate → diff staged → commit → log -1 confirm → report) is observably load-bearing. Promoting to permanent `STUDIO_PROCESS.md` §9 rule.
+
+2. **Serialized wave-close commits: INSUFFICIENT.** Commit-race incidents went UP, not down (1 → 2 in wave 1's three-parallel-agent dispatch). Despite explicit "stage your specific files only" language in every brief, both incidents occurred when one agent's `git commit` swept up another agent's untracked working-tree files. The race is not at staging-time; it's at commit-write time when the pre-commit gate's ~2-minute test runner allows another agent's working-tree state to mature. **Sequential single-agent waves don't trigger it (waves 2A/2B/3 were clean). Parallel multi-agent waves do (wave 1's three parallel agents stomped twice).**
+
+**Promoted to permanent rule (added to STUDIO_PROCESS.md §9 2026-05-12):** Per-TDD-cycle commits + anti-loop brief language. The discipline is load-bearing.
+
+**Demoted to follow-up experiment:** The parallel-agent commit-race mitigation is unresolved. Recommend Experiment 04 (worktree-per-agent vs lead-orchestrated commit serialization) per arch-reviewer-p2s2's structural recommendation. The Pitfall #7 mitigation Open Space sync between Phase 2 close and Phase 3 kickoff is the right forum to choose the mitigation strategy.
+
+**Cost-of-measurement:** ~10 min lead time for verdict-table fill. Below bottleneck.
 
 **Notes:**
-- Like Experiments 01 and 02, N=1 single session is directional only. Graduates to permanent rule in `STUDIO_PROCESS.md` only after a SECOND confirming session.
+- The most informative data point: parallel-agent waves are structurally different from sequential ones. The discipline-side intervention works for sequential; structural intervention (worktrees or commit-lock) needed for parallel. Splitting the verdict captures both.
 - Risk: per-TDD-cycle commits make `git log` more granular. May produce 30+ commits per wave instead of 5. Feature, not bug — granular commits make `git bisect` viable when a regression sneaks in. But PRs become longer to read.
 - Companion to existing `STUDIO_PROCESS.md` §9 rule (2026-05-01) about pre-commit gate filtering by `git diff --cached --name-only` — that's an automation-side mitigation; this is a discipline-side one. Both should land together.
 
