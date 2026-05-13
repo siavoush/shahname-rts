@@ -89,6 +89,46 @@ class_name FarrConfig extends Resource
 ## 3:1 or more triggers per §4.3.
 @export var snowball_ratio: float = 3.0
 
+# --- Drain-rate table (Phase 3 wave 1B + forward-compat keys) ---
+# Reference: 02f_PHASE_3_KICKOFF.md §2 Open Space resolution; canonical Farr
+# drain rates table per the Constraint Negotiation between balance-engineer
+# and gameplay-systems.
+#
+# Convention:
+#   - POSITIVE magnitudes here. The Farr-drain dispatcher applies the negative
+#     sign at the call site: FarrSystem.apply_farr_change(-magnitude, ...).
+#   - StringName keys match the reasons recorded in the F2 overlay log so
+#     post-hoc analysis can trace every Farr movement back to its trigger.
+#
+# Phase 3 wired keys (the drain dispatcher subscribes to unit_health_zero and
+# reads fsm.current.id PRE-Dying-swap to pick one of these):
+#   worker_killed_idle              — Kargar killed while in &"idle" state
+#   worker_killed_during_gather     — Kargar killed while gathering / returning
+#
+# Forward-compat keys (Phase 4+; the dispatcher fires zero drain if absent):
+#   capital_damaged                 — Throne HP loss event (per-hit trigger)
+#   capital_lost                    — Throne destroyed (game-ending drain)
+#   building_destroyed_civilian     — Khaneh / Mazra'eh lost
+#   building_destroyed_military     — Sarbaz-khaneh lost
+#   building_destroyed_atashkadeh   — sacred-flame loss (heavy drain per §4.3)
+#   hero_died                       — Rostam dies (per §7.3)
+#
+# Why a dict instead of @export fields per key:
+#   The drain dispatcher looks up by StringName at runtime. A dict makes the
+#   "what reasons trigger drains?" surface explicit (the keys present == the
+#   reasons honored). New drain triggers add a key here + an emit site;
+#   no schema migration needed.
+@export var drain_rates: Dictionary = {
+	&"worker_killed_idle": 1.0,
+	&"worker_killed_during_gather": 0.5,
+	&"capital_damaged": 2.0,
+	&"capital_lost": 12.0,
+	&"building_destroyed_civilian": 1.5,
+	&"building_destroyed_military": 2.5,
+	&"building_destroyed_atashkadeh": 5.0,
+	&"hero_died": 5.0,
+}
+
 # --- Generation magnitudes (positive Farr deltas) ---
 # Reference: 01_CORE_MECHANICS.md §4.3 (Generators section).
 # Building Farr generation (Atashkadeh, Dadgah, Barghah, Yadgar) is per-tick

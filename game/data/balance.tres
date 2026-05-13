@@ -276,6 +276,22 @@ drain_snowball_worker = -1.0
 snowball_ratio = 3.0
 gain_hero_rescue = 3.0
 gain_hero_spares_enemy = 5.0
+; Phase 3 wave 1B drain-rate table (Open Space 2026-05-13 resolution).
+; Positive magnitudes; the dispatcher applies the negative sign at the call site.
+; Phase 3 wired keys: worker_killed_idle, worker_killed_during_gather.
+; Forward-compat keys (Phase 4+ emit sites): capital_damaged, capital_lost,
+; building_destroyed_civilian, building_destroyed_military,
+; building_destroyed_atashkadeh, hero_died.
+drain_rates = {
+&"worker_killed_idle": 1.0,
+&"worker_killed_during_gather": 0.5,
+&"capital_damaged": 2.0,
+&"capital_lost": 12.0,
+&"building_destroyed_civilian": 1.5,
+&"building_destroyed_military": 2.5,
+&"building_destroyed_atashkadeh": 5.0,
+&"hero_died": 5.0
+}
 
 ; =========================================================================
 ; CombatMatrix sub-resource
