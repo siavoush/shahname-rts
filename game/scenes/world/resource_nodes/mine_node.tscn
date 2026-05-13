@@ -1,0 +1,68 @@
+[gd_scene load_steps=4 format=3 uid="uid://shahnameh_mine_node"]
+
+; mine_node.tscn — Coin MineNode scene.
+;
+; Source: 01_CORE_MECHANICS.md §3 (Coin / sekkeh economy) +
+; docs/RESOURCE_NODE_CONTRACT.md §1.3 + Phase 3 wave 1A kickoff §3.
+;
+; Visual placeholder per CLAUDE.md "colored shapes only":
+;   - Yellow cylinder, ~1.5 wide × 0.5 tall (squat — reads as a coin pile,
+;     not a column).
+;   - Iran-coin gold color (0.85, 0.7, 0.2). Saturated enough to stay
+;     readable against the sandy terrain — the FarrGauge contrast lesson
+;     from Phase 2 session 1 is the precedent the lead will catch in the
+;     wave-1A live test.
+;
+; Composition is bare:
+;   - Root: Node3D (extends ResourceNode via mine_node.gd's path-string
+;     extends; the script handles the SimNode-discipline routing).
+;   - MeshInstance3D: the yellow cylinder.
+;
+; What's deliberately NOT in the scene:
+;   - CollisionShape3D — Phase 3 wave 1A doesn't need physics on mines.
+;     Workers pathfind to global_position; they don't bump the mine.
+;     Wave 1B may add a CollisionShape3D for click-to-target if the input
+;     layer needs raycast hits on the mine.
+;   - NavigationObstacle3D — per RESOURCE_NODE_CONTRACT.md §3.2: mines
+;     SHOULD carry NavigationObstacle3D so the navmesh routes around them.
+;     Wave 1A skips this — the wave-1A reserves spawn at known sandy spots
+;     that are clear of any unit-blocking geometry, and the navmesh isn't
+;     baked at wave-1A scope (LATER L2 MovementSystem coordinator). Wave 1B
+;     adds the obstacle alongside the NavigationRegion3D bake setup.
+;   - SpatialAgentComponent — mines aren't units; they don't need spatial
+;     indexing for combat queries. If wave-1B selection / range queries
+;     need it, the component plugs in here.
+
+[ext_resource type="Script" path="res://scripts/world/resource_nodes/mine_node.gd" id="1_mine"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_mine"]
+; Squat coin-pile silhouette. Wider than tall so it reads as a deposit on
+; the ground, not a pillar or column. Top and bottom radius equal (true
+; cylinder, not cone) — a stack of coins / ore, not a refinery. Sized 1.5
+; wide (radius 0.75) × 0.5 tall per kickoff §3 visual layout note.
+top_radius = 0.75
+bottom_radius = 0.75
+height = 0.5
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_mine"]
+; Iran-coin gold per kickoff §3. Saturation deliberately punchy
+; (0.85 red, 0.7 green, 0.2 blue) — same lesson as FarrGauge fix
+; (commit 2d1e24e): low-contrast against sandy terrain fails the live-test
+; readability check. Lead live-tests post-wave-1A; if the gold still
+; bleeds into the terrain, balance-engineer / world-builder retunes here
+; (it's a material tweak, not a balance number).
+albedo_color = Color(0.85, 0.7, 0.2, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — matches the unit material pipeline
+
+
+[node name="MineNode" type="Node3D"]
+script = ExtResource("1_mine")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+; Y-offset: half-height (0.25) so the cylinder's bottom face sits ON the
+; ground plane. Matches the unit.tscn / kargar.tscn mesh-bottom-at-y=0
+; convention so spawn positions land the mine cleanly on terrain at the
+; same Y the workers walk on.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25, 0)
+mesh = SubResource("CylinderMesh_mine")
+material_override = SubResource("StandardMaterial3D_mine")
