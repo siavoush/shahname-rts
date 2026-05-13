@@ -41,6 +41,7 @@ const SpatialAgentComponentScript: Script = preload(
 # `is Unit` check still works (CharacterBody3D is the production base).
 class FakeUnit extends CharacterBody3D:
 	var unit_id: int = -1
+	var unit_type: StringName = &""  # Phase 3 wave 1B — gather routing
 	var team: int = Constants.TEAM_IRAN
 	var command_queue: Object = null
 	var _selectable: Variant = null
@@ -556,3 +557,90 @@ func test_click_tolerance_radius_is_configurable_via_constants() -> void:
 	assert_eq(selected._last_replace_kind, Constants.COMMAND_MOVE,
 		"unit just outside Constants.CLICK_TOLERANCE_RADIUS must NOT trigger "
 		+ "the fallback — sanity that the radius constant is the gate")
+
+
+# ===========================================================================
+# Right click — gather routing (Phase 3 wave 1B)
+# ===========================================================================
+
+# Fake ResourceNode mirroring the duck-typed surface ClickHandler probes:
+# `request_extract` method + `is_gatherable` field. Extends Node3D because the
+# duck-type check walks the parent chain — node must be position-bearing.
+class FakeResourceNode extends Node3D:
+	var is_gatherable: bool = true
+	var kind: StringName = Constants.KIND_COIN
+	func request_extract(_unit_id: int) -> bool:
+		return true
+
+
+func _make_kargar(uid: int) -> FakeUnit:
+	var k: FakeUnit = _make_unit(uid, Constants.TEAM_IRAN)
+	k.unit_type = &"kargar"
+	return k
+
+
+func _make_mine() -> FakeResourceNode:
+	var m: FakeResourceNode = FakeResourceNode.new()
+	add_child_autofree(m)
+	_units.append(m)
+	return m
+
+
+func test_right_click_on_mine_dispatches_gather_to_kargar() -> void:
+	# Phase 3 wave 1B: right-click a ResourceNode with a Kargar selected →
+	# the Kargar receives a COMMAND_GATHER with payload.target_node = the mine.
+	var k: FakeUnit = _make_kargar(1)
+	var mine: FakeResourceNode = _make_mine()
+	SelectionManager.select(k)
+	handler.process_right_click_hit(_hit(mine, Vector3(5.0, 0.0, 0.0)))
+	assert_eq(k._replace_call_count, 1,
+		"Kargar must receive exactly one gather command")
+	assert_eq(k._last_replace_kind, Constants.COMMAND_GATHER,
+		"command kind is Constants.COMMAND_GATHER (&\"gather\")")
+	assert_true(k._last_replace_payload.has(&"target_node"),
+		"payload must carry `target_node` (Node ref)")
+	assert_eq(k._last_replace_payload[&"target_node"], mine,
+		"payload.target_node is the clicked mine")
+
+
+func test_right_click_on_mine_skips_non_workers() -> void:
+	# A mixed selection (Kargar + non-worker like a future Piyade) on right-click
+	# mine: ONLY the Kargar gets gather. Non-workers don't get any command —
+	# matches StarCraft's "workers gather, combat units don't auto-follow."
+	var k: FakeUnit = _make_kargar(1)
+	var soldier: FakeUnit = _make_unit(2, Constants.TEAM_IRAN)
+	soldier.unit_type = &"piyade"
+	var mine: FakeResourceNode = _make_mine()
+	SelectionManager.select(k)
+	SelectionManager.add_to_selection(soldier)
+	handler.process_right_click_hit(_hit(mine, Vector3.ZERO))
+	assert_eq(k._replace_call_count, 1, "Kargar gathers")
+	assert_eq(soldier._replace_call_count, 0,
+		"non-worker (piyade) gets no command on right-click-mine")
+
+
+func test_right_click_on_mine_no_op_when_no_workers_selected() -> void:
+	# Mine click with only non-workers selected: no commands dispatched.
+	var soldier: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	soldier.unit_type = &"piyade"
+	var mine: FakeResourceNode = _make_mine()
+	SelectionManager.select(soldier)
+	handler.process_right_click_hit(_hit(mine, Vector3.ZERO))
+	assert_eq(soldier._replace_call_count, 0,
+		"non-worker selection + mine click is a no-op")
+
+
+func test_right_click_on_mine_with_multi_kargar_dispatches_to_all() -> void:
+	var k1: FakeUnit = _make_kargar(1)
+	var k2: FakeUnit = _make_kargar(2)
+	var k3: FakeUnit = _make_kargar(3)
+	var mine: FakeResourceNode = _make_mine()
+	SelectionManager.select(k1)
+	SelectionManager.add_to_selection(k2)
+	SelectionManager.add_to_selection(k3)
+	handler.process_right_click_hit(_hit(mine, Vector3.ZERO))
+	for k in [k1, k2, k3]:
+		assert_eq(k._replace_call_count, 1,
+			"each Kargar in the selection gets exactly one gather command")
+		assert_eq(k._last_replace_kind, Constants.COMMAND_GATHER)
+		assert_eq(k._last_replace_payload[&"target_node"], mine)
