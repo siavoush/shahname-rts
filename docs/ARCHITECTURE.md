@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.19.0
+version: 0.20.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -18,8 +18,8 @@ ssot_for:
 references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md, RESOURCE_NODE_CONTRACT.md, AI_DIFFICULTY.md, ../02_IMPLEMENTATION_PLAN.md, STUDIO_PROCESS.md]
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
-last_updated: 2026-05-12
-# bumped to v0.19.0 — Phase 2 Session 2 retro (L13 escalated, L20/L21 new — Pitfall #7 SSOT)
+last_updated: 2026-05-13
+# bumped to v0.20.0 — Open Space sync Phase 2→3 transition (Pitfall #7 worktree mitigation, Unit.stance spec, Farr drain rates, Sim Contract 1.4.0 addenda)
 ---
 
 # Architecture — Target Shape and Build State
@@ -1162,6 +1162,59 @@ Backfilled retroactively per arch-reviewer-phase-2-s1's F-2 finding.
 
 - **Commits:** `test(integration): Phase 2 session 2 wave 3 — full RPS roster + live combat chain integration tests`
 
+---
+
+### v0.20.0 — Open Space sync, Phase 2 close → Phase 3 kickoff (2026-05-13) — multi-agent decisions
+
+This entry consolidates the four decisions made during the design-mode Open Space sync between Phase 2 close and Phase 3 wave 1 kickoff. Each decision was reached via the documented studio-process pattern (Constraint Negotiation, Open Consultation, or lead-drafted addendum). All four ship as docs-only changes in this PR; implementations land in subsequent Phase 3 waves that reference these specs.
+
+**Decision 1: Pitfall #7 mitigation — `git worktree`-per-agent for parallel waves; sequential-shared-tree for single-deliverable / heavy-shared-doc waves; Option 2 (lead-orchestrated commit serialization) VETOED.**
+
+Constraint Negotiation between engine-architect (technical-foundation lens) and gameplay-systems (DX lens). Both converged on Option 1 hybrid; both independently rejected Option 2 on different but complementary grounds — engine-architect framed it as wrong-layer (race is at working-tree level, not index level), gameplay-systems framed it as fighting the just-graduated per-TDD-cycle rule (incentivizes batched commits at wave-close). The full mitigation specification (wave-mode declaration, brief delta, decision boundary, 10 mandatory pitfalls including dispatch-id-not-role-name worktree naming, `.godot/` gitignore, `balance.tres` sequential-only, semantic merge-conflict awareness, worktree cleanup at session close) lands as a new permanent rule in `STUDIO_PROCESS.md` §9 (2026-05-13 entry). The decision opens Experiment 04 — first formal trial in Phase 3 session 2 when DummyAI / fog / 3 buildings naturally form a 3-4-parallel wave. Validation marker: zero Pitfall #7 incidents in Phase 3 session 2.
+
+**Decision 2: `Unit.stance` field spec — PASSIVE-only in Phase 3, Phase 6 preview as AI/component glue (not state-machine extension).**
+
+Open Consultation with ai-engineer as single-authority drafter. Field placement: `@export var stance: StringName = &"passive"` on `Unit` base class (NOT on `CombatComponent`) — the three-reasons argument is the SSOT-for-AI-black-box-read per State Machine §6.4, survives composition variance (Kargar has no CombatComponent but still has a stance), and `@export` makes it scene-tweakable for spawn-side overrides. Three new Constants entries (`STANCE_PASSIVE / STANCE_DEFENSIVE / STANCE_AGGRESSIVE`) co-located with the existing `TEAM_*` block. Phase 3 ships the field as **read-only from CombatComponent's perspective** — DummyAIController reads it (and contains a `push_warning` for non-passive as a Phase 6 future-grep target), but no other system consumes it. Critical: CombatComponent does NOT consume stance in Phase 3; all Phase 2 combat tests pass byte-for-byte. Phase 6 will land defensive (hook into a future `EventBus.unit_damaged` signal — Phase 6 prereq) and aggressive (per-tick SpatialIndex.query_radius_team in `UnitState_Idle._sim_tick`) as AI/component-side glue — neither requires new states. Flat 5-state FSM (idle/moving/attacking/attack_move/dying) stays stable. Live-game-broken-surface mitigation: code-review checklist (not lint rule) for `.stance` references outside the whitelist (Unit declaration, Constants, DummyAIController, tests). Phase 6 per-unit-type defaults recommendation (Kargar passive, combat units aggressive, heroes defensive) saved as a §6 LATER-preview note for Phase 6 ai-engineer.
+
+**Decision 3: Farr drain rates table — positive-magnitude in `BalanceData.farr.drain_rates: Dictionary[StringName, float]`, negative-sign at call site.**
+
+Constraint Negotiation between balance-engineer (draft author) and gameplay-systems (reviewer of trip-reset semantics question). gameplay-systems AGREED with balance-engineer's no-trip-reset position — the death-cleanup path is already fully specified by State Machine §4.2 + Resource Node Contract §4.1/§4.2 (`Gathering.exit()` calls `release_extract()`, slot freed, `_carry_*` fields die with SimNode). The drain table:
+
+| Key | Magnitude | Phase 3 scope | Rationale (balance-engineer's verbatim) |
+|---|---|---|---|
+| `&"worker_killed_idle"` | 1.0 | ✅ wire | Spec-canonical §4.3 ("Worker killed while idle and unarmed: −1 Farr each"). Single idle death is small, recoverable; repeated accumulates. |
+| `&"worker_killed_during_gather"` | 0.5 | ✅ wire | Worker was doing their duty; half the idle penalty. Creates pull-back-vs-keep-gathering tension under raid pressure. |
+| `&"capital_damaged"` | 2.0 | Phase 3 sess 2 (forward-compat entry) | Per-damage-threshold event (75%/50%/25% bands), not per-hit. Max 6 Farr drain from capital attrition. |
+| `&"capital_lost"` | 12.0 | Phase 4+ (forward-compat entry) | Near `kaveh_trigger_threshold` 15.0 but below. From 50 Farr, capital loss → 38 Farr (below Tier 2, above Kaveh). |
+| `&"building_destroyed_civilian"` | 1.5 | Phase 4 | Khaneh/Mazra'eh. Cumulative drain on base wipes. |
+| `&"building_destroyed_military"` | 2.5 | Phase 4 | Sarbaz-khaneh. Higher than civilian — strategic loss. |
+| `&"building_destroyed_atashkadeh"` | 5.0 | Phase 4 | Mirrors existing `drain_atashkadeh_lost = -5.0` typed field. |
+| `&"hero_died"` | 5.0 | Phase 5 | Mirrors existing `drain_hero_killed_battle = -5.0`. |
+
+`FarrConfig.validate_hard()` gains three rules: (a) all magnitudes positive; (b) all values < `kaveh_trigger_threshold` (so no single event insta-triggers Kaveh — that's aggregate-over-time); (c) Phase 3 required keys present.
+
+**Critical implementation gotcha flagged by gameplay-systems (state-at-death capture timing):** the Farr drain handler must read `current.id` BEFORE the FSM swaps `current` to `Dying` (State Machine §4.2). If the handler subscribes to `EventBus.unit_died` (emitted from `Dying.enter()`), every death looks like state.id == `&"dying"` and both drain keys collapse to the same path. **Subscribe to `unit_health_zero` (pre-preempt) OR have the FSM stamp `last_alive_state_id` before swap.** This is the load-bearing implementation detail for Phase 3's Farr-drain wiring; the wave dispatch brief must reference this verbatim.
+
+**Decision 4: Sim Contract amended to 1.4.0** with two paragraph-length addenda:
+- **§1.3 init-time carve-out:** parent `_ready` writes to child component fields via plain `set()` BEFORE `SimClock` has run its first tick are exempt from self-only-mutation. Closes spec gap flagged by arch-reviewer-p2s2 in Phase 2 session 2 — the `Unit._apply_balance_data_defaults` pattern (precedent across multiple components) is now formally allowed.
+- **§1.5 UI-local tween carve-out:** tweens writing ONLY to UI-local state (fields no sim consumer reads — e.g., `FarrGauge._displayed_farr`, `SelectedUnitPanel.hp_bar.value`) may start inside signal handlers without queue-then-drain. The boundary test: if a field is written by a tween started in a handler, no `_sim_tick` anywhere reads it. Tweens writing to sim-state fields still MUST use queue-then-drain. Closes spec gap flagged by both reviewers in Phase 1 session 2 + reaffirmed Phase 2 session 2.
+
+See `docs/SIMULATION_CONTRACT.md` 1.4.0 for full text.
+
+**Doc / experiment impact:**
+- `docs/STUDIO_PROCESS.md` 1.3.0 → 1.4.0 (Pitfall #7 mitigation as new permanent rule + Sim Contract addenda announcement).
+- `docs/SIMULATION_CONTRACT.md` 1.2.1 → 1.4.0 (two addenda — skip 1.3.x because both addenda land together).
+- `docs/PROCESS_EXPERIMENTS.md` 1.1.0 → 1.2.0 (Experiment 04 opened; Pitfall #7 candidate retired — superseded by the STUDIO_PROCESS rule).
+- `docs/ARCHITECTURE.md` 0.19.0 → 0.20.0 (this entry + §7 LATER index updates).
+- `02f_PHASE_3_KICKOFF.md` 1.0.0 → 1.1.0 (Open Space §2 decisions inlined as resolved).
+
+**§7 LATER index updates:**
+- **L20 (Pitfall #7 SSOT) — CLOSED.** Mitigation has a single owning surface now: `STUDIO_PROCESS.md` §9 2026-05-13 entry. The decision criteria (parallel-worktrees vs sequential-shared-tree) and the 10 mandatory pitfalls live in ONE place. Future cross-references (BUILD_LOG retros, §6 entries) point to that single rule. Marked closed with commit SHA of this PR's merge.
+- **L13 (MatchHarness migration) — UNCHANGED.** Still 🔴 Phase 3 pre-flight blocker. Closes in Phase 3 wave 0.
+- **L21 (`docs/PITFALLS.md`) — UNCHANGED.** Still 🟡 deferred until 3rd hybrid concept emerges. The worktree decision lives in STUDIO_PROCESS, not a new doc; no escalation triggered.
+
+**Commit:** `docs(open-space): Phase 2→3 transition decisions — Pitfall #7 worktree mitigation, Unit.stance spec, Farr drain rates, Sim Contract 1.4.0`
+
 Architectural / project-wide deferred work. Each entry has a brief description, the canonical surfacing source (commit + §6 entry), and the priority class:
 - **🔴 Phase-blocking** — must ship before the named phase can complete its milestone. Owns a slot in the implementation plan.
 - **🟡 Scale-blocking** — works fine at MVP scale; visibly fails as unit/building counts grow toward production. Surfaces when N exceeds the empirical threshold.
@@ -1190,7 +1243,7 @@ Promoted from §6 entry prose at session-close retros so they're indexable rathe
 | L17 | **`F2` Farr log debug overlay** | 🟢 (Phase 4) | CLAUDE.md "debug overlays first-class" + Phase 2 session 1 first Farr drain | Per-tick log of every `EventBus.farr_changed` emit (amount, reason, source_unit_id). Toggleable via F2. Surfaces when Atashkadeh per-tick contributions ship in Phase 4 — debug-overlay observer of the producer-side batching. |
 | L18 | **`F1` pathfinding debug overlay** | 🟢 (Phase 6 with AI) | CLAUDE.md + Phase 1 session 1 | Renders unit waypoint paths in 3D. Currently scaffolded by DebugOverlayManager but no concrete F1 overlay. Surfaces when AI pathfinding becomes the debugging surface that matters. |
 | L19 | **`F3` AI state debug overlay** | 🟢 (Phase 6 with AI) | CLAUDE.md + Phase 6 plan | Renders AI controller state per unit (idle / attacking / fleeing / etc.) as floating text or color-coded silhouettes. Surfaces with `DummyAIController` shipping. |
-| L20 | **Pitfall #7 mitigation needs single owning surface** | 🔴 (Open Space sync, Phase 2→3 transition) | arch-reviewer-pr9 SSOT-in-spirit framing (Phase 2 sess 2 close) | **NEW 2026-05-12.** Three confirmed cross-agent commit-staging race occurrences across two sessions (`aa429ef`, `cac29cc`, `3fefeea`). Mitigation hypothesis (worktree-per-agent vs commit-serialization vs explicit per-file staging) is distributed across BUILD_LOG line 322 + ARCHITECTURE.md §6 v0.17.9 + STUDIO_PROCESS.md §9 + four other places — currently "correct everywhere, owns nowhere." Promote to single owning surface: either a top-level §7-style entry on the project root OR a dedicated `docs/PITFALLS.md`. Pin the mitigation options + decision criteria at ONE location so a future agent reads ONE thing and understands the structural recommendation. Closes via Open Space sync between Phase 2 close and Phase 3 kickoff. |
+| ~~L20~~ | ~~**Pitfall #7 mitigation needs single owning surface**~~ — **CLOSED 2026-05-13.** Open Space sync resolved this: mitigation = `git worktree`-per-agent for parallel waves; sequential-shared-tree for single-deliverable / heavy-shared-doc waves; Option 2 (lead commit serialization) VETOED. Single owning surface: `STUDIO_PROCESS.md` §9 2026-05-13 entry. See §6 v0.20.0 entry for the full Constraint Negotiation outcome. Decision opens **Experiment 04** — first formal trial Phase 3 session 2. | — | arch-reviewer-pr9 framing (Phase 2 sess 2 close) → resolved by engine-architect + gameplay-systems Constraint Negotiation | — |
 | L21 | **`docs/PITFALLS.md` as project-level top-level pitfall doc** | 🟡 (when 3rd Pitfall-class concept emerges) | arch-reviewer-pr9 framing (Phase 2 sess 2 close) | **NEW 2026-05-12.** Currently engine-level Pitfalls live in `docs/PROCESS_EXPERIMENTS.md` Known Godot Pitfalls section (engine foot-guns); process-level Pitfalls (Pitfall #7 cross-agent commit-race) live in `STUDIO_PROCESS.md` §9; some hybrid (the queue_free + _test_run_tick interaction) crosses both. When a third hybrid concept emerges, the cross-doc navigation becomes painful — promote to a single `docs/PITFALLS.md` that indexes by class (engine / process / hybrid). Defer until concrete third instance. |
 
 **How to add to this list:** at session-close retro, scan §6 entries and BUILD_LOG retros for "LATER items surfaced." Promote architectural / scale-blocking ones here with the priority class. Keep §6 entries focused on "what shipped this wave + why"; the LATER index is the cross-wave aggregation.

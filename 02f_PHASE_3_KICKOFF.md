@@ -2,7 +2,7 @@
 title: Phase 3 Kickoff — Economy, Dummy AI, Fog Data Layer
 type: plan
 status: living
-version: 1.0.0
+version: 1.1.0
 owner: team
 summary: Phase 3 session-1 recipe — the full economic loop (Kargar gathering, Coin mines, Fertile fields, ResourceSystem, building placement) + a DummyAIController for the Turan side + fog-of-war data layer (boolean grid, no shader). Includes Experiments 01, 02 (permanent), 03 (sequential single-agent permanent; parallel-agent commit-race deferred to Experiment 04), and the L13 pre-flight blocker.
 audience: all
@@ -18,7 +18,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, 02e_PHASE_2_SESSION_2_KICKOFF.md, docs/PROCESS_EXPERIMENTS.md, docs/STUDIO_PROCESS.md, docs/ARCHITECTURE.md, docs/SIMULATION_CONTRACT.md, docs/STATE_MACHINE_CONTRACT.md, docs/TESTING_CONTRACT.md, docs/RESOURCE_NODE_CONTRACT.md, BUILD_LOG.md]
 tags: [phase-3, kickoff, economy, dummy-ai, fog, kargar, resource-nodes, buildings, recipe]
 created: 2026-05-12
-last_updated: 2026-05-12
+last_updated: 2026-05-13
 ---
 
 # Phase 3 Kickoff — Economy, Dummy AI, Fog Data Layer
@@ -47,9 +47,27 @@ This doc is **Phase 3 session-1 specific.** Subsequent Phase 3 sessions read `BU
 10. **`BUILD_LOG.md`** — Phase 2 session 2 final entries + retro entries (PR #10 if/when this retro merges).
 11. **This doc** for the wave breakdown and Open Space sync agenda.
 
-## 2. Open Space sync (BEFORE wave 1)
+## 2. Open Space sync (RESOLVED 2026-05-13)
 
-Per `STUDIO_PROCESS.md` §12 (operating-modes split), this is the design-mode window between Phase 2 close and Phase 3 wave 1. Five queued topics. Lead runs the sync; outputs feed into wave-1 dispatch briefs.
+Per `STUDIO_PROCESS.md` §12 (operating-modes split), this was the design-mode window between Phase 2 close and Phase 3 wave 1. Five topics resolved via Constraint Negotiation / Open Consultation / lead-drafted addenda. Decisions captured in `docs/ARCHITECTURE.md` §6 v0.20.0 entry; this section summarizes them inline so a fresh Phase 3 agent doesn't need to cross-reference.
+
+### Resolutions summary (all decisions live; wave-1 briefs reference these)
+
+| Topic | Pattern | Decision | Lands in |
+|---|---|---|---|
+| Pitfall #7 mitigation | Constraint Negotiation (engine-architect + gameplay-systems) | **Option 1 hybrid:** `git worktree`-per-agent for parallel waves + sequential-shared-tree for single-deliverable / heavy-shared-doc waves. Option 2 (commit serialization) VETOED. | `STUDIO_PROCESS.md` §9 2026-05-13 + Experiment 04 (Phase 3 sess 2 first trial) |
+| `Unit.stance` spec | Open Consultation (ai-engineer single authority) | Field on `Unit` base class (NOT CombatComponent). Phase 3: PASSIVE-only with DummyAIController reader. Phase 6: defensive/aggressive as AI/component glue (not FSM extension). | `Constants.STANCE_*` + `Unit.stance` field (Phase 3 sess 2 wave) |
+| Farr drain rates | Constraint Negotiation (balance-engineer drafted, gameplay-systems agreed) | Positive-magnitude dict in `BalanceData.farr.drain_rates`; negative sign at call site. Phase 3 wires `worker_killed_idle` (1.0) + `worker_killed_during_gather` (0.5). Forward-compat entries for capital/buildings/hero. | `FarrConfig.drain_rates` schema (Phase 3 wave 1B) |
+| Sim Contract §1.3 init-time carve-out | Lead-drafted addendum | Parent `_ready` writes to child component fields via plain `set()` pre-first-tick exempt from self-only-mutation. | `SIMULATION_CONTRACT.md` 1.4.0 §1.3 |
+| Sim Contract §1.5 UI-local tween carve-out | Lead-drafted addendum | Tweens writing ONLY to UI-local state (sim never reads) exempt from queue-then-drain. Sim-state tweens still require deferral. | `SIMULATION_CONTRACT.md` 1.4.0 §1.5 |
+
+**Critical implementation note for Phase 3 wave 1B (Farr-drain wiring):** the drain handler must read FSM `current.id` BEFORE the `Dying` state swap (State Machine §4.2). Subscribe to `EventBus.unit_health_zero` (pre-preempt) OR have the FSM stamp `last_alive_state_id` before swap. If the handler subscribes to `unit_died` (emitted from `Dying.enter()`), every death looks like state.id == `&"dying"` and the two drain keys collapse. gameplay-systems flagged this as the load-bearing implementation gotcha.
+
+---
+
+### Historical record of the queued topics (for archaeology)
+
+The five topics, as originally queued before the sync:
 
 ### 2.1. **Pitfall #7 structural mitigation** (L20)
 

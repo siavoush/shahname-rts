@@ -2,7 +2,7 @@
 title: Simulation Architecture Contract
 type: contract
 status: ratified
-version: 1.2.1
+version: 1.4.0
 owner: engine-architect
 summary: When gameplay state mutates and how systems observe changes. The engine layer everything else sits on.
 audience: all
@@ -20,8 +20,8 @@ ssot_for:
 references: [STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md]
 tags: [tick, sim, determinism, spatial, rng, lint, foundation]
 created: 2026-04-30
-last_updated: 2026-05-01
-provenance: Outcome of Sync 1 (engine-architect, ai-engineer, qa-engineer). Convergence Review revision pass 2026-05-01. PATCH 1.2.1 (2026-05-01) clarifies §1.3, §6.1, §7 to match Phase 0 session 1 implementation; no behavior change.
+last_updated: 2026-05-13
+provenance: Outcome of Sync 1 (engine-architect, ai-engineer, qa-engineer). Convergence Review revision pass 2026-05-01. PATCH 1.2.1 (2026-05-01) clarifies §1.3, §6.1, §7 to match Phase 0 session 1 implementation; no behavior change. MINOR 1.4.0 (2026-05-13) adds two addenda from Open Space sync between Phase 2 close and Phase 3 kickoff: §1.3 init-time carve-out (parent `_ready` writes to child fields exempt pre-first-tick) and §1.5 UI-local tween carve-out (tweens to fields no sim consumer reads exempt from queue-then-drain).
 ---
 
 # Simulation Architecture Contract
@@ -113,6 +113,8 @@ Components write through `_set_sim`. In debug builds, off-tick writes crash with
 
 `apply_farr_change(amount, reason, source_unit)` (mandated by `CLAUDE.md`) calls `_set_sim` internally, so every Farr mutation is checked for free.
 
+**Init-time carve-out (added 1.4.0, 2026-05-13).** Parent `_ready` writes to child component fields via plain `set()` BEFORE `SimClock` has run its first tick are **exempt** from the self-only-mutation rule. The pattern: `Unit._apply_balance_data_defaults` reads `BalanceData.units[unit_type]` and writes `_health_component.max_hp = ...`, `_combat_component.attack_damage_x100 = ...` from inside `_ready`. This is composition glue at scene-boot, not per-tick mutation. The exemption applies ONLY pre-first-tick — once `SimClock.tick > 0`, runtime component-to-component writes still require method-call discipline (`take_damage(amount)`, `apply_farr_change(...)`). Cite: this addendum closes the spec gap flagged by `arch-reviewer-p2s2` in Phase 2 session 2 wave-close review. Cross-reference `BUILD_LOG.md` Phase 2 session 2 final entry.
+
 **Why `SimNode` and not a `SimMutation` autoload:** see the design note at the end of §3.
 
 ### 1.4 CI lint rule (owned by qa-engineer)
@@ -157,6 +159,8 @@ func _process(_dt: float) -> void:
 ```
 
 The queue-then-drain pattern is enforced by convention; lint rule L2 (§1.4) catches the worst offenders (`EventBus.*.emit` from `_process`), but the UI-side discipline of *not synchronously mutating Tweens in a callback* is reviewed at code-review.
+
+**UI-local tween carve-out (added 1.4.0, 2026-05-13).** Tweens that write ONLY to **UI-local state** — fields the sim never reads — may be started inside signal handlers without the queue-then-drain ceremony. Examples: `FarrGauge._displayed_farr` (private to the gauge widget; never read by FarrSystem or any sim consumer), `SelectedUnitPanel.hp_bar.value` (private to the panel; sim reads from `HealthComponent.hp_x100`, not from the panel). The boundary test: if a field is written by a tween started in a handler, no `_sim_tick` anywhere in the codebase may read it. The queue-then-drain pattern remains MANDATORY for any tween writing to sim-state fields. Cite: this addendum closes the spec gap flagged by both reviewer agents in Phase 1 session 2 + reaffirmed in Phase 2 session 2 — the FarrGauge tween and SelectedUnitPanel HP-bar tween in `c583d48` / `db5fa73` were correctly within this carve-out but the contract didn't yet say so.
 
 ### 1.6 Numeric Representation: Determinism via Integer Arithmetic
 
