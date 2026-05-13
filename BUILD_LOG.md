@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-04 (Phase 2 session 1 wave 1A)
+last_updated: 2026-05-08 (Phase 3 session 1 wave 1A)
 ---
 
 # Build Log
@@ -2035,3 +2035,54 @@ L13 closed. Both Phase 2 integration test files that bypassed MatchHarness have 
 **Open questions:** None.
 
 **State for next session:** L13 is closed. Wave-3 (Phase 3 session 1) can now add a third integration test file without propagating the bypass pattern. The MatchHarness is the sole approved integration test fixture per contract.
+
+---
+
+## 2026-05-08 — Phase 3 session 1 wave 1A (gameplay-systems): Kargar gather-loop + Coin MineNode
+
+**Branch:** `feat/phase-3-session-1`
+
+**Shipped:**
+
+1. **`ResourceNode` abstract base** (`game/scripts/world/resource_nodes/resource_node.gd`). Schema (`kind`, `reserves_x100`, `extract_ticks`, `max_slots`, `is_gatherable`, `yield_per_trip_x100`) + three-call API (`request_extract` / `complete_extract` / `release_extract`) + slot bookkeeping. Subclass hook `_on_depleted` called when reserves hit 0 (base no-op; MineNode overrides). API naming follows kickoff §3 (request/complete/release) rather than the contract's original begin/tick/release — the wave-1A pattern moves the dwell timer onto the state side, simplifying the node's surface. Documented as a deliberate divergence in the source header; if Mazra'eh's per-tick accumulation (wave 1B+) needs the original `tick_extract` shape the contract can be patched.
+
+2. **`MineNode` (Coin)** (`game/scripts/world/resource_nodes/mine_node.gd` + `game/scenes/world/resource_nodes/mine_node.tscn`). Yellow cylinder placeholder (`Color(0.85, 0.7, 0.2)` per kickoff §3). Hardcoded reserves (100 Coin = 10000 x100), yield per trip (10 Coin = 1000 x100), dwell (60 ticks = 2 s) — all marked `TODO(phase-3-wave-1B)` for BalanceData wire-up. `max_slots = 1` Phase 3 simplification per kickoff §3. `_on_depleted` calls `queue_free.call_deferred()` per Pitfall #8 (we're in a tree-mutating context).
+
+3. **`UnitState_Gathering`** (`game/scripts/units/states/unit_state_gathering.gd`). `id = &"gathering"` is LOAD-BEARING per Open Space sync v0.20.0 — Phase 3 wave 1B's Farr-drain dispatcher distinguishes gather-death from idle-death by reading this id BEFORE the FSM swaps to Dying. `priority = 5`, `interrupt_level = COMBAT`. Reads `target_node` ref from `current_command.payload`; walks via MovementComponent; requests slot on arrival; dwells `extract_ticks`; pulls payload from `complete_extract`; writes carry to unit's `_carry_kind` / `_carry_amount_x100` fields; transitions to Returning. `exit()` releases slot per Resource Node Contract §4.1 ("always called even on death").
+
+4. **`UnitState_Returning`** (`game/scripts/units/states/unit_state_returning.gd`). `id = &"returning"`, `priority = 5`, `interrupt_level = COMBAT`. Reads `deposit_target` Vector3 from payload (wave 1A fallback: own position — zero-walk deposit; wave 1B switches to Throne / ResourceSystem dropoff). Walks back, runs `_perform_deposit` stub (clears carry — wave 1B replaces body with `ResourceSystem.add`), loops back to Gathering with the SAME target_node — or transitions to Idle if the mine depleted / was freed mid-trip.
+
+5. **`Unit` base class** (`game/scripts/units/unit.gd`). Two new fields: `_carry_kind: StringName` and `_carry_amount_x100: int` (x100 fixed-point per Sim Contract §1.6). New preload consts for the two states. `_ready` registers both new states alongside Idle/Moving/Attacking/AttackMove/Dying. Combat units never receive `&"gather"` — registered-but-never-entered cost is one RefCounted state each, tiny.
+
+6. **`main.gd::_spawn_starting_resources()`** spawns 5 Coin MineNodes at known positions in the central wave-area (Z ≈ 0..15, X ≈ -14..-6) — between the Iran home cluster (Z≤0) and the Turan mirror (Z≥20). Called from `_ready` after `_spawn_starting_units`. Visible to the lead at boot as five yellow cylinders.
+
+**Test-count delta:** 893 → 939 passing (+46 new tests). Pre-existing 3 pending unchanged.
+
+**Lint:** 0 violations (L1-L5).
+
+**Commit chain** (per-TDD-cycle per STUDIO_PROCESS §9):
+- `f4c5489` — ResourceNode base + 12 tests (893 → 905).
+- `363b7d9` — MineNode (Coin) concrete + scene + 12 tests (905 → 917).
+- `6f2c2d9` — Gathering + Returning states + Unit registration + carry fields + 20 tests (917 → 935).
+- `8117543` — main.gd spawn + 4 tests (935 → 939).
+
+**`&"gathering"` StringName preserved per Open Space contract.** Phase 3 wave 1B's Farr-drain dispatcher reads `current.id` at `unit_health_zero` time (pre-`Dying`-swap) to choose `worker_killed_during_gather` (0.5) vs `worker_killed_idle` (1.0). The state's `id` field is the contract — do not rename.
+
+**Live-game-broken-surface answers (Experiment 01):**
+1. *Runtime state no unit test exercises:* The full live chain `EventBus.sim_phase → Unit._on_sim_phase → fsm.tick → UnitState_Gathering._sim_tick → _movement._sim_tick + mine_node.request_extract` only fires end-to-end in the live scene with the production `NavigationAgentPathScheduler` — unit tests use `MockPathScheduler`. The wave-1A spawn positions are inside the terrain plane bounds, but no navmesh is baked at wave-1A scope (LATER L2), so the production scheduler will return FAILED for any path request; the Gathering / Returning defensive `FAILED → Idle` bail keeps the live game readable (worker walks toward the mine for one tick, then idles silently). Wave 1B bakes the navmesh as part of the ResourceSystem / Khaneh placement wiring; that's the wave where gather-walk actually works in the live game. The wave-1A live-test value is "the visuals appear; the FSM doesn't crash on right-click."
+2. *What headless tests can't detect:* Visual readability — does the yellow cylinder distinguish from the sandy Kargar and the sandy terrain? Lead live-tests post-merge; if it bleeds, the material in `mine_node.tscn` retunes (a `Color()` edit, not a balance number — same lesson as Phase 2 session 1's FarrGauge contrast fix in commit `2d1e24e`).
+3. *Min interactive smoke test:* Lead boots, sees 5 yellow cylinders at Z ≈ 0..15 (between Iran and Turan clusters). Right-clicks one with a Kargar selected — currently no-op in the live game because wave-1B's input layer doesn't yet route `&"gather"` commands. To exercise the gather state pre-wave-1B, the lead can call `kargar.replace_command(&"gather", {&"target_node": <mine ref>})` from a debug overlay (not shipped this wave). The FSM behavior is covered headlessly via `test_unit_state_returning.gd::test_gather_return_gather_loop_continues` (full mini-loop) and per-state unit tests.
+
+**Cross-agent coordination:** None — sequential single-agent wave per STUDIO_PROCESS §9 2026-05-13. Diff verified via `git diff --staged --stat` on each of the 4 commits — only files in the wave-1A ownership list staged.
+
+**Open questions added to `QUESTIONS_FOR_DESIGN.md`:** None. Two implementation choices made independently per CLAUDE.md escalation rule #1:
+- API naming follows kickoff §3's `request_extract` / `complete_extract` / `release_extract` rather than the contract's `begin_extract` / `tick_extract` / `release_extract`. Documented inline.
+- Wave-1A deposit target falls back to the worker's own position when payload lacks `deposit_target` — zero-walk loop. Wave 1B wires the Throne / ResourceSystem dropoff.
+
+**State for next session (Phase 3 wave 1B):**
+- **ResourceSystem autoload + HUD wire-up.** `UnitState_Returning._perform_deposit` swaps its zero-out body for a `ResourceSystem.add(team, kind, amount_x100)` call. The current wave-1A tests for the zero-out are not coupled to the autoload (they read `_carry_kind` / `_carry_amount_x100` directly on the unit) — wave 1B's tests cover the deposit-then-credit path end-to-end.
+- **Farr-drain dispatcher.** Subscribe to `EventBus.unit_health_zero` (NOT `unit_died` — the latter fires from `Dying.enter` and would collapse the drain keys per the Open Space load-bearing note). Read `unit.fsm.current.id` in the handler and branch on `&"gathering"` (drain `worker_killed_during_gather` = 0.5) vs `&"idle"` (drain `worker_killed_idle` = 1.0). Route both through `FarrSystem.apply_farr_change(amount, reason, source_unit)`.
+- **MineNode reserves / yield / dwell wired to BalanceData.** Three `TODO(phase-3-wave-1B)` constants in `mine_node.gd` switch to `BalanceData.economy.resource_nodes.{mine_initial_stock, coin_yield_per_trip, trip_full_load_ticks}`.
+- **NavigationObstacle3D on MineNode scene + navmesh bake.** Per Resource Node Contract §3.2 — mines are obstacles. Wave 1A skips this because no navmesh is baked yet. Wave 1B adds the navmesh bake on terrain + the obstacle child on `mine_node.tscn`.
+- **Input layer routes `&"gather"` commands.** Right-click on a MineNode with a Kargar selected → `kargar.replace_command(&"gather", {&"target_node": mine})`. ClickHandler extension. Wave 1B input dispatch.
+- **Cultural alignment note for shahnameh-loremaster:** Coin in this wave is the Persian سکّه (sekkeh) — currency-as-evidence-of-kingship. The MineNode source header references this; if the lead invokes the loremaster on a future wave that names the deposit interaction or the resource UI strings, the cultural framing is already in the source so the reviewer can build on it rather than re-derive.

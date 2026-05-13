@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.20.1
+version: 0.20.2
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -19,7 +19,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
 last_updated: 2026-05-13
-# bumped to v0.20.1 — shahnameh-loremaster cultural-alignment reviewer agent added
+# bumped to v0.20.2 — Phase 3 wave 1A: Kargar gather-loop + Coin MineNode
 ---
 
 # Architecture — Target Shape and Build State
@@ -1240,6 +1240,48 @@ Third reviewer agent for the wave-close review trio (alongside `godot-code-revie
 **No new permanent rule beyond "third reviewer available."** The wave-close review trio now potentially includes the loremaster; STUDIO_PROCESS §9 2026-05-13 codifies the dispatch judgment.
 
 **Commit:** `docs(agents): add shahnameh-loremaster cultural-alignment reviewer (third wave-close reviewer for culturally-load-bearing surfaces)`
+
+---
+
+### v0.20.2 — Phase 3 wave 1A: Kargar gather-loop + Coin MineNode (2026-05-08)
+
+First half of Phase 3's economic loop. `ResourceNode` abstract base (Node3D + slot bookkeeping + three-call API), `MineNode` concrete (yellow cylinder, hardcoded wave-1A reserves), `UnitState_Gathering` + `UnitState_Returning` FSM states on the Kargar, 5 Coin mines spawn at match start in the central wave-area.
+
+**Architectural decisions:**
+
+1. **Three-call API names follow kickoff §3 (`request_extract` / `complete_extract` / `release_extract`) over Resource Node Contract §4's `begin_extract` / `tick_extract` / `release_extract`.** The wave-1A pattern moves the dwell timer onto the state side (one local int counter per gathering state instance) instead of accumulating yield per-tick on the node. This simplifies the node's surface — no `_sim_tick` on `ResourceNode` for wave 1A, no per-worker progress dictionary, no deferred-emit cleanup for partial extracts. The MineNode is functionally a state-less resource pool from the consumer's perspective; the state owns the dwell. If Mazra'eh's per-tick yield model (wave 1B+) demands the original tick-with-accumulator surface, the contract can be patched and both subclasses can co-exist (the gathering state would branch on `node.has_method(&"tick_extract")` vs `node.has_method(&"complete_extract")`). For wave 1A the simpler shape ships. Documented inline in `resource_node.gd`'s header.
+
+2. **`ResourceNode` extends `Node3D` directly, not `SimNode`.** Workers walk to the node's `global_position` — a Node3D capability. SimNode is `extends Node` and doesn't naturally compose with Node3D's transform layer. The same architectural compromise applies as `Unit extends CharacterBody3D` (which doesn't get the SimNode `_set_sim` chokepoint either — see `unit.gd` header). On-tick discipline is preserved by construction: every mutation of `reserves_x100` / `is_gatherable` is called from `request_extract` / `complete_extract` / `release_extract`, all invoked from the worker state's `_sim_tick`. Lint enforces the off-tick boundary at the framework layer; the node's own mutations are not at risk because there's no off-tick caller surface (no `_process` on ResourceNode).
+
+3. **Kargar carry state (`_carry_kind` / `_carry_amount_x100`) lives on `Unit` base, not on `Kargar`.** Two reasons: (a) the carry seam is worker-loop infrastructure, not Kargar-specific (any future worker-like subclass — Tier 2 specialists, post-MVP factions — inherits it for free), and (b) combat units having the fields as no-op zeros is cheaper than an `is Kargar` check at every read site. Trades minor field bloat on every Unit for one consistent read surface across the FSM. Per Sim Contract §1.6 the amount is x100 fixed-point.
+
+4. **`UnitState_Gathering.id = &"gathering"` is contract per Open Space sync v0.20.0.** Wave 1B's Farr-drain dispatcher subscribes to `EventBus.unit_health_zero` (NOT `unit_died` — see v0.20.0 entry's load-bearing note) and reads `unit.fsm.current.id` BEFORE the FSM swaps to `&"dying"`. Two drain keys (`worker_killed_idle` 1.0 vs `worker_killed_during_gather` 0.5) collapse to one if the dispatcher sees `&"dying"` for both paths. The StringName is the contract — do not rename.
+
+5. **Gather loop's "deposit target" falls back to the worker's own position when payload is empty.** Phase 3 wave 1A doesn't ship a Throne or `ResourceSystem.dropoff_for_team(team)` — those land in wave 1B. The fallback (zero-walk deposit at self) is a deliberate stub that keeps the FSM topology verifiable headlessly: Gathering → Returning → Gathering loops indefinitely without any Throne reference, so the test surface covers the loop structure correctly. Wave 1B replaces the fallback with the real dropoff lookup — a one-method change inside `UnitState_Returning.enter`, no test churn outside the new ResourceSystem integration tests.
+
+**Test scope:**
+- `test_resource_node.gd` (12 tests, 27 asserts) — schema, slot bookkeeping (occupy / release / max-cap / double-grant guard), complete_extract payload + reserves decrement + depletion flag flip.
+- `test_mine_node.gd` (12 tests, 19 asserts) — scene smoke, `kind=&"coin"`, reserves positive at spawn, max_slots=1, depletion → `queue_free.call_deferred()` per Pitfall #8 (verified via ≥2 `await get_tree().process_frame`).
+- `test_unit_state_gathering.gd` (11 tests, 19 asserts) — id/priority/interrupt_level, payload parsing + defensive bails, request_repath, slot-grant on arrival, dwell countdown, complete_extract carry-write, transition to Returning, slot release on exit per Contract §4.1.
+- `test_unit_state_returning.gd` (8 tests, ~15 asserts) — id/priority/interrupt_level, payload parsing, deposit-stub clears carry, loop back to Gathering with same target_node, transitions to Idle on depleted / freed mine, repath cancel on exit. Plus integration: full gather→return→gather mini-loop.
+- `test_match_start_spawn_resources.gd` (4 tests, 11 asserts) — `_COIN_MINE_SPAWN_POSITIONS` shape, pairwise-distinct positions, 5 mines spawn as direct World children.
+
+**Commit chain** (per STUDIO_PROCESS §9 per-TDD-cycle): `f4c5489` (ResourceNode) → `363b7d9` (MineNode) → `6f2c2d9` (Gathering + Returning + Unit registration + carry fields) → `8117543` (main.gd spawn) → this docs commit.
+
+**Test count:** 893 → 939 passing (+46 new). 3 pending unchanged. Lint clean.
+
+**LATER items deferred for wave 1B+:**
+- `NavigationObstacle3D` on MineNode scene per Resource Node Contract §3.2. Wave 1A skips (no navmesh bake yet); wave 1B adds both navmesh bake and the obstacle.
+- BalanceData wire-up for the three hardcoded wave-1A constants in `mine_node.gd` (reserves, yield, dwell). Marked `TODO(phase-3-wave-1B)` in source.
+- Input layer routing for `&"gather"` commands (right-click on MineNode → `kargar.replace_command(&"gather", {...})`). Wave 1B's ClickHandler extension.
+- `ResourceSystem` autoload and the deposit wire-up in `UnitState_Returning._perform_deposit`. Wave 1B.
+- Farr-drain dispatcher subscribing to `unit_health_zero` and branching on `fsm.current.id == &"gathering"`. Wave 1B.
+
+No new permanent LATER index entries — all five items are explicitly named in the wave-1B plan, not architectural drift.
+
+**Commit:** `docs(arch+build-log): Phase 3 wave 1A — Kargar gather-loop + Coin MineNode`
+
+---
 
 Architectural / project-wide deferred work. Each entry has a brief description, the canonical surfacing source (commit + §6 entry), and the priority class:
 - **🔴 Phase-blocking** — must ship before the named phase can complete its milestone. Owns a slot in the implementation plan.
