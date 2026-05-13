@@ -34,6 +34,11 @@
 #     HealthBarsOverlay seam, AttackRangeOverlay, FarrDrain, pitfall regressions).
 #
 # Typing: Variant slots for unit refs — docs/ARCHITECTURE.md §6 v0.4.0.
+#
+# Phase 3 wave 0 migration: manual autoload bookkeeping in before_each/after_each
+# replaced with MatchHarness.start_match()/teardown() per TESTING_CONTRACT.md §3.1.
+# Remaining per-test resets (CommandPool, SelectionManager, DebugOverlayManager,
+# UnitScript.reset_id_counter) are not in the harness scope and stay inline.
 
 extends GutTest
 
@@ -46,19 +51,19 @@ const PiyadeScene: PackedScene = preload("res://scenes/units/piyade.tscn")
 const TuranPiyadeScene: PackedScene = preload("res://scenes/units/turan_piyade.tscn")
 const KargarScene: PackedScene = preload("res://scenes/units/kargar.tscn")
 const UnitScript: Script = preload("res://scripts/units/unit.gd")
-const MockPathSchedulerScript: Script = preload("res://scripts/navigation/mock_path_scheduler.gd")
 const ClickHandlerScript: Script = preload("res://scripts/input/click_handler.gd")
 const AttackMoveHandlerScript: Script = preload("res://scripts/input/attack_move_handler.gd")
 const HealthBarsOverlayScene: PackedScene = preload("res://scenes/ui/health_bars_overlay.tscn")
 const AttackRangeOverlayScene: PackedScene = preload("res://scenes/ui/overlays/attack_range_overlay.tscn")
 const MainScene: PackedScene = preload("res://scenes/main.tscn")
+const MatchHarnessScript: Script = preload("res://tests/harness/match_harness.gd")
 
 
 # ---------------------------------------------------------------------------
 # State
 # ---------------------------------------------------------------------------
 
-var _mock: Variant = null
+var harness: Variant = null
 
 var _iran: Variant = null
 var _turan: Variant = null
@@ -70,15 +75,13 @@ var _kargar: Variant = null
 # ---------------------------------------------------------------------------
 
 func before_each() -> void:
-	SimClock.reset()
+	harness = MatchHarnessScript.new()
+	harness.start_match(0, &"empty")
+	# Non-harness resets: autoloads not managed by MatchHarness.
 	CommandPool.reset()
 	SelectionManager.reset()
-	FarrSystem.reset()
-	SpatialIndex.reset()
 	DebugOverlayManager.reset()
 	UnitScript.call(&"reset_id_counter")
-	_mock = MockPathSchedulerScript.new()
-	PathSchedulerService.set_scheduler(_mock)
 	_iran = null
 	_turan = null
 	_kargar = null
@@ -94,16 +97,13 @@ func after_each() -> void:
 	_iran = null
 	_turan = null
 	_kargar = null
+	# Non-harness resets: must precede harness.teardown so signal connections
+	# from tests are cleared before autoloads reset.
 	SelectionManager.reset()
-	FarrSystem.reset()
-	SpatialIndex.reset()
 	DebugOverlayManager.reset()
-	PathSchedulerService.reset()
-	if _mock != null:
-		_mock.clear_log()
-	_mock = null
-	SimClock.reset()
 	CommandPool.reset()
+	harness.teardown()
+	harness = null
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +115,7 @@ func _spawn_iran(pos: Vector3 = Vector3.ZERO) -> Variant:
 	add_child_autofree(u)
 	u.global_position = pos
 	u.team = Constants.TEAM_IRAN
-	u.get_movement()._scheduler = _mock
+	u.get_movement()._scheduler = harness._mock_scheduler
 	return u
 
 
@@ -124,7 +124,7 @@ func _spawn_turan(pos: Vector3 = Vector3.ZERO) -> Variant:
 	add_child_autofree(u)
 	u.global_position = pos
 	u.team = Constants.TEAM_TURAN
-	u.get_movement()._scheduler = _mock
+	u.get_movement()._scheduler = harness._mock_scheduler
 	return u
 
 
@@ -133,7 +133,7 @@ func _spawn_kargar(pos: Vector3 = Vector3.ZERO) -> Variant:
 	add_child_autofree(u)
 	u.global_position = pos
 	u.team = Constants.TEAM_IRAN
-	u.get_movement()._scheduler = _mock
+	u.get_movement()._scheduler = harness._mock_scheduler
 	return u
 
 
@@ -319,8 +319,8 @@ func test_bug06_attacking_drives_movement_when_out_of_range() -> void:
 		"BUG-06: attacker must land at least one hit after closing the gap "
 		+ "(initial_hp=%d after=%d)" % [initial_hp_x100, hp_after])
 
-	# Restore the default mock scheduler so subsequent tests behave normally.
-	PathSchedulerService.set_scheduler(_mock)
+	# Restore the harness mock scheduler so subsequent tests behave normally.
+	PathSchedulerService.set_scheduler(harness._mock_scheduler)
 
 
 # ============================================================================
