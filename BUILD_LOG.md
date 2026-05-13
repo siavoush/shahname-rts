@@ -2005,3 +2005,33 @@ Rationale: the live-test failure mode was readability against the sandy terrain,
 - Wave 2A (CombatComponent RPS matrix integration): consume `BalanceData.combat.get_multiplier(attacker.unit_type, target.unit_type)` in `CombatComponent._sim_tick`'s damage-fire step. Multiply into `attack_damage_x100` at fire-time. Do NOT use raw `effectiveness` dict access — Turan folding requires the method.
 - Wave 2B (main.gd spawn expansion): extend `_spawn_starting_units` to spawn 1-2 of each new Turan type (turan_kamandar, turan_savar, turan_asb_savar) at the opposite map corner.
 - Wave 1C (Asb-savar + Turan Asb-savar unit scripts): balance.tres already has `asb_savar_kamandar` and `turan_asb_savar` entries with full stats. Unit scripts consume these via `_apply_balance_data_defaults`.
+
+---
+
+## 2026-05-08 — Phase 3 session 1 wave 0 (qa-engineer): L13 MatchHarness migration
+
+**Branch:** `feat/phase-3-session-1`
+
+**Shipped:**
+
+L13 closed. Both Phase 2 integration test files that bypassed MatchHarness have been migrated to use `MatchHarness.start_match(0, &"empty")` / `harness.teardown()` per TESTING_CONTRACT.md §3.1.
+
+1. **`test_phase_2_session_1_combat.gd`** — `537ccdf`. Replaced manual `SimClock.reset()`, `FarrSystem.reset()`, `SpatialIndex.reset()`, and `PathSchedulerService.set_scheduler(_mock)` calls with harness. `_spawn_*` helpers updated to reference `harness._mock_scheduler`. Autoloads outside harness scope (`CommandPool`, `SelectionManager`, `DebugOverlayManager`, `UnitScript.reset_id_counter`) stay inline. No test logic or assertion text changed. `_InstantPathScheduler` inner class preserved (test-side stub for per-tick reissue scenario, not harness scope).
+
+2. **`test_phase_2_session_2_rps_combat.gd`** — `94af3b7`. Same migration pattern. `_spawn` helper and end-of-test `PathSchedulerService.set_scheduler()` restores updated to reference `harness._mock_scheduler`. `_InstantPathScheduler` preserved for same reason.
+
+**Test-count delta:** 0 (893 passing / 3 pending before and after both migrations). The 3 pending tests are pre-existing: FarrSystem defensive fallback + 2 navmesh-not-ready.
+
+**3× consecutive suite clean:** All three runs produced identical results: 893 passing, 3 pending, 0 failures. No test-order dependence introduced.
+
+**Lint:** 0 violations (L1-L5) on both modified files.
+
+**ARCHITECTURE.md §7:** L13 row and §7 retro entry both updated to CLOSED with commit SHAs.
+
+**Did not ship:** No production game code changes. No harness API additions were needed — the existing harness covered all required autoloads.
+
+**New pitfall surfaced:** None. The migration was clean — no state the harness doesn't reset was identified in these two files. The `CommandPool`, `SelectionManager`, `DebugOverlayManager`, and `UnitScript.reset_id_counter` items confirmed as outside MatchHarness contract and must remain inline; this is consistent with how harness scope is defined in TESTING_CONTRACT.md §3.1.
+
+**Open questions:** None.
+
+**State for next session:** L13 is closed. Wave-3 (Phase 3 session 1) can now add a third integration test file without propagating the bypass pattern. The MatchHarness is the sole approved integration test fixture per contract.
