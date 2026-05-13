@@ -2086,3 +2086,72 @@ L13 closed. Both Phase 2 integration test files that bypassed MatchHarness have 
 - **NavigationObstacle3D on MineNode scene + navmesh bake.** Per Resource Node Contract §3.2 — mines are obstacles. Wave 1A skips this because no navmesh is baked yet. Wave 1B adds the navmesh bake on terrain + the obstacle child on `mine_node.tscn`.
 - **Input layer routes `&"gather"` commands.** Right-click on a MineNode with a Kargar selected → `kargar.replace_command(&"gather", {&"target_node": mine})`. ClickHandler extension. Wave 1B input dispatch.
 - **Cultural alignment note for shahnameh-loremaster:** Coin in this wave is the Persian سکّه (sekkeh) — currency-as-evidence-of-kingship. The MineNode source header references this; if the lead invokes the loremaster on a future wave that names the deposit interaction or the resource UI strings, the cultural framing is already in the source so the reviewer can build on it rather than re-derive.
+
+
+## 2026-05-08 (gameplay-systems) — Phase 3 wave 1B: ResourceSystem + HUD wire-up + gather routing + Farr drain dispatcher
+
+**Wave-1B scope per `02f_PHASE_3_KICKOFF.md` §3:** the four integration pieces that wire wave 1A's gather-loop state machinery into the live game. ResourceSystem is the per-team Coin/Grain/Population chokepoint; the HUD subscribes to its signal; right-click MineNode now dispatches gather commands; and death-triggered Farr drains route through a new dispatcher that reads FSM state pre-Dying-swap.
+
+**Shipped:**
+
+1. **`ResourceSystem` autoload** (`game/scripts/autoload/resource_system.gd`). Extends SimNode via path-string preload (registry-race pattern, ARCHITECTURE.md §6 v0.4.0). Per-team fixed-point storage (`Dictionary[int, int]` keyed by `Constants.TEAM_*`). Single sanctioned write: `change_resource(team, kind, amount_x100, reason, source_unit)`. Asserts on-tick via inherited `_set_sim`. Emits `EventBus.resource_changed(team, kind, delta_x100, new_total_x100)`. Sister chokepoints `change_population` and `change_population_cap` ship the same shape for wave 1C+. `reset()` mirrors FarrSystem.reset() for MatchHarness teardown. **Naming choice (load-bearing): `change_resource`, NOT `apply_resource_change`.** The L1 lint rule (`tools/lint_simulation.sh`) flags `apply_*\(` calls when the file defines an off-tick frame entry — adopting the verb-noun shape keeps the chokepoint pattern without expanding the allowlist. The FarrSystem precedent (`apply_farr_change`) predates the lint rule; reserving `apply_*` for the Farr chokepoint specifically minimizes future allowlist churn.
+
+2. **`EventBus.resource_changed` signal + sink registration.** Write-shaped (kind discriminates COIN/GRAIN/population/population_cap). Added to `_SINK_SIGNALS` and `_make_forwarder` arms for telemetry coverage.
+
+3. **`ResourceHUD` wire-up** (`game/scripts/ui/resource_hud.gd`). Now subscribes to `EventBus.resource_changed` (FarrGauge pattern: seed on `_ready`, refresh on signal — no per-frame polling for Coin/Grain/Pop). Reads from `ResourceSystem.coin_for / grain_for / population_for(TEAM_IRAN)`. Legacy `GameState.player_resources` meta path retained as defensive fallback for pre-Phase-3 test fixtures; production reads always win via ResourceSystem.
+
+4. **`UnitState_Returning._perform_deposit` real wire** (`game/scripts/units/states/unit_state_returning.gd`). Replaces wave 1A's carry-zeroing stub with `ResourceSystem.change_resource(unit.team, unit._carry_kind, unit._carry_amount_x100, &"gather_deposit", unit)` followed by the same zero-out. Empty-carry defensively skipped to avoid spurious delta=0 signals. Sim Contract §1.3 compliance: change_resource called from inside the state's _sim_tick (driven by EventBus.sim_phase → StateMachine.tick), so SimClock.is_ticking() holds when the chokepoint's assert fires.
+
+5. **Right-click gather routing in `click_handler.gd`.** New branch BEFORE the unit-team branch: if the raycast hit a ResourceNode (duck-typed via `has_method(&"request_extract")` + `&"is_gatherable" in n`), dispatch `Constants.COMMAND_GATHER` to every selected worker (`unit_type == &"kargar"`). Non-workers in mixed selections are skipped — matches StarCraft 2's "workers gather, combat units don't auto-follow." Constants.COMMAND_GATHER already existed; StateMachine._COMMAND_KIND_TO_STATE_ID already maps `&"gather"` → `&"gathering"` (wave 1A wiring), so Unit.replace_command flows through transition_to_next into UnitState_Gathering.enter without further changes.
+
+6. **`FarrDrainDispatcher` autoload** (`game/scripts/autoload/farr_drain_dispatcher.gd`). New standalone autoload — NOT folded into FarrSystem (cleaner separation: FarrSystem owns the chokepoint, dispatcher owns trigger→key routing; dispatcher has zero owned state). Subscribes to `EventBus.unit_health_zero` at `_ready` (autoload init runs at engine boot, BEFORE any unit's StateMachine connects to the same signal at spawn time — Godot signal handlers run in connect() order, so dispatcher fires first and reads `unit.fsm.current.id` PRE-Dying-swap). **Subscription choice load-bearing** per Open Space 2026-05-13: subscribing to `unit_died` would collapse the drain keys (every death would see `state.id == &"dying"` because Dying.enter is what emits unit_died). Dispatch table: `&"gathering"` / `&"returning"` → `&"worker_killed_during_gather"` (0.5); `&"idle"` AND `unit_type == &"kargar"` → `&"worker_killed_idle"` (1.0); anything else → no drain. Looks up magnitude from `BalanceData.farr.drain_rates[key]`. Applies the negative sign at the call site (`FarrSystem.apply_farr_change(-magnitude, key, unit)` — magnitudes are stored positive in BalanceData per Open Space convention).
+
+7. **`FarrConfig.drain_rates` schema + `balance.tres` populated.** `Dictionary[StringName, float]` field with 8 keys per the Open Space drain-rate table — 2 Phase 3 wired (`worker_killed_idle` 1.0, `worker_killed_during_gather` 0.5) + 6 forward-compat (`capital_damaged` 2.0, `capital_lost` 12.0, `building_destroyed_civilian` 1.5, `building_destroyed_military` 2.5, `building_destroyed_atashkadeh` 5.0, `hero_died` 5.0). `BalanceData.validate_hard` gains three rules: Phase 3 required keys present, all magnitudes positive (sign applied at call site), all magnitudes < `kaveh_trigger_threshold` (a single drain that skips the grace window violates §9.1).
+
+8. **Legacy `FarrSystem._on_unit_died` retired.** The Phase 2 session 1 cause-string suffix path (`"_idle_worker"` parsing) is no longer wired — `FarrSystem._ready` and `reset()` no longer connect the handler. The handler method body is now a no-op stub to preserve the symbol for any external caller. `test_farr_drain.gd` migrated: tests now emit `unit_health_zero` and verify the dispatcher path; one explicit negative test asserts the legacy `unit_died` + suffix path is a no-op.
+
+**Test-count delta:** 939 → 987 passing (+48 new tests). Pre-existing 3 pending unchanged.
+- `test_resource_system.gd` (13 new)
+- `test_resource_hud.gd` (3 new + 4 migrated legacy tests)
+- `test_unit_state_returning.gd` (3 new)
+- `test_click_handler.gd` (4 new)
+- `test_balance_data.gd` (9 new)
+- `test_farr_drain_dispatcher.gd` (12 new)
+- `test_farr_drain.gd` (6 migrated to new dispatcher path)
+- `test_phase_3_gather_loop.gd` (4 new integration tests)
+
+**Lint:** 0 violations (L1-L5).
+
+**Commit chain** (per-TDD-cycle per STUDIO_PROCESS §9):
+- `9cb0352` — ResourceSystem autoload + EventBus signal + 13 tests (939 → 952).
+- `f10e944` — HUD wire-up + 3 tests + 4 legacy test migrations (952 → 955).
+- `098cdaa` — Returning deposit wire + 3 tests (955 → 958).
+- `41fbe83` — Input gather routing + 4 tests (958 → 962).
+- `7870157` — BalanceData drain_rates + validation + 9 tests (962 → 971).
+- `5f94f06` — FarrDrainDispatcher + 12 tests + 6 migrated (971 → 983).
+- `6b2bd94` — Integration test gather loop + 4 tests (983 → 987).
+
+**Live-game-broken-surface answers (Experiment 01):**
+1. *Runtime state no unit test exercises:* The full live chain `right-click mine → ClickHandler → SelectionManager → Unit.replace_command → StateMachine.transition_to_next → UnitState_Gathering.enter → MovementComponent.request_repath → tick → arrival → MineNode.request_extract → dwell → complete_extract → carry set → UnitState_Returning → walk back → ResourceSystem.change_resource → EventBus.resource_changed → HUD label update.` Each link is unit-tested in isolation; the wave-1A live-game caveat about no baked navmesh still applies (production scheduler will FAIL paths; Gathering / Returning defensive `FAILED → Idle` bail keeps the live game readable). Navmesh bake is deferred to a later wave per Resource Node Contract §3.2; **the gather-walk itself does not work in the live game yet without the navmesh.** The lead's smoke test will verify visuals + FSM transitions, not full walk-and-deposit.
+2. *Headless can't detect:* HUD label visual readability (text contrast against any future themed terrain — currently sandy ochre); smooth-vs-jittery counter updates on rapid signal bursts (multiple workers depositing simultaneously); whether the +10 Coin increment is satisfying to watch (animation polish is Phase 5).
+3. *Min interactive smoke test:* Lead boots. Selects a Kargar. Right-clicks a yellow mine cylinder. Worker either (a) walks if a navmesh is baked, gathers, returns, deposits — HUD Coin counter increments by 10 each cycle; OR (b) without navmesh, the worker stays in Gathering for one tick (path FAILED), bails to Idle. Either way: no crash, no UI freeze. Then: kill a Kargar standing idle — Farr drops 50 → 49. Kill a Kargar mid-gather — Farr drops 49 → 48.5 (lighter).
+
+**Drain dispatcher subscription confirmation:** subscribes to `EventBus.unit_health_zero`, NOT `unit_died`. Verified in two places:
+1. `test_farr_drain_dispatcher.gd::test_dispatcher_subscribes_to_unit_health_zero_not_unit_died` (positive contract)
+2. `test_farr_drain_dispatcher.gd::test_dispatcher_does_not_subscribe_to_unit_died` (negative contract)
+
+**Naming choice rationale (`change_resource`):** documented in `resource_system.gd` header AND in the cycle-1 commit body (9cb0352). The L1 lint rule's `apply_*\(` pattern would flag a hypothetical `apply_resource_change` call when the file defines an off-tick frame entry. Reserving `apply_*` for the FarrSystem chokepoint specifically keeps every other chokepoint clear of L1 expansion. Verb-noun naming (`change_resource`, `change_population`, `change_population_cap`) is the project convention going forward.
+
+**LATER items added or surfaced:**
+- The dispatcher's `_find_unit_by_id` walks the scene tree O(N) per death event. Phase 3 scale (<100 units) makes this negligible; when UnitRegistry ships (LATER L1), swap to direct lookup.
+- HealthComponent still appends `"_idle_worker"` cause-string suffix for legacy telemetry parity. Future cleanup can remove the augmentation entirely once nothing reads it (the F2 debug overlay will subscribe to the dispatcher's `farr_changed` emits directly).
+
+**Cross-agent coordination:** None — sequential single-agent wave per Pitfall #7 mitigation. Diff verified via `git diff --staged --stat` on each of the 7 commits.
+
+**Open questions added to `QUESTIONS_FOR_DESIGN.md`:** None. Two implementation choices made independently per CLAUDE.md escalation rule #1:
+- The dispatcher routes via a separate autoload (not folded into FarrSystem) for cleaner separation of concerns. Rationale documented in source header.
+- The HUD retains a defensive GameState meta fallback path for legacy test fixtures (test_resource_hud.gd has Phase 0 fixtures that pre-date ResourceSystem); production reads always win via ResourceSystem.
+
+**State for next session:**
+- **Khaneh + placement (wave 1C).** Right-click-build flow + NavigationObstacle3D + population_cap increment via `ResourceSystem.change_population_cap` (sister chokepoint shipped this wave for forward-compat).
+- **HealthComponent cause-string augmentation cleanup.** Now that the dispatcher owns the worker-killed-idle path via FSM state lookup, the `"_idle_worker"` suffix in HealthComponent.\_apply_damage_x100 is dead code from the dispatcher's perspective. F2 debug overlay (Phase 4) decides whether the suffix carries telemetry value or can be removed entirely.

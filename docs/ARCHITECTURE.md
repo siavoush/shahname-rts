@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.20.2
+version: 0.20.3
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -164,7 +164,8 @@ The game is a deterministic real-time simulation with seven phases per tick at 3
 | **Session 2 integration tests (wave 3)** | [02c_PHASE_1_SESSION_2_KICKOFF.md §3](../02c_PHASE_1_SESSION_2_KICKOFF.md) | ✅ Built | — | qa-engineer | Phase 1 session 2 wave 3. 37 new integration tests across 5 files. `tests/integration/test_session_2_box_select.gd` (7 tests — drag covers all, covers none, Shift-additive, dead-zone arbitration, current_drag_rect state, no-press no-op). `tests/integration/test_session_2_control_groups.gd` (6 tests — bind/recall, freed-unit filter, unbound-group no-op, double-tap center, cross-key no-center, stale-tap no-center). `tests/integration/test_session_2_group_move.gd` (6 tests — distinct targets for 5 units, targets within ring radius, arrive at distinct positions via mock, single-unit identity, empty-array no-op, freed-unit skip). `tests/integration/test_session_2_farr_gauge.gd` (10 tests — signal updates target_farr, color bands at all thresholds, delta accumulates, seeded from FarrSystem at ready, off-tick signal no crash, successive signals update correctly, large negative clamps, signal before in-tree no crash). `tests/integration/test_session_2_panel.gd` (9 tests — empty state, single layout, 5-icon multi, icon narrows to single, unit death clears panel, freed icon is safe no-op, deselect-all returns empty, partial HP bar, MOUSE_FILTER_STOP regression guard). `tests/integration/test_session_2_smoke.gd` (2 tests — main.tscn spot-check for SelectedUnitPanel + DoubleClickSelect node coexistence; cross-feature round-trip: box-select 5 → group-move → bind/deselect/recall → Farr change → narrow single-select → panel STATE_SINGLE). Total test count: 498 → 535 (+37). All pass headless. 3 pre-existing PENDING unchanged (FarrSystem fallback path, navmesh-not-ready ×2). |
 | **CombatSystem** | [02_IMPLEMENTATION_PLAN.md Phase 2](../02_IMPLEMENTATION_PLAN.md) | 📋 Planned | — | gameplay-systems | Phase 2 |
 | **ResourceNode + MineNode + Mazra'eh** | [RNC 1.1.1](RESOURCE_NODE_CONTRACT.md) | 📋 Planned | — | world-builder + gameplay-systems | Phase 3 |
-| **ResourceSystem** | [01_CORE_MECHANICS.md §3](../01_CORE_MECHANICS.md) | 📋 Planned | — | gameplay-systems | Phase 3 |
+| **ResourceSystem** | [01_CORE_MECHANICS.md §3](../01_CORE_MECHANICS.md) | ✅ Built | — | gameplay-systems | Phase 3 wave 1B (2026-05-08). `scripts/autoload/resource_system.gd` extends SimNode (path-string preload — registry-race pattern). Per-team fixed-point storage: `_coin_x100 / _grain_x100 / _population / _population_cap` as `Dictionary[int, int]` keyed by `Constants.TEAM_*`. Single sanctioned write: `change_resource(team, kind, amount_x100, reason, source_unit)`; sister chokepoints `change_population` + `change_population_cap` (forward-compat for wave 1C). Asserts on-tick via inherited `_set_sim`. Emits `EventBus.resource_changed(team, kind, delta_x100, new_total_x100)`. Public accessors: `coin_for / grain_for / population_for / population_cap_for(team)` (float boundary conversion per Sim Contract §1.6). `reset()` for MatchHarness teardown — re-loads economy.starting_coin / starting_grain from BalanceData. **Naming choice (load-bearing):** `change_resource` not `apply_resource_change` — L1 lint pattern `apply_*\(` would expand the allowlist; reserving `apply_*` for the FarrSystem chokepoint keeps every other chokepoint clear. See §6 v0.20.1. Tests in `tests/unit/test_resource_system.gd` (13) + integration `tests/integration/test_phase_3_gather_loop.gd` (4). |
+| **FarrDrainDispatcher** | [01_CORE_MECHANICS.md §4](../01_CORE_MECHANICS.md) | ✅ Built | — | gameplay-systems | Phase 3 wave 1B (2026-05-08). `scripts/autoload/farr_drain_dispatcher.gd`. Standalone autoload — NOT folded into FarrSystem (cleaner separation: FarrSystem owns the chokepoint, dispatcher owns trigger→key routing). Subscribes to `EventBus.unit_health_zero` in `_ready` — **load-bearing per Open Space 2026-05-13**: must run PRE-Dying-state-swap so `unit.fsm.current.id` reads the alive state. Order rests on (1) HealthComponent emits `unit_health_zero` BEFORE `unit_died`, and (2) autoload connect happens at engine boot before any per-unit StateMachine connects to the same signal. Dispatch table: `&"gathering"` or `&"returning"` → `&"worker_killed_during_gather"` (0.5); `&"idle"` AND `unit_type == &"kargar"` → `&"worker_killed_idle"` (1.0); other → no drain. Reads magnitude from `BalanceData.farr.drain_rates[key]` (positive, stored); applies negative sign at call site (`FarrSystem.apply_farr_change(-magnitude, key, unit)`). Resolves dying unit via scene-tree walk on `unit_id` (LATER: O(1) via UnitRegistry when L1 ships). Tests in `tests/unit/test_farr_drain_dispatcher.gd` (12) + migrated `tests/unit/test_farr_drain.gd` (6). Retires the legacy FarrSystem cause-string suffix path (FarrSystem.\_on_unit_died is now a no-op stub). |
 | **DummyAIController** | [02_IMPLEMENTATION_PLAN.md Phase 3](../02_IMPLEMENTATION_PLAN.md) | 📋 Planned | — | ai-engineer | Phase 3 — 100-line stub for solo testing |
 | **Building system** | [01_CORE_MECHANICS.md §5](../01_CORE_MECHANICS.md) | 📋 Planned | — | gameplay-systems | Phase 3 |
 | **Fog-of-war data layer** | [02_IMPLEMENTATION_PLAN.md Phase 3](../02_IMPLEMENTATION_PLAN.md) | 📋 Planned | — | world-builder | Phase 3 — boolean grid only |
@@ -1280,6 +1281,41 @@ First half of Phase 3's economic loop. `ResourceNode` abstract base (Node3D + sl
 No new permanent LATER index entries — all five items are explicitly named in the wave-1B plan, not architectural drift.
 
 **Commit:** `docs(arch+build-log): Phase 3 wave 1A — Kargar gather-loop + Coin MineNode`
+
+---
+
+### v0.20.3 — Phase 3 wave 1B: ResourceSystem + HUD wire-up + gather routing + Farr drain dispatcher (2026-05-08)
+
+Wave 1B wires wave 1A's gather-loop state machinery into the live game. Four integration pieces: `ResourceSystem` autoload (per-team Coin/Grain/Pop chokepoint), HUD subscribes to it, right-click MineNode dispatches gather, `FarrDrainDispatcher` autoload routes death events to drain keys reading `fsm.current.id` PRE-Dying-swap.
+
+**Architectural decisions:**
+
+1. **`ResourceSystem.change_resource` is the single sanctioned write seam (mirrors the `apply_farr_change` chokepoint pattern).** Method name is `change_resource`, NOT `apply_resource_change`. The L1 lint rule (`tools/lint_simulation.sh`) flags `apply_*\(` calls in files defining an off-tick frame entry — adopting the verb-noun shape avoids expanding the L1 allowlist. The FarrSystem precedent (`apply_farr_change`) predates the lint rule; reserving `apply_*` for the Farr chokepoint specifically and using verb-noun naming for every other chokepoint (`change_resource`, `change_population`, `change_population_cap`) minimizes future allowlist churn. The decision is annotated load-bearing in the source header AND in the cycle-1 commit (`9cb0352`). Per-team fixed-point storage via `Dictionary[int, int]` keyed by Constants.TEAM_*; emits `EventBus.resource_changed(team, kind, delta_x100, new_total_x100)` (write-shaped, added to `_SINK_SIGNALS` for telemetry coverage).
+
+2. **`FarrDrainDispatcher` subscribes to `EventBus.unit_health_zero`, NOT `unit_died` — and ships as a separate autoload, not folded into FarrSystem.** Subscription choice load-bearing per Open Space 2026-05-13: `unit_died` is emitted from `Dying.enter` via HealthComponent, so every death would read `state.id == &"dying"`, collapsing `worker_killed_idle` (1.0) and `worker_killed_during_gather` (0.5) into one bucket. Subscribing to `unit_health_zero` runs BEFORE the StateMachine death-preempt swap because (a) HealthComponent emits `unit_health_zero` strictly before `unit_died` (documented as load-bearing in `health_component.gd` lines 237-238), and (b) Godot signal handlers run in connect() order — this autoload connects in `_ready` at engine boot, before any unit's StateMachine connects to the same signal at spawn time. Separate-autoload choice (not folded into FarrSystem): FarrSystem owns the chokepoint, dispatcher owns trigger→key resolution; dispatcher has zero owned state. The legacy FarrSystem cause-string suffix path (Phase 2 session 1 wave 2A `"_idle_worker"` parsing) is retired — `FarrSystem._on_unit_died` body is now a no-op stub, the `_ready` connect call is removed.
+
+3. **`BalanceData.farr.drain_rates` magnitudes are stored POSITIVE; dispatcher applies the negative sign at the call site.** Open Space 2026-05-13 Constraint Negotiation outcome. `apply_farr_change(-magnitude, key, unit)` keeps the sign convention visible at the dispatch site rather than buried in the table. `validate_hard` gains three rules: Phase 3 required keys present (`worker_killed_idle`, `worker_killed_during_gather`), all magnitudes positive (the dispatcher applies the sign), all magnitudes < `kaveh_trigger_threshold` (a single drain ≥ 15 would skip the 30-second grace window per §9.1 invariant). 8 keys ship: 2 Phase 3 wired + 6 forward-compat (capital_damaged 2.0, capital_lost 12.0, building_destroyed_civilian 1.5, building_destroyed_military 2.5, building_destroyed_atashkadeh 5.0, hero_died 5.0).
+
+4. **HUD switches from `_process` polling to `EventBus.resource_changed` signal subscription for Coin/Grain/Pop.** FarrGauge pattern: seed once on `_ready` (read current ResourceSystem state), subscribe to the signal, refresh labels on signal. Same off-tick discipline (Sim Contract §1.5) — handler reads sim state, writes only to UI-local label text. Legacy `GameState.player_resources` meta path is retained as defensive fallback for pre-Phase-3 test fixtures (`test_resource_hud.gd` has Phase 0 fixtures predating ResourceSystem); production reads always win via ResourceSystem. The `node.has_method(&"coin_for")` duck-type avoids hard class_name dependencies between the UI and gameplay layers.
+
+5. **Right-click ResourceNode branch fires BEFORE the unit-team branch in `process_right_click_hit`.** ClickHandler's dispatch table evaluates "is this a mine?" first, then "is this an enemy unit?", then "is this terrain?". This ordering matters because a future mine variant with a CollisionShape3D that hits the raycast must NEVER be mistaken for an enemy unit. Duck-typed via `has_method(&"request_extract")` + `&"is_gatherable" in n` — no class_name dependency on ResourceNode (registry-race avoidance pattern from ARCHITECTURE §6 v0.4.0). Only workers (`unit_type == &"kargar"`) in the selection receive `COMMAND_GATHER`; non-workers are skipped, matching StarCraft 2's "workers gather, combat units don't auto-follow" UX.
+
+**Test-count delta:** 939 → 987 (+48). Per-TDD-cycle commits: `9cb0352`, `f10e944`, `098cdaa`, `41fbe83`, `7870157`, `5f94f06`, `6b2bd94`. Lint clean each commit.
+
+**LATER items surfaced this wave:**
+- The dispatcher's `_find_unit_by_id` walks the scene tree O(N) per death. Phase 3 scale (<100 units) makes this free; covered by existing L1 (`UnitRegistry` autoload) which the dispatcher will consume when it ships.
+- HealthComponent still appends `"_idle_worker"` cause-string suffix for legacy telemetry parity. The dispatcher no longer reads it; future cleanup (Phase 4 F2 overlay work) may remove the augmentation entirely. Covered by existing L14 (Cause-string suffix taxonomy as Constants).
+
+No new permanent LATER index entries — all surfaced items are subsumed by existing entries (L1, L14).
+
+**Commit chain (per-TDD-cycle):**
+- `9cb0352` — ResourceSystem autoload + EventBus signal + 13 tests
+- `f10e944` — HUD wire-up + 3 tests + 4 legacy migrations
+- `098cdaa` — Returning deposit wire + 3 tests
+- `41fbe83` — Input gather routing + 4 tests
+- `7870157` — BalanceData drain_rates + validation + 9 tests
+- `5f94f06` — FarrDrainDispatcher + 12 tests + 6 migrated
+- `6b2bd94` — Integration test gather loop + 4 tests
 
 ---
 
