@@ -86,6 +86,35 @@ signal farr_changed(amount: float, reason: String, source_unit_id: int,
 		farr_after: float, tick: int)
 
 
+# ---- Resource signals -------------------------------------------------------
+# Emitted by ResourceSystem.change_resource / change_population /
+# change_population_cap. Single channel for every economic mutation; the
+# `kind` StringName discriminates (Constants.KIND_COIN, KIND_GRAIN,
+# &"population", &"population_cap").
+#
+# Write-shaped (UI subscribes/reads; doesn't mutate state in the handler —
+# Sim Contract §1.5). Not subject to the L2 lint allowlist because the signal
+# is only ever emitted from inside change_*, which is itself on-tick by
+# assertion. Off-tick emits would crash via the assert long before reaching
+# the L2 _process check.
+#
+# Fields:
+#   team             — Constants.TEAM_IRAN / TEAM_TURAN / TEAM_NEUTRAL
+#   kind             — Constants.KIND_COIN / KIND_GRAIN / &"population" /
+#                      &"population_cap"
+#   delta_x100       — effective delta after clamp. Fixed-point for coin/grain;
+#                      raw int delta for population/cap (kind discriminates).
+#   new_total_x100   — post-clamp total. Same fixed-point/raw-int convention
+#                      as delta_x100.
+#
+# Phase 3 wave 1B ships the signal; Phase 3 wave 1C+ adds population/cap
+# emission via change_population[_cap].
+
+@warning_ignore("unused_signal")
+signal resource_changed(team: int, kind: StringName, delta_x100: int,
+		new_total_x100: int)
+
+
 # ---- Selection signals (read-shaped) ----------------------------------------
 # Emitted by the SelectionManager (Phase 1 ui-developer wave 2 work) when the
 # player's current selection changes. The payload is the canonical list of
@@ -121,6 +150,7 @@ const _SINK_SIGNALS: Array[StringName] = [
 	&"unit_state_changed",
 	&"farr_changed",
 	&"unit_died",
+	&"resource_changed",
 	# Extend as new write-shaped signals are added. Order is not significant.
 ]
 
@@ -185,6 +215,10 @@ func _make_forwarder(sig: StringName, sink: Callable) -> Callable:
 			return func(unit_id: int, killer_unit_id: int, cause: StringName,
 					position: Vector3) -> void:
 				sink.call(sig, [unit_id, killer_unit_id, cause, position])
+		&"resource_changed":
+			return func(team: int, kind: StringName, delta_x100: int,
+					new_total_x100: int) -> void:
+				sink.call(sig, [team, kind, delta_x100, new_total_x100])
 		_:
 			push_error("EventBus._make_forwarder: signal '%s' has no forwarder arm" % sig)
 			return Callable()
