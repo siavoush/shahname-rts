@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.20.0
+version: 0.20.1
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -19,7 +19,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
 last_updated: 2026-05-13
-# bumped to v0.20.0 — Open Space sync Phase 2→3 transition (Pitfall #7 worktree mitigation, Unit.stance spec, Farr drain rates, Sim Contract 1.4.0 addenda)
+# bumped to v0.20.1 — shahnameh-loremaster cultural-alignment reviewer agent added
 ---
 
 # Architecture — Target Shape and Build State
@@ -1214,6 +1214,32 @@ See `docs/SIMULATION_CONTRACT.md` 1.4.0 for full text.
 - **L21 (`docs/PITFALLS.md`) — UNCHANGED.** Still 🟡 deferred until 3rd hybrid concept emerges. The worktree decision lives in STUDIO_PROCESS, not a new doc; no escalation triggered.
 
 **Commit:** `docs(open-space): Phase 2→3 transition decisions — Pitfall #7 worktree mitigation, Unit.stance spec, Farr drain rates, Sim Contract 1.4.0`
+
+---
+
+### v0.20.1 — `shahnameh-loremaster` reviewer agent added (2026-05-13)
+
+Third reviewer agent for the wave-close review trio (alongside `godot-code-reviewer` + `architecture-reviewer`). Read-only; reviews culturally-load-bearing waves against the source material — Ferdowsi's epic, the cultural / mythological context, the project's `MANIFESTO.md` + `00_SHAHNAMEH_RESEARCH.md` + `DECISIONS.md`. Definition: `.claude/agents/shahnameh-loremaster.md`.
+
+**Discipline boundary:** the loremaster does NOT invent design. When a cultural gap exists in committed design (e.g., a new mechanic with no Shahnameh referent), the loremaster FLAGs via `QUESTIONS_FOR_DESIGN.md` for design-chat routing — does NOT make the call itself. The agent stays on the implementation side of the design/implementation split per `STUDIO_PROCESS.md` §12.
+
+**Verdict shape (mirrors other reviewers):** APPROVE / SUGGEST / FLAG / NEEDS-DESIGN-CHAT. No BLOCK authority — lead arbitrates conflicts between the loremaster's flags and implementation constraints / design-chat-committed decisions.
+
+**Lead's dispatch judgment:** invoke when a wave touches culturally-resonant territory:
+- New unit types in Phase 5+ roster (heroes — Rostam, Sohrab, Esfandiyar)
+- Hero ability flavor (Rostam's seven labors as ability set, Sohrab's tragic recognition, Esfandiyar's invulnerability)
+- Building thematic work (Atashkadeh Fire-Temple symbolism, Yadgar tied to hero death positions per Phase 2 spec)
+- Kaveh Event presentation (rebellion narrative, blacksmith-banner imagery)
+- Campaign scenarios (Phase 7+)
+- Naming choices for new game-side terms (locations, military classes, faction iconography)
+
+**Skip dispatch when:** purely technical infrastructure (test harness migrations, pathfinding tuning, performance work, lint-rule additions). The loremaster's response in those cases is "out of cultural-alignment scope" anyway — saves a round-trip.
+
+**Why now (Phase 3 prep) and not later (Phase 5):** the agent definition is a small artifact (one markdown file in `.claude/agents/`). Adding it now means Phase 3 wave-close reviews can opt in if any wave surfaces a cultural angle the lead didn't anticipate (e.g., naming the Coin / Grain resources, naming the worker's deposit interaction, choosing colors for Iran / Turan factions if those drift from established palettes). The cost is zero until invoked. Phase 5 is the first guaranteed dispatch context.
+
+**No new permanent rule beyond "third reviewer available."** The wave-close review trio now potentially includes the loremaster; STUDIO_PROCESS §9 2026-05-13 codifies the dispatch judgment.
+
+**Commit:** `docs(agents): add shahnameh-loremaster cultural-alignment reviewer (third wave-close reviewer for culturally-load-bearing surfaces)`
 
 Architectural / project-wide deferred work. Each entry has a brief description, the canonical surfacing source (commit + §6 entry), and the priority class:
 - **🔴 Phase-blocking** — must ship before the named phase can complete its milestone. Owns a slot in the implementation plan.
