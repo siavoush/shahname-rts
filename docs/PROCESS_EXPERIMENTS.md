@@ -2,7 +2,7 @@
 title: Process Experiments — Controlled Tests of Studio Process Changes
 type: log
 status: append-only
-version: 1.1.0
+version: 1.2.0
 owner: lead
 summary: Append-only log of controlled experiments on the studio's working process. Plus the Known Godot Pitfalls list — engine foot-guns promoted from experiments. One entry per experiment — hypothesis, intervention, baseline, metrics, verdict. Prevents process-bloat-by-vibes; every change pays for itself or is dropped.
 audience: all
@@ -16,7 +16,7 @@ ssot_for:
 references: [docs/STUDIO_PROCESS.md, BUILD_LOG.md, 02_IMPLEMENTATION_PLAN.md]
 tags: [process, experiments, measurement, retro, pitfalls]
 created: 2026-05-03
-last_updated: 2026-05-04
+last_updated: 2026-05-13
 ---
 
 # Process Experiments
@@ -388,6 +388,60 @@ The intervention has TWO mechanisms with very different verdicts:
 - The most informative data point: parallel-agent waves are structurally different from sequential ones. The discipline-side intervention works for sequential; structural intervention (worktrees or commit-lock) needed for parallel. Splitting the verdict captures both.
 - Risk: per-TDD-cycle commits make `git log` more granular. May produce 30+ commits per wave instead of 5. Feature, not bug — granular commits make `git bisect` viable when a regression sneaks in. But PRs become longer to read.
 - Companion to existing `STUDIO_PROCESS.md` §9 rule (2026-05-01) about pre-commit gate filtering by `git diff --cached --name-only` — that's an automation-side mitigation; this is a discipline-side one. Both should land together.
+
+### Experiment 04 — `git worktree`-per-agent for parallel waves (2026-05-13)
+
+**Sessions:** Phase 3 session 2 (first formal trial — Phase 3 session 1 is sequential by deliverable dependency, no parallel-wave trigger).
+
+**Hypothesis:** Pre-creating a separate `git worktree` per dispatched agent for parallel-wave dispatches eliminates the Pitfall #7 cross-agent commit-staging race. Specifically: zero Pitfall #7 incidents in a parallel-wave dispatch where the prior shared-tree pattern would have produced ≥1 incident.
+
+**Intervention:** When wave brief stamps `parallel-worktrees` mode (per the new STUDIO_PROCESS §9 2026-05-13 rule), lead pre-creates worktrees at dispatch time:
+
+```bash
+git worktree add ../shahnameh-rts-<dispatch-id> <branch>
+```
+
+One per dispatched agent. Brief delta is one line: `"Your worktree: ../shahnameh-rts-<dispatch-id>"`. Agent never manages worktree setup. Each worktree has independent `.uid` / `.import/` regeneration on first scene load. All worktrees commit to the SAME shared branch; git serializes the underlying `.git` write lock. Wave-close push order is lead-serialized.
+
+**Held constant** (NOT changed from Phase 2 session 2):
+- Live-game-broken-surface section per deliverable (Experiment 01, expected to graduate at Phase 3 sess 2 close).
+- Wave-close review by reviewer pair via `gh pr review --comment` (Experiment 02, permanent).
+- Per-TDD-cycle commits + anti-loop brief language (Experiment 03 sequential portion, permanent).
+- Sequential-shared-tree mode remains for single-deliverable / heavy-shared-doc waves.
+
+**Baseline (Phase 2 session 2 wave 1 — three parallel agents in shared tree):**
+
+| Metric | Phase 2 sess 2 wave 1 (parallel-three, shared tree) |
+|---|---|
+| Pitfall #7 incidents in wave | 2 (`cac29cc` swept TuranKamandar; `3fefeea` swept TuranSavar) |
+| Cross-agent doc contamination | 4+ stomps recoverable via §6 retro entries |
+| Recovery overhead per incident | ~15 min lead time to document attribution |
+| Branch commits affected | 2 of 12 (17%) carry wrong attribution in commit title |
+
+**Metrics to capture at Phase 3 session 2 close:**
+
+| Metric | How measured | Baseline | Actual | Δ |
+|---|---|---|---|---|
+| Pitfall #7 incidents | Misattributed commits (file headers ≠ commit title); cross-agent file sweeps | 2 in wave 1 | _TBD_ | _TBD_ |
+| Cross-agent doc contamination | Times an agent's `git diff` of BUILD_LOG / ARCHITECTURE included another agent's draft text | 4+ | _TBD_ | _TBD_ |
+| Worktree-creation overhead (lead) | Wall-clock time to `git worktree add` × N + brief delta | n/a | _TBD_ | _TBD_ |
+| Worktree-cleanup overhead (lead) | Wall-clock `git worktree remove` × N at session close | n/a | _TBD_ | _TBD_ |
+| First-load `.uid` / `.import/` regen cost (per agent) | Wall-clock from agent dispatch to first successful pre-commit gate | n/a | _TBD_ | _TBD_ |
+| Parallel-wave throughput recovery | Wall-clock parallel vs equivalent sequential dispatches | n/a | _TBD_ | _TBD_ |
+
+**Verdict criteria:**
+
+- **Kept** if: Pitfall #7 incidents = 0 in Phase 3 session 2's parallel-wave dispatch, AND total worktree overhead < 20 min per session, AND no new orthogonal issues introduced.
+- **Modified** if: Pitfall #7 incidents = 0 BUT overhead > 20 min OR a new issue emerges (e.g., shared `user://` test isolation bites). Tune the brief / cleanup discipline.
+- **Dropped** if: Pitfall #7 incidents > 0 (worktrees didn't help, structural fix isn't the right structural fix), OR overhead > 40 min (impractical at the size of waves we run). Fallback to sequential-shared-tree as the permanent answer (Option 3 from the Open Space negotiation).
+
+**Verdict:** _TBD — fill at Phase 3 session 2 close._
+
+**Notes:**
+- Pitfall #7 is now a CLOSED candidate in the Known Godot Pitfalls candidate list (above) — superseded by this experiment + the STUDIO_PROCESS §9 2026-05-13 permanent rule. The Pitfall list governs ENGINE foot-guns; the worktree workflow is a PROCESS rule. Different ownership surfaces, as the L20 closure documents.
+- The 10 mandatory pitfalls for worktree mode (worktree naming by dispatch-id, `.godot/` gitignore, `balance.tres` sequential-only, file-count test semantic conflicts, retro aggregation, worktree cleanup, `user://` test isolation, `.uid` cache, fast-forward race at push) all came from the Constraint Negotiation engineering POVs. Folded into STUDIO_PROCESS §9 2026-05-13 entry. These are NOT separate experiments — they're the implementation guardrails for THIS experiment.
+- Cost-of-measurement: ~15 min lead-time at session close to fill verdict table. Add to session-close-retro template.
+- Graduates to permanent STUDIO_PROCESS §9 rule (currently provisional) only after a SECOND confirming session — Phase 3 session 3 or Phase 4 session 1 will be the second trial.
 
 ## Mid-flight deviations log
 

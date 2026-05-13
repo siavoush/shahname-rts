@@ -2,7 +2,7 @@
 title: Studio Process — How the Virtual Studio Operates
 type: process
 status: living
-version: 1.3.0
+version: 1.4.0
 owner: team
 summary: Operating contract for multi-agent collaboration — discussion patterns, facilitator role, retro practice, SemVer policy, mode separation, sync log.
 audience: all
@@ -21,7 +21,7 @@ ssot_for:
 references: [MANIFESTO.md, ARCHITECTURE.md]
 tags: [process, syncs, retros, ssot, modes, semver, frontmatter]
 created: 2026-04-30
-last_updated: 2026-05-12
+last_updated: 2026-05-13
 ---
 
 # Studio Process — How the Virtual Studio Operates
@@ -339,6 +339,34 @@ This section accumulates rules added/modified through retros. Each entry is date
   2. **Lead-orchestrated commit serialization** — agents request a commit-window-of-one from lead before staging; lead grants windows sequentially. No infrastructure change.
 
   Until Open Space resolves: **prefer sequential single-agent waves over parallel-agent waves when wave deliverables would otherwise share docs (`BUILD_LOG.md`, `ARCHITECTURE.md`)**. Phase 2 session 2's waves 2A / 2B / 3 (sequential) all shipped clean; wave 1's parallel-three stomped twice.
+
+- *(2026-05-13, Open Space sync, Phase 2 close → Phase 3 kickoff)* **Pitfall #7 mitigation RESOLVED: parallel-wave dispatches use `git worktree`-per-agent isolation. Option 2 (lead-orchestrated commit serialization) is VETOED.** Both engineering POVs (engine-architect on technical-foundation lens; gameplay-systems on DX lens) converge on Option 1 hybrid. Option 2 is rejected on two independent grounds: (a) wrong-layer — race is at working-tree level, not index level, so serializing the commit window doesn't close it; (b) fights the just-graduated per-TDD-cycle rule by incentivizing batched commits at wave-close. **The new permanent rule:**
+
+  **Wave-mode declaration.** Every wave brief explicitly stamps a mode:
+  - **`parallel-worktrees`** — wave has multiple INDEPENDENT deliverables touching DISTINCT code surfaces. Lead pre-creates a worktree per dispatched agent (`git worktree add ../<repo-name>-<dispatch-id> <branch>`) BEFORE dispatch. Each agent receives their worktree path in the brief; agent never manages worktree setup. Each worktree has independent `.uid` / `.import/` regeneration on first scene load (~1 min cost; one-time per worktree). All worktrees commit to the SAME branch; git serializes the underlying `.git` write lock. Push order is wave-close serialized by the lead.
+  - **`sequential-shared-tree`** — wave has one deliverable, OR multiple deliverables that touch shared files (`balance.tres`, `main.tscn` heavily, large doc additions). Single agent owns the working tree for the wave's duration. Per-TDD-cycle commits apply.
+
+  **Decision boundary** (lead's call at wave-design time):
+  - Parallel-worktrees: 3 unit types in different files; integration tests independent of game code changes; UI changes parallel to gameplay changes.
+  - Sequential-shared-tree: anything touching `balance.tres` (cross-cutting writes); single-deliverable waves; docs-aggregator commits; emergency bug-fix sweeps.
+
+  **Mandatory pitfalls for worktree mode (folded from engineering POVs):**
+  1. Worktree directory naming uses **dispatch identifier**, NOT role name. If wave 1A and wave 1C are both `gameplay-systems`, they get `gp-sys-wave-1A` and `gp-sys-wave-1C` directories. Collapsing by role name leaks the race back.
+  2. Lead creates worktrees AT DISPATCH TIME, not inside the agent brief. Brief delta is one line: `"Your worktree: ../shahnameh-rts-<dispatch-id>"`. Agent does NOT run `git worktree add`.
+  3. `.godot/` must be in `.gitignore` for per-worktree state to regenerate cleanly. Verify before first parallel-worktrees wave.
+  4. `balance.tres` cross-cutting writes are sequential-only — never parallel. Two worktrees writing the same `.tres` resource produces a last-push-wins race that git doesn't catch.
+  5. File-count integration tests (e.g., `test_main_tscn_spawns_N_units`) experience semantic merge conflicts when two parallel agents both extend the spawn list. Each worktree's tests pass locally; the merged commit may fail. Lead's wave-close integration smoke catches this.
+  6. BUILD_LOG / ARCHITECTURE retro entries from each worktree need aggregation at wave-close. Lead consolidates or asks each agent to push a per-wave entry to a known anchor.
+  7. Worktree cleanup discipline: `git worktree remove ../<dispatch-id>` at session close. Add to session-close-retro template.
+  8. Test isolation via shared `user://` storage: existing tests don't write `user://`, but spot-check before adding any save-game tests.
+  9. `.uid` cache: project currently has `*.uid` as untracked; per-worktree regeneration is cheap and harmless. If `.uid` files ever get committed, switch to gitignore to avoid two worktrees committing different UIDs for the same logical file.
+  10. Fast-forward race at push time: shared branch means each worktree pushes commits to the same `feat/<branch>`. Git's local `.git` lock serializes writes; the remote push is a normal `git push` (with the same fast-forward rules we already follow at PR time). No new mechanism needed.
+
+  **Cites Manifesto Principle 4 (Lean Iteration):** worktrees buy back parallel-agent throughput without giving up isolation; Option 3 (sequential-only forever) gives up parallelism categorically. **Cites Principle 8 (Separation of Concerns):** the race lives at the working-tree level; the mitigation lives at the working-tree level. Wrong-layer mitigations (Option 2) are rejected on architectural grounds. The decision lands as Experiment 04's intervention; first formal trial in Phase 3 session 2's parallel-3+ wave. Validation marker: **zero Pitfall #7 incidents in Phase 3 session 2** if intervention works.
+
+- *(2026-05-13, Open Space sync, Phase 2 close → Phase 3 kickoff)* **Sim Contract amended to 1.4.0** with two paragraph-length addenda. **§1.3 init-time carve-out:** parent `_ready` writes to child component fields via plain `set()` BEFORE `SimClock` has run its first tick are exempt from the self-only-mutation rule. The exemption applies ONLY pre-first-tick; runtime component-to-component writes still require method-call discipline. **§1.5 tween-in-callback addendum:** tweens that write ONLY to UI-local state (fields not read by any sim consumer) may be started inside signal handlers. Tweens writing to sim-state fields must use queue-then-drain (next-frame deferral via `call_deferred`). Both addenda close spec-gaps flagged by reviewers in Phase 1 session 2 + Phase 2 session 2. See `docs/SIMULATION_CONTRACT.md` 1.4.0 for full text.
+
+- *(2026-05-13, post-Open-Space-sync)* **`shahnameh-loremaster` agent available for wave-close review trio on culturally-load-bearing surfaces.** Third reviewer agent (alongside `godot-code-reviewer` + `architecture-reviewer`) for waves that touch unit/building/hero naming, narrative content, symbolism, or any new mechanic with a Shahnameh referent. Definition: `.claude/agents/shahnameh-loremaster.md`. **Read-only; produces APPROVE / SUGGEST / FLAG / NEEDS-DESIGN-CHAT verdicts via SendMessage.** Does NOT invent design (gaps route via `QUESTIONS_FOR_DESIGN.md`). Does NOT hold unilateral veto (lead arbitrates conflicts with implementation constraints). **Dispatch judgment is lead's:** invoke when a wave touches culturally-resonant territory (new unit types in Phase 5+ roster, hero abilities, building thematic work, Kaveh Event presentation, campaign scenarios). Skip when work is purely technical (test infrastructure, pathfinding tuning, performance). Cites the CLAUDE.md rule "cultural authenticity and the Persian epic's themes treated as load-bearing design constraints, not flavor." First likely dispatch context: Phase 5 hero work (Rostam / Sohrab / Esfandiyar arcs).
 
 ---
 
