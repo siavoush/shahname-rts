@@ -187,18 +187,43 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 	_request_idle(ctx)
 
 
-# Wave 1A deposit-stub. Clears the carry fields on the unit. Wave 1B
-# replaces this body with the ResourceSystem.add(team, kind, amount) call
-# followed by the same zero-out.
+# Wave 1B deposit — routes the carry through ResourceSystem.change_resource
+# (the chokepoint). Replaces wave 1A's stub which only zeroed the carry.
+#
+# Sim-tick mutation through chokepoint is allowed (Sim Contract §1.3): this
+# state's _sim_tick is driven by the unit's StateMachine which is itself
+# driven by EventBus.sim_phase. ResourceSystem.change_resource's on-tick
+# assert is satisfied by construction.
+#
+# Source reference: 01_CORE_MECHANICS.md §3 (Iran workers deliver resources
+# to the Throne; the Throne mints coin into the treasury) + Resource Node
+# Contract §5 (IDropoffTarget — deposit is what the Throne does for Coin).
 func _perform_deposit(ctx: Object) -> void:
 	if ctx == null:
 		return
-	# Read carry for the (currently empty) deposit step. Future wave 1B
-	# wiring uses these values to credit the team's coin pool.
-	# var kind: StringName = ctx.get(&"_carry_kind")
-	# var amount: int = int(ctx.get(&"_carry_amount_x100"))
-	# Zero the carry. set() is safe inside _sim_tick (same rationale as
-	# Gathering's carry-write — we're inside the unit's _sim_tick path).
+	# Read carry. _carry_kind is the StringName resource kind (KIND_COIN /
+	# KIND_GRAIN); _carry_amount_x100 is the fixed-point amount the worker is
+	# returning with. Both were written by UnitState_Gathering on
+	# complete_extract (gathering.gd):
+	var kind: Variant = ctx.get(&"_carry_kind") if &"_carry_kind" in ctx else &""
+	var amount_x100: Variant = ctx.get(&"_carry_amount_x100") if &"_carry_amount_x100" in ctx else 0
+	# Defensive: if the carry is empty (zero-walk return with no extract,
+	# stale-carry edge case) skip the deposit. Calling change_resource with
+	# amount_x100 == 0 would emit a delta-zero signal which is noisy on the
+	# HUD's poll path; cheaper to bail.
+	if typeof(kind) == TYPE_STRING_NAME and kind != &"" \
+			and typeof(amount_x100) == TYPE_INT and int(amount_x100) > 0:
+		# Resolve team from the unit. Defensive default: TEAM_NEUTRAL — but
+		# a worker with no team is a bug condition; the team field is
+		# set on spawn for every unit.
+		var team: int = Constants.TEAM_NEUTRAL
+		if &"team" in ctx:
+			team = int(ctx.team)
+		ResourceSystem.change_resource(
+			team, kind, int(amount_x100), &"gather_deposit", ctx)
+	# Zero the carry via set(). Same rationale as Gathering's carry-write —
+	# we're inside the unit's _sim_tick path (the on-tick discipline applies
+	# by construction).
 	if &"_carry_kind" in ctx:
 		ctx.set(&"_carry_kind", &"")
 	if &"_carry_amount_x100" in ctx:

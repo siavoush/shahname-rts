@@ -151,9 +151,91 @@ func test_arrival_clears_carry_and_loops_to_gathering() -> void:
 		"loops to Gathering with the original mine target_node")
 	# Carry is zeroed.
 	assert_eq(_unit._carry_kind, &"",
-		"_carry_kind cleared at deposit (wave 1A stub)")
+		"_carry_kind cleared at deposit")
 	assert_eq(_unit._carry_amount_x100, 0,
-		"_carry_amount_x100 zeroed at deposit (wave 1A stub)")
+		"_carry_amount_x100 zeroed at deposit")
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 wave 1B — deposit routes through ResourceSystem.
+# ---------------------------------------------------------------------------
+
+func test_deposit_credits_team_coin_via_resource_system() -> void:
+	# Phase 3 wave 1B: when Returning arrives and the carry is non-empty,
+	# _perform_deposit calls ResourceSystem.change_resource for the team's
+	# coin pool. This is the replacement for the wave 1A stub which only
+	# zeroed the carry.
+	ResourceSystem.reset()
+	var pre_x100: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	_spawn_unit()
+	_spawn_mine()
+	_enter_returning(_mine, Vector3(10.0, 0.0, 10.0))
+	# Drive ticks until we transition out of Returning (deposit fires on
+	# arrival). The Gathering->Returning carry write is in _enter_returning's
+	# fixture; carry = (KIND_COIN, 1000 x100) = 10 Coin.
+	SimClock._test_run_tick()
+	for i in range(60):
+		_tick_fsm()
+		if _unit.fsm.current.id != &"returning":
+			break
+	var post_x100: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	assert_eq(post_x100 - pre_x100, 1000,
+		"deposit credits team coin by 1000 x100 (10 Coin) via ResourceSystem")
+	ResourceSystem.reset()
+
+
+func test_deposit_credits_correct_team() -> void:
+	# Turan worker's deposit must credit Turan, not Iran. Per-team isolation
+	# verified end-to-end at the chokepoint.
+	ResourceSystem.reset()
+	var iran_pre: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	var turan_pre: int = ResourceSystem.coin_x100_for(Constants.TEAM_TURAN)
+	_spawn_unit()
+	_unit.team = Constants.TEAM_TURAN  # override default Iran
+	_spawn_mine()
+	_enter_returning(_mine, Vector3(10.0, 0.0, 10.0))
+	SimClock._test_run_tick()
+	for i in range(60):
+		_tick_fsm()
+		if _unit.fsm.current.id != &"returning":
+			break
+	var iran_post: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	var turan_post: int = ResourceSystem.coin_x100_for(Constants.TEAM_TURAN)
+	assert_eq(iran_post, iran_pre,
+		"Iran balance unchanged when a Turan worker deposits")
+	assert_eq(turan_post - turan_pre, 1000,
+		"Turan balance credited by deposit amount")
+	ResourceSystem.reset()
+
+
+func test_empty_carry_does_not_credit() -> void:
+	# Defensive case: if Returning enters with no carry (zero amount or
+	# empty kind), _perform_deposit must NOT call change_resource. Avoids
+	# a spurious resource_changed signal with delta=0 polluting the HUD log.
+	ResourceSystem.reset()
+	var pre: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	_spawn_unit()
+	_spawn_mine()
+	_unit._carry_kind = &""  # empty carry
+	_unit._carry_amount_x100 = 0
+	_unit.current_command = {
+		"kind": &"return",
+		"payload": {
+			&"target_node": _mine,
+			&"deposit_target": Vector3(10.0, 0.0, 10.0),
+		},
+	}
+	_unit.fsm.transition_to(&"returning")
+	_tick_fsm()
+	SimClock._test_run_tick()
+	for i in range(60):
+		_tick_fsm()
+		if _unit.fsm.current.id != &"returning":
+			break
+	var post: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	assert_eq(post, pre,
+		"Empty-carry deposit is a no-op on ResourceSystem (no spurious signal)")
+	ResourceSystem.reset()
 
 
 func test_arrival_with_depleted_mine_transitions_to_idle() -> void:
