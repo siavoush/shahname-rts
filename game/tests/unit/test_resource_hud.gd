@@ -138,10 +138,15 @@ func test_resource_hud_scene_has_expected_labels() -> void:
 
 
 func test_coin_label_shows_zero_when_resources_absent() -> void:
-	# GameState has no `player_resources` declared field at Phase 0; clear
-	# any meta we (or a previous test) may have set.
+	# Phase 3 wave 1B: HUD now reads from ResourceSystem (not GameState meta).
+	# To simulate "resources absent," we override ResourceSystem's per-team
+	# Coin to 0; the HUD must follow.
 	if GameState.has_meta(&"player_resources"):
 		GameState.remove_meta(&"player_resources")
+	# Direct field write — ResourceSystem.change_resource asserts on-tick; this
+	# test fixture writes outside a tick (no SimClock involvement). The field
+	# write here mirrors FarrSystem.reset()'s off-tick direct-write convention.
+	ResourceSystem._coin_x100[Constants.TEAM_IRAN] = 0
 	var hud: CanvasLayer = _instantiate_hud()
 	if hud == null:
 		pending("resource_hud.tscn unavailable")
@@ -149,14 +154,19 @@ func test_coin_label_shows_zero_when_resources_absent() -> void:
 	hud._refresh_labels()
 	var label: Label = hud.get_node("Margin/HBox/CoinLabel")
 	assert_eq(label.text, "Coin: 0",
-		"CoinLabel must show 0 when GameState.player_resources is missing")
+		"CoinLabel must show 0 when ResourceSystem.coin_for(TEAM_IRAN) is 0")
+	ResourceSystem.reset()
 
 
 func test_pop_label_shows_zero_zero_when_fields_absent() -> void:
+	# Phase 3 wave 1B: pop reads from ResourceSystem. Reset to defaults (0/0)
+	# guarantees the "fields absent" semantics that the legacy test verified
+	# against GameState meta.
 	if GameState.has_meta(&"player_pop"):
 		GameState.remove_meta(&"player_pop")
 	if GameState.has_meta(&"player_pop_cap"):
 		GameState.remove_meta(&"player_pop_cap")
+	ResourceSystem.reset()
 	var hud: CanvasLayer = _instantiate_hud()
 	if hud == null:
 		pending("resource_hud.tscn unavailable")
@@ -164,7 +174,7 @@ func test_pop_label_shows_zero_zero_when_fields_absent() -> void:
 	hud._refresh_labels()
 	var label: Label = hud.get_node("Margin/HBox/PopLabel")
 	assert_eq(label.text, "Pop: 0/0",
-		"PopLabel must show 0/0 when GameState pop fields are missing")
+		"PopLabel must show 0/0 when ResourceSystem population/cap are 0")
 
 
 # ---------------------------------------------------------------------------
@@ -177,21 +187,19 @@ func test_pop_label_shows_zero_zero_when_fields_absent() -> void:
 
 
 func test_coin_label_reads_from_player_resources() -> void:
-	# Phase 0 contract: the HUD reads coin/grain from a Dictionary keyed by
-	# Constants.KIND_COIN / KIND_GRAIN on GameState.player_resources. Tests
-	# that data path so the eventual ResourceSystem just needs to populate
-	# the dict — no HUD edits.
-	#
-	# `set_meta` is the seam used while GameState doesn't yet declare the
-	# field as a typed property (Phase 0 wave 1; gameplay-systems will
-	# declare it when ResourceSystem ships). The HUD's _read_field_or_meta
-	# helper reads declared property first, then meta — so the same code
-	# works for both phases.
-	var resources: Dictionary = {
-		Constants.KIND_COIN: 250,
-		Constants.KIND_GRAIN: 180,
-	}
-	GameState.set_meta(&"player_resources", resources)
+	# Phase 3 wave 1B: production HUD reads from ResourceSystem (not GameState
+	# meta). Test the same end-to-end behavior — "HUD shows live Coin/Grain"
+	# — under the new contract. The pre-Phase-3 GameState meta path remains
+	# in resource_hud.gd as the legacy fallback for ResourceSystem-absent
+	# test contexts, but production reads always win via ResourceSystem.
+	GameState.set_meta(&"player_resources", null)
+	if GameState.has_meta(&"player_resources"):
+		GameState.remove_meta(&"player_resources")
+	# Stage values directly into ResourceSystem's per-team store. Field write
+	# is off-tick (no SimClock) — mirrors the same pattern as
+	# test_coin_label_shows_zero_when_resources_absent above.
+	ResourceSystem._coin_x100[Constants.TEAM_IRAN] = 25000  # 250 Coin
+	ResourceSystem._grain_x100[Constants.TEAM_IRAN] = 18000  # 180 Grain
 	var hud: CanvasLayer = _instantiate_hud()
 	if hud == null:
 		pending("resource_hud.tscn unavailable")
@@ -201,12 +209,16 @@ func test_coin_label_reads_from_player_resources() -> void:
 	var grain_label: Label = hud.get_node("Margin/HBox/GrainLabel")
 	assert_eq(coin_label.text, "Coin: 250")
 	assert_eq(grain_label.text, "Grain: 180")
-	GameState.remove_meta(&"player_resources")
+	ResourceSystem.reset()
 
 
 func test_pop_label_reads_from_pop_fields() -> void:
+	# Phase 3 wave 1B: pop reads from ResourceSystem. Population is integer-
+	# valued (not fixed-point — no fractional units).
 	GameState.set_meta(&"player_pop", 12)
 	GameState.set_meta(&"player_pop_cap", 30)
+	ResourceSystem._population[Constants.TEAM_IRAN] = 12
+	ResourceSystem._population_cap[Constants.TEAM_IRAN] = 30
 	var hud: CanvasLayer = _instantiate_hud()
 	if hud == null:
 		pending("resource_hud.tscn unavailable")
@@ -216,6 +228,7 @@ func test_pop_label_reads_from_pop_fields() -> void:
 	assert_eq(label.text, "Pop: 12/30")
 	GameState.remove_meta(&"player_pop")
 	GameState.remove_meta(&"player_pop_cap")
+	ResourceSystem.reset()
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +239,71 @@ func test_pop_label_reads_from_pop_fields() -> void:
 # the gauge updates on EventBus.farr_changed. Coverage of the signal-driven
 # refresh lives in test_farr_gauge.gd::test_displayed_farr_eventually_matches_target_after_tween
 # and test_farr_changed_signal_updates_target_farr.
+
+
+# ---------------------------------------------------------------------------
+# 6. Phase 3 wave 1B — ResourceSystem signal-driven refresh
+# ---------------------------------------------------------------------------
+
+# Helper: run a Callable inside a single sim tick so change_resource's on-tick
+# assert is satisfied. Same pattern as test_resource_system.gd.
+func _run_inside_tick(body: Callable) -> void:
+	var handler: Callable = func(phase: StringName, _tick: int) -> void:
+		if phase == &"farr":
+			body.call()
+	EventBus.sim_phase.connect(handler)
+	SimClock._test_run_tick()
+	EventBus.sim_phase.disconnect(handler)
+
+
+func test_coin_label_reads_live_from_resource_system() -> void:
+	# Phase 3 wave 1B contract: the HUD reads Coin from
+	# ResourceSystem.coin_for(TEAM_IRAN) — replacing the Phase 0
+	# GameState.player_resources meta path for production.
+	ResourceSystem.reset()
+	var hud: CanvasLayer = _instantiate_hud()
+	if hud == null:
+		pending("resource_hud.tscn unavailable")
+		return
+	hud._refresh_labels()
+	var coin_label: Label = hud.get_node("Margin/HBox/CoinLabel")
+	# balance.tres ships economy.starting_coin = 150.
+	assert_eq(coin_label.text, "Coin: 150",
+		"CoinLabel must read live from ResourceSystem.coin_for(TEAM_IRAN)")
+
+
+func test_grain_label_reads_live_from_resource_system() -> void:
+	ResourceSystem.reset()
+	var hud: CanvasLayer = _instantiate_hud()
+	if hud == null:
+		pending("resource_hud.tscn unavailable")
+		return
+	hud._refresh_labels()
+	var grain_label: Label = hud.get_node("Margin/HBox/GrainLabel")
+	assert_eq(grain_label.text, "Grain: 50",
+		"GrainLabel must read live from ResourceSystem.grain_for(TEAM_IRAN)")
+
+
+func test_coin_label_updates_on_resource_changed_signal() -> void:
+	ResourceSystem.reset()
+	SimClock.reset()
+	var hud: CanvasLayer = _instantiate_hud()
+	if hud == null:
+		pending("resource_hud.tscn unavailable")
+		return
+	# Drive a deposit. The HUD subscribes to EventBus.resource_changed and
+	# refreshes label text on signal.
+	_run_inside_tick(func() -> void:
+		ResourceSystem.change_resource(
+			Constants.TEAM_IRAN, Constants.KIND_COIN, 1000,
+			&"test_deposit", null)
+	)
+	var coin_label: Label = hud.get_node("Margin/HBox/CoinLabel")
+	# 150 + 10 = 160.
+	assert_eq(coin_label.text, "Coin: 160",
+		"CoinLabel updates on EventBus.resource_changed (signal-driven, not polled)")
+	ResourceSystem.reset()
+	SimClock.reset()
 
 
 # ---------------------------------------------------------------------------
