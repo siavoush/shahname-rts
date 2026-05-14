@@ -28,16 +28,26 @@ extends Node
 ##
 ## Input ordering (Pitfall #5):
 ##   When _placement_kind != &"", this handler's _unhandled_input
-##   consumes the click BEFORE ClickHandler interprets it. Godot's
-##   _unhandled_input dispatch is tree-document order — lower-index
-##   sibling runs first. So this handler is placed BEFORE ClickHandler
-##   in main.tscn so it fires first. When in placement mode it consumes
-##   the click and calls `get_viewport().set_input_as_handled()`;
-##   ClickHandler never sees the event. Same convention as
-##   AttackMoveHandler (also placed before ClickHandler in main.tscn).
-##   Regression-locked by test_main_tscn_build_placement_handler_before_click_handler
-##   and test_pitfall_5_build_placement_handler_before_click_handler_standalone
+##   consumes the click BEFORE ClickHandler interprets it. **Godot
+##   dispatches _unhandled_input in REVERSE sibling order** — the
+##   higher-index sibling fires first (verified by
+##   tests/unit/test_godot_unhandled_input_dispatch_order.gd). So this
+##   handler is placed AFTER ClickHandler / BoxSelectHandler /
+##   DoubleClickSelect in main.tscn so it fires first. When in
+##   placement mode it consumes the click and calls
+##   `get_viewport().set_input_as_handled()`; the other sibling
+##   handlers never see the event. Regression-locked by
+##   test_main_tscn_build_placement_handler_after_click_handler and
+##   test_pitfall_5_build_placement_handler_after_click_handler_standalone
 ##   in tests/integration/test_phase_3_khaneh_placement.gd.
+##
+##   BUG-10 history (2026-05-14): the wave-1C placement put BPH at a
+##   LOWER sibling index ("BEFORE ClickHandler") under the mistaken
+##   "lower-index = first" convention copied from AttackMoveHandler.
+##   That convention was backwards; ClickHandler at the lower index
+##   actually fired first, consumed every terrain click via deselect-
+##   all, and the BUG-08 selection_changed guard then cancelled the
+##   orphaned placement state. See ARCHITECTURE.md §6 v0.20.8.
 ##
 ##   When _placement_kind == &"" (no active placement), the handler
 ##   short-circuits and lets ClickHandler do its normal job.
@@ -217,6 +227,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if _placement_kind == &"":
 		return  # not in placement mode — let other handlers run.
+	# BUG-10 diagnostic — entry log gated on placement mode. Future
+	# input-ordering bugs are diagnosable by checking this line against
+	# the [click] / [box-select] logs in run order.
+	if DEBUG_LOG_CLICKS and event is InputEventMouseButton and event.pressed:
+		print("[build-placement] _unhandled_input entry — kind=", _placement_kind,
+			" button=", event.button_index)
 	if not (event is InputEventMouseButton):
 		# Mouse motion is handled in _process for ghost tracking, not here.
 		# Escape cancels.

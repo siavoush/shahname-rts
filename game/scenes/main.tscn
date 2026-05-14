@@ -53,17 +53,6 @@ text = "tick=0"
 [node name="AttackMoveHandler" type="Node" parent="."]
 script = ExtResource("11_attackmove")
 
-; BuildPlacementHandler is placed BEFORE ClickHandler in sibling order
-; so its _unhandled_input runs first (per the AttackMoveHandler /
-; ClickHandler precedent — lower-index sibling consumes the event
-; first; the existing regression test `amh.get_index() < ch.get_index()`
-; codifies this for the AttackMove case). When in placement mode the
-; handler calls get_viewport().set_input_as_handled() so ClickHandler
-; never sees the click. When not in placement mode the handler
-; short-circuits and ClickHandler runs normally.
-[node name="BuildPlacementHandler" type="Node" parent="."]
-script = ExtResource("13_buildplacement")
-
 [node name="ClickHandler" type="Node" parent="."]
 script = ExtResource("5_click")
 
@@ -72,6 +61,32 @@ script = ExtResource("6_boxselect")
 
 [node name="DoubleClickSelect" type="Node" parent="."]
 script = ExtResource("8_doubleclick")
+
+; BuildPlacementHandler is placed AFTER ClickHandler / BoxSelectHandler /
+; DoubleClickSelect in sibling order so its _unhandled_input runs FIRST.
+; Godot dispatches _unhandled_input in REVERSE sibling order — the
+; higher-index sibling fires first. Verified by the regression test
+; `test_godot_unhandled_input_dispatch_order` in
+; tests/unit/test_godot_unhandled_input_dispatch_order.gd.
+;
+; BUG-10 fix (2026-05-14): the wave-1C placement put BPH at idx 4
+; (between AttackMoveHandler and ClickHandler) under the mistaken
+; "lower-index = first" convention copied from AttackMoveHandler. That
+; convention is backwards; ClickHandler at the lower index actually
+; fired first and consumed every terrain click via deselect-all,
+; preventing BPH from ever reaching its confirm-click handler. The
+; selection-changed guard in BPH then cancelled the orphaned placement
+; state. Live-test #2 surfaced this; the log diagnostic at
+; `[click] LEFT: hit non-unit → deselect_all` arriving BEFORE the
+; `[build-placement] BUG-08 guard` line was the smoking gun.
+;
+; When in placement mode the handler calls
+; get_viewport().set_input_as_handled() so ClickHandler / BoxSelect /
+; DoubleClickSelect never see the confirm-click. When not in placement
+; mode the handler short-circuits and lets the other handlers run
+; normally.
+[node name="BuildPlacementHandler" type="Node" parent="."]
+script = ExtResource("13_buildplacement")
 
 [node name="HealthBarsOverlay" parent="." instance=ExtResource("9_healthbars")]
 

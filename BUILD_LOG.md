@@ -34,6 +34,41 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-14 — Phase 3 session 1 wave-close: BUG-10 sibling-order convention reversal
+
+**Branch:** `feat/phase-3-session-1`
+**Driver:** lead (no agent dispatch — surgical fix derived from log diagnostic).
+**Commits:** 1 (the docs-and-fix aggregator).
+**Test delta:** 1101 → **1102** (+1 new synthetic dispatch-order regression test). 0 failures. Lint clean.
+
+**What shipped:**
+
+Lead live-test #2 surfaced that the BUG-08 fix-wave (v0.20.7) did NOT close the Khaneh-placement bug. Log diagnostic from the live game showed `[box-select]` (idx 6) logging BEFORE `[click]` (idx 5) — proving Godot dispatches `_unhandled_input` in REVERSE sibling order, not the tree-document order codified in the project's AttackMoveHandler / BPH headers.
+
+Empirical regression-lock test (`test_godot_unhandled_input_dispatch_order.gd`) confirms: for siblings at idx 0/1/2, dispatch order is `[2, 1, 0]`. Pitfall #5 prose in `docs/PROCESS_EXPERIMENTS.md` was correct all along; the project headers and regression tests were locking in the broken order.
+
+**Fix:**
+- `main.tscn`: BuildPlacementHandler moved from idx 4 (between AttackMoveHandler and ClickHandler) to after DoubleClickSelect. Higher index → fires first in reverse-sibling-order dispatch.
+- `build_placement_handler.gd`: header docblock rewritten with the corrected convention + BUG-10 history. Entry log added at `_unhandled_input` for future diagnostics.
+- `test_phase_3_khaneh_placement.gd`: two regression tests flipped from `<` to `>` and renamed `..._before_click_handler` → `..._after_click_handler`.
+- `test_godot_unhandled_input_dispatch_order.gd`: NEW regression-lock test pinning Godot's dispatch behavior project-wide.
+- `tools/run_game.sh`: NEW interactive-launch wrapper that tees Godot output to `/tmp/shahnameh.log`. Live-test sessions now write a log Claude can `tail`/`read` directly, replacing the copy-paste round-trip.
+
+**Verdict notes:**
+
+- BUG-08's two defenses from v0.20.7 are PRESERVED: (a) BuildMenu Root=MOUSE_FILTER_STOP, (b) BPH selection_changed guard. Defense-in-depth — they protect against the original hypothesis (Button.action_mode press-edge leak) and any future deselection path even though the actual mechanism turned out to be sibling-order dispatch.
+- The Phase 2 session 1 wave 2B AttackMoveHandler convention is ALSO suspect — same diagnosis as BUG-10. Surfaced as NEW LATER L24. Not yet verified broken in live game (lead has not specifically tested Shift+A flow); deferred until next live-test confirms or refutes.
+- L22 (Pitfall #5 prose audit) CLOSED — prose was right, project layer fixed in this entry.
+
+**Process tool added:** `tools/run_game.sh` — interactive Godot wrapper that pipes stdout+stderr to `/tmp/shahnameh.log`. Future live-tests: `tools/run_game.sh` (in user terminal), then Claude reads `/tmp/shahnameh.log` directly. Removes the copy-paste round-trip that gated this diagnosis.
+
+**State for next session:**
+- Re-run live-test #2 (Khaneh placement). Should now place. The two preserved BUG-08 defenses + the BUG-10 sibling-order fix should provide robust input handling.
+- If AMH appears broken on Shift+A → left-click (lead test), L24 fix-wave dispatches with the same shape.
+- After live-test passes, open PR to main.
+
+---
+
 ## 2026-05-14 — Phase 3 session 1 post-live-test fix-wave: BUG-08 + BUG-09 + Farr gauge polish
 
 **Branch:** `feat/phase-3-session-1`
