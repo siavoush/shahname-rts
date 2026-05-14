@@ -19,6 +19,7 @@ const KargarScene: PackedScene = preload("res://scenes/units/kargar.tscn")
 const UnitScript: Script = preload("res://scripts/units/unit.gd")
 const BuildingScript: Script = preload(
 	"res://scripts/world/buildings/building.gd")
+const MainScene: PackedScene = preload("res://scenes/main.tscn")
 
 
 var harness: Variant = null
@@ -274,3 +275,53 @@ func test_placed_khaneh_has_collision_body_and_nav_obstacle() -> void:
 	assert_true(has_nav_obstacle,
 		"Placed Khaneh must contain a NavigationObstacle3D for "
 		+ "dynamic navmesh carving (RESOURCE_NODE_CONTRACT §3.2)")
+
+
+# ---------------------------------------------------------------------------
+# Flow 5 — Pitfall #5 regression lock: BuildPlacementHandler sibling order.
+#
+# Codifies the AttackMoveHandler precedent (test_phase_2_session_1_combat.gd
+# :1026 and :1118) for the new BuildPlacementHandler. Godot's
+# _unhandled_input dispatches in tree-document order — lower-index sibling
+# runs first. BuildPlacementHandler must run BEFORE ClickHandler so it can
+# consume the confirm-click during placement mode (otherwise ClickHandler
+# eats the click as deselect-all, the ghost is orphaned, and no
+# COMMAND_CONSTRUCT dispatches). The bug would survive every unit test
+# and only surface in live play.
+# ---------------------------------------------------------------------------
+
+func test_main_tscn_build_placement_handler_before_click_handler() -> void:
+	var main_node: Node = MainScene.instantiate()
+	add_child_autofree(main_node)
+	await get_tree().process_frame
+
+	var bph: Node = main_node.get_node_or_null("BuildPlacementHandler")
+	var ch: Node = main_node.get_node_or_null("ClickHandler")
+
+	assert_not_null(bph,
+		"main.tscn must contain BuildPlacementHandler (wave-1C deliverable)")
+	assert_not_null(ch, "main.tscn must contain ClickHandler")
+
+	if bph != null and ch != null:
+		assert_true(bph.get_index() < ch.get_index(),
+			"BuildPlacementHandler (idx=%d) must appear BEFORE ClickHandler (idx=%d) "
+			% [bph.get_index(), ch.get_index()])
+
+
+# Pitfall #5 standalone twin (same shape as the AttackMoveHandler precedent's
+# test_pitfall_5_attack_move_handler_before_click_handler_standalone).
+func test_pitfall_5_build_placement_handler_before_click_handler_standalone() -> void:
+	var main_node: Node = MainScene.instantiate()
+	add_child_autofree(main_node)
+	await get_tree().process_frame
+
+	var bph: Node = main_node.get_node_or_null("BuildPlacementHandler")
+	var ch: Node = main_node.get_node_or_null("ClickHandler")
+
+	assert_not_null(bph, "BuildPlacementHandler must be in main.tscn")
+	assert_not_null(ch, "ClickHandler must be in main.tscn")
+	if bph == null or ch == null:
+		return
+	assert_true(bph.get_index() < ch.get_index(),
+		"Pitfall #5: BuildPlacementHandler (idx=%d) must appear BEFORE ClickHandler (idx=%d) "
+		% [bph.get_index(), ch.get_index()])
