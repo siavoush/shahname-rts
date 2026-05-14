@@ -2,7 +2,7 @@
 title: Fog of War — Data Layer Contract
 type: contract
 status: ratified
-version: 1.3.0
+version: 1.3.1
 owner: world-builder
 summary: FogSystem autoload — boolean visibility grid, per-team two-layer storage, is_visible_to / get_last_seen / get_scout_candidates API, vision source registration (static/dynamic), two-pass phase ordering, death-position freezing, determinism guarantees.
 audience: all
@@ -227,7 +227,7 @@ func _footprint_cells(building: Node3D) -> Array[Vector2i]:
     return cells
 ```
 
-`Building.get_footprint_aabb()` returns a world-aligned `AABB`. Default implementation (in `building.gd`) uses `find_child("CollisionShape3D")` + BoxShape3D extent; subclasses override for non-rectangular footprints. Gameplay-systems owns this method. If wave 3A (FogSystem) ships before wave 1A (Mazra'eh + the method), FogSystem falls back to a 2×2 default per the base implementation's fallback clause.
+`Building.get_footprint_aabb()` returns a world-aligned `AABB`. Shipped implementation (in `building.gd`) uses `find_child("MeshInstance3D", true, false)` + `mesh.mesh.get_aabb()` — the mesh defines the footprint for placeholder-art buildings; subclasses may override for non-rectangular footprints. Gameplay-systems owns this method. If wave 3A (FogSystem) ships before a building subclass overrides this, FogSystem falls back to a 2×2 default per the base implementation's fallback clause.
 
 The footprint array is stored in the source record (alongside `team` and `radius_cells`) so it doesn't recompute every tick. For MVP buildings (2×2 to 4×4 grid footprints), this is 4–16 cells.
 
