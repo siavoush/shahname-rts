@@ -34,6 +34,49 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-14 — Phase 3 wave 3 (qa-engineer): integration tests for the Phase 3 economic loop
+
+**Branch:** `feat/phase-3-session-1`
+
+**Shipped:**
+
+1. **`test_phase_3_multi_cycle_gather.gd` — 4 integration tests.** Verifies back-to-back gather trips over 180 ticks via MatchHarness. Covers: second trip starts without manual re-command; cumulative coin delivery correct across 2 trips; mid-trip resource state does not corrupt; Kargar FSM is idle-or-gathering (never stuck). Commit `26ec95c`.
+
+2. **`test_phase_3_resource_system_chokepoint.gd` — 8 integration tests.** Verifies every ResourceSystem mutation flows through `change_resource`; `resource_changed` signal fires with correct (delta_x100, new_total_x100) payload; `reset()` restores starting values; affordability edge cases (exact-cost, zero-balance, over-limit). Commit `2da4faf`.
+
+3. **`test_phase_3_khaneh_pop_cap.gd` — 4 integration tests.** Verifies `place_at` increments `population_cap` by 10 per Khaneh; second Khaneh stacks correctly; `building_placed` signal fires; team isolation (Khaneh on team 2 does not affect team 1 cap). Commit `0b816e2`.
+
+4. **`test_phase_3_nav_obstacle_carving.gd` — 5 structural tests.** Verifies Khaneh scene contains NavigationObstacle3D + StaticBody3D (RESOURCE_NODE_CONTRACT §3.2 + BUG-07 regression locks); ghost preview has no collision body and is not in the `buildings` group; placed Khaneh IS in the `buildings` group. Actual navmesh-routing path verification deferred — NavigationServer requires a display server to bake, which isn't available headless. Commit `6deb8a1`.
+
+5. **`test_phase_3_cross_feature_smoke.gd` — 5 integration tests.** Drives gather + combat simultaneously via MatchHarness over 150 ticks to verify Phase 2 and Phase 3 systems do not corrupt each other. Also covers all three FarrDrainDispatcher drain paths directly: idle Kargar death → −1.0; gathering Kargar death → −0.5; returning Kargar death → −0.5; Piyade (combat unit) death → 0.0 drain. Commit `0ce566e`. Resolved a parse error in `_InstantScheduler.request_repath` (parent signature is 4-params: `unit_id, from, to, priority`; original stub used a 5-param async-callback pattern). Pattern corrected from `test_phase_2_session_1_combat.gd`'s `_InstantPathScheduler`.
+
+6. **`docs/ARCHITECTURE.md` updated to v0.20.5.** §6 entry added for this wave.
+
+**Test-count delta:** 1059 → 1088 passing (+29). 3 pending unchanged (headless nav-routing limitation). 2700 asserts, 83 scripts, 10.534s. GUT run clean — 0 failures.
+
+**Did not ship (intentional deferrals):**
+- Nav-obstacle actual routing test: NavigationServer bake requires display server; cannot verify path avoids Khaneh in headless mode.
+- Production-queue population ceiling test: no unit production system in Phase 3 session 1 yet.
+
+**Coverage gaps inherited (not new):**
+- FarrSystem per-tick Atashkadeh contribution not yet testable — Atashkadeh is a session-2 deliverable.
+
+**Live-game-broken-surface:**
+- Cross-feature smoke flow exercises the gather+combat coexistence chain that headless tests can't fully reproduce: clicking a Kargar mid-gather while a combat unit is engaged, Farr meter moving. Tests confirm the FSM state isolation holds at the data layer; visual coexistence verification stays with the lead's wave-close playtest.
+- Nav-obstacle carving (whether placed Khaneh actually deflects worker paths) is entirely a live-game check — the structural presence of NavigationObstacle3D is test-verified, but runtime path recalculation is not.
+
+**LATER items surfaced:**
+- None new. L16 (per-tick repath throttle in UnitState_Attacking) re-confirmed by `_InstantScheduler` starvation behavior in cross-feature smoke: the attacker re-issues `request_repath` every tick. Still within tolerance at 15 units. Profile at 50+.
+
+**Commits (per-TDD-cycle):**
+- `26ec95c` — test_phase_3_multi_cycle_gather.gd (4 tests)
+- `2da4faf` — test_phase_3_resource_system_chokepoint.gd (8 tests)
+- `0b816e2` — test_phase_3_khaneh_pop_cap.gd (4 tests)
+- `6deb8a1` — test_phase_3_nav_obstacle_carving.gd (5 tests, structural)
+- `0ce566e` — test_phase_3_cross_feature_smoke.gd (5 tests) + parse-error fix for _InstantScheduler
+
+---
+
 ## 2026-05-08 — Phase 3 session 1 wave 1C (gameplay-systems): Khaneh + placement skeleton
 
 **Branch:** `feat/phase-3-session-1`

@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.20.4
+version: 0.20.5
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -18,8 +18,8 @@ ssot_for:
 references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md, RESOURCE_NODE_CONTRACT.md, AI_DIFFICULTY.md, ../02_IMPLEMENTATION_PLAN.md, STUDIO_PROCESS.md]
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
-last_updated: 2026-05-08
-# bumped to v0.20.4 — Phase 3 wave 1C: Khaneh + placement skeleton
+last_updated: 2026-05-14
+# bumped to v0.20.5 — Phase 3 wave 3: QA integration tests
 ---
 
 # Architecture — Target Shape and Build State
@@ -1350,6 +1350,25 @@ Wave 1C ships the first building-placement loop. The Khaneh (house) is the smoke
 - `d334a71` — Build menu UI + scene + 13 tests + main.tscn wire
 - `1283518` — BuildPlacementHandler + ghost preview + state_machine map + 16 tests + main.tscn wire
 - `e006ade` — Integration test (MatchHarness) + 4 tests
+
+---
+
+### v0.20.5 — Phase 3 wave 3: QA integration tests (2026-05-14) — qa-engineer
+
+Wave 3 ships integration tests covering the Phase 3 economic loop end-to-end. Five new test files target the gather cycle, ResourceSystem chokepoint, Khaneh pop-cap, nav-obstacle carving (structural), and cross-feature smoke flows (gather + combat coexistence, FarrDrainDispatcher drain paths).
+
+**Test-count delta:** 1059 → 1088 passing (+29). 3 pending unchanged (headless nav-routing limitation). 2700 asserts across 83 scripts in 10.534s.
+
+**Commit chain (per-TDD-cycle):**
+- `26ec95c` — `test_phase_3_multi_cycle_gather.gd` (4 tests): back-to-back gather trips; second-trip starts immediately; delivery increments; mid-trip resource change does not corrupt state.
+- `2da4faf` — `test_phase_3_resource_system_chokepoint.gd` (8 tests): all resource mutations flow through `change_resource`; `resource_changed` signal fires with correct delta/total; `reset()` restores starting values; affordability edge cases (exact-cost, zero-balance, over-limit).
+- `0b816e2` — `test_phase_3_khaneh_pop_cap.gd` (4 tests): `place_at` increments `population_cap` by 10; second Khaneh stacks; `building_placed` signal fires; team isolation (Khaneh for team 2 does not affect team 1 cap).
+- `6deb8a1` — `test_phase_3_nav_obstacle_carving.gd` (5 tests, structural): Khaneh scene contains `NavigationObstacle3D`; StaticBody3D collision shape present; ghost preview has NO collision body and NOT in `buildings` group; placed Khaneh IS in `buildings` group. Actual routing verification is headless-limited (NavigationServer bake requires display server).
+- `0ce566e` — `test_phase_3_cross_feature_smoke.gd` (5 tests): gather + combat coexist across 150 ticks without state corruption; FarrDrainDispatcher dispatches correct drain per unit FSM state at death time (idle Kargar → −1.0; gathering/returning Kargar → −0.5; Piyade death → 0.0 drain).
+
+**LATER items surfaced this wave:** none new. L16 (per-tick repath throttle in Attacking) remains the live concern at 50+ units — `_InstantScheduler` in cross-feature smoke test confirmed re-issue every tick during MockPathScheduler starvation; added explicit comment in test noting the L16 surface.
+
+**Coverage gaps (intentional):** nav-obstacle actual routing test deferred (headless limitation, no display server → NavigationServer bake fails); production-queue pop-ceiling test deferred (no unit production in Phase 3 session 1 yet).
 
 ---
 
