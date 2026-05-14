@@ -2,28 +2,28 @@
 title: Resource Node Schema Contract
 type: contract
 status: ratified
-version: 1.1.1
+version: 1.2.0
 owner: world-builder
-summary: Resource gathering — ResourceNode hierarchy (MineNode, Mazra'eh), three-call extract API, IDropoffTarget protocol, fertile-zone placement, EventBus signals, BalanceData keys.
+summary: Resource gathering — ResourceNode hierarchy (MineNode + Mazra'eh-as-Building-subclass via duck-typing), three-call extract API (request_extract / complete_extract / release_extract), IDropoffTarget protocol, fertile-zone placement, EventBus signals, BalanceData keys.
 audience: all
 read_when: working-on-resources-mines-farms-gather-or-worker-ai
 prerequisites: [MANIFESTO.md, SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md]
 ssot_for:
-  - ResourceNode abstract base + MineNode + Mazra'eh subclass hierarchy
-  - three-call extract API (begin_extract / tick_extract / release_extract)
-  - ExtractResult enum (GATHERING, YIELD_READY, NODE_DEPLETED, NODE_FULL, INVALID)
+  - ResourceNode abstract base + MineNode subclass + Mazra'eh duck-typed Building subclass
+  - three-call extract API (request_extract / complete_extract / release_extract) with Dictionary payload
+  - state-side dwell counter pattern (extract_ticks field on node, countdown on UnitState_Gathering)
   - IDropoffTarget duck-typed protocol
   - fertile-zone placement (Array[Vector2i] map metadata, WorldGrid.is_fertile)
   - NavigationObstacle3D ownership (mine scenes carry it; farms don't)
-  - depletion lifecycle (deferred-emit via cleanup phase)
+  - depletion lifecycle (queue_free.call_deferred for mines; building-destruction for farms)
   - four resource-node EventBus signals
   - resource_node_depleted dual-mode payload (API ref + telemetry destructure)
   - ResourceNodeConfig keys (mine + farm yield/stock/workers)
 references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md]
 tags: [resources, mines, farms, gather, navigation, fertile-tiles, signals]
 created: 2026-04-30
-last_updated: 2026-04-30
-provenance: Outcome of Sync 4 — joint Constraint Negotiation between world-builder and gameplay-systems. Path 2 (workers gather grain) ratified by design chat 2026-04-30. Convergence Review revisions 2026-05-01.
+last_updated: 2026-05-14
+provenance: Outcome of Sync 4 — joint Constraint Negotiation between world-builder and gameplay-systems. Path 2 (workers gather grain) ratified by design chat 2026-04-30. Convergence Review revisions 2026-05-01. v1.2.0 wave-1A patch (2026-05-14) — §4 SSOT-fix to align consumer-facing API prose with shipped code (the wave-1A implementation walked away from the v1 begin_extract / tick_extract / ExtractResult-enum shape; this contract version documents the actual three-call API in flight) + Mazra'eh-as-duck-typed-Building-subclass shape from Room A Open Space.
 ---
 
 # Resource Node Schema Contract
@@ -233,81 +233,145 @@ Workers can walk onto the Mazra'eh's tile to gather — there is no `NavigationO
 
 ## 4. Consumer-Facing API — the `Gathering` State's View
 
-### 4.1 The contract from the consumer's side
+> **Version 1.2.0 reality check (2026-05-14):** the §4 prose below describes the API the SHIPPED wave-1A code uses (`request_extract` / `complete_extract` / `release_extract` with `Dictionary` payloads + a state-side dwell counter). The original v1 contract spec'd `begin_extract` / `tick_extract` / `release_extract` with an `ExtractResult` enum; the wave-1A implementation (2026-05-08, see ARCHITECTURE.md §6 v0.20.2) deliberately walked away from that design for the rationale documented in `game/scripts/world/resource_nodes/resource_node.gd` lines 12–33 (no per-worker progress dict on the node, no deferred-emit cleanup, no node `_sim_tick`). This SSOT-fix patch (v1.2.0) brings the contract in line with the shipped code per the §9 2026-05-14 rule (SSOT prose contradictions are BLOCKING at wave-close).
 
-The worker's `Gathering` state holds two refs: a `ResourceNode` (target) and nothing else. Carry state lives on the worker. The state issues exactly three calls into the node across its lifetime:
+### 4.1 The shipped three-call API
 
-1. `node.begin_extract(self) -> bool` from `enter()`. Returns false if the node is depleted, full, or invalid — state immediately transitions to `Idle` (or design-defined retarget; see §9 #1).
-2. `node.tick_extract(self, dt) -> ExtractResult` once per `_sim_tick`. Branch on the enum, never on the subclass type.
-3. `node.release_extract(self)` from `exit()`. Single deterministic cleanup point. Always called, even on death.
+The worker's `UnitState_Gathering` state holds two refs: a target node (any node duck-typing the three-call API, including non-`ResourceNode` subclasses — see §4.5 for Mazra'eh) and nothing else. Carry state lives on the worker. The state issues exactly three calls into the node across its lifetime:
 
-The `Gathering` state has no knowledge of mines, farms, depletion semantics, fertile zones, or building lifecycles. All that lives behind the three method calls.
+1. `node.request_extract(unit_id: int) -> bool` from `_sim_tick` after the worker arrives at the node. Returns `false` if the node is depleted, full (all `max_slots` occupied), or this `unit_id` already holds a slot here. State transitions to Idle on rejection.
+2. `node.complete_extract(unit_id: int) -> Dictionary` from `_sim_tick` after the state-side dwell timer (`_dwell_remaining_ticks`) reaches zero. Returns `{ kind: StringName, amount_x100: int }` — the carry payload. Decrements the node's `reserves_x100` (no-op for `Mazra'eh` with `reserves_x100 = -1`) and frees the worker's slot. Empty payload (`kind=&""`, `amount_x100=0`) signals an unknown-worker double-complete; the state never receives this in correctly-shaped code.
+3. `node.release_extract(unit_id: int) -> void` from `exit()`. Idempotent — releasing a slot the worker doesn't hold is a no-op. Per State Machine Contract §3.2, `exit()` is called on every leave path including death.
 
-### 4.2 Gathering state skeleton
+**Why state-side dwell (not on-node tick accumulator):** the wave-1A simplification keeps the node's API surface to three methods and avoids a per-worker progress dictionary on the node. The state has its own `_dwell_remaining_ticks` counter, initialized at slot-grant time from `node.extract_ticks` (a public field, kind-specific). The node doesn't need a `_sim_tick`; depletion is computed inside `complete_extract` at trip-end.
+
+The `UnitState_Gathering` state has no knowledge of mines, farms, depletion semantics, fertile zones, or building lifecycles. All that lives behind the three method calls and the node's `extract_ticks` field.
+
+### 4.2 Gathering state skeleton (shipped, abbreviated)
+
+The shipped state at `game/scripts/units/states/unit_state_gathering.gd` follows this shape. The full implementation includes movement-driving + path-state branches; the gather-specific surface below is the contract-relevant subset.
 
 ```gdscript
-# units/states/gathering.gd
-class_name Gathering extends State
+# game/scripts/units/states/unit_state_gathering.gd  (gameplay-systems)
+class_name UnitState_Gathering extends "res://scripts/core/state_machine/unit_state.gd"
 
-const id: StringName = &"gathering"
-const interrupt_level: int = InterruptLevel.COMBAT  # damage interrupts gathering
+# id = &"gathering" — LOAD-BEARING per Open Space sync (ARCHITECTURE.md §6
+# v0.20.0). The Farr-drain dispatcher reads current.id at unit-death time
+# to distinguish gather-death (drain -0.5) from idle-death (drain -1.0).
 
-var _node: ResourceNode = null
+var _target_node: Variant = null         # any node duck-typing request_extract
+var _slot_held: bool = false
+var _dwell_remaining_ticks: int = 0      # state-side dwell counter
+var _cached_unit_id: int = -1
 
-func enter(prev: State, ctx: Unit) -> void:
-    _ctx = ctx
-    var payload: Dictionary = ctx.command_queue.peek().payload
-    _node = payload.get(&"node")
-    if _node == null or not _node.begin_extract(ctx):
-        ctx.fsm.transition_to(&"idle")   # see §9 #1 (retarget policy)
+func enter(_prev: Object, ctx: Object) -> void:
+    # ... resolve target_node from ctx.current_command.payload &"target_node"
+    # Defensive: validate target via has_method(&"request_extract") — duck-type
+    # check is the discovery seam; no class_name check needed. Both MineNode
+    # and Mazra'eh-as-Building pass.
 
-func _sim_tick(dt: float, ctx: Unit) -> void:
-    match _node.tick_extract(ctx, dt):
-        ResourceNode.ExtractResult.GATHERING:
-            pass   # node has called ctx.set_carry(...) if progress was made
-        ResourceNode.ExtractResult.YIELD_READY:
-            var dropoff := _node.get_dropoff_target(ctx)
-            ctx.append_command(&"deposit", { target: dropoff })
-            ctx.fsm.transition_to_next()
-        ResourceNode.ExtractResult.NODE_DEPLETED, ResourceNode.ExtractResult.INVALID:
-            ctx.fsm.transition_to(&"idle")   # see §9 #1
-        ResourceNode.ExtractResult.NODE_FULL:
-            ctx.fsm.transition_to(&"idle")   # rare; another worker took the slot first
-
-var _ctx: Unit = null   # stored in enter(), cleared in exit()
+func _sim_tick(dt: float, ctx: Object) -> void:
+    # ... drive movement until arrival ...
+    if not _slot_held:
+        var granted: bool = _target_node.request_extract(int(ctx.unit_id))
+        if not granted:
+            ctx.fsm.transition_to(&"idle")  # see §9 #1 (retarget policy)
+            return
+        _slot_held = true
+        _cached_unit_id = int(ctx.unit_id)
+        _dwell_remaining_ticks = int(_target_node.extract_ticks)
+        if _dwell_remaining_ticks <= 0:
+            _dwell_remaining_ticks = 1   # one-tick minimum
+    _dwell_remaining_ticks -= 1
+    if _dwell_remaining_ticks > 0:
+        return   # still dwelling
+    # Dwell complete — pull the carry payload.
+    var payload: Dictionary = _target_node.complete_extract(int(ctx.unit_id))
+    _slot_held = false
+    var carry_kind: StringName = payload.get(&"kind", &"")
+    var carry_amount_x100: int = int(payload.get(&"amount_x100", 0))
+    # Carry written to ctx._carry_kind / _carry_amount_x100 — UnitState_Returning
+    # reads these in its enter() for the deposit step.
+    ctx.set(&"_carry_kind", carry_kind)
+    ctx.set(&"_carry_amount_x100", carry_amount_x100)
+    ctx.fsm.transition_to(&"returning")
 
 func exit() -> void:
-    if _node != null and is_instance_valid(_node) and _ctx != null:
-        _node.release_extract(_ctx)
-    _node = null
-    _ctx = null
+    if _target_node != null and is_instance_valid(_target_node) and _slot_held:
+        if _cached_unit_id != -1:
+            _target_node.release_extract(_cached_unit_id)
+    # Reset state.
 ```
 
-What this demonstrates, in order:
-- One polymorphic call surface — the state has no idea whether `_node` is a mine or a farm-building.
-- All gather-progress mutation happens inside `tick_extract` (which calls `ctx.set_carry(...)` per §1.2 and §4.3). The state never directly mutates carry.
-- Dropoff target obtained via `_node.get_dropoff_target(ctx)` — no `Throne` reference in the state.
-- State machine completion uses `transition_to_next()` and `append_command` per State Machine Contract §2.5 / §3.4.
-- `exit()` is the single cleanup point — releases the slot deterministically. Per State Machine Contract §3.2, `exit` is called on every leave path including death (handled by §4 of that contract).
+What this demonstrates:
+- **One polymorphic call surface.** The state uses `has_method(&"request_extract")` as the discovery filter. It has no idea whether `_target_node` is a `MineNode extends ResourceNode` or a `Mazra'eh extends Building` (see §4.5).
+- **State-side dwell counter.** Decoupled from the node's tick path. `_dwell_remaining_ticks` lives on the state and counts down in the state's `_sim_tick`.
+- **Dictionary payload.** `complete_extract` returns `{ kind, amount_x100 }` — typed bag, not an enum. Branch on whether the kind is non-empty if you need to distinguish empty (unknown-worker) from valid payloads.
+- **Carry mutation via `ctx.set()`.** The state writes `_carry_kind` / `_carry_amount_x100` on the worker directly. The node does NOT call into the worker — the wave-1A simplification moved that responsibility to the state (vs. the original v1 design which had the node call `worker.set_carry()`).
+- **Deterministic cleanup at `exit()`.** Per State Machine Contract §3.2, `exit()` is called on every leave path. The idempotent `release_extract` makes the slot-release safe even when the slot has already been freed by a previous `complete_extract` call.
 
-### 4.3 Worker carry mutation rule
+### 4.3 Worker carry storage
 
-The node calls `worker.set_carry(kind: StringName, amount: int)`. This is a sanctioned cross-component method call per Simulation Contract §1.3 — the *worker* exposes the method, the worker's `set_carry` internally calls `_set_sim(&"_carry_kind", kind)` and `_set_sim(&"_carry_amount", amount)`. The node never reaches into worker fields directly.
+The carry payload is two fields on the worker:
 
 ```gdscript
-# units/worker.gd  (gameplay-systems)
-func set_carry(kind: StringName, amount: int) -> void:
-    _set_sim(&"_carry_kind", kind)
-    _set_sim(&"_carry_amount", amount)
+# game/scripts/units/unit.gd or kargar.gd  (gameplay-systems)
+var _carry_kind: StringName = &""           # &"coin" | &"grain" | &""(empty)
+var _carry_amount_x100: int = 0             # fixed-point per Sim Contract §1.6
 ```
 
-The worker's `Deposit` state (a sibling state, not specified in this contract — lives in the worker's state set) reads `_carry_kind` and `_carry_amount` after the `move-to-dropoff` step completes, calls `dropoff.deposit(_carry_kind, _carry_amount)`, then resets carry to zero via its own `set_carry(&"", 0)` and transitions onward.
+These are written by `UnitState_Gathering` at trip-end (read from `complete_extract`'s return Dictionary) and read by `UnitState_Returning` at the deposit step. The fields live on the unit script; `_carry_kind = &""` is the "empty carry" sentinel.
 
-### 4.4 What the state does NOT do
+`UnitState_Returning` calls the dropoff target's `deposit(resource_kind, amount, worker)` method (see §5), then resets carry to `&""` / `0`.
 
-- Does not call `ctx.set_carry()` itself. That's the node's job through `tick_extract`.
-- Does not look up the next node when one depletes. Auto-retarget is escalated to design (§9 #1) and lives in `ResourceSystem` if/when it ships, not in this state.
-- Does not validate the dropoff. It trusts `get_dropoff_target` to return a live `Node3D` implementing the deposit protocol.
+### 4.4 What the `Gathering` state does NOT do
+
+- Does not call into the worker via a node-side method (no `node` → `worker.set_carry()` indirection — payload comes back from `complete_extract` as a Dictionary).
+- Does not look up the next node when one depletes. Auto-retarget is escalated to design (§9 #1) and lives in `ResourceSystem` or a future scouting AI if/when it ships, not in this state.
+- Does not validate the dropoff. `UnitState_Returning` does the dropoff handoff; the gather state's job ends at `transition_to(&"returning")` with the carry written.
+
+### 4.5 Mazra'eh — first non-`ResourceNode` consumer of the three-call API (2026-05-14)
+
+Per Room A Open Space (2026-05-14, see `02g_PHASE_3_SESSION_2_KICKOFF.md` §2.4 Decision 4), Mazra'eh extends `Building` (not `ResourceNode`) and implements the three-call API as duck-typed methods on itself. The schema collision — Mazra'eh is simultaneously a `Building` (placement lifecycle, HP, &"buildings" group, unit_id counter) and a "resource node" from the gather-loop perspective — is resolved by **duck-typing the three-call API** rather than forcing single-inheritance gymnastics.
+
+```gdscript
+# game/scripts/world/buildings/mazraeh.gd  (world-builder)
+extends "res://scripts/world/buildings/building.gd"
+class_name Mazraeh
+
+# Mazra'eh implements the three-call ResourceNode API on itself.
+# UnitState_Gathering's has_method(&"request_extract") filter discovers
+# Mazra'eh without needing it to extend ResourceNode.
+
+var kind: StringName = &"grain"             # duck-type field for ResourceSystem registry
+var reserves_x100: int = -1                  # -1 sentinel = infinite (per §1.5); same field name as ResourceNode base
+var max_slots: int = 1                       # from BalanceData.economy.resource_nodes.farm_max_workers
+var extract_ticks: int = 90                  # from BalanceData — "tending" dwell, 3s at 30Hz
+var yield_per_trip_x100: int = 200           # from BalanceData — 2 Grain per trip
+var is_gatherable: bool = false              # flips true at construction-complete
+# (slot bookkeeping replicated from ResourceNode.gd, OR composed via small helper)
+
+func request_extract(unit_id: int) -> bool: ...   # see ResourceNode shape
+func complete_extract(unit_id: int) -> Dictionary: ...
+func release_extract(unit_id: int) -> void: ...
+```
+
+**Why option (iii) duck-type (vs (i) extends ResourceNode + replicate Building, (ii) Building with composed ResourceNode child):**
+
+- `UnitState_Gathering` already discovers consumers via `has_method(&"request_extract")` (the wave-1A design choice that paid back here). No state-side change required to support Mazra'eh.
+- Both `Building` (placement lifecycle, build-menu integration, NavObstacle owning) and `ResourceNode` (three-call API) bases stay clean. No subclass forced to mix concerns.
+- The cost — Mazra'eh re-implements the three-call methods rather than inheriting them — is ~30 lines of code. Acceptable for a single concrete subclass; if future buildings need the same shape (post-MVP), the gather methods can hoist into a shared mixin module or a small composition helper.
+
+**Mazra'eh-specific differences from MineNode (worth flagging for §8's worked example):**
+
+- `reserves_x100 = -1` (infinite — per §1.5; same field name as ResourceNode base, distinct from §1's older `current_stock` shorthand). `complete_extract`'s decrement is a no-op for negative sentinels.
+- `extract_ticks = 90` (3s dwell) — longer than MineNode's 60-tick dwell. Reads visually as "tending the field" (dehqan stewardship — see Mazra'eh script header) rather than "extracting from the mine."
+- `yield_per_trip_x100 = 200` (2 Grain per trip) — smaller than MineNode's coin payload (1000 = 10 Coin). Long dwell + small payload combine for the trickle-yield visual.
+- `is_gatherable = false` while under construction; flips `true` when the building system's construction-complete signal fires.
+- Mazra'eh self-registers with `ResourceSystem.register_node(self)` at construction-complete (the wave-1A API, see Decision 4 above + §2.3).
+- No `NavigationObstacle3D` — workers walk ONTO the farm tile to gather (§3.2).
+
+The cultural-framing rationale for the long dwell lives in `mazraeh.gd`'s header — the *dehqan* (دهقان, landed cultivator) model from Ferdowsi's Shahnameh — and is referenced here for visibility but is NOT load-bearing for the API contract. Loremaster reviews the cultural framing at wave-close.
 
 ---
 
@@ -408,43 +472,53 @@ The keys live under `BalanceData.economy.resource_nodes.*`. `MineNode._ready()` 
 
 ## 8. Worked Example: Kargar Mines Coin → Deposits at Throne
 
-The example below traces a full gather→deposit cycle for a coin mine, mirroring State Machine Contract §8. The grain path is identical except for `resource_kind = &"grain"`, the `Mazra'eh` target node, and the BalanceData yield/capacity numbers — same EventBus emissions, same state transitions, same dropoff. World-builder to extend with mine-side or farm-side visual/proxy specifics if needed.
+The example below traces a full gather→deposit cycle for a coin mine using the SHIPPED three-call API (v1.2.0 §4). The grain path is identical except for `kind = &"grain"`, the `Mazra'eh` target node (extends Building, duck-types the API — see §4.5), and the BalanceData yield/dwell numbers — same EventBus emissions, same state transitions, same dropoff. World-builder to extend with mine-side or farm-side visual/proxy specifics if needed.
 
 ```
 tick T0    Player right-clicks coin mine M1 with one kargar selected.
-             Input layer: unit.replace_command(&"gather", { node: M1 }).
-             FSM transition_to_next() pops Gather → routes to Moving (path to M1).
+             Input layer: unit.replace_command(&"gather", { target_node: M1 }).
+             FSM transition_to(&"moving") routes the kargar toward M1.
 
-tick T1    Moving.enter() issues request_move(M1.position). Path arrives next tick.
+tick T1-T6   UnitState_Moving drives the MovementComponent toward M1.position.
 
-tick T7    Path consumed. Moving completes, calls transition_to_next().
-             Pops residual Gather command → transitions to Gathering.
-             Gathering.enter():
-               M1.begin_extract(kargar) -> true (slot 1/2 occupied).
+tick T7    Path consumed; arrival latched. UnitState_Moving completes,
+             pops the residual Gather command, transitions to UnitState_Gathering.
+             UnitState_Gathering._sim_tick():
+               M1.request_extract(kargar.unit_id) -> true (slot 1/1 occupied).
                EventBus.extract_started.emit(kargar.unit_id, M1.node_id, 7).
+               _dwell_remaining_ticks = M1.extract_ticks (60 at MVP).
 
-tick T8-T67  Each tick: M1.tick_extract(kargar, dt) returns GATHERING.
-              M1 calls kargar.set_carry(&"coin", carry+1). M1 decrements
-              current_stock via _set_sim. (60 ticks = 2s = full load
-              of 10 if BalanceData.coin_yield_per_tick=1 with rounding.)
+tick T8-T67  Each tick: _dwell_remaining_ticks counts down on the state.
+              The node has no _sim_tick — it's idle through the dwell.
+              60 ticks = 2s at SIM_HZ=30.
 
-tick T68    M1.tick_extract returns YIELD_READY.
-              EventBus.extract_completed.emit(kargar.unit_id, M1.node_id, 10, 68).
-              Gathering: ctx.append_command(&"deposit", { target: throne }),
-                         ctx.fsm.transition_to_next() → routes to Moving.
-              Gathering.exit(): M1.release_extract(kargar). Slot freed.
+tick T68    _dwell_remaining_ticks reaches 0.
+              payload: Dictionary = M1.complete_extract(kargar.unit_id)
+                returns { kind: &"coin", amount_x100: 1000 }  (10 Coin).
+              M1.reserves_x100 decrements by 1000.
+              kargar._carry_kind / _carry_amount_x100 written by the state.
+              EventBus.extract_completed.emit(kargar.unit_id, M1.node_id, 1000, 68).
+              State transitions to UnitState_Returning.
+              UnitState_Gathering.exit(): M1.release_extract — slot already
+                freed inside complete_extract, idempotent no-op here.
 
-tick T75    Arrival at Throne. Moving completes, transition_to_next() pops
-              Deposit → transitions to Deposit state (worker-owned, not in this contract).
-              Deposit calls throne.deposit(&"coin", 10, kargar).
-              ResourceSystem.add(&"coin", 10).
-              EventBus.resources_deposited.emit(kargar.unit_id, &"coin", 10, 75).
-              kargar.set_carry(&"", 0).
-              Deposit.transition_to_next() — queue empty, Idle.
+tick T69-T74  UnitState_Returning drives the kargar toward the Throne via
+              ResourceSystem.dropoff_for_team or a scene-tree lookup.
+
+tick T75    Arrival at Throne. UnitState_Returning calls
+              throne.deposit(kargar._carry_kind, kargar._carry_amount_x100, kargar)
+              -> throne.deposit(&"coin", 1000, kargar).
+              ResourceSystem.change_resource(team, &"coin", +1000,
+                                              &"gather_deposit", kargar).
+              EventBus.resources_deposited.emit(kargar.unit_id, &"coin", 1000, 75).
+              kargar._carry_kind = &"", _carry_amount_x100 = 0.
+              UnitState_Returning.transition_to_next() — queue empty, Idle.
 
 [loop: kargar would normally have a follow-up gather queued via Shift-click,
  or auto-return logic per §9 #1 once design resolves it]
 ```
+
+**Grain path variant (Mazra'eh, wave 1A 2026-05-14):** the same trace with three differences — (a) `kind = &"grain"`; (b) `extract_ticks = 90` (3s dwell, "tending the field"); (c) `yield_per_trip_x100 = 200` (2 Grain per trip). Mazra'eh's `complete_extract` is a no-op on the `reserves_x100` decrement because `reserves_x100 = -1` (infinite, per §1.5). All EventBus emissions, state transitions, and dropoff calls are identical to the coin path. The duck-typed three-call API (§4.5) means UnitState_Gathering does not branch on the target's class.
 
 ---
 
@@ -463,6 +537,8 @@ tick T75    Arrival at Throne. Moving completes, transition_to_next() pops
 ### 9.X Resolved
 
 - *(2026-04-30, design chat)* **Grain mechanic — Path 2 ratified.** Workers gather grain from `Mazra'eh` farms via the standard `ResourceNode` API. Reasoning: workers are foundational to the RTS archetype; passive grain would have stripped that role for one resource type and broken the worker's centrality. Div faction may receive different economics post-MVP — separate research track. Patch applied in v1.1: §1.1 (two MVP subclasses), §1.4 (Mazra'eh extends `ResourceNode`), §1.5 (rationale for `current_stock = -1`), §2.3 (Mazra'eh self-registration), §3.4 (lifecycle restored), §6 (EventBus emitter language), §7 (`grain_yield_per_trip`, `grain_yield_per_tick`, `farm_max_workers` keys added).
+
+- *(2026-05-14, Phase 3 session 2 Room A Open Space — wave 1A SSOT-fix patch)* **§4 consumer-facing API rewritten to match shipped code.** The original v1 contract spec'd `begin_extract` / `tick_extract` / `release_extract` with an `ExtractResult` enum. The wave-1A implementation (2026-05-08, see ARCHITECTURE.md §6 v0.20.2) deliberately walked away from that design — the shipped API is `request_extract` / `complete_extract` / `release_extract` with `Dictionary` payloads, and the dwell counter lives on `UnitState_Gathering` (`_dwell_remaining_ticks`), not on the node. Rationale documented in `game/scripts/world/resource_nodes/resource_node.gd` lines 12–33: dwell-on-state-side, payload-on-completion, no per-worker progress dict on the node, no node `_sim_tick`. **The §9 2026-05-14 rule (SSOT prose contradictions are BLOCKING at wave-close)** made this patch a wave-1A blocker. v1.2.0 §4 + §8 now describe the shipped semantics. Also added §4.5 documenting Mazra'eh as the first non-`ResourceNode` consumer of the duck-typed three-call API — Mazra'eh extends `Building` (option iii from Room A), and `UnitState_Gathering`'s `has_method(&"request_extract")` filter at `unit_state_gathering.gd:143` is the discovery seam. The cultural-framing rationale for Mazra'eh's longer dwell (90 ticks vs MineNode's 60) lives in `mazraeh.gd`'s header and is NOT load-bearing for the API contract. **Caveat:** §1.4 still says `Mazraeh extends ResourceNode` and §3.4 still describes Mazra'eh's depletion-on-fatal-damage path — both are world-builder-owned sections (§1–§3) and will need a follow-up patch from world-builder when wave 1A's Mazra'eh scene + class file ship and HP arrives at wave 1C. Flagged for world-builder's wave-1A close report.
 
 ---
 
