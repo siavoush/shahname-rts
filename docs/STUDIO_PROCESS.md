@@ -421,6 +421,8 @@ This section accumulates rules added/modified through retros. Each entry is date
 
   Cites Manifesto Principle 1 (Truth-Seeking — adversarial fresh-eyes catches what in-room familiarity can't) and Principle 7 (SSOT — the canonical manifesto, not the local interpretation, is the source of truth for the project's promises). [Phase 3 session 1 retro follow-up](#phase-3-session-1--economic-loop-foundation)
 
+- *(2026-05-14, post-Phase-3-session-1 follow-up)* **Decision-arc instance continuity: the SAME agent instances persist from Open Space → implementation waves → retro.** Not just "session-persistent" but "continuous across the temporal arc of a single decision." When an Open Space sync ratifies a design, the agents who argued for it are the SAME instances dispatched to implement it in subsequent waves, and the SAME instances who reflect on it at retro. Documents are not substitutes for agents-who-remember-arguing-the-rule; the rule says what, but only the agent who debated knows *why*, what was rejected, what the unresolved worries were. See §12.5 for the canonical incident (Phase 3 session 1's L23 verification gap, which the engine-architect-who-argued-for-worktrees would have caught at dispatch time if they'd been the dispatched instance). **Operational form:** when the lead dispatches a specialist for work derived from a prior Open Space sync, the lead uses `SendMessage to <existing-persistent-instance>` rather than `Agent({subagent_type: ...})`. Same for retro participants — the agents who lived the arc are the ones who reflect. The cycling exceptions (Tier-3 ephemeral one-shot + PR-time fresh reviewers) remain as documented. Cites Manifesto Principle 1, Principle 6 (Partnership — continuity of self is how agents take care of each other across time), Principle 10 (Feedback Cycle — the loop only closes if the same minds that hypothesized are the same minds that observe and revise). [Phase 3 session 1 retro follow-up](#phase-3-session-1--economic-loop-foundation)
+
 ---
 
 ## 10. Sync Log
@@ -757,6 +759,26 @@ We don't drift between modes. We switch deliberately:
 
 - **Entering implementation mode** — after a Convergence Review ratifies (or after a phase plan is locked), the lead announces the switch and the agents stand down from the team channel. They work async until invited back.
 - **Returning to design mode** — when an architectural gap surfaces, when a phase ends and a retro is needed, or when a tier transition approaches, the lead reactivates the team and convenes a sync. Implementation work pauses on affected files.
+
+### 12.5 Mode separation is COGNITIVE, not INSTANCE separation (2026-05-14)
+
+The mode boundary above is about the *kind of thinking* the agents are doing (open-ended deliberation in design mode; bounded execution in implementation mode), NOT about *which instances* are doing it.
+
+**The same agent instances persist across all three temporal points of a decision arc:**
+
+1. **Open Space sync (design mode)** — agents debate the decision.
+2. **Implementation waves (implementation mode)** — those SAME agent instances ship the code that implements the ratified decision.
+3. **Retro (back to design mode)** — those SAME agent instances reflect on the lived experience of implementing what they debated.
+
+This continuity is **load-bearing for the studio process to work**. Documents (§9 rules, ratified contracts) are not substitutes for agents-who-remember-arguing-the-rule. The rule says X; the agent who debated knows WHY X, what alternatives were rejected, what the limits of X are, what they were worried about that didn't get fully resolved. Re-instantiated agents lose all of that.
+
+**Why this matters (canonical incident):** Phase 3 session 1 dispatched fresh fix-wave agents to ship work governed by the 2026-05-13 Open Space's ratified Pitfall #7 mitigation (worktree-per-agent). The fresh agents had the §9 rule as authority but not the lived debate. They executed against documented design and hit a runtime gap (the unimplemented `isolation: "worktree"` tool param) nobody had verified. The engine-architect instance who had ARGUED for worktrees would have asked at dispatch time: "wait, has anyone verified the tool's worktree-isolation parameter actually works?" That question only comes from lived memory of the debate, not from reading the rule.
+
+**Operational consequence:** when the lead spawns specialist agents for implementation work that derives from a prior Open Space sync, the lead **resumes the existing persistent instance** of that specialty rather than spawning fresh. Same applies for retro participants — the agents who argued the decision and shipped the code are the same instances who reflect on what happened.
+
+**The cycling exceptions stay:** Tier-3 ephemeral one-shot agents (fix-wave, surgical bug-fix) and Mode-B PR-time fresh reviewers (per the two-class review architecture rule in §9) are explicit fresh-instance dispatches. Everything else defaults to instance persistence across the decision arc.
+
+Cites Manifesto Principle 1 (Truth-Seeking — lived debate is evidence the ratified rule alone can't replace), Principle 6 (Partnership — continuity of self is how agents take care of each other across time), and Principle 10 (Feedback Cycle — the loop only closes if the same minds that hypothesized are the same minds that observe and revise).
 
 The architecture doc is the bridge — the artifact that carries the design across the mode boundary into implementation, so individual agents don't need the full studio process baggage to orient.
 
