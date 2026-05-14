@@ -47,6 +47,19 @@ class_name UnitState_Returning extends "res://scripts/core/state_machine/unit_st
 ## id = &"returning". priority = 5 (same as Gathering — they're peers in
 ## the gather loop). interrupt_level = COMBAT (same as Gathering — damage
 ## interrupts the return; player commands always win).
+##
+## Cultural note (shahnameh-loremaster review 2026-05-14):
+##   In the Shahnameh, the relationship between king and people is
+##   reciprocal — the people offer tribute and labor to the seat of
+##   royal power, and the just king's farr makes that tribute fruitful
+##   for the realm. Workers depositing at the Throne is the gameplay
+##   surfacing of that exchange: the Kargar's return-and-deposit beat
+##   is not just resource bookkeeping but the moment the farr-bearing
+##   king's authority gains material expression. See 01_CORE_MECHANICS.md
+##   §3 (resources) + §4 (farr) — the latter is what gives the deposit
+##   beat its meaning beyond accounting. Symmetry with sibling states
+##   Gathering (people-of-the-soil labor) and Constructing (settled-life
+##   anchoring) per CLAUDE.md "save design rationale alongside the code."
 
 const _IPathScheduler: Script = preload("res://scripts/core/path_scheduler.gd")
 
