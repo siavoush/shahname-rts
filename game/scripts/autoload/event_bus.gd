@@ -115,6 +115,57 @@ signal resource_changed(team: int, kind: StringName, delta_x100: int,
 		new_total_x100: int)
 
 
+# ---- Building lifecycle signals --------------------------------------------
+# Emitted by UnitState_Constructing when a worker finishes placing a building
+# (Phase 3 session 1 wave 1C). Write-shaped — telemetry sinks, UI listeners
+# (e.g., a future production-queue panel), and AI consumers (DummyAIController
+# in Phase 3 session 2) subscribe.
+#
+# Fields:
+#   unit_id    — id of the worker that placed the building (the Kargar). -1
+#                sentinel allowed for scripted spawns that don't have a
+#                placing worker (cheats, scenario seeds).
+#   kind       — building-type StringName (&"khaneh", future &"mazraeh",
+#                &"atashkadeh", ...). Matches the BalanceData.buildings key.
+#   team       — Constants.TEAM_IRAN / TEAM_TURAN / TEAM_NEUTRAL.
+#   position   — world-space placement position (Vector3).
+#
+# This signal is the building-side analog of the unit_died signal: a complete
+# placement payload that future systems consume without having to walk the
+# scene tree. The placed Building node also adds itself to the &"buildings"
+# group so consumers that prefer a tree-walk over a signal-snapshot can do
+# either.
+#
+# Phase 3 session 1 wave 1C wires the producer (UnitState_Constructing).
+# Phase 3 session 2 likely adds a `build_placement_started` UI-shaped
+# signal — keeping that one read-shaped so the build-menu side-effect is
+# contained.
+
+@warning_ignore("unused_signal")
+signal building_placed(unit_id: int, kind: StringName, team: int, position: Vector3)
+
+
+# ---- Build-placement UI signals (read-shaped) ------------------------------
+# Emitted by the build menu when the player clicks a building button — the
+# user has entered placement mode. The BuildPlacementHandler subscribes and
+# attaches its ghost preview / next-click consumer. Read-shaped (UI-side
+# only); state mutation happens later when the actual COMMAND_CONSTRUCT is
+# dispatched, not here.
+#
+# Pitfall #4 (re-entrant signal mutation) note: handlers of this signal MUST
+# NOT call ResourceSystem.change_resource synchronously. The Coin deduction
+# happens at UnitState_Constructing's on-arrival placement step, not at the
+# moment the menu button is pressed. (If a future preview cost-reservation
+# is desired, route through call_deferred.)
+#
+# Fields:
+#   building_kind  — StringName (&"khaneh" in session 1).
+#   cost_coin_x100 — fixed-point cost to display in the placement HUD.
+
+@warning_ignore("unused_signal")
+signal build_placement_started(building_kind: StringName, cost_coin_x100: int)
+
+
 # ---- Selection signals (read-shaped) ----------------------------------------
 # Emitted by the SelectionManager (Phase 1 ui-developer wave 2 work) when the
 # player's current selection changes. The payload is the canonical list of
@@ -151,7 +202,10 @@ const _SINK_SIGNALS: Array[StringName] = [
 	&"farr_changed",
 	&"unit_died",
 	&"resource_changed",
+	&"building_placed",
 	# Extend as new write-shaped signals are added. Order is not significant.
+	# `selection_changed` and `build_placement_started` are read-shaped (UI
+	# side-effects only) and intentionally NOT in the sink registry.
 ]
 
 # sink_callable -> { signal_name: forwarder_callable }
@@ -219,6 +273,10 @@ func _make_forwarder(sig: StringName, sink: Callable) -> Callable:
 			return func(team: int, kind: StringName, delta_x100: int,
 					new_total_x100: int) -> void:
 				sink.call(sig, [team, kind, delta_x100, new_total_x100])
+		&"building_placed":
+			return func(unit_id: int, kind: StringName, team: int,
+					position: Vector3) -> void:
+				sink.call(sig, [unit_id, kind, team, position])
 		_:
 			push_error("EventBus._make_forwarder: signal '%s' has no forwarder arm" % sig)
 			return Callable()

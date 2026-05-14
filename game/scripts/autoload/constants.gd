@@ -139,6 +139,13 @@ const COMMAND_ATTACK: StringName = &"attack"
 const COMMAND_ATTACK_MOVE: StringName = &"attack_move"
 const COMMAND_GATHER: StringName = &"gather"
 const COMMAND_BUILD: StringName = &"build"
+# Phase 3 session 1 wave 1C — distinct from COMMAND_BUILD so a future
+# "queue a production order at a building" command (COMMAND_BUILD, e.g.
+# "Sarbaz-khaneh, train a Piyade") doesn't collide with the worker-walks-to-
+# spot-and-places-a-building flow we use here. The wave 1C kickoff specifies
+# COMMAND_CONSTRUCT verbatim; we honor that. UnitState_Constructing maps
+# this command to its on-arrival placement action.
+const COMMAND_CONSTRUCT: StringName = &"construct"
 const COMMAND_ABILITY: StringName = &"ability"
 
 
