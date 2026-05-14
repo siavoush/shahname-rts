@@ -88,13 +88,24 @@ func registered_keys() -> Array:
 ## Flip the visibility of the overlay registered under `key`. No-op if `key`
 ## is unknown — useful when an F-key is bound for a future-phase overlay
 ## that doesn't exist yet.
+##
+## Log gate (DEBUG_LOG_TOGGLES, default true): every toggle emits a line to
+## stdout so /tmp/shahnameh.log (via tools/run_game.sh) surfaces F1-F4
+## presses. Helps live-test diagnosis when something the player thinks
+## they toggled didn't actually fire.
+const DEBUG_LOG_TOGGLES: bool = true
+
 func toggle_overlay(key: StringName) -> void:
 	if not _overlays.has(key):
+		if DEBUG_LOG_TOGGLES:
+			print("[debug-overlay] toggle ", key, " — no overlay registered")
 		return
 	var overlay: Control = _overlays[key] as Control
 	if overlay == null:
 		return
 	overlay.visible = not overlay.visible
+	if DEBUG_LOG_TOGGLES:
+		print("[debug-overlay] toggle ", key, " → visible=", overlay.visible)
 
 
 ## Map a raw keycode to the overlay key and toggle. Public so tests can drive

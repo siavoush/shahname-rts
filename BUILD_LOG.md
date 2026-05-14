@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-04 (Phase 2 session 1 wave 1A)
+last_updated: 2026-05-08 (Phase 3 session 1 wave 1C)
 ---
 
 # Build Log
@@ -33,6 +33,297 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 ```
 
 ## Entries
+
+## 2026-05-14 — Phase 3 session 1 wave-close: BUG-11 — buildings leaked into box-select
+
+**Branch:** `feat/phase-3-session-1`
+**Driver:** lead. Surfaced via `/tmp/shahnameh.log` (the new `tools/run_game.sh` log piping caught the script error directly — no copy-paste needed).
+**Commits:** 1 (code fix + 3 tests + docs).
+**Test delta:** 1102 → **1105** (+3). 1102 passing + 3 pre-existing risky/pending. 0 failures. Lint clean.
+
+**What shipped:**
+
+Phase 3 wave-1C introduced the Building base class. Buildings inherit `unit_id` + `team` and pass the duck-type filter in `BoxSelectHandler._collect_unit_shaped`. Box-dragging across a placed Khaneh therefore included it in the selection; the next right-click crashed inside `GroupMoveController.dispatch_group_move` calling `replace_command` on the Khaneh (Building doesn't have that method).
+
+**Fix (two-axis defense):**
+- Primary: `_collect_unit_shaped` skips nodes in the `&"buildings"` group.
+- Belt-and-braces: `dispatch_group_move` skips entries without `replace_command`.
+
+**Verdict notes:**
+
+- Buildings are not currently selectable via any path post-fix. Left-click already ignored them (ClickHandler classifies the StaticBody3D's collider as "non-unit"). Box-select now also skips them. Future Phase 4+ production-UI flow will introduce a separate building-selection mode that doesn't mix with unit selections.
+- `tools/run_game.sh` paid off on its first deployment — the script error in `/tmp/shahnameh.log` was readable from the Claude session without copy-paste, leading to a root-cause diagnosis in one round-trip.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** None.
+
+**Decisions made independently:**
+- Used the `&"buildings"` group as the filter token rather than a `replace_command` method check at the selection layer. Group is semantic intent ("I am a Building"); method check is operational consequence ("can I take commands"). Cleaner to filter on intent at the selection boundary; the method check is the dispatch-layer safety net.
+
+**State for next session:**
+- Re-run live-test #2 with box-drag across the placed Khaneh — should NOT include the Khaneh in selection. Right-click after should issue a normal move command to the Kargars, no script error.
+- If lead's full 6-test sweep passes, the PR is ready to open.
+
+---
+
+## 2026-05-14 — Phase 3 session 1 wave-close: BUG-10 sibling-order convention reversal
+
+**Branch:** `feat/phase-3-session-1`
+**Driver:** lead (no agent dispatch — surgical fix derived from log diagnostic).
+**Commits:** 1 (the docs-and-fix aggregator).
+**Test delta:** 1101 → **1102** (+1 new synthetic dispatch-order regression test). 0 failures. Lint clean.
+
+**What shipped:**
+
+Lead live-test #2 surfaced that the BUG-08 fix-wave (v0.20.7) did NOT close the Khaneh-placement bug. Log diagnostic from the live game showed `[box-select]` (idx 6) logging BEFORE `[click]` (idx 5) — proving Godot dispatches `_unhandled_input` in REVERSE sibling order, not the tree-document order codified in the project's AttackMoveHandler / BPH headers.
+
+Empirical regression-lock test (`test_godot_unhandled_input_dispatch_order.gd`) confirms: for siblings at idx 0/1/2, dispatch order is `[2, 1, 0]`. Pitfall #5 prose in `docs/PROCESS_EXPERIMENTS.md` was correct all along; the project headers and regression tests were locking in the broken order.
+
+**Fix:**
+- `main.tscn`: BuildPlacementHandler moved from idx 4 (between AttackMoveHandler and ClickHandler) to after DoubleClickSelect. Higher index → fires first in reverse-sibling-order dispatch.
+- `build_placement_handler.gd`: header docblock rewritten with the corrected convention + BUG-10 history. Entry log added at `_unhandled_input` for future diagnostics.
+- `test_phase_3_khaneh_placement.gd`: two regression tests flipped from `<` to `>` and renamed `..._before_click_handler` → `..._after_click_handler`.
+- `test_godot_unhandled_input_dispatch_order.gd`: NEW regression-lock test pinning Godot's dispatch behavior project-wide.
+- `tools/run_game.sh`: NEW interactive-launch wrapper that tees Godot output to `/tmp/shahnameh.log`. Live-test sessions now write a log Claude can `tail`/`read` directly, replacing the copy-paste round-trip.
+
+**Verdict notes:**
+
+- BUG-08's two defenses from v0.20.7 are PRESERVED: (a) BuildMenu Root=MOUSE_FILTER_STOP, (b) BPH selection_changed guard. Defense-in-depth — they protect against the original hypothesis (Button.action_mode press-edge leak) and any future deselection path even though the actual mechanism turned out to be sibling-order dispatch.
+- The Phase 2 session 1 wave 2B AttackMoveHandler convention is ALSO suspect — same diagnosis as BUG-10. Surfaced as NEW LATER L24. Not yet verified broken in live game (lead has not specifically tested Shift+A flow); deferred until next live-test confirms or refutes.
+- L22 (Pitfall #5 prose audit) CLOSED — prose was right, project layer fixed in this entry.
+
+**Process tool added:** `tools/run_game.sh` — interactive Godot wrapper that pipes stdout+stderr to `/tmp/shahnameh.log`. Future live-tests: `tools/run_game.sh` (in user terminal), then Claude reads `/tmp/shahnameh.log` directly. Removes the copy-paste round-trip that gated this diagnosis.
+
+**State for next session:**
+- Re-run live-test #2 (Khaneh placement). Should now place. The two preserved BUG-08 defenses + the BUG-10 sibling-order fix should provide robust input handling.
+- If AMH appears broken on Shift+A → left-click (lead test), L24 fix-wave dispatches with the same shape.
+- After live-test passes, open PR to main.
+
+---
+
+## 2026-05-14 — Phase 3 session 1 post-live-test fix-wave: BUG-08 + BUG-09 + Farr gauge polish
+
+**Branch:** `feat/phase-3-session-1`
+**Agents:** 3 parallel fix-wave agents (gameplay-systems + 2× ui-developer) — dispatched with `isolation: "worktree"` per Experiment 04, but the runtime parameter was unimplemented (see new LATER L23). Mid-flight Pitfall #7 incident; resolved by serialization + cherry-picking each agent's branch into feat.
+**Commits:** 5 (`798d64b` → `135349b`). Cherry-picked clean — file scopes were disjoint.
+**Test delta:** 1090 → **1101** passing (+11 new tests). 3 pre-existing risky/pending. 0 failures. Lint clean every commit.
+
+**What shipped:**
+
+Three bugs surfaced in the lead live-test (after the v0.20.6 reviewer-trio wave-close had landed). All three closed by this fix-wave.
+
+- **BUG-08** — BPH placement-mode selection desync. Lead reproducer: select Kargar → click Khaneh button → click terrain → no Khaneh. Root cause hypothesis: `Button.action_mode = ACTION_MODE_BUTTON_RELEASE` — the PRESS edge of a click on the button falls through to `_unhandled_input` because GUI consume happens on RELEASE; ClickHandler raycasts → misses Unit (clicked on Control area) → deselects all. By the time RELEASE fires the `pressed` signal and BPH enters placement mode, selection is gone.
+  - Fix #1: `build_menu.tscn` Root Control `mouse_filter = MOUSE_FILTER_STOP` (was PASS). Entire menu surface is now an input shield.
+  - Fix #2: BPH subscribes to `EventBus.selection_changed`, auto-cancels placement when selection no longer contains a Kargar (defense-in-depth against ANY future deselection path).
+  - Hypothesis NOT verified end-to-end headless (Godot's synthetic Input dispatch doesn't reproduce the Control GUI race) — both defenses shipped as orthogonal regression locks.
+
+- **BUG-09** — F4 attack-range overlay circles don't follow units when they move. Root cause: `_process` was explicitly NOT used; entries only refreshed on `selection_changed`. Fix: `_process(_delta)` walks `_entries`, refreshes `world_pos` from each entry's `(unit as Node3D).global_position`, calls `queue_redraw()` on change. Entry shape extended with `&"unit": Node3D` ref. Sim Contract §1.5 fit: pure UI-local read.
+
+- **Farr gauge POLISH** — half-Farr drains (0.5 `worker_killed_during_gather`) invisible because `_draw_numeric_label` used `roundi(displayed_farr)` + `"%d"`. Fix: `"%s %.1f"` format. Adds public `format_numeric_label() -> String` testability seam.
+
+**Verdict notes:**
+
+- BUG-08 + BUG-09 hypotheses both held under code review; defense-in-depth was the right call on BUG-08 specifically because the headless test surface can't validate Control GUI dispatch order.
+- Farr gauge `.1f` fix is minimal-surface; deliberately did NOT add tween animation for the displayed value (speculative scope creep).
+
+**Reviewer notes (none formally dispatched — wave was lead-driven from live-test observations + the agents' own headless-vs-live caveats):**
+- Pitfall #1 + #5 + #11 awareness explicit in each agent's report.
+- No formal godot-code-reviewer or architecture-reviewer pass for this fix-wave — the changes are small, the test counts hold, and the reviewer-trio already cleared the wave-close in v0.20.6. The next wave-close review will catch any drift.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** None.
+
+**Decisions made independently:**
+- Cherry-picked all 5 commits onto `feat/phase-3-session-1` in serialized order rather than merging via `--no-ff`. The project's history pattern is linear; cherry-pick preserves the per-TDD-cycle subjects without merge commits. New SHAs on `feat/phase-3-session-1`; the original branches (`fix/bug-08-...`, `polish/farr-gauge-...`, `fix/bug-09-...`) can be deleted post-merge.
+- Defense-in-depth on BUG-08 (both fixes shipped) without litigating which is the prime mover, per the agent's reasoning + my brief's authorization.
+- Skipped formal reviewer-trio for this fix-wave per the small-surface + recent v0.20.6 review.
+
+**Process incident: Pitfall #7 race during dispatch.**
+The `isolation: "worktree"` Agent-tool parameter, documented as creating separate `git worktree`s, in fact runs all parallel agents in the same shared checkout. Polish-farr-gauge agent had its working-tree edits overwritten by a sibling agent's `git checkout` mid-write; recovered via re-apply. BUG-09 agent had its first commit attempt land on the wrong branch (`fix/bug-09-attack-range-overlay-tracks-live`) instead of its branch (`fix/bug-08-bph-selection-desync`); cleanly escalated rather than retry destructively. BUG-08 agent self-detangled via cherry-pick of its lost commit `2c0cea4` → `9a6a3f6` on its own branch. Lead serialized recovery: BUG-08 finished, polish-farr-gauge stood down (already complete on its branch), BUG-09 re-applied its cached diff. All three branches cherry-picked clean into `feat/phase-3-session-1`. **New LATER L23 added.** Sequential dispatch is the project's working pattern for write-active waves until the runtime gap is closed.
+
+**State for next session:**
+- Phase 3 session 1 is ready for lead live-test #2. The three bugs from live-test #1 are closed; the previous PR-readiness checklist is back in effect.
+- Live-test #2 acceptance: BUG-08 fix verified (worker → Khaneh button → terrain → Khaneh appears); BUG-09 verified (F4 circles follow moving units); Farr gauge shows "Farr 47.5" after killing a gathering Kargar.
+- Performance / visual flags from the agents' live-game-broken-surface answers (see v0.20.7) — lead should hand-verify in F5.
+- After live-test #2 pass, open PR to main.
+
+---
+
+## 2026-05-14 — Phase 3 session 1 wave-close: reviewer-trio follow-up commits
+
+**Branch:** `feat/phase-3-session-1`
+**Agents:** godot-code-reviewer + architecture-reviewer + shahnameh-loremaster (parallel, read-only), lead-driven follow-up commit set.
+**Commits:** 9 (4cc9af8 → ea70023).
+**Test delta:** 1088 → 1090 (+2 Pitfall #5 regression locks). 3 pre-existing risky/pending. 0 failures. Lint clean every commit.
+
+**What shipped:** the 9-commit consolidated follow-up addresses every blocking + recommended finding from the three reviewer agents.
+
+**Reviewer verdicts:**
+- godot-code-reviewer: **COMMENT** (no blockers; NB-1 + NB-2 + cosmetic NB-3)
+- architecture-reviewer: **APPROVE** (4 non-blocking drift findings)
+- shahnameh-loremaster: **NEEDS_REFINEMENT** (one user-visible string change required + 3 doc-symmetry recommendations + 3 design-chat escalations)
+
+**Findings → commits:**
+- `4cc9af8` — godot NB-1: Pitfall #5 regression test pair for BPH-vs-ClickHandler sibling order (mirrors AttackMoveHandler precedent).
+- `37334a3` — godot NB-2 + arch drift-1: `build_placement_handler.gd:30-41` header rewritten — actual project convention is "tree-document order; lower-index sibling runs first," not the "REVERSE tree order" the header claimed.
+- `a299dee` — arch drift-2: §2 build-state row split. MineNode ✅ Built (was hidden inside a still-Planned row); Mazra'eh stays 📋 Planned for session 2.
+- `c66cc2d` — arch drift-3: 7 legacy `FarrConfig.drain_*` @export fields marked DEPRECATED (superseded by `drain_rates` dict in wave 1B). Retained for `balance.tres` backward compat; Phase 4 cleanup pass can remove.
+- `f0e79ce` — loremaster required: `strings.csv` "House" → "Khaneh" ×3 + regenerated `.translation` + downstream comment / scene-fallback references. Persian-primary label per spec §5 + UNIT_KARGAR precedent + loremaster Q3 ranking.
+- `b0c4f73` — loremaster recommended (Returning state): cultural-note block added for sibling-state symmetry. Frames the deposit beat as the reciprocal king/people relationship Ferdowsi describes.
+- `30afe83` — loremaster recommended (Building base): cross-faction caveat header note. Flags that the current concrete subclass (Khaneh) is Iran-coded and that future Turan housing analogues MUST carry parallel substantive cultural rationale per `00_SHAHNAMEH_RESEARCH.md` §7 "worthy rivals."
+- `194f807` — loremaster Q4 (addendum): Khaneh header phrase "separates civilization from raid and steppe" → "anchors the Iranian dynasties' relationship to land and people (distinct from, but not morally above, Turan's mobile counterpart)." Worth fixing now since this header is the template every future Iran-building's cultural-note block clones.
+- `ea70023` — loremaster escalations: Q1 (en-side naming convention) + Q2 (Coin vs Sekkeh) + Q3 (Turan housing analogue) appended to `QUESTIONS_FOR_DESIGN.md`.
+
+**Verdict notes not actioned:**
+- godot NB-3 (`_cached_unit_id` declaration position): declared cosmetic / not a defect. Skipped.
+- godot future-scope flag: Pitfall #5 prose in `PROCESS_EXPERIMENTS.md:84-86` says "reverse-tree-order" but codified convention is "earlier=first." **LATER L22 added** for next session-close docs-audit pass.
+- loremaster optional polish: `UI_BUILDING_KHANEH_TOOLTIP` key. Not in scope for wave-close fix set; deferred to UI tooltip pass.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:**
+- Q1: UI primary-name convention — Persian word vs English gloss (partially blocks session-2 build menu).
+- Q2: Coin vs Sekkeh resource name (paired with Q1; loremaster recommends "Coin").
+- Q3: Turan housing analogue — Otag / Khargah / Cherahgah candidates; whether Building base needs a `cultural_idiom` field.
+
+**Decisions made independently:**
+- Strings.csv "House" → "Khaneh" applied without escalation because it brings the implementation BACK to the spec (`01_CORE_MECHANICS.md` §5 "Khaneh (house)" — Persian primary) and matches the established `UNIT_KARGAR,Kargar,` pattern. Loremaster Q1 still escalates the GENERAL convention rule for session-2 inheritance.
+- Cultural-note tightening in `khaneh.gd` applied without escalation because the change is a rationale-comment refinement (not a gameplay/narrative shift) and the loremaster explicitly recommended it as cheap-to-fix-now given the template-cloning risk.
+- Turan-side cultural-rationale candidates surfaced (Piran's hospitality, Manijeh's loyalty, *otaq* tradition) but escalated as Q3 rather than committed to. The naming choice is design-chat scope.
+
+**Cross-agent coordination:** Three reviewer agents in parallel (read-only — no commit race). qa-wave-3 (writer) ran sequentially with the reviewers; reviewer trio dispatched while wave-3 still in flight against `feat/phase-3-session-1`, but reviewers' read-only access avoided the Pitfall #7 staging race. Lead-driven follow-up commits applied AFTER qa-wave-3 landed all 6 commits to avoid shared-doc race.
+
+**State for next session:**
+- Phase 3 session 1 ready for PR. Branch `feat/phase-3-session-1` is clean, lint passes, 1090 tests passing, 0 failures.
+- Wave-close ceremony: lead live-test (smoke gather loop + build Khaneh + verify Farr drain on Kargar death) → open PR to main.
+- Pitfall #5 prose in `PROCESS_EXPERIMENTS.md:84-86` needs a docs-audit at next session-close (LATER L22).
+
+---
+
+## 2026-05-14 — Phase 3 wave 3 (qa-engineer): integration tests for the Phase 3 economic loop
+
+**Branch:** `feat/phase-3-session-1`
+
+**Shipped:**
+
+1. **`test_phase_3_multi_cycle_gather.gd` — 4 integration tests.** Verifies back-to-back gather trips over 180 ticks via MatchHarness. Covers: second trip starts without manual re-command; cumulative coin delivery correct across 2 trips; mid-trip resource state does not corrupt; Kargar FSM is idle-or-gathering (never stuck). Commit `26ec95c`.
+
+2. **`test_phase_3_resource_system_chokepoint.gd` — 8 integration tests.** Verifies every ResourceSystem mutation flows through `change_resource`; `resource_changed` signal fires with correct (delta_x100, new_total_x100) payload; `reset()` restores starting values; affordability edge cases (exact-cost, zero-balance, over-limit). Commit `2da4faf`.
+
+3. **`test_phase_3_khaneh_pop_cap.gd` — 4 integration tests.** Verifies `place_at` increments `population_cap` by 10 per Khaneh; second Khaneh stacks correctly; `building_placed` signal fires; team isolation (Khaneh on team 2 does not affect team 1 cap). Commit `0b816e2`.
+
+4. **`test_phase_3_nav_obstacle_carving.gd` — 5 structural tests.** Verifies Khaneh scene contains NavigationObstacle3D + StaticBody3D (RESOURCE_NODE_CONTRACT §3.2 + BUG-07 regression locks); ghost preview has no collision body and is not in the `buildings` group; placed Khaneh IS in the `buildings` group. Actual navmesh-routing path verification deferred — NavigationServer requires a display server to bake, which isn't available headless. Commit `6deb8a1`.
+
+5. **`test_phase_3_cross_feature_smoke.gd` — 5 integration tests.** Drives gather + combat simultaneously via MatchHarness over 150 ticks to verify Phase 2 and Phase 3 systems do not corrupt each other. Also covers all three FarrDrainDispatcher drain paths directly: idle Kargar death → −1.0; gathering Kargar death → −0.5; returning Kargar death → −0.5; Piyade (combat unit) death → 0.0 drain. Commit `0ce566e`. Resolved a parse error in `_InstantScheduler.request_repath` (parent signature is 4-params: `unit_id, from, to, priority`; original stub used a 5-param async-callback pattern). Pattern corrected from `test_phase_2_session_1_combat.gd`'s `_InstantPathScheduler`.
+
+6. **`docs/ARCHITECTURE.md` updated to v0.20.5.** §6 entry added for this wave.
+
+**Test-count delta:** 1059 → 1088 passing (+29). 3 pending unchanged (headless nav-routing limitation). 2700 asserts, 83 scripts, 10.534s. GUT run clean — 0 failures.
+
+**Did not ship (intentional deferrals):**
+- Nav-obstacle actual routing test: NavigationServer bake requires display server; cannot verify path avoids Khaneh in headless mode.
+- Production-queue population ceiling test: no unit production system in Phase 3 session 1 yet.
+
+**Coverage gaps inherited (not new):**
+- FarrSystem per-tick Atashkadeh contribution not yet testable — Atashkadeh is a session-2 deliverable.
+
+**Live-game-broken-surface:**
+- Cross-feature smoke flow exercises the gather+combat coexistence chain that headless tests can't fully reproduce: clicking a Kargar mid-gather while a combat unit is engaged, Farr meter moving. Tests confirm the FSM state isolation holds at the data layer; visual coexistence verification stays with the lead's wave-close playtest.
+- Nav-obstacle carving (whether placed Khaneh actually deflects worker paths) is entirely a live-game check — the structural presence of NavigationObstacle3D is test-verified, but runtime path recalculation is not.
+
+**LATER items surfaced:**
+- None new. L16 (per-tick repath throttle in UnitState_Attacking) re-confirmed by `_InstantScheduler` starvation behavior in cross-feature smoke: the attacker re-issues `request_repath` every tick. Still within tolerance at 15 units. Profile at 50+.
+
+**Commits (per-TDD-cycle):**
+- `26ec95c` — test_phase_3_multi_cycle_gather.gd (4 tests)
+- `2da4faf` — test_phase_3_resource_system_chokepoint.gd (8 tests)
+- `0b816e2` — test_phase_3_khaneh_pop_cap.gd (4 tests)
+- `6deb8a1` — test_phase_3_nav_obstacle_carving.gd (5 tests, structural)
+- `0ce566e` — test_phase_3_cross_feature_smoke.gd (5 tests) + parse-error fix for _InstantScheduler
+
+---
+
+## 2026-05-08 — Phase 3 session 1 wave 1C (gameplay-systems): Khaneh + placement skeleton
+
+**Branch:** `feat/phase-3-session-1`
+
+**Shipped:**
+
+1. **Building abstract base + scene** (`game/scripts/world/buildings/building.gd` + `game/scenes/world/buildings/building.tscn`). Mirrors the ResourceNode → MineNode template from wave 1A. Schema: `kind` / `team` / `unit_id` (own static counter, separate from Unit) / `is_complete`. `place_at(world_pos, owner_team, placer_unit_id)` is the placement seam — sets the schema, fires `_on_placement_complete(placer_unit_id)` subclass hook. Joins the `&"buildings"` group on `_ready`. Base scene composition: MeshInstance3D placeholder (neutral grey BoxMesh 2×1.2×2), StaticBody3D + CollisionShape3D (BUG-07 lesson — click targets need a CollisionObject3D ancestor), NavigationObstacle3D (RESOURCE_NODE_CONTRACT §3.2 — the sanctioned runtime navmesh-carve pattern; runtime REBAKE is forbidden).
+
+2. **Khaneh — first concrete Building** (`game/scripts/world/buildings/khaneh.gd` + `game/scenes/world/buildings/khaneh.tscn`). Dual-init pattern (`kind = &"khaneh"` set in `_init` AND `_ready` per kargar.gd's header). `_on_placement_complete` bumps `ResourceSystem.change_population_cap(team, +10, &"khaneh_placed", self)` (wave 1B chokepoint) and emits `EventBus.building_placed(placer_unit_id, kind, team, position)`. Earthy tan placeholder `(0.78, 0.65, 0.45)` distinct from kargar sandy-brown, mine gold, unit blue-grey. `Khaneh.cost_coin()` static helper reads cost from BalanceData for the build menu. `BuildingStats` gained a `population_capacity` field; `balance.tres`'s `bldg_khaneh` populated with `population_capacity = 10` (kickoff placeholder; spec says +5) and `construction_ticks = 90` (session 2's progress-bar timer; session 1 uses INSTANT placement).
+
+3. **`UnitState_Constructing`** (`game/scripts/units/states/unit_state_constructing.gd`). `id = Constants.STATE_CONSTRUCTING`, `priority = 5`, `interrupt_level = COMBAT`. Same arrival-latch pattern as Gathering / Returning: enter resolves the payload (`building_kind` + `target_position`), kicks off the path; `_sim_tick` drives movement, latches arrival, counts 90-tick dwell (placeholder), fires placement. Placement step: affordability check via `ResourceSystem.coin_x100_for` → deduct cost via the `change_resource` chokepoint → instantiate Building scene from kind→path table → add as worker's-parent child → `building.place_at(target, team, unit_id)`. Cost deducted at placement, NOT at command dispatch (SC2 / AoE convention). No refund on interrupt. Registered on every Unit's FSM (combat units pay one RefCounted state instance overhead, tiny).
+
+4. **Constants + EventBus additions.** `Constants.COMMAND_CONSTRUCT = &"construct"` (distinct from `COMMAND_BUILD`, reserved for a future "queue production at building" flow). `EventBus.building_placed(unit_id, kind, team, position)` write-shaped signal (added to `_SINK_SIGNALS` for telemetry). `EventBus.build_placement_started(building_kind, cost_coin_x100)` read-shaped UI signal. `StateMachine._COMMAND_KIND_TO_STATE_ID` gained `&"construct" → &"constructing"` mapping.
+
+5. **Build menu UI** (`game/scenes/ui/build_menu.tscn` + `game/scripts/ui/build_menu.gd`). Bottom-right CanvasLayer-anchored Control panel. Visible when selection contains a Kargar (subscribes to `EventBus.selection_changed`), hidden otherwise. Pitfall #1 discipline: decorative children use `MOUSE_FILTER_PASS`; only the Khaneh Button uses `MOUSE_FILTER_STOP`. Button press emits `EventBus.build_placement_started(&"khaneh", 5000)` — does NOT mutate ResourceSystem (Pitfall #4). Tested directly. Translations added for `UI_BUILD_MENU_HEADER`, `UI_BUILDING_KHANEH_COST`, etc. (en column only; Persian Tier-2 schedule).
+
+6. **`BuildPlacementHandler` + ghost preview** (`game/scripts/input/build_placement_handler.gd` + `game/scenes/world/buildings/ghost_placement_preview.tscn`). Dedicated input handler sibling of ClickHandler. Subscribes to `build_placement_started` to enter placement mode, spawn the ghost, and listen for clicks. `_process` raycasts cursor each frame to update ghost position + green/red validity. Validity = on-terrain + non-overlap with existing buildings (via `&"buildings"` group iteration) + affordability. On confirm: dispatches `Unit.replace_command(COMMAND_CONSTRUCT, {building_kind, target_position})` to first Kargar in selection. On right-click / Escape: cancels. Sibling order: BEFORE ClickHandler so its `_unhandled_input` consumes the placement-mode click first (per the AttackMoveHandler precedent). Ghost preview INTENTIONALLY has no collision body (BUG-07 inverted: must not be raycast-target) and is NOT in the `&"buildings"` group (would self-flag every position as overlapping).
+
+7. **Integration test** (`game/tests/integration/test_phase_3_khaneh_placement.gd`). MatchHarness-based per Testing Contract §3.1 + wave-0 precedent. 4 tests cover the full live chain: Kargar selected → COMMAND_CONSTRUCT dispatched → walk → place → Coin deducted 50 + cap bumped 10 + building_placed emitted once, resource_changed signals for BOTH Coin AND population_cap, placed Khaneh carries StaticBody3D + NavigationObstacle3D (BUG-07 + Resource Node Contract §3.2 regression locks).
+
+8. **`docs/ARCHITECTURE.md` updated.** §2 "Building system" row promoted from 📋 Planned to ✅ Built (Khaneh + placement skeleton). §6 v0.20.4 entry with 7 architectural decisions documented.
+
+**Test-count delta:** 987 → 1059 (+72 net). 1056 passing, 3 pre-existing pending (FarrSystem fallback, navmap not ready, navmesh not ready), 0 failures.
+
+**Files created:**
+- `game/scripts/world/buildings/building.gd` (abstract base)
+- `game/scenes/world/buildings/building.tscn` (base scene template)
+- `game/scripts/world/buildings/khaneh.gd`
+- `game/scenes/world/buildings/khaneh.tscn`
+- `game/scripts/world/buildings/ghost_placement_preview.gd`
+- `game/scenes/world/buildings/ghost_placement_preview.tscn`
+- `game/scripts/units/states/unit_state_constructing.gd`
+- `game/scripts/ui/build_menu.gd` + `game/scenes/ui/build_menu.tscn`
+- `game/scripts/input/build_placement_handler.gd`
+- `game/tests/unit/test_building_base.gd` (15 tests)
+- `game/tests/unit/test_khaneh.gd` (12 tests)
+- `game/tests/unit/test_unit_state_constructing.gd` (12 tests)
+- `game/tests/unit/test_build_menu.gd` (13 tests)
+- `game/tests/unit/test_build_placement_handler.gd` (16 tests)
+- `game/tests/integration/test_phase_3_khaneh_placement.gd` (4 tests)
+
+**Files modified:**
+- `game/scripts/autoload/constants.gd` (COMMAND_CONSTRUCT)
+- `game/scripts/autoload/event_bus.gd` (building_placed, build_placement_started signals + forwarder)
+- `game/scripts/core/state_machine/state_machine.gd` (COMMAND_KIND_TO_STATE_ID entry)
+- `game/scripts/units/unit.gd` (register UnitState_Constructing)
+- `game/data/sub_resources/building_stats.gd` (population_capacity field)
+- `game/data/balance.tres` (Khaneh.population_capacity=10, construction_ticks=90)
+- `game/translations/strings.csv` + strings.en.translation (new keys)
+- `game/scenes/main.tscn` (wired BuildMenu + BuildPlacementHandler)
+- `docs/ARCHITECTURE.md` (§2 row, §6 v0.20.4)
+- `BUILD_LOG.md` (this entry)
+
+**Did not ship (deferred to session 2 or later):**
+- Mazra'eh / Ma'dan / Sarbaz-khaneh / Atashkadeh (session 2 deliverables).
+- Construction-in-progress visuals + progress bar (session 2 wave 1).
+- BuildingRegistry autoload for kind→PackedScene lookup (when the table grows >5 entries OR AI needs programmatic placement queries).
+- Building selection / production-queue panel (session 2+).
+
+**Live-game-broken-surface (Experiment 01):**
+1. *Runtime no unit test exercises:* Full LIVE chain — build menu button → BuildPlacementHandler enters placement mode → ghost preview follows cursor → confirm click → COMMAND_CONSTRUCT → Kargar walks → arrives → Khaneh appears via `instance` → NavigationObstacle3D dynamically carves the navmesh → future workers route around the Khaneh. Each link is unit-tested; the live chain is the lead's wave-close test.
+2. *Headless can't detect:* Ghost preview color contrast against sandy terrain (green/red — FarrGauge contrast lesson applies; lead retunes here if it bleeds). Khaneh tan-vs-sandy contrast (same lesson). Build menu readability at default 1280×720. Cursor-feel during placement.
+3. *Min interactive smoke:* Lead boots, selects Kargar, sees build menu bottom-right. Clicks Khaneh button → ghost preview tracks cursor in green over open terrain → red when hovering an existing building. Clicks valid terrain → Kargar walks, Khaneh appears, Coin decrements 50, pop cap increments 10. Right-clicks past the Khaneh with another Kargar — pathfinding routes around it.
+
+**Known Godot Pitfalls applied:**
+- **#1 (mouse_filter on Control nodes):** build menu's decorative children all use MOUSE_FILTER_PASS; only the Button uses STOP (Button default). Tested directly.
+- **#2 (FSM tick driver):** no new driver needed — existing `Unit._on_sim_phase` pumps `fsm.tick` during `&"movement"` phase, drives UnitState_Constructing the same way it drives Gathering / Returning.
+- **#4 (re-entrant signal mutation):** build menu button press emits a READ-shaped signal; no synchronous `ResourceSystem.change_resource` call. Cost deduction lives at placement time, on-tick, in UnitState_Constructing.
+- **#5 (sibling tree-order):** BuildPlacementHandler placed BEFORE ClickHandler in `main.tscn` so its `_unhandled_input` consumes the placement-mode click first (same shape as AttackMoveHandler / ClickHandler precedent).
+- **#7 (shared-doc staging race):** `git diff` of `unit.gd`, `state_machine.gd`, `event_bus.gd`, `constants.gd`, `building_stats.gd`, `balance.tres`, `main.tscn`, `strings.csv`, `docs/ARCHITECTURE.md`, `BUILD_LOG.md` confirmed only my additions before each per-TDD-cycle commit.
+- **#8 / #11 (queue_free + _test_run_tick):** integration test after_each frees buildings with synchronous `remove_child` + `free()` (not `queue_free`) so the `&"buildings"` group is empty at next `before_each`. Tests use group lookup as the "Khaneh placed" predicate, not `is_instance_valid`.
+- **BUG-07 lesson (Pitfall #12 candidate):** placed Khaneh inherits StaticBody3D + CollisionShape3D from the base building.tscn. Ghost preview INTENTIONALLY has no CollisionObject3D — placement raycast must hit terrain underneath, not the ghost itself. Asymmetry tested directly in `test_ghost_scene_has_no_collision_body` and `test_placed_khaneh_has_collision_body_and_nav_obstacle`.
+
+**Open questions / state for next session:** None blocking. Session 2 picks up Mazra'eh / Ma'dan / Sarbaz-khaneh / Atashkadeh and adds the construction timer + progress-bar UI. The `_BUILDING_SCENE_PATHS` dict in `unit_state_constructing.gd` is the extension seam; the `_CONSTRUCTING_DWELL_TICKS` constant is the placeholder timer to replace with BalanceData read.
+
+**Reviewer trio (Experiment 02 + 02 extension):** Wave 1C touches naming (Khaneh / خانه), Iran-house cultural framing, the placeholder material tone choice (Persian-village mud-brick). Recommend the `shahnameh-loremaster` agent in addition to the standard godot-code-reviewer + architecture-reviewer pair.
+
+**Commits (per-TDD-cycle, Experiment 03):**
+- `fe243c2` — Building abstract base + scene + EventBus signals + 15 tests
+- `83cbfa0` — Khaneh concrete + 12 tests + translations
+- `2621a16` — UnitState_Constructing + Unit registration + 12 tests
+- `d334a71` — Build menu UI + 13 tests + main.tscn wire
+- `1283518` — BuildPlacementHandler + ghost preview + 16 tests + main.tscn wire
+- `e006ade` — Integration test (MatchHarness) + 4 tests
+- (this commit) — Docs aggregator (BUILD_LOG + ARCHITECTURE.md §6 v0.20.4)
 
 ## 2026-05-08 — Phase 2 session 2 wave 3 (qa-engineer): integration tests for full RPS roster + live combat chain
 
@@ -2005,3 +2296,153 @@ Rationale: the live-test failure mode was readability against the sandy terrain,
 - Wave 2A (CombatComponent RPS matrix integration): consume `BalanceData.combat.get_multiplier(attacker.unit_type, target.unit_type)` in `CombatComponent._sim_tick`'s damage-fire step. Multiply into `attack_damage_x100` at fire-time. Do NOT use raw `effectiveness` dict access — Turan folding requires the method.
 - Wave 2B (main.gd spawn expansion): extend `_spawn_starting_units` to spawn 1-2 of each new Turan type (turan_kamandar, turan_savar, turan_asb_savar) at the opposite map corner.
 - Wave 1C (Asb-savar + Turan Asb-savar unit scripts): balance.tres already has `asb_savar_kamandar` and `turan_asb_savar` entries with full stats. Unit scripts consume these via `_apply_balance_data_defaults`.
+
+---
+
+## 2026-05-08 — Phase 3 session 1 wave 0 (qa-engineer): L13 MatchHarness migration
+
+**Branch:** `feat/phase-3-session-1`
+
+**Shipped:**
+
+L13 closed. Both Phase 2 integration test files that bypassed MatchHarness have been migrated to use `MatchHarness.start_match(0, &"empty")` / `harness.teardown()` per TESTING_CONTRACT.md §3.1.
+
+1. **`test_phase_2_session_1_combat.gd`** — `537ccdf`. Replaced manual `SimClock.reset()`, `FarrSystem.reset()`, `SpatialIndex.reset()`, and `PathSchedulerService.set_scheduler(_mock)` calls with harness. `_spawn_*` helpers updated to reference `harness._mock_scheduler`. Autoloads outside harness scope (`CommandPool`, `SelectionManager`, `DebugOverlayManager`, `UnitScript.reset_id_counter`) stay inline. No test logic or assertion text changed. `_InstantPathScheduler` inner class preserved (test-side stub for per-tick reissue scenario, not harness scope).
+
+2. **`test_phase_2_session_2_rps_combat.gd`** — `94af3b7`. Same migration pattern. `_spawn` helper and end-of-test `PathSchedulerService.set_scheduler()` restores updated to reference `harness._mock_scheduler`. `_InstantPathScheduler` preserved for same reason.
+
+**Test-count delta:** 0 (893 passing / 3 pending before and after both migrations). The 3 pending tests are pre-existing: FarrSystem defensive fallback + 2 navmesh-not-ready.
+
+**3× consecutive suite clean:** All three runs produced identical results: 893 passing, 3 pending, 0 failures. No test-order dependence introduced.
+
+**Lint:** 0 violations (L1-L5) on both modified files.
+
+**ARCHITECTURE.md §7:** L13 row and §7 retro entry both updated to CLOSED with commit SHAs.
+
+**Did not ship:** No production game code changes. No harness API additions were needed — the existing harness covered all required autoloads.
+
+**New pitfall surfaced:** None. The migration was clean — no state the harness doesn't reset was identified in these two files. The `CommandPool`, `SelectionManager`, `DebugOverlayManager`, and `UnitScript.reset_id_counter` items confirmed as outside MatchHarness contract and must remain inline; this is consistent with how harness scope is defined in TESTING_CONTRACT.md §3.1.
+
+**Open questions:** None.
+
+**State for next session:** L13 is closed. Wave-3 (Phase 3 session 1) can now add a third integration test file without propagating the bypass pattern. The MatchHarness is the sole approved integration test fixture per contract.
+
+---
+
+## 2026-05-08 — Phase 3 session 1 wave 1A (gameplay-systems): Kargar gather-loop + Coin MineNode
+
+**Branch:** `feat/phase-3-session-1`
+
+**Shipped:**
+
+1. **`ResourceNode` abstract base** (`game/scripts/world/resource_nodes/resource_node.gd`). Schema (`kind`, `reserves_x100`, `extract_ticks`, `max_slots`, `is_gatherable`, `yield_per_trip_x100`) + three-call API (`request_extract` / `complete_extract` / `release_extract`) + slot bookkeeping. Subclass hook `_on_depleted` called when reserves hit 0 (base no-op; MineNode overrides). API naming follows kickoff §3 (request/complete/release) rather than the contract's original begin/tick/release — the wave-1A pattern moves the dwell timer onto the state side, simplifying the node's surface. Documented as a deliberate divergence in the source header; if Mazra'eh's per-tick accumulation (wave 1B+) needs the original `tick_extract` shape the contract can be patched.
+
+2. **`MineNode` (Coin)** (`game/scripts/world/resource_nodes/mine_node.gd` + `game/scenes/world/resource_nodes/mine_node.tscn`). Yellow cylinder placeholder (`Color(0.85, 0.7, 0.2)` per kickoff §3). Hardcoded reserves (100 Coin = 10000 x100), yield per trip (10 Coin = 1000 x100), dwell (60 ticks = 2 s) — all marked `TODO(phase-3-wave-1B)` for BalanceData wire-up. `max_slots = 1` Phase 3 simplification per kickoff §3. `_on_depleted` calls `queue_free.call_deferred()` per Pitfall #8 (we're in a tree-mutating context).
+
+3. **`UnitState_Gathering`** (`game/scripts/units/states/unit_state_gathering.gd`). `id = &"gathering"` is LOAD-BEARING per Open Space sync v0.20.0 — Phase 3 wave 1B's Farr-drain dispatcher distinguishes gather-death from idle-death by reading this id BEFORE the FSM swaps to Dying. `priority = 5`, `interrupt_level = COMBAT`. Reads `target_node` ref from `current_command.payload`; walks via MovementComponent; requests slot on arrival; dwells `extract_ticks`; pulls payload from `complete_extract`; writes carry to unit's `_carry_kind` / `_carry_amount_x100` fields; transitions to Returning. `exit()` releases slot per Resource Node Contract §4.1 ("always called even on death").
+
+4. **`UnitState_Returning`** (`game/scripts/units/states/unit_state_returning.gd`). `id = &"returning"`, `priority = 5`, `interrupt_level = COMBAT`. Reads `deposit_target` Vector3 from payload (wave 1A fallback: own position — zero-walk deposit; wave 1B switches to Throne / ResourceSystem dropoff). Walks back, runs `_perform_deposit` stub (clears carry — wave 1B replaces body with `ResourceSystem.add`), loops back to Gathering with the SAME target_node — or transitions to Idle if the mine depleted / was freed mid-trip.
+
+5. **`Unit` base class** (`game/scripts/units/unit.gd`). Two new fields: `_carry_kind: StringName` and `_carry_amount_x100: int` (x100 fixed-point per Sim Contract §1.6). New preload consts for the two states. `_ready` registers both new states alongside Idle/Moving/Attacking/AttackMove/Dying. Combat units never receive `&"gather"` — registered-but-never-entered cost is one RefCounted state each, tiny.
+
+6. **`main.gd::_spawn_starting_resources()`** spawns 5 Coin MineNodes at known positions in the central wave-area (Z ≈ 0..15, X ≈ -14..-6) — between the Iran home cluster (Z≤0) and the Turan mirror (Z≥20). Called from `_ready` after `_spawn_starting_units`. Visible to the lead at boot as five yellow cylinders.
+
+**Test-count delta:** 893 → 939 passing (+46 new tests). Pre-existing 3 pending unchanged.
+
+**Lint:** 0 violations (L1-L5).
+
+**Commit chain** (per-TDD-cycle per STUDIO_PROCESS §9):
+- `f4c5489` — ResourceNode base + 12 tests (893 → 905).
+- `363b7d9` — MineNode (Coin) concrete + scene + 12 tests (905 → 917).
+- `6f2c2d9` — Gathering + Returning states + Unit registration + carry fields + 20 tests (917 → 935).
+- `8117543` — main.gd spawn + 4 tests (935 → 939).
+
+**`&"gathering"` StringName preserved per Open Space contract.** Phase 3 wave 1B's Farr-drain dispatcher reads `current.id` at `unit_health_zero` time (pre-`Dying`-swap) to choose `worker_killed_during_gather` (0.5) vs `worker_killed_idle` (1.0). The state's `id` field is the contract — do not rename.
+
+**Live-game-broken-surface answers (Experiment 01):**
+1. *Runtime state no unit test exercises:* The full live chain `EventBus.sim_phase → Unit._on_sim_phase → fsm.tick → UnitState_Gathering._sim_tick → _movement._sim_tick + mine_node.request_extract` only fires end-to-end in the live scene with the production `NavigationAgentPathScheduler` — unit tests use `MockPathScheduler`. The wave-1A spawn positions are inside the terrain plane bounds, but no navmesh is baked at wave-1A scope (LATER L2), so the production scheduler will return FAILED for any path request; the Gathering / Returning defensive `FAILED → Idle` bail keeps the live game readable (worker walks toward the mine for one tick, then idles silently). Wave 1B bakes the navmesh as part of the ResourceSystem / Khaneh placement wiring; that's the wave where gather-walk actually works in the live game. The wave-1A live-test value is "the visuals appear; the FSM doesn't crash on right-click."
+2. *What headless tests can't detect:* Visual readability — does the yellow cylinder distinguish from the sandy Kargar and the sandy terrain? Lead live-tests post-merge; if it bleeds, the material in `mine_node.tscn` retunes (a `Color()` edit, not a balance number — same lesson as Phase 2 session 1's FarrGauge contrast fix in commit `2d1e24e`).
+3. *Min interactive smoke test:* Lead boots, sees 5 yellow cylinders at Z ≈ 0..15 (between Iran and Turan clusters). Right-clicks one with a Kargar selected — currently no-op in the live game because wave-1B's input layer doesn't yet route `&"gather"` commands. To exercise the gather state pre-wave-1B, the lead can call `kargar.replace_command(&"gather", {&"target_node": <mine ref>})` from a debug overlay (not shipped this wave). The FSM behavior is covered headlessly via `test_unit_state_returning.gd::test_gather_return_gather_loop_continues` (full mini-loop) and per-state unit tests.
+
+**Cross-agent coordination:** None — sequential single-agent wave per STUDIO_PROCESS §9 2026-05-13. Diff verified via `git diff --staged --stat` on each of the 4 commits — only files in the wave-1A ownership list staged.
+
+**Open questions added to `QUESTIONS_FOR_DESIGN.md`:** None. Two implementation choices made independently per CLAUDE.md escalation rule #1:
+- API naming follows kickoff §3's `request_extract` / `complete_extract` / `release_extract` rather than the contract's `begin_extract` / `tick_extract` / `release_extract`. Documented inline.
+- Wave-1A deposit target falls back to the worker's own position when payload lacks `deposit_target` — zero-walk loop. Wave 1B wires the Throne / ResourceSystem dropoff.
+
+**State for next session (Phase 3 wave 1B):**
+- **ResourceSystem autoload + HUD wire-up.** `UnitState_Returning._perform_deposit` swaps its zero-out body for a `ResourceSystem.add(team, kind, amount_x100)` call. The current wave-1A tests for the zero-out are not coupled to the autoload (they read `_carry_kind` / `_carry_amount_x100` directly on the unit) — wave 1B's tests cover the deposit-then-credit path end-to-end.
+- **Farr-drain dispatcher.** Subscribe to `EventBus.unit_health_zero` (NOT `unit_died` — the latter fires from `Dying.enter` and would collapse the drain keys per the Open Space load-bearing note). Read `unit.fsm.current.id` in the handler and branch on `&"gathering"` (drain `worker_killed_during_gather` = 0.5) vs `&"idle"` (drain `worker_killed_idle` = 1.0). Route both through `FarrSystem.apply_farr_change(amount, reason, source_unit)`.
+- **MineNode reserves / yield / dwell wired to BalanceData.** Three `TODO(phase-3-wave-1B)` constants in `mine_node.gd` switch to `BalanceData.economy.resource_nodes.{mine_initial_stock, coin_yield_per_trip, trip_full_load_ticks}`.
+- **NavigationObstacle3D on MineNode scene + navmesh bake.** Per Resource Node Contract §3.2 — mines are obstacles. Wave 1A skips this because no navmesh is baked yet. Wave 1B adds the navmesh bake on terrain + the obstacle child on `mine_node.tscn`.
+- **Input layer routes `&"gather"` commands.** Right-click on a MineNode with a Kargar selected → `kargar.replace_command(&"gather", {&"target_node": mine})`. ClickHandler extension. Wave 1B input dispatch.
+- **Cultural alignment note for shahnameh-loremaster:** Coin in this wave is the Persian سکّه (sekkeh) — currency-as-evidence-of-kingship. The MineNode source header references this; if the lead invokes the loremaster on a future wave that names the deposit interaction or the resource UI strings, the cultural framing is already in the source so the reviewer can build on it rather than re-derive.
+
+
+## 2026-05-08 (gameplay-systems) — Phase 3 wave 1B: ResourceSystem + HUD wire-up + gather routing + Farr drain dispatcher
+
+**Wave-1B scope per `02f_PHASE_3_KICKOFF.md` §3:** the four integration pieces that wire wave 1A's gather-loop state machinery into the live game. ResourceSystem is the per-team Coin/Grain/Population chokepoint; the HUD subscribes to its signal; right-click MineNode now dispatches gather commands; and death-triggered Farr drains route through a new dispatcher that reads FSM state pre-Dying-swap.
+
+**Shipped:**
+
+1. **`ResourceSystem` autoload** (`game/scripts/autoload/resource_system.gd`). Extends SimNode via path-string preload (registry-race pattern, ARCHITECTURE.md §6 v0.4.0). Per-team fixed-point storage (`Dictionary[int, int]` keyed by `Constants.TEAM_*`). Single sanctioned write: `change_resource(team, kind, amount_x100, reason, source_unit)`. Asserts on-tick via inherited `_set_sim`. Emits `EventBus.resource_changed(team, kind, delta_x100, new_total_x100)`. Sister chokepoints `change_population` and `change_population_cap` ship the same shape for wave 1C+. `reset()` mirrors FarrSystem.reset() for MatchHarness teardown. **Naming choice (load-bearing): `change_resource`, NOT `apply_resource_change`.** The L1 lint rule (`tools/lint_simulation.sh`) flags `apply_*\(` calls when the file defines an off-tick frame entry — adopting the verb-noun shape keeps the chokepoint pattern without expanding the allowlist. The FarrSystem precedent (`apply_farr_change`) predates the lint rule; reserving `apply_*` for the Farr chokepoint specifically minimizes future allowlist churn.
+
+2. **`EventBus.resource_changed` signal + sink registration.** Write-shaped (kind discriminates COIN/GRAIN/population/population_cap). Added to `_SINK_SIGNALS` and `_make_forwarder` arms for telemetry coverage.
+
+3. **`ResourceHUD` wire-up** (`game/scripts/ui/resource_hud.gd`). Now subscribes to `EventBus.resource_changed` (FarrGauge pattern: seed on `_ready`, refresh on signal — no per-frame polling for Coin/Grain/Pop). Reads from `ResourceSystem.coin_for / grain_for / population_for(TEAM_IRAN)`. Legacy `GameState.player_resources` meta path retained as defensive fallback for pre-Phase-3 test fixtures; production reads always win via ResourceSystem.
+
+4. **`UnitState_Returning._perform_deposit` real wire** (`game/scripts/units/states/unit_state_returning.gd`). Replaces wave 1A's carry-zeroing stub with `ResourceSystem.change_resource(unit.team, unit._carry_kind, unit._carry_amount_x100, &"gather_deposit", unit)` followed by the same zero-out. Empty-carry defensively skipped to avoid spurious delta=0 signals. Sim Contract §1.3 compliance: change_resource called from inside the state's _sim_tick (driven by EventBus.sim_phase → StateMachine.tick), so SimClock.is_ticking() holds when the chokepoint's assert fires.
+
+5. **Right-click gather routing in `click_handler.gd`.** New branch BEFORE the unit-team branch: if the raycast hit a ResourceNode (duck-typed via `has_method(&"request_extract")` + `&"is_gatherable" in n`), dispatch `Constants.COMMAND_GATHER` to every selected worker (`unit_type == &"kargar"`). Non-workers in mixed selections are skipped — matches StarCraft 2's "workers gather, combat units don't auto-follow." Constants.COMMAND_GATHER already existed; StateMachine._COMMAND_KIND_TO_STATE_ID already maps `&"gather"` → `&"gathering"` (wave 1A wiring), so Unit.replace_command flows through transition_to_next into UnitState_Gathering.enter without further changes.
+
+6. **`FarrDrainDispatcher` autoload** (`game/scripts/autoload/farr_drain_dispatcher.gd`). New standalone autoload — NOT folded into FarrSystem (cleaner separation: FarrSystem owns the chokepoint, dispatcher owns trigger→key routing; dispatcher has zero owned state). Subscribes to `EventBus.unit_health_zero` at `_ready` (autoload init runs at engine boot, BEFORE any unit's StateMachine connects to the same signal at spawn time — Godot signal handlers run in connect() order, so dispatcher fires first and reads `unit.fsm.current.id` PRE-Dying-swap). **Subscription choice load-bearing** per Open Space 2026-05-13: subscribing to `unit_died` would collapse the drain keys (every death would see `state.id == &"dying"` because Dying.enter is what emits unit_died). Dispatch table: `&"gathering"` / `&"returning"` → `&"worker_killed_during_gather"` (0.5); `&"idle"` AND `unit_type == &"kargar"` → `&"worker_killed_idle"` (1.0); anything else → no drain. Looks up magnitude from `BalanceData.farr.drain_rates[key]`. Applies the negative sign at the call site (`FarrSystem.apply_farr_change(-magnitude, key, unit)` — magnitudes are stored positive in BalanceData per Open Space convention).
+
+7. **`FarrConfig.drain_rates` schema + `balance.tres` populated.** `Dictionary[StringName, float]` field with 8 keys per the Open Space drain-rate table — 2 Phase 3 wired (`worker_killed_idle` 1.0, `worker_killed_during_gather` 0.5) + 6 forward-compat (`capital_damaged` 2.0, `capital_lost` 12.0, `building_destroyed_civilian` 1.5, `building_destroyed_military` 2.5, `building_destroyed_atashkadeh` 5.0, `hero_died` 5.0). `BalanceData.validate_hard` gains three rules: Phase 3 required keys present, all magnitudes positive (sign applied at call site), all magnitudes < `kaveh_trigger_threshold` (a single drain that skips the grace window violates §9.1).
+
+8. **Legacy `FarrSystem._on_unit_died` retired.** The Phase 2 session 1 cause-string suffix path (`"_idle_worker"` parsing) is no longer wired — `FarrSystem._ready` and `reset()` no longer connect the handler. The handler method body is now a no-op stub to preserve the symbol for any external caller. `test_farr_drain.gd` migrated: tests now emit `unit_health_zero` and verify the dispatcher path; one explicit negative test asserts the legacy `unit_died` + suffix path is a no-op.
+
+**Test-count delta:** 939 → 987 passing (+48 new tests). Pre-existing 3 pending unchanged.
+- `test_resource_system.gd` (13 new)
+- `test_resource_hud.gd` (3 new + 4 migrated legacy tests)
+- `test_unit_state_returning.gd` (3 new)
+- `test_click_handler.gd` (4 new)
+- `test_balance_data.gd` (9 new)
+- `test_farr_drain_dispatcher.gd` (12 new)
+- `test_farr_drain.gd` (6 migrated to new dispatcher path)
+- `test_phase_3_gather_loop.gd` (4 new integration tests)
+
+**Lint:** 0 violations (L1-L5).
+
+**Commit chain** (per-TDD-cycle per STUDIO_PROCESS §9):
+- `9cb0352` — ResourceSystem autoload + EventBus signal + 13 tests (939 → 952).
+- `f10e944` — HUD wire-up + 3 tests + 4 legacy test migrations (952 → 955).
+- `098cdaa` — Returning deposit wire + 3 tests (955 → 958).
+- `41fbe83` — Input gather routing + 4 tests (958 → 962).
+- `7870157` — BalanceData drain_rates + validation + 9 tests (962 → 971).
+- `5f94f06` — FarrDrainDispatcher + 12 tests + 6 migrated (971 → 983).
+- `6b2bd94` — Integration test gather loop + 4 tests (983 → 987).
+
+**Live-game-broken-surface answers (Experiment 01):**
+1. *Runtime state no unit test exercises:* The full live chain `right-click mine → ClickHandler → SelectionManager → Unit.replace_command → StateMachine.transition_to_next → UnitState_Gathering.enter → MovementComponent.request_repath → tick → arrival → MineNode.request_extract → dwell → complete_extract → carry set → UnitState_Returning → walk back → ResourceSystem.change_resource → EventBus.resource_changed → HUD label update.` Each link is unit-tested in isolation; the wave-1A live-game caveat about no baked navmesh still applies (production scheduler will FAIL paths; Gathering / Returning defensive `FAILED → Idle` bail keeps the live game readable). Navmesh bake is deferred to a later wave per Resource Node Contract §3.2; **the gather-walk itself does not work in the live game yet without the navmesh.** The lead's smoke test will verify visuals + FSM transitions, not full walk-and-deposit.
+2. *Headless can't detect:* HUD label visual readability (text contrast against any future themed terrain — currently sandy ochre); smooth-vs-jittery counter updates on rapid signal bursts (multiple workers depositing simultaneously); whether the +10 Coin increment is satisfying to watch (animation polish is Phase 5).
+3. *Min interactive smoke test:* Lead boots. Selects a Kargar. Right-clicks a yellow mine cylinder. Worker either (a) walks if a navmesh is baked, gathers, returns, deposits — HUD Coin counter increments by 10 each cycle; OR (b) without navmesh, the worker stays in Gathering for one tick (path FAILED), bails to Idle. Either way: no crash, no UI freeze. Then: kill a Kargar standing idle — Farr drops 50 → 49. Kill a Kargar mid-gather — Farr drops 49 → 48.5 (lighter).
+
+**Drain dispatcher subscription confirmation:** subscribes to `EventBus.unit_health_zero`, NOT `unit_died`. Verified in two places:
+1. `test_farr_drain_dispatcher.gd::test_dispatcher_subscribes_to_unit_health_zero_not_unit_died` (positive contract)
+2. `test_farr_drain_dispatcher.gd::test_dispatcher_does_not_subscribe_to_unit_died` (negative contract)
+
+**Naming choice rationale (`change_resource`):** documented in `resource_system.gd` header AND in the cycle-1 commit body (9cb0352). The L1 lint rule's `apply_*\(` pattern would flag a hypothetical `apply_resource_change` call when the file defines an off-tick frame entry. Reserving `apply_*` for the FarrSystem chokepoint specifically keeps every other chokepoint clear of L1 expansion. Verb-noun naming (`change_resource`, `change_population`, `change_population_cap`) is the project convention going forward.
+
+**LATER items added or surfaced:**
+- The dispatcher's `_find_unit_by_id` walks the scene tree O(N) per death event. Phase 3 scale (<100 units) makes this negligible; when UnitRegistry ships (LATER L1), swap to direct lookup.
+- HealthComponent still appends `"_idle_worker"` cause-string suffix for legacy telemetry parity. Future cleanup can remove the augmentation entirely once nothing reads it (the F2 debug overlay will subscribe to the dispatcher's `farr_changed` emits directly).
+
+**Cross-agent coordination:** None — sequential single-agent wave per Pitfall #7 mitigation. Diff verified via `git diff --staged --stat` on each of the 7 commits.
+
+**Open questions added to `QUESTIONS_FOR_DESIGN.md`:** None. Two implementation choices made independently per CLAUDE.md escalation rule #1:
+- The dispatcher routes via a separate autoload (not folded into FarrSystem) for cleaner separation of concerns. Rationale documented in source header.
+- The HUD retains a defensive GameState meta fallback path for legacy test fixtures (test_resource_hud.gd has Phase 0 fixtures that pre-date ResourceSystem); production reads always win via ResourceSystem.
+
+**State for next session:**
+- **Khaneh + placement (wave 1C).** Right-click-build flow + NavigationObstacle3D + population_cap increment via `ResourceSystem.change_population_cap` (sister chokepoint shipped this wave for forward-compat).
+- **HealthComponent cause-string augmentation cleanup.** Now that the dispatcher owns the worker-killed-idle path via FSM state lookup, the `"_idle_worker"` suffix in HealthComponent.\_apply_damage_x100 is dead code from the dispatcher's perspective. F2 debug overlay (Phase 4) decides whether the suffix carries telemetry value or can be removed entirely.

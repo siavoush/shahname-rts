@@ -13,7 +13,7 @@ ssot_for:
 references: [01_CORE_MECHANICS.md, DECISIONS.md]
 tags: [log, questions, design-chat, escalations]
 created: 2026-04-23
-last_updated: 2026-05-01
+last_updated: 2026-05-14
 ---
 
 # Questions for Design
@@ -37,6 +37,53 @@ Keep entries terse. Long questions fragment the design chat's attention.
 
 ## Open questions
 
+
+## 2026-05-14 — UI primary-name convention: Persian word vs English gloss
+
+**Context:** Phase 3 session 1 wave-close shahnameh-loremaster review. The spec (`01_CORE_MECHANICS.md` §5) names buildings as "Khaneh (house)", "Mazra'eh (farm)", "Sarbaz-khaneh (barracks)" — Persian word as primary, English as gloss. The existing strings.csv has both patterns: `UNIT_KARGAR,Kargar,` (Persian-primary, correct) and originally `BLDG_KHANEH,House,` (English-primary, anachronistic — fixed in commit `f0e79ce` to `BLDG_KHANEH,Khaneh,` per the loremaster's strong recommendation).
+
+**Question:** Should the canonical en-side label for buildings (and other named-in-Persian gameplay surfaces) be the **Persian word** (e.g. "Khaneh", "Mazra'eh", "Sarbaz-khaneh") or the **English gloss** (e.g. "House", "Farm", "Barracks")? Make the rule explicit so session-2's build-menu extensions inherit one consistent convention.
+
+**Options considered:**
+- **Persian-primary** (what we just landed for Khaneh + Kargar). Teaches the player one Persian word per element. Matches the Persian-rooted-not-flavored stance from `MANIFESTO.md` + `00_SHAHNAMEH_RESEARCH.md` §7. Pairs naturally with an optional tooltip key (`UI_BUILDING_KHANEH_TOOLTIP`) carrying the English semantic in hover-text.
+- **English-primary with Persian tooltip.** Easier first-impression for non-Persian speakers; loses the daily-vocabulary-teaching opportunity.
+- **Mixed by element type.** E.g., units always Persian (Kargar), buildings always English (House). Hardest to justify; what the loremaster called "the worst-of-both."
+
+**Blocking:** Partially. Session 2's wave 1 (Mazra'eh / Ma'dan / Sarbaz-khaneh / Atashkadeh build-menu extensions) needs a ruling here — they'll inherit whatever pattern lands.
+
+---
+
+## 2026-05-14 — Coin or Sekkeh? Resource name in en-side
+
+**Context:** Phase 3 session 1 wave-close shahnameh-loremaster review. The spec (`01_CORE_MECHANICS.md` §3 line 103) names the resource "Coin (سکه, *sekkeh*)" — English "Coin" with the Persian root *sekkeh* in the spec. `Constants.KIND_COIN = &"coin"` matches. The Persian word *sekkeh* / *drahm* / *derham* is Kayanian/Sasanian-era authentic.
+
+**Question:** Should the en-side stay "Coin" (current — spec-canonical and the loremaster's recommendation) or flip to "Sekkeh" to match the building / unit Persian-primary convention? Pair this ruling with Q1 above (UI primary-name convention) so both are answered together.
+
+**Options considered:**
+- **Keep "Coin"** (loremaster recommendation). Generic-enough English word that doesn't dilute setting; spec-canonical. `fa` column lands سکه at Tier 2.
+- **"Sekkeh"** to match Persian-primary convention if Q1 chooses that path. Internally consistent at the cost of a slightly higher first-impression friction for non-Persian speakers.
+
+**Blocking:** No. Session 1's `Coin` strings already shipped; either ruling is a one-line strings.csv edit when it lands.
+
+---
+
+## 2026-05-14 — Turan housing analogue: what's it called, when does it ship?
+
+**Context:** Phase 3 session 1 wave-close shahnameh-loremaster review. Phase 3 is Iran-only per spec §1 (Turan is AI with simplified economy in MVP). The Building abstract base shipped in wave 1C is faction-neutral (place_at + _on_placement_complete hook works for any side). Khaneh — Iran's settled-household pop-cap building — is its first concrete subclass. The cultural-rationale header in `khaneh.gd` IS Iran-coded (settled life, dynastic builders Jamshid/Fereydun). When Turan housing ships it MUST carry parallel substantive cultural-rationale per `00_SHAHNAMEH_RESEARCH.md` §7 "worthy rivals" rule.
+
+**Question:**
+(a) What's the Turan housing equivalent called? Loremaster's candidates: ***Otag*** (Turkic-origin word for tent, attested in Persian sources) or ***Khargah*** (large royal tent, Shahnameh-attested for steppe encampments).
+(b) Does the `Building` base class need a `cultural_idiom` field (Iran="settled", Turan="nomadic") before session-2 starts adding more Iran-only buildings that may bake in settled-only assumptions?
+(c) Same Q for Mazra'eh — Turan's equivalent isn't "farm" (different gather-loop topology: grazing / animal husbandry, not soil-tied agriculture). Cultural framing for the Turan analogue should be settled NOW so session-2's Mazra'eh ships with the same shape.
+
+**Options considered:**
+- **Defer entirely** — Turan AI uses simplified economy in MVP per spec §1; never ships a parallel housing building. Cheapest path.
+- **Otag for housing, Cherahgah ("grazing-ground") for Mazra'eh-analogue** — Turkic-rooted, dignified, parallels Iran's Khaneh + Mazra'eh shape.
+- **Khargah for housing** — more royal-connotation; reserve for a Phase 4+ Turan-Court building, not a baseline pop-cap building.
+
+**Blocking:** No for session 1; partially blocking for Phase 4 if MVP expands Turan's economy past "simplified AI." Worth answering before session 2 adds more Iran-only buildings whose abstraction surfaces bake in settled-only assumptions.
+
+---
 
 ## 2026-04-30 — Do depleted mine ruins stay permanently or can they be cleared?
 

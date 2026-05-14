@@ -1,0 +1,100 @@
+[gd_scene load_steps=5 format=3 uid="uid://shahnameh_mine_node"]
+
+; mine_node.tscn — Coin MineNode scene.
+;
+; Source: 01_CORE_MECHANICS.md §3 (Coin / sekkeh economy) +
+; docs/RESOURCE_NODE_CONTRACT.md §1.3 + Phase 3 wave 1A kickoff §3.
+;
+; Visual placeholder per CLAUDE.md "colored shapes only":
+;   - Yellow cylinder, ~1.5 wide × 0.5 tall (squat — reads as a coin pile,
+;     not a column).
+;   - Iran-coin gold color (0.85, 0.7, 0.2). Saturated enough to stay
+;     readable against the sandy terrain — the FarrGauge contrast lesson
+;     from Phase 2 session 1 is the precedent the lead will catch in the
+;     wave-1A live test.
+;
+; Composition is bare:
+;   - Root: Node3D (extends ResourceNode via mine_node.gd's path-string
+;     extends; the script handles the SimNode-discipline routing).
+;   - MeshInstance3D: the yellow cylinder.
+;
+; What's deliberately NOT in the scene:
+;   - NavigationObstacle3D — per RESOURCE_NODE_CONTRACT.md §3.2: mines
+;     SHOULD carry NavigationObstacle3D so the navmesh routes around them.
+;     Wave 1A skips this — the wave-1A reserves spawn at known sandy spots
+;     that are clear of any unit-blocking geometry, and the navmesh isn't
+;     baked at wave-1A scope (LATER L2 MovementSystem coordinator). Wave 1B
+;     adds the obstacle alongside the NavigationRegion3D bake setup.
+;   - SpatialAgentComponent — mines aren't units; they don't need spatial
+;     indexing for combat queries. If wave-1B selection / range queries
+;     need it, the component plugs in here.
+
+[ext_resource type="Script" path="res://scripts/world/resource_nodes/mine_node.gd" id="1_mine"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_mine"]
+; Squat coin-pile silhouette. Wider than tall so it reads as a deposit on
+; the ground, not a pillar or column. Top and bottom radius equal (true
+; cylinder, not cone) — a stack of coins / ore, not a refinery. Sized 1.5
+; wide (radius 0.75) × 0.5 tall per kickoff §3 visual layout note.
+top_radius = 0.75
+bottom_radius = 0.75
+height = 0.5
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_mine"]
+; Iran-coin gold per kickoff §3. Saturation deliberately punchy
+; (0.85 red, 0.7 green, 0.2 blue) — same lesson as FarrGauge fix
+; (commit 2d1e24e): low-contrast against sandy terrain fails the live-test
+; readability check. Lead live-tests post-wave-1A; if the gold still
+; bleeds into the terrain, balance-engineer / world-builder retunes here
+; (it's a material tweak, not a balance number).
+albedo_color = Color(0.85, 0.7, 0.2, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — matches the unit material pipeline
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_mine"]
+; Phase 3 wave 1B BUG-07 fix: click-target collision body for the right-click
+; raycast. Shape matches the visual cylinder (radius 0.75, height 0.5). Sized
+; so the navmesh's walkable surface keeps the mine's center reachable —
+; collision radius 0.75 m on a 256 m map with NAV_AGENT_RADIUS=0.5 leaves
+; ample clearance around the center so MovementComponent.request_repath
+; (mine.global_position) resolves. (If the navmesh ever rejects the center
+; in practice, escalate per kickoff comment — do NOT switch to a layer-mask
+; workaround without coordination.)
+radius = 0.75
+height = 0.5
+
+
+[node name="MineNode" type="Node3D"]
+script = ExtResource("1_mine")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+; Y-offset: half-height (0.25) so the cylinder's bottom face sits ON the
+; ground plane. Matches the unit.tscn / kargar.tscn mesh-bottom-at-y=0
+; convention so spawn positions land the mine cleanly on terrain at the
+; same Y the workers walk on.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25, 0)
+mesh = SubResource("CylinderMesh_mine")
+material_override = SubResource("StandardMaterial3D_mine")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="."]
+; Phase 3 wave 1B BUG-07 fix: ClickHandler._raycast_from_screen runs with
+; collide_with_bodies=true / collide_with_areas=false, so the raycast only
+; hits CollisionObject3D bodies. Without a body in this subtree, the
+; raycast walks past the mine and strikes the terrain — the resolver
+; (_resolve_resource_node_from_hit) finds no `request_extract` ancestor
+; on the terrain's parent chain and the right-click falls through to a
+; Move command. Adding a StaticBody3D + CollisionShape3D here makes the
+; mine visible to the raycast; the resolver walks body.parent → MineNode
+; (which carries `request_extract`) and dispatches COMMAND_GATHER per the
+; ClickHandler dispatch table.
+;
+; Default collision_layer = 1, collision_mask = 1 — matches the existing
+; unit.tscn / terrain.tscn convention. The raycast's mask is 0xFFFFFFFF
+; (all-layers) so any layer would work; staying on layer 1 keeps the scene
+; consistent with the other CollisionObject3Ds in the project.
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticBody3D"]
+; Same Y-offset as the visual (0.25) so the body's centre sits where the
+; rendered cylinder's centre sits — clicking the visible silhouette hits
+; the collision shape with no off-by-half-height surprises.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25, 0)
+shape = SubResource("CylinderShape3D_mine")

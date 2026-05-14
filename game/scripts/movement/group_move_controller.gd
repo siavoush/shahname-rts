@@ -77,10 +77,20 @@ static func dispatch_group_move(units: Array, target: Vector3) -> void:
 	# the slots for the ones that follow (the array order is the slot order,
 	# so a freed unit just leaves a slot unused — this keeps the dispatch
 	# deterministic against a stable input ordering).
+	#
+	# BUG-11 defense-in-depth (2026-05-14): also skip anything without
+	# `replace_command`. The primary fix is at the selection layer
+	# (box_select_handler filters &"buildings" group), but Buildings
+	# inherit `unit_id` + `team` and could leak through a future selection
+	# path. The `has_method` check is cheap and renders the dispatch safe
+	# against any non-Unit Node in the input array.
 	var live: Array = []
 	for u in units:
-		if u != null and is_instance_valid(u):
-			live.append(u)
+		if u == null or not is_instance_valid(u):
+			continue
+		if not u.has_method(&"replace_command"):
+			continue
+		live.append(u)
 
 	if live.is_empty():
 		return

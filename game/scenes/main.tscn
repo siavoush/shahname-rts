@@ -11,6 +11,8 @@
 [ext_resource type="PackedScene" uid="uid://shahhealthbarsoverlay" path="res://scenes/ui/health_bars_overlay.tscn" id="9_healthbars"]
 [ext_resource type="PackedScene" uid="uid://shahattackrangeoverlay" path="res://scenes/ui/overlays/attack_range_overlay.tscn" id="10_attackrange"]
 [ext_resource type="Script" path="res://scripts/input/attack_move_handler.gd" id="11_attackmove"]
+[ext_resource type="PackedScene" uid="uid://shahnameh_build_menu" path="res://scenes/ui/build_menu.tscn" id="12_buildmenu"]
+[ext_resource type="Script" path="res://scripts/input/build_placement_handler.gd" id="13_buildplacement"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -60,6 +62,34 @@ script = ExtResource("6_boxselect")
 [node name="DoubleClickSelect" type="Node" parent="."]
 script = ExtResource("8_doubleclick")
 
+; BuildPlacementHandler is placed AFTER ClickHandler / BoxSelectHandler /
+; DoubleClickSelect in sibling order so its _unhandled_input runs FIRST.
+; Godot dispatches _unhandled_input in REVERSE sibling order — the
+; higher-index sibling fires first. Verified by the regression test
+; `test_godot_unhandled_input_dispatch_order` in
+; tests/unit/test_godot_unhandled_input_dispatch_order.gd.
+;
+; BUG-10 fix (2026-05-14): the wave-1C placement put BPH at idx 4
+; (between AttackMoveHandler and ClickHandler) under the mistaken
+; "lower-index = first" convention copied from AttackMoveHandler. That
+; convention is backwards; ClickHandler at the lower index actually
+; fired first and consumed every terrain click via deselect-all,
+; preventing BPH from ever reaching its confirm-click handler. The
+; selection-changed guard in BPH then cancelled the orphaned placement
+; state. Live-test #2 surfaced this; the log diagnostic at
+; `[click] LEFT: hit non-unit → deselect_all` arriving BEFORE the
+; `[build-placement] BUG-08 guard` line was the smoking gun.
+;
+; When in placement mode the handler calls
+; get_viewport().set_input_as_handled() so ClickHandler / BoxSelect /
+; DoubleClickSelect never see the confirm-click. When not in placement
+; mode the handler short-circuits and lets the other handlers run
+; normally.
+[node name="BuildPlacementHandler" type="Node" parent="."]
+script = ExtResource("13_buildplacement")
+
 [node name="HealthBarsOverlay" parent="." instance=ExtResource("9_healthbars")]
 
 [node name="AttackRangeOverlay" parent="." instance=ExtResource("10_attackrange")]
+
+[node name="BuildMenu" parent="." instance=ExtResource("12_buildmenu")]

@@ -562,6 +562,62 @@ func test_signal_to_band_change_integration_red() -> void:
 
 
 # ---------------------------------------------------------------------------
+# 13. Numeric label exposes fractional drains (Phase 3 polish)
+# ---------------------------------------------------------------------------
+# Phase 3 session 1 live-test regression: a half-Farr drain (e.g. killing a
+# gathering Kargar, −0.5) was invisible because the label rounded to int via
+# roundi(). Spec §4.3 lists 0.5 drain magnitudes as load-bearing; the player
+# must see them happen. Format is "%s %.1f" — one decimal so 47.5 reads as
+# "Farr 47.5", not "Farr 48".
+#
+# The gauge exposes the rendered label text through `format_numeric_label()`
+# (the same string `_draw_numeric_label` passes to `draw_string`). Tests
+# assert on this exposed string rather than reading a framebuffer.
+
+func test_numeric_label_includes_one_decimal_place_at_integer_farr() -> void:
+	var gauge: Control = _instantiate_gauge()
+	if gauge == null:
+		pending("farr_gauge.tscn unavailable")
+		return
+	EventBus.farr_changed.emit(0.0, "test", -1, 50.0, 0)
+	for _i in range(30):
+		await get_tree().process_frame
+	var label: String = gauge.call(&"format_numeric_label")
+	assert_eq(label, "%s 50.0" % tr("UI_FARR"),
+		"Integer Farr value must render with .0 suffix: \"Farr 50.0\", not \"Farr 50\"")
+
+
+func test_numeric_label_surfaces_half_farr_fraction() -> void:
+	# The reproducer from the lead live-test: Farr at 47.5 must render as
+	# "Farr 47.5", not snap back to "Farr 48" via roundi().
+	var gauge: Control = _instantiate_gauge()
+	if gauge == null:
+		pending("farr_gauge.tscn unavailable")
+		return
+	EventBus.farr_changed.emit(-0.5, "test_half_drain", -1, 47.5, 0)
+	for _i in range(30):
+		await get_tree().process_frame
+	var label: String = gauge.call(&"format_numeric_label")
+	assert_string_contains(label, ".5",
+		"Half-Farr drain (47.5) must surface as a fractional digit in the label")
+	assert_eq(label, "%s 47.5" % tr("UI_FARR"),
+		"Label must render the exact value 47.5 with %.1f format")
+
+
+func test_numeric_label_at_zero_is_zero_point_zero() -> void:
+	var gauge: Control = _instantiate_gauge()
+	if gauge == null:
+		pending("farr_gauge.tscn unavailable")
+		return
+	EventBus.farr_changed.emit(-50.0, "test", -1, 0.0, 0)
+	for _i in range(30):
+		await get_tree().process_frame
+	var label: String = gauge.call(&"format_numeric_label")
+	assert_eq(label, "%s 0.0" % tr("UI_FARR"),
+		"Farr 0 must render \"Farr 0.0\" (no negative zero, no truncation)")
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

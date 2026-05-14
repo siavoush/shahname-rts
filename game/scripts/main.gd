@@ -31,6 +31,8 @@ extends Node
 ## gameplay effect → make the choice, document briefly.)
 
 const _KargarScene: PackedScene = preload("res://scenes/units/kargar.tscn")
+const _MineNodeScene: PackedScene = preload(
+	"res://scenes/world/resource_nodes/mine_node.tscn")
 const _PiyadeScene: PackedScene = preload("res://scenes/units/piyade.tscn")
 const _TuranPiyadeScene: PackedScene = preload("res://scenes/units/turan_piyade.tscn")
 const _KamandarScene: PackedScene = preload("res://scenes/units/kamandar.tscn")
@@ -167,12 +169,49 @@ const _TURAN_ASB_SAVAR_SPAWN_POSITIONS: Array[Vector3] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Phase 3 wave 1A — Coin MineNode spawn cluster.
+#
+# Five mines placed in the central wave-area (Z ≈ 0..15, between Iran's
+# Kargar/Piyade clusters at Z≤0 and Turan's at Z≥20). This is "no-man's
+# land" — the player has to walk workers out from the home base to gather,
+# which is the gameplay intent (mines aren't free at the doorstep).
+#
+# X-spread is asymmetric (mostly negative-X) to leave the +X corridor open
+# for the existing Iran Savar / Turan Savar engagement zone. Y = 0.0 so the
+# mine's mesh-bottom sits flat on the terrain — MineNode.tscn handles the
+# 0.25 mesh-offset internally.
+#
+# Live-game-broken-surface considerations:
+#   1. Positions are clearly within the terrain plane bounds — no off-map
+#      mines that fail to spawn visibly.
+#   2. Wave-1A doesn't yet bake a navmesh (LATER L2 MovementSystem coord),
+#      so "off-navmesh" isn't a current failure mode; MockPathScheduler in
+#      tests uses straight-line paths, and the live game falls back to the
+#      production NavigationAgentPathScheduler (which itself FAILs when no
+#      navmesh exists — workers seeing FAILED bail to Idle per wave-1A
+#      defensive design). Wave 1B adds the navmesh; this spawn layout will
+#      need a re-check to confirm each position is inside the baked region.
+#   3. Yellow against sandy terrain — the FarrGauge contrast lesson is
+#      reflected in MineNode.tscn's saturated gold material. Lead live-
+#      tests post-wave-1A and reports if the color blends.
+
+const _COIN_MINE_SPAWN_POSITIONS: Array[Vector3] = [
+	Vector3(-8.0, 0.0, 5.0),
+	Vector3(-12.0, 0.0, 8.0),
+	Vector3(-6.0, 0.0, 12.0),
+	Vector3(-14.0, 0.0, 0.0),
+	Vector3(-10.0, 0.0, 15.0),
+]
+
+
 func _ready() -> void:
 	print("[main] Shahnameh RTS booted. Godot %s, SIM_HZ=%d." % [
 		Engine.get_version_info().get("string", "unknown"),
 		SimClock.SIM_HZ,
 	])
 	_spawn_starting_units()
+	_spawn_starting_resources()
 
 
 # Spawn the Phase-1 + Phase-2 starting roster: 5 Iran Kargar + 5 Iran Piyade
@@ -240,6 +279,24 @@ func _spawn_starting_units() -> void:
 	# Turan AsbSavar mirror — unit_ids 31..33.
 	for pos: Vector3 in _TURAN_ASB_SAVAR_SPAWN_POSITIONS:
 		_spawn_unit(_TuranAsbSavarScene, pos, Constants.TEAM_TURAN)
+
+
+# Phase 3 wave 1A — spawn the starting resource nodes. Per kickoff §3:
+# 5 Coin mines in the central wave-area so the lead can right-click a mine
+# with a selected Kargar and observe the full gather-deposit-loop.
+#
+# Wave 1B adds:
+#   - The deposit target (Throne or ResourceSystem hookup); wave-1A's
+#     Returning state stub uses the worker's own position, which is enough
+#     to verify the loop's FSM topology but not to credit a HUD counter.
+#   - Mazra'eh (Grain) farms — Mazra'eh extends ResourceNode similarly.
+#   - BalanceData-driven reserves / yield_per_trip / extract_ticks; wave 1A
+#     hardcodes these in mine_node.gd with TODO citations.
+func _spawn_starting_resources() -> void:
+	for pos: Vector3 in _COIN_MINE_SPAWN_POSITIONS:
+		var mine: Node3D = _MineNodeScene.instantiate() as Node3D
+		mine.position = pos
+		_world.add_child(mine)
 
 
 # Internal spawn helper. Team is set BEFORE add_child so the Unit's _ready

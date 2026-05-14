@@ -128,7 +128,46 @@ func validate_hard() -> Array[String]:
 			+ "Must be >= 1 tick. Design invariant per 01_CORE_MECHANICS.md §9.1."
 		)
 
-	# --- Invariant 4: All CombatMatrix effectiveness values in [0.0, 5.0] ---
+	# --- Invariant 4 (Phase 3 wave 1B): drain_rates magnitudes are positive and
+	# below kaveh_trigger_threshold, and Phase 3 required keys are present. ---
+	# Reference: 02f_PHASE_3_KICKOFF.md §2 Open Space resolution. Magnitudes are
+	# stored positive; the drain dispatcher applies the negative sign at the
+	# call site. A single drain that lands the meter below Kaveh in one event
+	# (magnitude >= 15) would skip the 30-second grace window — design
+	# invariant violation.
+	var phase_3_required_drain_keys: Array[StringName] = [
+		&"worker_killed_idle",
+		&"worker_killed_during_gather",
+	]
+	for required_key in phase_3_required_drain_keys:
+		if not farr.drain_rates.has(required_key):
+			errors.append(
+				"farr.drain_rates is missing Phase 3 required key '%s'"
+				% required_key
+			)
+	for drain_key: Variant in farr.drain_rates:
+		var raw: Variant = farr.drain_rates[drain_key]
+		if typeof(raw) != TYPE_FLOAT and typeof(raw) != TYPE_INT:
+			errors.append(
+				"farr.drain_rates[%s] is not numeric (got type %d)"
+				% [drain_key, typeof(raw)]
+			)
+			continue
+		var magnitude: float = float(raw)
+		if magnitude <= 0.0:
+			errors.append(
+				"farr.drain_rates[%s] = %.2f must be positive — the dispatcher "
+				% [drain_key, magnitude]
+				+ "applies the negative sign at the call site"
+			)
+		if magnitude >= farr.kaveh_trigger_threshold:
+			errors.append(
+				"farr.drain_rates[%s] = %.2f >= kaveh_trigger_threshold (%.2f): "
+				% [drain_key, magnitude, farr.kaveh_trigger_threshold]
+				+ "a single event would skip the grace window per §9.1 invariant"
+			)
+
+	# --- Invariant 5: All CombatMatrix effectiveness values in [0.0, 5.0] ---
 	# Values above 5× or below 0 are almost certainly data entry errors and
 	# will produce nonsensical combat outcomes.
 	for attacker_key: Variant in combat.effectiveness:

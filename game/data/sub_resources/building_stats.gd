@@ -27,3 +27,15 @@ class_name BuildingStats extends Resource
 ## Atashkadeh target: +1 Farr/min = 1/1800 Farr/tick ≈ 0.000556 Farr/tick.
 ## FarrSystem reads this field; apply_farr_change() is the chokepoint per CLAUDE.md.
 @export var farr_per_tick: float = 0.0
+
+## Population cap contribution. Khaneh (house) adds +K to its owner team's
+## population_cap when construction completes. Phase 3 session 1 wave 1C
+## ships Khaneh first; future cap-contributing buildings (Sarbaz-khaneh?)
+## set their own value here. 0 for non-housing buildings (Atashkadeh,
+## Mazra'eh, Throne, etc.).
+##
+## Spec reference: 01_CORE_MECHANICS.md §5 — "Khaneh (house) — Population
+## cap +5 per building. 50 coin." Phase 3 session 1 wave 1C kickoff
+## (02f_PHASE_3_KICKOFF.md §3) opted for +10 as the placeholder starting
+## point pending playtest; balance-engineer tunes via balance.tres.
+@export var population_capacity: int = 0

@@ -640,3 +640,132 @@ func test_combat_matrix_is_populated_not_empty() -> void:
 		"combat.effectiveness must be populated with RPS matrix (wave 1B)")
 	assert_gt(effectiveness.size(), 0,
 		"combat.effectiveness must have at least one attacker row")
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 wave 1B — Farr drain_rates table
+# ---------------------------------------------------------------------------
+
+func test_drain_rates_is_populated() -> void:
+	assert_not_null(_balance)
+	var farr: Variant = _balance.get(&"farr")
+	var rates: Variant = farr.get(&"drain_rates")
+	assert_eq(typeof(rates), TYPE_DICTIONARY,
+		"farr.drain_rates must be a Dictionary[StringName, float]")
+	assert_false((rates as Dictionary).is_empty(),
+		"farr.drain_rates must have entries (Phase 3 minimum is 2 keys)")
+
+
+func test_drain_rates_phase_3_required_keys_present() -> void:
+	# Phase 3 wave 1B drain dispatcher wires these two keys:
+	#   worker_killed_idle              → Kargar dying in idle state
+	#   worker_killed_during_gather     → Kargar dying in gather/return state
+	# Open Space resolution 2026-05-13. Validation must catch missing keys.
+	assert_not_null(_balance)
+	var farr: Variant = _balance.get(&"farr")
+	var rates: Dictionary = farr.get(&"drain_rates")
+	assert_true(rates.has(&"worker_killed_idle"),
+		"drain_rates must include 'worker_killed_idle' (Phase 3 wave 1B)")
+	assert_true(rates.has(&"worker_killed_during_gather"),
+		"drain_rates must include 'worker_killed_during_gather' (Phase 3 wave 1B)")
+
+
+func test_drain_rates_phase_3_magnitudes_match_spec() -> void:
+	# Open Space spec: idle = 1.0, gather = 0.5 (positive magnitudes; dispatcher
+	# applies negative sign).
+	assert_not_null(_balance)
+	var farr: Variant = _balance.get(&"farr")
+	var rates: Dictionary = farr.get(&"drain_rates")
+	assert_almost_eq(float(rates[&"worker_killed_idle"]), 1.0, 1e-4,
+		"worker_killed_idle magnitude is 1.0 per spec")
+	assert_almost_eq(float(rates[&"worker_killed_during_gather"]), 0.5, 1e-4,
+		"worker_killed_during_gather magnitude is 0.5 per spec")
+
+
+func test_drain_rates_all_magnitudes_positive() -> void:
+	# Convention: magnitudes are POSITIVE; the dispatcher applies the negative
+	# sign at the call site (apply_farr_change(-magnitude, ...)).
+	assert_not_null(_balance)
+	var farr: Variant = _balance.get(&"farr")
+	var rates: Dictionary = farr.get(&"drain_rates")
+	for key: Variant in rates:
+		var v: float = float(rates[key])
+		assert_gt(v, 0.0,
+			"drain_rates[%s] = %.2f must be positive (sign applied at call site)"
+			% [key, v])
+
+
+func test_drain_rates_all_magnitudes_below_kaveh_threshold() -> void:
+	# Design invariant per validate_hard: no single drain event can land the
+	# meter below the Kaveh threshold (15.0) in one shot. Skipping the
+	# 30-second grace window would violate §9.1.
+	assert_not_null(_balance)
+	var farr: Variant = _balance.get(&"farr")
+	var rates: Dictionary = farr.get(&"drain_rates")
+	var kaveh_threshold: float = float(farr.get(&"kaveh_trigger_threshold"))
+	for key: Variant in rates:
+		var v: float = float(rates[key])
+		assert_lt(v, kaveh_threshold,
+			"drain_rates[%s] = %.2f must be < kaveh_trigger_threshold (%.2f)"
+			% [key, v, kaveh_threshold])
+
+
+func test_validate_hard_passes_with_current_drain_rates() -> void:
+	# Sanity: the shipped balance.tres must pass validate_hard.
+	assert_not_null(_balance)
+	var errors: Array[String] = _balance.validate_hard()
+	assert_eq(errors.size(), 0,
+		"validate_hard must pass on the shipped balance.tres "
+		+ "(errors: %s)" % str(errors))
+
+
+func test_validate_hard_catches_missing_required_drain_key() -> void:
+	# Delete worker_killed_idle and verify validate_hard flags it.
+	assert_not_null(_balance)
+	var farr: Variant = _balance.get(&"farr")
+	var rates: Dictionary = farr.get(&"drain_rates")
+	rates.erase(&"worker_killed_idle")
+	farr.set(&"drain_rates", rates)
+	var errors: Array[String] = _balance.validate_hard()
+	var found: bool = false
+	for e in errors:
+		if "worker_killed_idle" in e and "missing" in e:
+			found = true
+			break
+	assert_true(found,
+		"validate_hard must flag missing 'worker_killed_idle' "
+		+ "(errors: %s)" % str(errors))
+
+
+func test_validate_hard_catches_negative_drain_magnitude() -> void:
+	# Magnitude must be positive; negative values are misconfigured.
+	assert_not_null(_balance)
+	var farr: Variant = _balance.get(&"farr")
+	var rates: Dictionary = farr.get(&"drain_rates")
+	rates[&"worker_killed_idle"] = -1.0
+	farr.set(&"drain_rates", rates)
+	var errors: Array[String] = _balance.validate_hard()
+	var found: bool = false
+	for e in errors:
+		if "worker_killed_idle" in e and "positive" in e:
+			found = true
+			break
+	assert_true(found,
+		"validate_hard must flag a negative drain magnitude")
+
+
+func test_validate_hard_catches_drain_at_or_above_kaveh_threshold() -> void:
+	# A 20-magnitude drain would skip the grace window — design invariant.
+	assert_not_null(_balance)
+	var farr: Variant = _balance.get(&"farr")
+	var rates: Dictionary = farr.get(&"drain_rates")
+	rates[&"worker_killed_idle"] = 20.0
+	farr.set(&"drain_rates", rates)
+	var errors: Array[String] = _balance.validate_hard()
+	var found: bool = false
+	for e in errors:
+		if "worker_killed_idle" in e and "kaveh_trigger_threshold" in e:
+			found = true
+			break
+	assert_true(found,
+		"validate_hard must flag a drain magnitude >= kaveh_trigger_threshold")

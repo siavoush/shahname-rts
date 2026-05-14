@@ -413,7 +413,18 @@ func _collect_unit_shaped(node: Node, out: Array) -> void:
 	# Duck-type: a unit has unit_id and team and a global_position. The
 	# same shape ClickHandler uses for unit-resolution, minus the
 	# `replace_command` requirement (we don't issue commands here).
-	if (&"unit_id" in node) and (&"team" in node) and (node is Node3D):
+	#
+	# BUG-11 fix (2026-05-14): Buildings (Khaneh and future Mazra'eh /
+	# Sarbaz-khaneh / Atashkadeh) inherit `unit_id` + `team` from the
+	# Building base class and would otherwise pass this duck-type
+	# check, ending up in the box-select result. They're NOT movable
+	# units — `replace_command` doesn't exist on Building — so a
+	# subsequent right-click-move crashes inside dispatch_group_move.
+	# Filter via the `&"buildings"` SceneTree group, which every Building
+	# joins on `_ready`. The group is the canonical "I am a building,
+	# not a unit" marker per ARCHITECTURE.md §6 v0.20.4.
+	if (&"unit_id" in node) and (&"team" in node) and (node is Node3D) \
+			and not node.is_in_group(&"buildings"):
 		var team_v: Variant = node.get(&"team")
 		if int(team_v) == Constants.TEAM_IRAN:
 			out.append(node)

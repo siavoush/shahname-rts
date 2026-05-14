@@ -53,41 +53,86 @@ class_name FarrConfig extends Resource
 ## Reference: 01_CORE_MECHANICS.md §9.3.
 @export var kaveh_resolve_window_ticks: int = 2700
 
-# --- Drain magnitudes (negative Farr deltas, expressed as negative floats) ---
+# --- DEPRECATED individual drain magnitudes (superseded by `drain_rates` dict below) ---
 # Reference: 01_CORE_MECHANICS.md §4.3 (Drains section).
-# FarrSystem passes these to apply_farr_change(); sign is negative.
+#
+# DEPRECATED — Phase 3 wave-close (2026-05-14).
+# Superseded by the `drain_rates: Dictionary` field below. The Phase 3
+# Farr-drain dispatcher (`scripts/autoload/farr_drain_dispatcher.gd`)
+# reads ONLY from `drain_rates` — none of the @export fields in this
+# block are live in the runtime. They're retained on the resource only
+# so old saved `balance.tres` files don't fail validation; they may be
+# removed in a Phase 4 cleanup pass alongside the cause-string-suffix
+# retirement noted in §6 v0.20.3. Do not add new triggers here — add
+# a new key to `drain_rates` and emit it from the relevant dispatcher.
 
-## Worker killed while idle and unarmed.
-## "Worker killed while idle and unarmed: −1 Farr each" — §4.3.
+## DEPRECATED. See `drain_rates[&"worker_killed_idle"]` (= 1.0; positive magnitude).
 @export var drain_idle_worker_killed: float = -1.0
 
-## Hero attacks an ally unit (friendly fire).
-## "Hero attacks an ally unit: −5 Farr" — §4.3.
+## DEPRECATED. See `drain_rates[&"hero_died"]` (= 5.0) — friendly-fire variant
+## will land as a separate key when Rostam ships in Phase 4.
 @export var drain_hero_attack_ally: float = -5.0
 
-## Hero killed while fleeing combat (facing away from enemy).
-## "Hero killed while fleeing combat: −10 Farr" — §4.3.
+## DEPRECATED. See `drain_rates[&"hero_died"]` (= 5.0) — flee/honest-battle
+## distinction will land as separate keys when Rostam death-trigger ships.
 @export var drain_hero_killed_fleeing: float = -10.0
 
-## Hero killed in honest battle (facing the enemy).
-## "−5 if killed in honest battle" — §7.3 Rostam death.
+## DEPRECATED. See `drain_rates[&"hero_died"]` (= 5.0).
 @export var drain_hero_killed_battle: float = -5.0
 
-## Loss of an Atashkadeh building (sacred flame extinguished).
-## "Loss of an Atashkadeh building: −5 Farr" — §4.3.
+## DEPRECATED. See `drain_rates[&"building_destroyed_atashkadeh"]` (= 5.0).
 @export var drain_atashkadeh_lost: float = -5.0
 
-## Per-kill drain when army outnumbers enemy by snowball_ratio:1 or more.
-## "−0.5 Farr per kill" — §4.3 snowball protection.
+## DEPRECATED. Snowball protection lands in Phase 4 with its own
+## `snowball_*` keys in `drain_rates`.
 @export var drain_snowball_per_kill: float = -0.5
 
-## Per-worker drain when destroying enemy economy while their military is broken.
-## "−1 Farr per worker" — §4.3 snowball protection.
+## DEPRECATED. Snowball protection — see note above.
 @export var drain_snowball_worker: float = -1.0
 
 ## Army size ratio that triggers snowball protection (attacker:defender).
 ## 3:1 or more triggers per §4.3.
 @export var snowball_ratio: float = 3.0
+
+# --- Drain-rate table (Phase 3 wave 1B + forward-compat keys) ---
+# Reference: 02f_PHASE_3_KICKOFF.md §2 Open Space resolution; canonical Farr
+# drain rates table per the Constraint Negotiation between balance-engineer
+# and gameplay-systems.
+#
+# Convention:
+#   - POSITIVE magnitudes here. The Farr-drain dispatcher applies the negative
+#     sign at the call site: FarrSystem.apply_farr_change(-magnitude, ...).
+#   - StringName keys match the reasons recorded in the F2 overlay log so
+#     post-hoc analysis can trace every Farr movement back to its trigger.
+#
+# Phase 3 wired keys (the drain dispatcher subscribes to unit_health_zero and
+# reads fsm.current.id PRE-Dying-swap to pick one of these):
+#   worker_killed_idle              — Kargar killed while in &"idle" state
+#   worker_killed_during_gather     — Kargar killed while gathering / returning
+#
+# Forward-compat keys (Phase 4+; the dispatcher fires zero drain if absent):
+#   capital_damaged                 — Throne HP loss event (per-hit trigger)
+#   capital_lost                    — Throne destroyed (game-ending drain)
+#   building_destroyed_civilian     — Khaneh / Mazra'eh lost
+#   building_destroyed_military     — Sarbaz-khaneh lost
+#   building_destroyed_atashkadeh   — sacred-flame loss (heavy drain per §4.3)
+#   hero_died                       — Rostam dies (per §7.3)
+#
+# Why a dict instead of @export fields per key:
+#   The drain dispatcher looks up by StringName at runtime. A dict makes the
+#   "what reasons trigger drains?" surface explicit (the keys present == the
+#   reasons honored). New drain triggers add a key here + an emit site;
+#   no schema migration needed.
+@export var drain_rates: Dictionary = {
+	&"worker_killed_idle": 1.0,
+	&"worker_killed_during_gather": 0.5,
+	&"capital_damaged": 2.0,
+	&"capital_lost": 12.0,
+	&"building_destroyed_civilian": 1.5,
+	&"building_destroyed_military": 2.5,
+	&"building_destroyed_atashkadeh": 5.0,
+	&"hero_died": 5.0,
+}
 
 # --- Generation magnitudes (positive Farr deltas) ---
 # Reference: 01_CORE_MECHANICS.md §4.3 (Generators section).

@@ -1,0 +1,65 @@
+[gd_scene load_steps=4 format=3 uid="uid://shahnameh_khaneh_building"]
+
+; khaneh.tscn — Khaneh (Iran house) building scene.
+;
+; Source: 01_CORE_MECHANICS.md §5 — "Khaneh (house) — Population cap +5 per
+; building. 50 coin. Low HP — not a combat building."
+;
+; Phase 3 session 1 wave 1C (02f_PHASE_3_KICKOFF.md §3) — Khaneh is the
+; first concrete Building subclass shipped. Smoke-test target for the
+; placement state machine.
+;
+; Pattern: scene inheritance via instance=ExtResource("path_to_building.tscn").
+; Same template kargar.tscn uses for inheriting from unit.tscn. The
+; inherited scene shares the Building composition (MeshInstance3D +
+; StaticBody3D + CollisionShape3D + NavigationObstacle3D) and only
+; overrides the MeshInstance3D's material + the root's script.
+;
+; Visual placeholder per CLAUDE.md "colored rectangles for buildings":
+;   - Base BoxMesh (2.0 × 1.2 × 2.0) inherited from building.tscn — Khaneh
+;     is the smallest building so the base footprint serves directly. If
+;     a future Khaneh-variant needs a different size, override here.
+;   - Earthy tan/sandy color (0.78, 0.65, 0.45) — Persian-village mud-
+;     brick tone. Distinct from:
+;       * Kargar sandy-brown (0.65, 0.5, 0.3) — Khaneh is brighter and
+;         warmer; a Kargar standing next to a Khaneh stays a distinct
+;         silhouette.
+;       * Iran-coin gold MineNode (0.85, 0.7, 0.2) — Khaneh is less
+;         saturated; the difference is "warm earthy" vs "saturated gold."
+;       * Iran unit blue-grey (0.3, 0.5, 0.7) — opposite hemisphere of
+;         the color wheel.
+;
+; What's NOT overridden:
+;   - The base StaticBody3D + CollisionShape3D — BUG-07 lesson applies;
+;     the inherited body lets future selection raycasts hit the Khaneh.
+;   - The base NavigationObstacle3D — radius 1.5 from the base scene
+;     matches the Khaneh's footprint at 2.0 × 2.0 XZ (diagonal ~1.4).
+;     Larger Khaneh-variants in the future may need a bigger obstacle;
+;     the override goes here.
+;
+; The Khaneh class registers via class_name (see khaneh.gd) so consumer
+; code can `instance is Khaneh` after the registry settles.
+
+[ext_resource type="PackedScene" uid="uid://shahnameh_building_base" path="res://scenes/world/buildings/building.tscn" id="1_building_template"]
+[ext_resource type="Script" path="res://scripts/world/buildings/khaneh.gd" id="2_khaneh"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_khaneh"]
+; Earthy tan/sandy — Persian village mud-brick. Per Phase 3 session 1
+; wave 1C kickoff §3 spec value. Saturated enough to read distinctly
+; against the sandy terrain (the FarrGauge / Iran-coin-gold contrast
+; lesson applied — lead will verify in live test, retune here if it
+; bleeds into the terrain like the FarrGauge did pre-Phase 2 session 1
+; commit 2d1e24e).
+albedo_color = Color(0.78, 0.65, 0.45, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — matches unit / mine pipeline.
+
+
+; Inherit the Building scene template; override only what differs.
+[node name="Khaneh" instance=ExtResource("1_building_template")]
+script = ExtResource("2_khaneh")
+
+[node name="MeshInstance3D" parent="." index="0"]
+; Override the base material to the Khaneh tan. Mesh + transform
+; inherited unchanged from building.tscn (the size and Y-offset are
+; correct for the Khaneh's "small one-room structure" footprint).
+material_override = SubResource("StandardMaterial3D_khaneh")

@@ -117,6 +117,20 @@ const _UnitStateMovingScript: Script = preload("res://scripts/units/states/unit_
 const _UnitStateAttackingScript: Script = preload("res://scripts/units/states/unit_state_attacking.gd")
 const _UnitStateAttackMoveScript: Script = preload("res://scripts/units/states/unit_state_attack_move.gd")
 const _UnitStateDyingScript: Script = preload("res://scripts/units/states/unit_state_dying.gd")
+# Phase 3 wave 1A — gather loop states. Registered on every Unit (including
+# combat units) so transition_to(&"gathering") / transition_to(&"returning")
+# always lands cleanly; combat units never receive a &"gather" command, so
+# the registered-but-never-entered cost is the RefCounted state instance
+# itself (one per unit, tiny).
+const _UnitStateGatheringScript: Script = preload("res://scripts/units/states/unit_state_gathering.gd")
+const _UnitStateReturningScript: Script = preload("res://scripts/units/states/unit_state_returning.gd")
+# Phase 3 wave 1C — building-placement state. Registered on every Unit
+# (including combat units) so transition_to(&"constructing") always lands
+# cleanly. Combat units never receive a COMMAND_CONSTRUCT, so the
+# registered-but-never-entered cost is one RefCounted state instance per
+# unit, tiny. Same "register on every Unit" rationale as the wave-1A
+# gather states.
+const _UnitStateConstructingScript: Script = preload("res://scripts/units/states/unit_state_constructing.gd")
 
 
 ## Snapshot of the most-recently-dispatched Command, populated by
@@ -143,6 +157,24 @@ const _UnitStateDyingScript: Script = preload("res://scripts/units/states/unit_s
 ## a ref would race with the pool re-renting the same instance. The
 ## Dictionary is a defensive copy of the kind/payload at dispatch time.
 var current_command: Dictionary = {}
+
+
+# === Worker carry state (Phase 3 wave 1A — gather loop) ====================
+# UnitState_Gathering writes these on complete_extract; UnitState_Returning
+# reads them at the Throne deposit step. Fixed-point per Sim Contract §1.6
+# — _carry_amount_x100 is the deposit amount scaled by 100.
+#
+# Fields live on Unit (not Kargar) so any worker-like unit subclass shares
+# the carry seam. Phase 3 only the Kargar uses these; the field is harmless
+# (zero / empty) on combat units that never gather. Per RESOURCE_NODE_CONTRACT
+# §4.3 the carry mutation rule is "node calls worker.set_carry(...)" — wave
+# 1A's UnitState_Gathering writes the fields directly inside its _sim_tick
+# instead of routing through a set_carry method (the state IS inside the
+# unit's _sim_tick, so the on-tick invariant is preserved by construction).
+# When a Mazra'eh extends the gather API (wave 1B+) with per-tick carry
+# accumulation, the set_carry method may be revisited.
+var _carry_kind: StringName = &""
+var _carry_amount_x100: int = 0
 
 
 # === Component getters (typed accessors) ===================================
@@ -251,6 +283,19 @@ func _ready() -> void:
 	# the scene tree, leaving zombie corpses for attackers to keep engaging.
 	if not fsm._states.has(&"dying"):
 		fsm.register(_UnitStateDyingScript.new())
+	# Phase 3 wave 1A — gather loop states. See preload-const header above
+	# for the "register on every Unit" rationale. Phase 3 only the Kargar
+	# uses them; combat units never receive a &"gather" command so the
+	# registered-but-never-entered cost is one RefCounted state per unit
+	# per id, tiny.
+	if not fsm._states.has(&"gathering"):
+		fsm.register(_UnitStateGatheringScript.new())
+	if not fsm._states.has(&"returning"):
+		fsm.register(_UnitStateReturningScript.new())
+	# Phase 3 wave 1C — building placement state. See preload-const
+	# header above for the "register on every Unit" rationale.
+	if not fsm._states.has(Constants.STATE_CONSTRUCTING):
+		fsm.register(_UnitStateConstructingScript.new())
 	# init() lands the unit on the starting state and connects the
 	# death-preempt signal. Subclasses that want a different starting
 	# state can call fsm.init(&"<id>") before super._ready (init is

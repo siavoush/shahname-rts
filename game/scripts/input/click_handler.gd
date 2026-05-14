@@ -187,8 +187,12 @@ func _handle_right_click(screen_pos: Vector2) -> void:
 ## short-circuits, but this method is defensive so direct test calls behave
 ## the same way as the input-driven path).
 ##
-## Dispatch table (Phase 2 session 1 wave 2B):
+## Dispatch table (Phase 2 session 1 wave 2B + Phase 3 wave 1B):
 ##   - hit empty / no selection → no-op.
+##   - hit is a ResourceNode AND at least one selected unit is a worker
+##     (responds to &"gather" command) → Gather Command per worker. Payload
+##     carries target_node (Node ref); UnitState_Gathering walks to it,
+##     dwells, extracts (Phase 3 wave 1B).
 ##   - hit is a Unit AND hit_unit.team != selected_team → Attack Command per
 ##     selected unit. Payload carries target_unit_id; UnitState_Attacking
 ##     resolves the live ref via scene-tree walk.
@@ -207,6 +211,18 @@ func process_right_click_hit(hit: Dictionary) -> void:
 		# Right-clicked into the void / off the terrain — no actionable target.
 		if DEBUG_LOG_CLICKS:
 			print("[click] RIGHT: no raycast hit → no-op")
+		return
+	# Phase 3 wave 1B — Gather routing. If the hit is a ResourceNode (duck-typed
+	# via has_method(&"request_extract")), dispatch a gather command to every
+	# selected unit that's a worker (duck-typed via unit_type == &"kargar").
+	# Combat units in the selection are skipped — a mixed-selection right-click
+	# on a mine moves the workers to gather while leaving combat units idle
+	# (no-op rather than walk; the player can right-click terrain after to
+	# move them, or split-select). This matches StarCraft 2's "workers gather,
+	# combat units don't auto-follow" UX.
+	var hit_node: Node = _resolve_resource_node_from_hit(hit)
+	if hit_node != null:
+		_dispatch_gather_to_workers(sel, hit_node)
 		return
 	# Branch on hit-unit team relative to the selection's team. The reference
 	# team is read off the first selected unit's `team` field (selection is
@@ -402,6 +418,86 @@ func _is_unit_shaped(n: Node) -> bool:
 		return false
 	return true
 
+
+# ============================================================================
+# Right click — gather routing (Phase 3 wave 1B)
+# ============================================================================
+
+## Resolve a ResourceNode (MineNode, future Mazra'eh) from a raycast hit.
+##
+## Strategy: walk up the parent chain looking for an ancestor that responds
+## to `request_extract`. ResourceNode subclasses ship this method as part of
+## the consumer API (docs/RESOURCE_NODE_CONTRACT.md §4). The duck-type check
+## avoids hard class_name dependencies (same registry-race rationale as
+## _resolve_unit_from_hit).
+##
+## Returns null if the hit was terrain / a unit / any non-ResourceNode.
+func _resolve_resource_node_from_hit(hit: Dictionary) -> Node:
+	var collider_v: Variant = hit.get(&"collider", null)
+	if collider_v == null:
+		return null
+	var node: Node = collider_v
+	while node != null:
+		if _is_resource_node_shaped(node):
+			return node
+		node = node.get_parent()
+	return null
+
+
+## Duck-type check: is `n` a ResourceNode (or behaves like one)?
+##
+## We do not `is ResourceNode` because the class_name registry race makes
+## typed checks brittle in autoload-and-test contexts (per docs/ARCHITECTURE.md
+## §6 v0.4.0). Instead we look for the ResourceNode-defining surface:
+## `request_extract` + `is_gatherable` field. Both ship on the base class.
+func _is_resource_node_shaped(n: Node) -> bool:
+	if n == null:
+		return false
+	if not n.has_method(&"request_extract"):
+		return false
+	if not (&"is_gatherable" in n):
+		return false
+	return true
+
+
+## Dispatch a gather command to every worker in `sel` targeting `target_node`.
+## Non-worker units in the selection are skipped — see process_right_click_hit
+## dispatch table for rationale.
+func _dispatch_gather_to_workers(sel: Array, target_node: Node) -> void:
+	var workers_dispatched: int = 0
+	for u in sel:
+		if u == null or not is_instance_valid(u):
+			continue
+		if not _is_worker_shaped(u):
+			continue
+		u.replace_command(
+			Constants.COMMAND_GATHER,
+			{&"target_node": target_node},
+		)
+		workers_dispatched += 1
+	if DEBUG_LOG_CLICKS:
+		print("[click] RIGHT: gather command target=",
+			(target_node as Node3D).global_position if target_node is Node3D else "?",
+			" workers_dispatched=", workers_dispatched,
+			" of selected=", sel.size())
+
+
+## Worker duck-type: a Unit whose `unit_type` reads as &"kargar". Phase 3
+## only Kargar workers exist; when other gather-capable units ship (Phase 4+),
+## extend this to check a `can_gather` capability field instead of a hard
+## unit_type comparison.
+func _is_worker_shaped(n: Object) -> bool:
+	if n == null:
+		return false
+	var ut: Variant = n.get(&"unit_type")
+	if typeof(ut) != TYPE_STRING_NAME:
+		return false
+	return ut == &"kargar"
+
+
+# ============================================================================
+# World access
+# ============================================================================
 
 ## get_world_3d() exists on Node3D but our handler is a plain Node. Resolve
 ## via the viewport, which always has a World3D in a 3D scene.

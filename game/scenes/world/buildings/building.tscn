@@ -1,0 +1,124 @@
+[gd_scene load_steps=5 format=3 uid="uid://shahnameh_building_base"]
+
+; building.tscn — base Building scene template.
+;
+; Per Phase 3 session 1 wave 1C kickoff (02f_PHASE_3_KICKOFF.md §3) +
+; 01_CORE_MECHANICS.md §5 (building roster).
+;
+; Mirrors unit.tscn's role: this is the structural template every concrete
+; building (Khaneh, Mazra'eh, Atashkadeh, Sarbaz-khaneh) inherits from,
+; overriding only the mesh / material / size for visual differentiation.
+;
+; Composition:
+;   - Root: Node3D (extends Building via building.gd's path-string extends)
+;     ├── MeshInstance3D       placeholder colored box (overridden by concrete subclasses)
+;     ├── StaticBody3D         click-target collision body (BUG-07 lesson — Pitfall #12 candidate)
+;     │   └── CollisionShape3D BoxShape3D matching the mesh
+;     └── NavigationObstacle3D dynamic navmesh carve at placement time
+;
+; What's deliberately HERE in the base (vs in subclass scenes):
+;   - StaticBody3D + CollisionShape3D: BUG-07 lesson (Phase 3 wave 1B fix
+;     for the mine right-click bug). Any new click-target scene MUST have
+;     a CollisionObject3D ancestor — otherwise raycasts walk through it.
+;     The base scene gets it; concrete subclasses inherit it for free.
+;   - NavigationObstacle3D: RESOURCE_NODE_CONTRACT §3.2 sanctions the
+;     dynamic navmesh-carve pattern (vs the forbidden navmesh REBAKE).
+;     Placed buildings carve the navmesh; workers route around them. The
+;     obstacle's radius is sized to the base placeholder; concrete
+;     subclasses scale the mesh AND should resize the obstacle to match.
+;
+; What's deliberately NOT here:
+;   - SelectableComponent — buildings aren't selectable in Phase 3 session 1
+;     (build menu is the only building-interaction surface this session).
+;     Session 2+ adds selection + the production-queue panel that requires
+;     building selection.
+;   - Visual children specific to a building kind (chimney, banner, walls,
+;     etc.) — those are placeholder-only and per-subclass.
+;   - A "construction in progress" mesh variant — session 1 ships INSTANT
+;     placement (Khaneh appears the tick the worker arrives). The
+;     in-progress mesh + progress-bar UI is session 2's wave 1 deliverable.
+;
+; Placeholder visual policy (CLAUDE.md "colored rectangles for buildings"):
+;   - BoxMesh ~2.0 × 1.2 × 2.0 (concrete subclasses may resize). The base
+;     uses a neutral grey so a bare Building instance is visually distinct
+;     from any concrete subclass. Concrete subclasses (Khaneh, etc.)
+;     override the mesh AND the material.
+;
+; Sources:
+; - 01_CORE_MECHANICS.md §5 — building list + "colored rectangles" rule
+; - 02f_PHASE_3_KICKOFF.md §3 wave 1C — placement skeleton spec
+; - docs/RESOURCE_NODE_CONTRACT.md §3.2 — NavigationObstacle3D carve rule
+; - PROCESS_EXPERIMENTS.md candidate Pitfall #12 — click-targets need
+;   CollisionObject3D ancestors
+
+[ext_resource type="Script" path="res://scripts/world/buildings/building.gd" id="1_building"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_building"]
+; Base building placeholder silhouette — wider and taller than a unit
+; (units' MeshInstance3D is 0.5 × 0.6 × 0.5). 2.0 × 1.2 × 2.0 reads as a
+; small one-room structure at default zoom. Concrete subclasses (Khaneh,
+; future Mazra'eh / Atashkadeh) override this with their own sizing.
+size = Vector3(2.0, 1.2, 2.0)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_building"]
+; Neutral grey for the base template. A bare Building instance (no concrete
+; subclass) renders grey so it's clearly NOT a Khaneh / Mazra'eh / etc. —
+; useful diagnostic if a subclass scene ever forgets its material_override.
+albedo_color = Color(0.55, 0.55, 0.55, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — matches the unit / mine material pipeline.
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_building"]
+; Collision shape MATCHES the visual mesh size — clicking the rendered
+; silhouette hits the collision shape with no off-by-half-extent surprises.
+; Phase 3 wave 1B BUG-07 lesson applied: the click-target needs a
+; CollisionObject3D ancestor (which the StaticBody3D below provides) AND
+; the collision shape must overlap the visual mesh, or raycasts miss.
+size = Vector3(2.0, 1.2, 2.0)
+
+
+[node name="Building" type="Node3D"]
+script = ExtResource("1_building")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+; Y-offset = half-height (0.6) so the mesh's BOTTOM face sits ON the
+; terrain plane (Y=0). Matches the unit.tscn / mine_node.tscn convention
+; so a Building placed at world Y=0 lands cleanly on terrain instead of
+; half-buried.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
+mesh = SubResource("BoxMesh_building")
+material_override = SubResource("StandardMaterial3D_building")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="."]
+; BUG-07 lesson — Phase 3 wave 1B: ClickHandler._raycast_from_screen has
+; collide_with_bodies=true / collide_with_areas=false. Without a body in
+; the building's subtree, future selection raycasts (session 2 selection
+; wiring) would walk past the building and strike the terrain.
+; collision_layer = 1, collision_mask = 1 — matches existing unit / mine
+; / terrain convention.
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticBody3D"]
+; Y-offset matches the visual mesh so the body's centre is where the
+; rendered silhouette's centre is.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
+shape = SubResource("BoxShape3D_building")
+
+[node name="NavigationObstacle3D" type="NavigationObstacle3D" parent="."]
+; RESOURCE_NODE_CONTRACT §3.2: runtime navmesh carving via
+; NavigationObstacle3D is the sanctioned pattern; runtime navmesh REBAKE
+; is forbidden. A finished building registers itself as an obstacle so
+; the navmesh agent's path queries route around it without a rebake.
+;
+; `radius` is the carve footprint; sized to encompass the base BoxMesh
+; (2.0 × 2.0 XZ → diagonal ~1.4 → radius 1.5 with margin). Concrete
+; subclasses with different mesh footprints should rescale this OR
+; resize via their .tscn override.
+;
+; Y-offset matches the mesh so the obstacle's centre is where the visible
+; building's centre is.
+;
+; The vertices array is intentionally empty — radius mode is what we want
+; for the Phase 3 session 1 placeholder. Polygon-shaped obstacles (for
+; non-circular footprints like a long Sarbaz-khaneh barracks) land when
+; that building's specific footprint requires them.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
+radius = 1.5

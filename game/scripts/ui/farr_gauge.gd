@@ -404,16 +404,27 @@ func _draw_threshold_tick(farr_value: float, color: Color, thickness: float) -> 
 
 
 func _draw_numeric_label() -> void:
-	# `tr("UI_FARR")` for the prefix, integer Farr for the number — matches
-	# the Phase 0 HUD aesthetic at lower visual weight (small, centered).
+	# `tr("UI_FARR")` for the prefix, one-decimal Farr for the number. Phase 3
+	# session 1 live-test surfaced a roundi() bug: a half-Farr drain (47.5)
+	# rendered as "Farr 48" — the drain was invisible. Spec §4.3's 0.5-magnitude
+	# drains are load-bearing for balance, so the player must see them. Format
+	# string is the *only* fix; per-tick smoothing/tween of the displayed value
+	# is a separate polish item (LATER).
 	var font: Font = ThemeDB.fallback_font
 	var font_size: int = 12
-	var text: String = "%s %d" % [tr("UI_FARR"), roundi(displayed_farr)]
+	var text: String = format_numeric_label()
 	var size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER,
 		-1.0, font_size)
 	var pos: Vector2 = _CENTER_OFFSET - Vector2(size.x * 0.5, -size.y * 0.25)
 	draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_CENTER, -1.0, font_size,
 		_COLOR_LABEL)
+
+
+# Public so tests (and the F2 debug overlay later) can assert on the rendered
+# string without reading a framebuffer. The displayed_farr field is the
+# source of truth; this is its formatted projection.
+func format_numeric_label() -> String:
+	return "%s %.1f" % [tr("UI_FARR"), displayed_farr]
 
 
 # === COLOR / BAND LOOKUP ====================================================

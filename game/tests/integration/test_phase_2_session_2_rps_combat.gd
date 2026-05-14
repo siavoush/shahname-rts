@@ -18,6 +18,11 @@
 #   Each test that uses SimClock._test_run_tick exercises the FULL chain.
 #
 # Typing: Variant slots for unit refs — docs/ARCHITECTURE.md §6 v0.4.0.
+#
+# Phase 3 wave 0 migration: manual autoload bookkeeping in before_each/after_each
+# replaced with MatchHarness.start_match()/teardown() per TESTING_CONTRACT.md §3.1.
+# Remaining per-test resets (CommandPool, SelectionManager, DebugOverlayManager,
+# UnitScript.reset_id_counter) are not in the harness scope and stay inline.
 
 extends GutTest
 
@@ -35,8 +40,8 @@ const TuranKamandarScene: PackedScene = preload("res://scenes/units/turan_kamand
 const TuranSavarScene: PackedScene = preload("res://scenes/units/turan_savar.tscn")
 const TuranAsbSavarScene: PackedScene = preload("res://scenes/units/turan_asb_savar.tscn")
 const UnitScript: Script = preload("res://scripts/units/unit.gd")
-const MockPathSchedulerScript: Script = preload("res://scripts/navigation/mock_path_scheduler.gd")
 const MainScene: PackedScene = preload("res://scenes/main.tscn")
+const MatchHarnessScript: Script = preload("res://tests/harness/match_harness.gd")
 
 const BALANCE_PATH: String = "res://data/balance.tres"
 
@@ -45,7 +50,7 @@ const BALANCE_PATH: String = "res://data/balance.tres"
 # Test state
 # ---------------------------------------------------------------------------
 
-var _mock: Variant = null
+var harness: Variant = null
 
 # Unit refs kept as Variant per class_name registry race pattern.
 var _unit_a: Variant = null
@@ -58,15 +63,13 @@ var _extra_units: Array = []
 # ---------------------------------------------------------------------------
 
 func before_each() -> void:
-	SimClock.reset()
+	harness = MatchHarnessScript.new()
+	harness.start_match(0, &"empty")
+	# Non-harness resets: autoloads not managed by MatchHarness.
 	CommandPool.reset()
 	SelectionManager.reset()
-	FarrSystem.reset()
-	SpatialIndex.reset()
 	DebugOverlayManager.reset()
 	UnitScript.call(&"reset_id_counter")
-	_mock = MockPathSchedulerScript.new()
-	PathSchedulerService.set_scheduler(_mock)
 	_unit_a = null
 	_unit_b = null
 	_extra_units = []
@@ -83,16 +86,13 @@ func after_each() -> void:
 	_extra_units = []
 	_unit_a = null
 	_unit_b = null
+	# Non-harness resets: must precede harness.teardown so signal connections
+	# from tests are cleared before autoloads reset.
 	SelectionManager.reset()
-	FarrSystem.reset()
-	SpatialIndex.reset()
 	DebugOverlayManager.reset()
-	PathSchedulerService.reset()
-	if _mock != null:
-		_mock.clear_log()
-	_mock = null
-	SimClock.reset()
 	CommandPool.reset()
+	harness.teardown()
+	harness = null
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +104,7 @@ func _spawn(scene: PackedScene, pos: Vector3, team: int) -> Variant:
 	add_child_autofree(u)
 	u.global_position = pos
 	u.team = team
-	u.get_movement()._scheduler = _mock
+	u.get_movement()._scheduler = harness._mock_scheduler
 	return u
 
 
@@ -303,7 +303,7 @@ func test_kamandar_vs_piyade_kamandar_wins_at_range() -> void:
 		"Kamandar vs Piyade at range 6.0 (1.5× anti-infantry): Piyade HP must reach 0. "
 		+ "Analytical: Kamandar accumulates 1.5× damage advantage while Piyade closes, "
 		+ "then continues firing in melee. Combined DPS overwhelms Piyade HP.")
-	PathSchedulerService.set_scheduler(_mock)
+	PathSchedulerService.set_scheduler(harness._mock_scheduler)
 
 
 func test_asb_savar_vs_piyade_asb_savar_wins_at_range() -> void:
@@ -344,7 +344,7 @@ func test_asb_savar_vs_piyade_asb_savar_wins_at_range() -> void:
 		"AsbSavar vs Piyade (1.2× kiting advantage, held at range): Piyade HP must reach 0. "
 		+ "AsbSavar range=7.0 > Piyade range=1.5; AsbSavar fires first and compounds "
 		+ "the 1.2× advantage. If AsbSavar survives: multiplier not applied or range gate wrong.")
-	PathSchedulerService.set_scheduler(_mock)
+	PathSchedulerService.set_scheduler(harness._mock_scheduler)
 
 
 func test_turan_piyade_vs_turan_savar_turan_piyade_wins() -> void:
@@ -593,7 +593,7 @@ func test_kiting_math_asb_savar_fires_before_piyade_closes_melee() -> void:
 	var piyade_hp_zero_at_50: bool = is_instance_valid(_unit_b) and int(_unit_b.get_health().hp_x100) <= 0
 	if piyade_hp_zero_at_50:
 		pass_test("Piyade HP reached 0 by tick 50 — AsbSavar damage was decisive (ok)")
-		PathSchedulerService.set_scheduler(_mock)
+		PathSchedulerService.set_scheduler(harness._mock_scheduler)
 		return
 
 	var piyade_hp_at_50: int = int(_unit_b.get_health().hp_x100)
@@ -617,7 +617,7 @@ func test_kiting_math_asb_savar_fires_before_piyade_closes_melee() -> void:
 
 	if is_instance_valid(_unit_b) and int(_unit_b.get_health().hp_x100) <= 0:
 		pass_test("Piyade HP reached 0 by tick 55 — kiting DPS was decisive (ok)")
-		PathSchedulerService.set_scheduler(_mock)
+		PathSchedulerService.set_scheduler(harness._mock_scheduler)
 		return
 
 	var piyade_hp_at_55: int = int(_unit_b.get_health().hp_x100)
@@ -628,7 +628,7 @@ func test_kiting_math_asb_savar_fires_before_piyade_closes_melee() -> void:
 		+ "hp_at_50=%d hp_at_55=%d expected second shot ~1560 damage."
 		% [piyade_hp_at_50, piyade_hp_at_55])
 
-	PathSchedulerService.set_scheduler(_mock)
+	PathSchedulerService.set_scheduler(harness._mock_scheduler)
 
 
 func test_kiting_math_analytical_shot_count_within_close_window() -> void:
@@ -753,7 +753,7 @@ func test_cross_feature_5_piyade_vs_savar_piyade_cluster_survives() -> void:
 		+ "(1.5× advantage should mean Piyade suffers fewer losses). "
 		+ "surviving=%d" % surviving_piyade)
 
-	PathSchedulerService.set_scheduler(_mock)
+	PathSchedulerService.set_scheduler(harness._mock_scheduler)
 
 
 # ============================================================================

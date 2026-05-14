@@ -262,3 +262,77 @@ func test_mouse_filter_is_ignore_at_runtime() -> void:
 	# session-1 regression.
 	assert_eq(overlay.mouse_filter, Control.MOUSE_FILTER_IGNORE,
 			"Pitfall #1 — overlay.mouse_filter must be MOUSE_FILTER_IGNORE")
+
+
+# ---------------------------------------------------------------------------
+# BUG-09 regression: live position tracking
+# ---------------------------------------------------------------------------
+# Before the fix, entries snapshotted world_pos at selection-change time and
+# never updated. A unit walking away from its selection origin left a stale
+# yellow circle hanging at the OLD position. For a debug overlay surfacing
+# *live* attack-range data, that's a lie. The overlay must refresh entry
+# positions every frame from the bound unit's current global_position.
+
+func test_entry_world_pos_follows_unit_after_move() -> void:
+	var u: FakeUnit = _make_unit(1, 1.5, Vector3(0, 0, 0))
+	SelectionManager.select(u)
+	var initial_entries: Array = overlay.entries()
+	assert_eq(initial_entries.size(), 1)
+	assert_eq(initial_entries[0].get(&"world_pos"), Vector3(0, 0, 0),
+			"baseline: entry world_pos starts at unit's selection-time position")
+	# Move the unit. No selection signal will fire — only the per-frame
+	# _process refresh can catch this.
+	u.global_position = Vector3(12, 0, -7)
+	await get_tree().process_frame
+	var updated_entries: Array = overlay.entries()
+	assert_eq(updated_entries.size(), 1,
+			"entry count must be unchanged after a position-only move")
+	assert_eq(updated_entries[0].get(&"world_pos"), Vector3(12, 0, -7),
+			"BUG-09: entry world_pos must follow unit.global_position live")
+
+
+func test_multiple_entries_each_track_their_own_unit() -> void:
+	var a: FakeUnit = _make_unit(1, 1.5, Vector3(0, 0, 0))
+	var b: FakeUnit = _make_unit(2, 2.0, Vector3(5, 0, 5))
+	SelectionManager.select(a)
+	SelectionManager.add_to_selection(b)
+	# Move each unit to a distinct new spot.
+	a.global_position = Vector3(-3, 0, 4)
+	b.global_position = Vector3(8, 0, -2)
+	await get_tree().process_frame
+	var entries: Array = overlay.entries()
+	assert_eq(entries.size(), 2)
+	# Entries preserve order (matches SelectionManager.selected_units order).
+	var by_id: Dictionary = {}
+	for e in entries:
+		by_id[int(e.get(&"unit_id"))] = e.get(&"world_pos")
+	assert_eq(by_id.get(1), Vector3(-3, 0, 4),
+			"entry for unit 1 must track unit-1's live position")
+	assert_eq(by_id.get(2), Vector3(8, 0, -2),
+			"entry for unit 2 must track unit-2's live position")
+
+
+func test_freed_unit_during_process_refresh_does_not_crash() -> void:
+	# A bound unit may be freed between the selection_changed broadcast and
+	# the next _process refresh (e.g., dies mid-tick). The per-frame refresh
+	# must skip the freed entry gracefully — NOT re-select, NOT crash.
+	var u: FakeUnit = _make_unit(1, 1.5, Vector3(0, 0, 0))
+	SelectionManager.select(u)
+	assert_eq(overlay.circle_count(), 1)
+	u.queue_free()
+	# Two frames: one for queue_free to complete, one for the overlay's
+	# _process refresh to encounter the dead ref. Per Pitfall #11, drive
+	# with process_frame, NOT SimClock._test_run_tick — queue_free completion
+	# happens on the main loop's process step.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	# No crash, and any surviving entries still have a valid Vector3 world_pos.
+	# (SelectionManager.selected_units already filters freed entries, so the
+	# next selection_changed broadcast would clear it — but no such broadcast
+	# fires from queue_free alone. The _process refresh is the only path; it
+	# must be defensive.)
+	var live_entries: Array = overlay.entries()
+	for e in live_entries:
+		var pos: Variant = e.get(&"world_pos")
+		assert_true(pos is Vector3,
+				"surviving entries must still have a valid Vector3 world_pos")
