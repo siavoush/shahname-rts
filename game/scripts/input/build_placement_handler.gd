@@ -28,13 +28,16 @@ extends Node
 ##
 ## Input ordering (Pitfall #5):
 ##   When _placement_kind != &"", this handler's _unhandled_input
-##   consumes the click BEFORE ClickHandler interprets it. The sibling
-##   order in main.tscn places BuildPlacementHandler LATER than
-##   ClickHandler — Godot _unhandled_input dispatch is REVERSE tree
-##   order (later siblings first). So the handler runs first, consumes
-##   the click if in placement mode, calls
-##   `get_viewport().set_input_as_handled()`. ClickHandler never sees
-##   the event.
+##   consumes the click BEFORE ClickHandler interprets it. Godot's
+##   _unhandled_input dispatch is tree-document order — lower-index
+##   sibling runs first. So this handler is placed BEFORE ClickHandler
+##   in main.tscn so it fires first. When in placement mode it consumes
+##   the click and calls `get_viewport().set_input_as_handled()`;
+##   ClickHandler never sees the event. Same convention as
+##   AttackMoveHandler (also placed before ClickHandler in main.tscn).
+##   Regression-locked by test_main_tscn_build_placement_handler_before_click_handler
+##   and test_pitfall_5_build_placement_handler_before_click_handler_standalone
+##   in tests/integration/test_phase_3_khaneh_placement.gd.
 ##
 ##   When _placement_kind == &"" (no active placement), the handler
 ##   short-circuits and lets ClickHandler do its normal job.
