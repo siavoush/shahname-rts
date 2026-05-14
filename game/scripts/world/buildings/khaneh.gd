@@ -13,12 +13,18 @@ extends "res://scripts/world/buildings/building.gd"
 ##
 ## Cultural note: in the Shahnameh, the home (خانه / khaneh) is the
 ## anchoring symbol of settled life — the persistence of family and
-## hearth that separates civilization from raid and steppe. The
+## hearth that anchors the Iranian dynasties' relationship to land and
+## people (distinct from, but not morally above, Turan's mobile
+## counterpart per 00_SHAHNAMEH_RESEARCH.md §7 "worthy rivals"). The
 ## population-cap mechanic is the gameplay surfacing of that idea: more
-## homes, more people, more capacity to sustain an army. Mirrors how
-## Iran's epic dynasties define themselves through what they BUILD, not
-## just whom they defeat — Jamshid's tools, Fereydun's halls, Kavus's
-## flying-throne folly.
+## homes, more households, more capacity to draw soldiers from a
+## settled people. Mirrors how Iran's epic dynasties define themselves
+## through what they BUILD — Jamshid's tools, Fereydun's halls, Kavus's
+## flying-throne folly all staged against the backdrop of an Iran that
+## organizes around its civic anchors. Turan's dignity comes from a
+## different anchor (mobility, the Khan's tent, the loyalty of the
+## *otaq*) — to be parameterized when Turan housing ships per the
+## cross-faction caveat in building.gd.
 ##
 ## What lives here vs in the base class:
 ##   - kind = &"khaneh" (dual-init pattern — see _init / _ready below).
