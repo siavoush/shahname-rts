@@ -1,0 +1,93 @@
+[gd_scene load_steps=2 format=3 uid="uid://shahnameh_build_menu"]
+
+; build_menu.tscn — bottom-right HUD panel for placing buildings.
+;
+; Phase 3 session 1 wave 1C deliverable 5. Per
+; 02f_PHASE_3_KICKOFF.md §3 wave 1C.
+;
+; Layout:
+;   CanvasLayer (BuildMenu)
+;     └── Root (Control, anchored bottom-right, hidden by default)
+;         ├── Background (ColorRect, fills root)
+;         └── Margin (MarginContainer, padded)
+;             └── VBox (VBoxContainer)
+;                 ├── HeaderLabel ("Build")
+;                 └── KhanehButton ("House (50 Coin)")
+;
+; Pitfall #1 mitigation — mouse_filter discipline:
+;   - Root, Background, Margin, VBox, HeaderLabel: MOUSE_FILTER_PASS
+;     (value 1). Background clicks fall through to the world when the
+;     menu is visible-but-not-on-button; when the menu is hidden, the
+;     Control's visible=false is the primary defense (PASS is the
+;     belt-and-braces).
+;   - KhanehButton: MOUSE_FILTER_STOP (value 0, the Button default —
+;     omitting the override is intentional so the click reliably
+;     lands on the button itself).
+;
+; Visibility:
+;   The Root Control starts visible = false. build_menu.gd's _ready also
+;   asserts this defensively, and the EventBus.selection_changed handler
+;   flips it on/off based on whether the selection contains a Kargar.
+;
+; Internationalization: every visible string flows through tr() in the
+; script. The .tscn placeholder text is the development-time fallback;
+; runtime always wins.
+
+[ext_resource type="Script" path="res://scripts/ui/build_menu.gd" id="1_buildmenu"]
+
+
+[node name="BuildMenu" type="CanvasLayer"]
+script = ExtResource("1_buildmenu")
+
+[node name="Root" type="Control" parent="."]
+; Anchored bottom-right. Width 200, height 120 — small panel, two-line
+; layout: header + one button per available building (Khaneh in
+; session 1; session 2 adds Mazra'eh / etc. and the height grows).
+visible = false
+anchors_preset = 3 ; PRESET_BOTTOM_RIGHT
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -216.0
+offset_top = -136.0
+offset_right = -16.0
+offset_bottom = -16.0
+mouse_filter = 1 ; MOUSE_FILTER_PASS — clicks fall through; the button STOPs.
+grow_horizontal = 0
+grow_vertical = 0
+
+[node name="Background" type="ColorRect" parent="Root"]
+anchors_preset = 15 ; PRESET_FULL_RECT
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 1 ; PASS — decorative.
+color = Color(0.1, 0.1, 0.12, 0.75)
+
+[node name="Margin" type="MarginContainer" parent="Root"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 1 ; PASS — decorative container.
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="Root/Margin"]
+layout_mode = 2
+mouse_filter = 1 ; PASS — decorative container.
+theme_override_constants/separation = 8
+
+[node name="HeaderLabel" type="Label" parent="Root/Margin/VBox"]
+layout_mode = 2
+mouse_filter = 1 ; PASS — decorative label.
+text = "Build"
+horizontal_alignment = 1 ; HORIZONTAL_ALIGNMENT_CENTER
+
+[node name="KhanehButton" type="Button" parent="Root/Margin/VBox"]
+; The actual interactive element. MOUSE_FILTER_STOP (Button default,
+; not overridden) so the click lands on the button itself.
+; build_menu.gd connects .pressed in _ready.
+layout_mode = 2
+text = "House (50 Coin)"
