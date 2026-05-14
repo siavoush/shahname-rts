@@ -34,6 +34,53 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-14 — Phase 3 session 1 post-live-test fix-wave: BUG-08 + BUG-09 + Farr gauge polish
+
+**Branch:** `feat/phase-3-session-1`
+**Agents:** 3 parallel fix-wave agents (gameplay-systems + 2× ui-developer) — dispatched with `isolation: "worktree"` per Experiment 04, but the runtime parameter was unimplemented (see new LATER L23). Mid-flight Pitfall #7 incident; resolved by serialization + cherry-picking each agent's branch into feat.
+**Commits:** 5 (`798d64b` → `135349b`). Cherry-picked clean — file scopes were disjoint.
+**Test delta:** 1090 → **1101** passing (+11 new tests). 3 pre-existing risky/pending. 0 failures. Lint clean every commit.
+
+**What shipped:**
+
+Three bugs surfaced in the lead live-test (after the v0.20.6 reviewer-trio wave-close had landed). All three closed by this fix-wave.
+
+- **BUG-08** — BPH placement-mode selection desync. Lead reproducer: select Kargar → click Khaneh button → click terrain → no Khaneh. Root cause hypothesis: `Button.action_mode = ACTION_MODE_BUTTON_RELEASE` — the PRESS edge of a click on the button falls through to `_unhandled_input` because GUI consume happens on RELEASE; ClickHandler raycasts → misses Unit (clicked on Control area) → deselects all. By the time RELEASE fires the `pressed` signal and BPH enters placement mode, selection is gone.
+  - Fix #1: `build_menu.tscn` Root Control `mouse_filter = MOUSE_FILTER_STOP` (was PASS). Entire menu surface is now an input shield.
+  - Fix #2: BPH subscribes to `EventBus.selection_changed`, auto-cancels placement when selection no longer contains a Kargar (defense-in-depth against ANY future deselection path).
+  - Hypothesis NOT verified end-to-end headless (Godot's synthetic Input dispatch doesn't reproduce the Control GUI race) — both defenses shipped as orthogonal regression locks.
+
+- **BUG-09** — F4 attack-range overlay circles don't follow units when they move. Root cause: `_process` was explicitly NOT used; entries only refreshed on `selection_changed`. Fix: `_process(_delta)` walks `_entries`, refreshes `world_pos` from each entry's `(unit as Node3D).global_position`, calls `queue_redraw()` on change. Entry shape extended with `&"unit": Node3D` ref. Sim Contract §1.5 fit: pure UI-local read.
+
+- **Farr gauge POLISH** — half-Farr drains (0.5 `worker_killed_during_gather`) invisible because `_draw_numeric_label` used `roundi(displayed_farr)` + `"%d"`. Fix: `"%s %.1f"` format. Adds public `format_numeric_label() -> String` testability seam.
+
+**Verdict notes:**
+
+- BUG-08 + BUG-09 hypotheses both held under code review; defense-in-depth was the right call on BUG-08 specifically because the headless test surface can't validate Control GUI dispatch order.
+- Farr gauge `.1f` fix is minimal-surface; deliberately did NOT add tween animation for the displayed value (speculative scope creep).
+
+**Reviewer notes (none formally dispatched — wave was lead-driven from live-test observations + the agents' own headless-vs-live caveats):**
+- Pitfall #1 + #5 + #11 awareness explicit in each agent's report.
+- No formal godot-code-reviewer or architecture-reviewer pass for this fix-wave — the changes are small, the test counts hold, and the reviewer-trio already cleared the wave-close in v0.20.6. The next wave-close review will catch any drift.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** None.
+
+**Decisions made independently:**
+- Cherry-picked all 5 commits onto `feat/phase-3-session-1` in serialized order rather than merging via `--no-ff`. The project's history pattern is linear; cherry-pick preserves the per-TDD-cycle subjects without merge commits. New SHAs on `feat/phase-3-session-1`; the original branches (`fix/bug-08-...`, `polish/farr-gauge-...`, `fix/bug-09-...`) can be deleted post-merge.
+- Defense-in-depth on BUG-08 (both fixes shipped) without litigating which is the prime mover, per the agent's reasoning + my brief's authorization.
+- Skipped formal reviewer-trio for this fix-wave per the small-surface + recent v0.20.6 review.
+
+**Process incident: Pitfall #7 race during dispatch.**
+The `isolation: "worktree"` Agent-tool parameter, documented as creating separate `git worktree`s, in fact runs all parallel agents in the same shared checkout. Polish-farr-gauge agent had its working-tree edits overwritten by a sibling agent's `git checkout` mid-write; recovered via re-apply. BUG-09 agent had its first commit attempt land on the wrong branch (`fix/bug-09-attack-range-overlay-tracks-live`) instead of its branch (`fix/bug-08-bph-selection-desync`); cleanly escalated rather than retry destructively. BUG-08 agent self-detangled via cherry-pick of its lost commit `2c0cea4` → `9a6a3f6` on its own branch. Lead serialized recovery: BUG-08 finished, polish-farr-gauge stood down (already complete on its branch), BUG-09 re-applied its cached diff. All three branches cherry-picked clean into `feat/phase-3-session-1`. **New LATER L23 added.** Sequential dispatch is the project's working pattern for write-active waves until the runtime gap is closed.
+
+**State for next session:**
+- Phase 3 session 1 is ready for lead live-test #2. The three bugs from live-test #1 are closed; the previous PR-readiness checklist is back in effect.
+- Live-test #2 acceptance: BUG-08 fix verified (worker → Khaneh button → terrain → Khaneh appears); BUG-09 verified (F4 circles follow moving units); Farr gauge shows "Farr 47.5" after killing a gathering Kargar.
+- Performance / visual flags from the agents' live-game-broken-surface answers (see v0.20.7) — lead should hand-verify in F5.
+- After live-test #2 pass, open PR to main.
+
+---
+
 ## 2026-05-14 — Phase 3 session 1 wave-close: reviewer-trio follow-up commits
 
 **Branch:** `feat/phase-3-session-1`

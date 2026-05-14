@@ -1373,6 +1373,49 @@ Wave 3 ships integration tests covering the Phase 3 economic loop end-to-end. Fi
 
 ---
 
+### v0.20.7 — Phase 3 session 1 wave-close: post-live-test fix-wave (2026-05-14)
+
+Three bugs surfaced in the lead live-test of Phase 3 session 1 (after the v0.20.6 wave-close commits landed). Three parallel fix-wave agents were dispatched in `git worktree`-isolated mode per the Open Space 2026-05-13 resolution + Experiment 04 trial — but the `isolation: "worktree"` Agent-tool parameter is a documented-but-unimplemented runtime gap (see new LATER L23 below). All three agents shared the same working tree, triggering a real Pitfall #7 race; the polish-farr-gauge agent self-recovered, BUG-09 cleanly escalated with cached diff, BUG-08 self-detangled via cherry-pick onto its own branch. Lead serialized the recovery: BUG-08 finished first, then polish-farr-gauge stood down (its work was already complete on its branch), then BUG-09 re-applied its cached diff. All three branches cherry-picked cleanly into `feat/phase-3-session-1` (files were disjoint).
+
+**Bugs fixed:**
+
+- **BUG-08** — BuildPlacementHandler placement-mode selection desync. Lead live-reproducer: select Kargar → click Khaneh button → click terrain → nothing happens. Root cause: `Button.action_mode` defaults to `ACTION_MODE_BUTTON_RELEASE` — on the PRESS edge of a click on the button, the GUI layer doesn't consume; event falls through to `_unhandled_input` on ClickHandler → raycast misses Unit → deselect-all. By the time the RELEASE edge fires the `pressed` signal and BPH enters placement mode, selection is already gone. Defense-in-depth fix (both shipped):
+  1. `build_menu.tscn` Root Control: `MOUSE_FILTER_PASS` → `MOUSE_FILTER_STOP`. The entire menu surface is now an input shield; clicks within the menu rect never leak to `_unhandled_input` regardless of any future Button-property change.
+  2. BPH subscribes to `EventBus.selection_changed` and auto-cancels placement when the new selection no longer contains a Kargar. Guards against any future deselection path (control-group recall, scripted deselect_all, etc.) — not just the Button-press race.
+  - Commits: `798d64b` (BPH guard + 3 unit tests), `966c6ec` (Root=STOP + 1 unit test + 1 integration test + .tscn comment + BuildMenu header docblock update).
+  - Pitfall #1 + #5 regressions still pass; decorative Background/Margin/VBox/Header stay PASS for inward click layering.
+
+- **BUG-09** — F4 attack-range overlay circles don't follow units when they move. Lead live-reproducer: select unit → F4 → right-click distant terrain → circle stays at the old position. Root cause: `attack_range_overlay.gd` explicitly didn't drive `_process` — entries only refreshed on `selection_changed`. Fix: `_process(_delta)` walks `_entries`, refreshes each entry's `world_pos` from the bound unit's `global_position`, calls `queue_redraw()` on any change. Entry shape extended with `&"unit": Node3D` ref for the per-frame read. Sim Contract §1.5 / §3.4 fit: pure UI-local read, no sim mutation, off-tick. Defensive against freed units (`is_instance_valid` guard before each read).
+  - Commit: `135349b` (overlay + 3 regression tests: position-tracking, multi-entry independence, freed-unit no-crash per Pitfall #11).
+
+- **POLISH (Farr gauge fractional drains)** — half-Farr drains (the 0.5 `worker_killed_during_gather` magnitude per `BalanceData.farr.drain_rates`) were invisible in the HUD because `_draw_numeric_label` used `roundi()` + `"%d"` format. Lead's live-test: kill gathering Kargar → expected display tick but saw "Farr 48" stay at "Farr 48" (because `roundi(47.5) == 48`). Fix: `"%s %.1f"` format. Adds a public `format_numeric_label() -> String` seam for testability.
+  - Commits: `aefc578` (failing tests for the new format), `65955aa` (format change + green).
+
+**Test count delta:** 1090 → **1101** passing (+11 new tests). 3 pre-existing risky/pending unchanged. 0 failures. Lint clean every commit. Pre-commit gate green every commit.
+
+**Commit chain (cherry-picked onto `feat/phase-3-session-1` in lead-merge order):**
+- `798d64b` → BUG-08 (1/2): BPH selection_changed guard
+- `966c6ec` → BUG-08 (2/2): build_menu Root=STOP
+- `aefc578` → polish-farr (1/3): failing tests
+- `65955aa` → polish-farr (2/3): `%.1f` format + green
+- `135349b` → BUG-09 (1/1): overlay `_process` position tracking
+
+**Verdict notes:**
+
+- Lead's Button-action-mode hypothesis (PRESS edge falls through to `_unhandled_input`): plausible, NOT verified end-to-end headless. Godot's synthetic `Input.parse_input_event` dispatch is too coarse to reproduce the live Control GUI race. Defense-in-depth was the right call — both fixes are cheap and orthogonal; the .tscn structural assertion in `test_build_menu.gd::test_root_uses_mouse_filter_stop_bug08_shield` is the discriminating regression lock for fix #1, and the selection_changed guard test in `test_build_placement_handler.gd::test_selection_*` is the discriminating lock for fix #2. Lead live-test #2 is the final verification surface.
+- BUG-09 honestly-deferred its actual routing-verification test ("circles deflect around the moving unit at 60fps") to lead live-test #2 because headless rendering doesn't expose the per-frame circle screen positions cleanly. Structural lock (entry `world_pos` updates each frame) is the headless guarantee.
+- Farr gauge `%.1f` format is the right minimum-surface fix. A future polish item (tween-animate the displayed value) was NOT added — bias toward shipping nothing speculative.
+
+**LATER items raised:**
+- **NEW L23** — `isolation: "worktree"` Agent-tool runtime gap (see below). Three parallel fix-wave agents shared the same working tree despite the parameter being documented as creating separate worktrees. This is the second Pitfall #7 occurrence in 12 hours under the supposed Experiment 04 mitigation; the mitigation as documented was unimplemented.
+- The `_draw`-side projection optimization for the attack-range overlay (cache projected polyline, re-project only on camera-transform OR position-change > pixel-threshold) is a potential future optimization IF heavy-selection live-test reveals FPS dips. Not done in this fix; flagged by BUG-09 agent.
+
+**Process incident note for the retro:**
+
+The first Pitfall #7 occurrence (Phase 2 session 2 close, 2026-05-12) was the original surfacing. The Open Space 2026-05-13 resolved it by codifying `git worktree`-per-agent in `STUDIO_PROCESS.md` §9. Today's incident is the second occurrence, proving the documented mitigation hadn't been implemented at the tool-runtime layer. The polish-farr-gauge and BUG-09 agents both independently detected the race, with BUG-09 holding off destructive recovery and escalating cleanly — the "trust the agent's observation" framing from the manifesto worked exactly as designed. Sequential dispatch is the project's working pattern until a real worktree-creation step is verified.
+
+---
+
 ### v0.20.6 — Phase 3 session 1 wave-close: reviewer-trio follow-up commits (2026-05-14)
 
 Three reviewer agents (godot-code-reviewer, architecture-reviewer, shahnameh-loremaster) ran in parallel after wave 3 landed. Verdicts: arch APPROVE, godot COMMENT (no blockers), loremaster NEEDS_REFINEMENT (one user-visible change). Nine consolidated follow-up commits address every blocking + recommended finding plus the loremaster's escalations to design chat.
@@ -1441,6 +1484,7 @@ Promoted from §6 entry prose at session-close retros so they're indexable rathe
 | ~~L20~~ | ~~**Pitfall #7 mitigation needs single owning surface**~~ — **CLOSED 2026-05-13.** Open Space sync resolved this: mitigation = `git worktree`-per-agent for parallel waves; sequential-shared-tree for single-deliverable / heavy-shared-doc waves; Option 2 (lead commit serialization) VETOED. Single owning surface: `STUDIO_PROCESS.md` §9 2026-05-13 entry. See §6 v0.20.0 entry for the full Constraint Negotiation outcome. Decision opens **Experiment 04** — first formal trial Phase 3 session 2. | — | arch-reviewer-pr9 framing (Phase 2 sess 2 close) → resolved by engine-architect + gameplay-systems Constraint Negotiation | — |
 | L21 | **`docs/PITFALLS.md` as project-level top-level pitfall doc** | 🟡 (when 3rd Pitfall-class concept emerges) | arch-reviewer-pr9 framing (Phase 2 sess 2 close) | **NEW 2026-05-12.** Currently engine-level Pitfalls live in `docs/PROCESS_EXPERIMENTS.md` Known Godot Pitfalls section (engine foot-guns); process-level Pitfalls (Pitfall #7 cross-agent commit-race) live in `STUDIO_PROCESS.md` §9; some hybrid (the queue_free + _test_run_tick interaction) crosses both. When a third hybrid concept emerges, the cross-doc navigation becomes painful — promote to a single `docs/PITFALLS.md` that indexes by class (engine / process / hybrid). Defer until concrete third instance. |
 | L22 | **Pitfall #5 prose audit in `docs/PROCESS_EXPERIMENTS.md`** | 🟢 (next docs-audit pass) | godot-code-reviewer-p3s1 wave-close (2026-05-14) | **NEW 2026-05-14.** `docs/PROCESS_EXPERIMENTS.md:84-86` describes Pitfall #5 as "reverse-tree-order: later siblings get `_unhandled_input` first." The codified project convention (per `attack_move_handler.gd` header, `build_placement_handler.gd` header post-`37334a3`, and regression tests `amh.get_index() < ch.get_index()` / `bph.get_index() < ch.get_index()`) is "tree-document order: lower-index sibling runs first." Runtime is correct; the pitfall doc's prose mislabels the direction. Cheap to fix; deferred to next session-close docs pass to avoid wave-close-fix-set churn. |
+| L23 | **`isolation: "worktree"` Agent-tool runtime gap** | 🔴 (blocking parallel agent dispatch) | Phase 3 session 1 post-live-test fix-wave (2026-05-14); BUG-09 + polish-farr-gauge race reports; BUG-08 cherry-pick recovery | **NEW 2026-05-14.** Three parallel fix-wave agents dispatched with `isolation: "worktree"` parameter shared the same working tree `/Users/siavoush/dev/shahnameh_rts/ShahnamehRTS` — the documented worktree creation was not performed at the tool-runtime layer. Second Pitfall #7 occurrence in 12 hours under the supposed Experiment 04 mitigation. Until the runtime gap is closed: **sequential dispatch only for any write-active wave**. Two viable workarounds for parallel waves: (a) lead manually pre-creates `git worktree add <path>` and passes the path to each agent in the brief, OR (b) keep parallel waves to read-only reviewer agents only (their lack of file writes precludes the race). Document the Pitfall as a candidate #12 entry for `docs/PROCESS_EXPERIMENTS.md` Known Godot Pitfalls list — though this one is a process / tooling Pitfall, not a Godot engine Pitfall, so it may belong in `STUDIO_PROCESS.md` §9 instead (cross-doc Pitfall — the same surfacing motivation as L21's `docs/PITFALLS.md` consolidation). |
 
 **How to add to this list:** at session-close retro, scan §6 entries and BUILD_LOG retros for "LATER items surfaced." Promote architectural / scale-blocking ones here with the priority class. Keep §6 entries focused on "what shipped this wave + why"; the LATER index is the cross-wave aggregation.
 
