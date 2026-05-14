@@ -122,10 +122,17 @@ func _ready() -> void:
 # Registers this Mazra'eh as a grain gather target so ResourceSystem and
 # UnitState_Gathering can discover it. Emits building_placed for telemetry.
 func _on_placement_complete(placer_unit_id: int) -> void:
-	# ResourceSystem.register_node ships in wave 1B; guard with has_method
-	# so wave 1A tests don't fail on missing API.
+	# ResourceSystem.register_node ships in wave 1A (gp-sys slice). Guard with
+	# has_method for forward-compat with tests that load Mazra'eh without
+	# the autoload available.
+	#
+	# v1.2.1 (2026-05-14): the signature is register_node(node, kind:
+	# StringName) — we pass Constants.KIND_GRAIN explicitly. Mazra'eh's own
+	# `kind` field is &"mazraeh" (Building kind) — passing it implicitly
+	# would register Mazra'eh under &"mazraeh", not &"grain", and any future
+	# AI consumer enumerating grain sources would miss it.
 	if ResourceSystem.has_method(&"register_node"):
-		ResourceSystem.register_node(self)
+		ResourceSystem.register_node(self, Constants.KIND_GRAIN)
 	# FogSystem ships in wave 3A. Mazra'eh is a fog ENTITY (tracked via
 	# get_last_seen) but NOT a vision source (farms don't see — ai-eng CC-2).
 	# sight_radius_cells=0, is_static=true. Guard is forward-compat: no-op

@@ -318,53 +318,65 @@ func change_population_cap(
 # StringName field via `.get(&"kind")`. Same pattern as
 # UnitState_Gathering's `has_method(&"request_extract")` filter.
 
-# Per-kind registry — Dictionary[StringName, Array[Node]] keyed by `kind`
-# (&"coin" / &"grain"). The values are Arrays-of-Nodes so iteration order is
-# stable across registrations (deterministic Phase 6 enumeration).
+# Per-kind registry — Dictionary[StringName, Array[Node]] keyed by the
+# RESOURCE kind passed explicitly at register-time (&"coin" / &"grain").
+# The values are Arrays-of-Nodes so iteration order is stable across
+# registrations (deterministic Phase 6 enumeration).
 #
-# A node's registration is keyed only on its `kind` at register-time; if a
-# node's kind changes after registration (shouldn't happen in practice —
-# Mazra'eh / MineNode don't mutate kind post-construction), the registry's
-# bucket WON'T follow. The double-register guard catches reregistration
-# under a different kind by emitting a warning.
+# v1.2.1 fix-up rationale (2026-05-14): the original v1.2.0 read kind from
+# `node.kind`. That worked for MineNode (whose `kind = &"coin"` is the
+# resource kind) but BROKE for Mazra'eh (which extends Building, so
+# `kind = &"mazraeh"` is the Building kind, NOT the resource kind &"grain").
+# A consumer asking `get_nodes_of_kind(&"grain")` would have missed Mazra'eh
+# entirely. Decoupling registered-kind from node-kind via the explicit
+# parameter eliminates the ambiguity at the seam between MineNode-as-
+# ResourceNode and Mazra'eh-as-Building.
+#
+# A node's registration is keyed only on the kind passed at register-time;
+# the registry does not introspect node.kind. The double-register guard
+# (same node, same kind, twice) catches buggy callers; double-register
+# under DIFFERENT kinds is allowed (a hypothetical hybrid node could
+# legitimately register under multiple kinds).
 var _nodes_by_kind: Dictionary = {}
 
 
 ## Register a resource-providing node so consumers can enumerate it.
 ##
-## Callers: Mazra'eh's _on_placement_complete (wave 1A, world-builder's
-## slice). MineNode could call this too — wave 1A wave-1A MineNode does
-## NOT call it for backward-compat with the wave-1A raycast-routing path,
-## but ResourceSystem.reset() / register_node remain available if a
-## future MineNode self-register seam is added.
+## The `kind` parameter is the RESOURCE kind (&"coin" / &"grain"), passed
+## explicitly by the caller. It does NOT have to match the node's `kind`
+## field — for Mazra'eh (which extends Building, so `node.kind = &"mazraeh"`
+## is the Building kind), the caller passes `&"grain"` here. The registry
+## stores the node under the EXPLICIT kind, not the node's field.
 ##
-## Idempotency: registering the same node twice emits a warning and does
-## NOT duplicate the registry entry. The warning surfaces a buggy caller
-## that calls _on_placement_complete twice; the no-duplicate guard
-## preserves the AI's enumeration correctness even if the caller is buggy.
+## Callers:
+##   - Mazra'eh's _on_placement_complete: `register_node(self, Constants.KIND_GRAIN)`
+##   - Future MineNode self-register seam: `register_node(self, Constants.KIND_COIN)`
+##   - Phase 5+ resource sources: caller-decided kind.
+##
+## Idempotency: registering the SAME node under the SAME kind twice emits a
+## warning and does NOT duplicate. Registering the SAME node under
+## DIFFERENT kinds is allowed (hypothetical hybrid node case) — both buckets
+## carry the ref; unregister_node clears all buckets.
 ##
 ## Sanctioned-write context: this method may be called from off-tick
-## contexts (a building's `_ready` runs during scene-tree warm-up, before
-## SimClock first tick). The mutation is on the registry Dictionary
-## (not a sim-state field), so the SimNode _set_sim discipline doesn't
-## apply. The registry is a control-plane structure, not a sim-state
-## structure — same precedent as _coin_x100's initial _load_starting_values
-## write at _ready.
+## contexts (a building's _on_placement_complete runs from inside the
+## worker's _sim_tick, which is on-tick; but for symmetry with the
+## off-tick Mazra'eh-construction case in wave 1C, the registry is a
+## control-plane structure, not a sim-state structure — same precedent
+## as _coin_x100's initial _load_starting_values write at _ready).
 ##
-## node must expose a `kind: StringName` field readable via `.get(&"kind")`.
-## A null node or a node without `kind` produces a push_error and no-op.
-func register_node(node: Node) -> void:
+## kind must be a non-empty StringName. An empty kind or null/invalid node
+## produces a push_error and no-op.
+func register_node(node: Node, kind: StringName) -> void:
 	if node == null or not is_instance_valid(node):
 		push_error(
 			"ResourceSystem.register_node: null or invalid node — no-op.")
 		return
-	var kind_v: Variant = node.get(&"kind")
-	if typeof(kind_v) != TYPE_STRING_NAME or StringName(kind_v) == &"":
+	if kind == &"":
 		push_error(
-			"ResourceSystem.register_node: node has no `kind` StringName "
-			+ "field (or it is empty). No-op. node=%s" % str(node))
+			"ResourceSystem.register_node: empty kind StringName. No-op. "
+			+ "node=%s" % str(node))
 		return
-	var kind: StringName = StringName(kind_v)
 	# Ensure the per-kind array exists.
 	if not _nodes_by_kind.has(kind):
 		_nodes_by_kind[kind] = []

@@ -224,39 +224,72 @@ func test_unknown_kind_logs_error_and_no_mutation() -> void:
 # ships in this same wave (world-builder's slice). Phase 6 / future
 # query-side helpers (get_nodes_of_kind, by_team filter) land when a
 # consumer demands them.
+#
+# v1.2.1 fix-up (2026-05-14): API now takes kind as an explicit parameter:
+# `register_node(node, kind: StringName)`. Original v1.2.0 derived kind from
+# `node.kind` field, but that breaks for Mazra'eh (which extends Building,
+# so `node.kind = &"mazraeh"` is the Building kind, NOT the resource kind
+# &"grain"). Caller passes the RESOURCE kind explicitly — eliminates the
+# field-name ambiguity at the seam between MineNode (kind IS resource kind)
+# and Mazra'eh-as-Building (kind is Building kind).
 
-func test_register_node_stores_a_resource_node() -> void:
-	# A duck-typed ResourceNode-like dummy: has a `kind` field. The registry
-	# doesn't class_name-check — it stores by node ref keyed on kind.
-	var fake_node: Node = Node.new()
-	fake_node.set_meta(&"kind", &"coin")  # ResourceNode exposes `kind` as a field;
-	                                       # the duck-type the registry needs is
-	                                       # readable via `.get(&"kind")`.
-	# Add a real field by extending Node — set() on Node creates a property
-	# only if the script defines it; metadata is the safer cross-field path.
-	# Better: use a small inner-class dummy with a `kind` field.
-	fake_node.free()
+func test_register_node_stores_under_explicit_kind() -> void:
+	# Caller passes the resource kind explicitly. The node's `kind` field
+	# (if any) is ignored — the registry trusts the caller's intent.
 	var dummy: _FakeResourceNode = _FakeResourceNode.new()
-	dummy.kind = &"coin"
+	dummy.kind = &"coin"  # node's own kind (may be Building kind, doesn't matter)
 	add_child_autofree(dummy)
-	ResourceSystem.register_node(dummy)
-	# Verify the node is now in the registry by introspection helper.
+	ResourceSystem.register_node(dummy, &"coin")
 	var found: bool = ResourceSystem.is_node_registered(dummy)
 	assert_true(found,
-		"register_node stores the node — subsequent is_node_registered "
-		+ "returns true")
+		"register_node(node, &\"coin\") stores the node — "
+		+ "is_node_registered returns true")
+	assert_eq(ResourceSystem.registered_node_count_for_kind(&"coin"), 1,
+		"node lands in the &\"coin\" bucket")
+
+
+func test_register_node_decouples_node_kind_from_registered_kind() -> void:
+	# v1.2.1 motivating case: Mazra'eh has `kind = &"mazraeh"` (Building kind)
+	# but registers as a GRAIN source. The registered kind is the explicit
+	# parameter, not the node.kind field.
+	var mazraeh_like: _FakeResourceNode = _FakeResourceNode.new()
+	mazraeh_like.kind = &"mazraeh"  # Building kind (irrelevant to registry)
+	add_child_autofree(mazraeh_like)
+	ResourceSystem.register_node(mazraeh_like, &"grain")  # resource kind explicit
+	assert_eq(ResourceSystem.registered_node_count_for_kind(&"grain"), 1,
+		"Mazra'eh-like (kind=&\"mazraeh\") registers under explicit &\"grain\"")
+	assert_eq(ResourceSystem.registered_node_count_for_kind(&"mazraeh"), 0,
+		"Mazra'eh-like does NOT register under its Building kind &\"mazraeh\" — "
+		+ "the explicit registered kind is the authority")
 
 
 func test_unregister_node_removes_a_registered_node() -> void:
 	var dummy: _FakeResourceNode = _FakeResourceNode.new()
 	dummy.kind = &"grain"
 	add_child_autofree(dummy)
-	ResourceSystem.register_node(dummy)
+	ResourceSystem.register_node(dummy, &"grain")
 	ResourceSystem.unregister_node(dummy)
 	var found: bool = ResourceSystem.is_node_registered(dummy)
 	assert_false(found,
 		"unregister_node removes the node — subsequent is_node_registered "
 		+ "returns false")
+
+
+func test_unregister_node_no_kind_arg_finds_node_under_any_kind() -> void:
+	# unregister_node intentionally does NOT take a kind argument — it scans
+	# all buckets. This matters because the caller's death/teardown path may
+	# not remember which kind the node was registered under (the registered
+	# kind is decided at register-time and lives in the registry, not on the
+	# node itself). The scan is O(num_kinds) — trivial at MVP scale (~2-3 kinds).
+	var dummy: _FakeResourceNode = _FakeResourceNode.new()
+	dummy.kind = &"mazraeh"  # Building kind
+	add_child_autofree(dummy)
+	ResourceSystem.register_node(dummy, &"grain")  # registered under resource kind
+	# The caller's teardown path calls unregister_node(self) — no kind argument.
+	ResourceSystem.unregister_node(dummy)
+	assert_false(ResourceSystem.is_node_registered(dummy),
+		"unregister_node(node) finds and removes the node regardless of "
+		+ "which kind bucket holds it — no kind argument needed")
 
 
 func test_unregister_node_is_idempotent_on_unknown_node() -> void:
@@ -282,9 +315,9 @@ func test_double_register_emits_warning_but_does_not_duplicate() -> void:
 	var dummy: _FakeResourceNode = _FakeResourceNode.new()
 	dummy.kind = &"coin"
 	add_child_autofree(dummy)
-	ResourceSystem.register_node(dummy)
-	# Second registration — must not crash, must not duplicate.
-	ResourceSystem.register_node(dummy)
+	ResourceSystem.register_node(dummy, &"coin")
+	# Second registration with the SAME kind — must not crash, must not duplicate.
+	ResourceSystem.register_node(dummy, &"coin")
 	# Verify only one entry exists by counting.
 	var count: int = ResourceSystem.registered_node_count_for_kind(&"coin")
 	assert_eq(count, 1,
@@ -292,16 +325,17 @@ func test_double_register_emits_warning_but_does_not_duplicate() -> void:
 
 
 func test_register_node_handles_multiple_kinds() -> void:
-	# A MineNode (&"coin") and a Mazra'eh (&"grain") should both register
-	# without colliding. Verified via the per-kind count helper.
+	# A MineNode (registered as &"coin") and a Mazra'eh (registered as
+	# &"grain") should both register without colliding. Verified via the
+	# per-kind count helper.
 	var mine: _FakeResourceNode = _FakeResourceNode.new()
-	mine.kind = &"coin"
+	mine.kind = &"coin"  # matches registered kind for MineNode (kind IS resource kind)
 	add_child_autofree(mine)
 	var farm: _FakeResourceNode = _FakeResourceNode.new()
-	farm.kind = &"grain"
+	farm.kind = &"mazraeh"  # Mazra'eh case — kind is Building kind
 	add_child_autofree(farm)
-	ResourceSystem.register_node(mine)
-	ResourceSystem.register_node(farm)
+	ResourceSystem.register_node(mine, &"coin")
+	ResourceSystem.register_node(farm, &"grain")  # explicit resource kind
 	assert_eq(ResourceSystem.registered_node_count_for_kind(&"coin"), 1,
 		"coin registry has 1 entry (the mine)")
 	assert_eq(ResourceSystem.registered_node_count_for_kind(&"grain"), 1,
@@ -315,7 +349,7 @@ func test_reset_clears_node_registry() -> void:
 	var dummy: _FakeResourceNode = _FakeResourceNode.new()
 	dummy.kind = &"coin"
 	add_child_autofree(dummy)
-	ResourceSystem.register_node(dummy)
+	ResourceSystem.register_node(dummy, &"coin")
 	assert_true(ResourceSystem.is_node_registered(dummy))
 	ResourceSystem.reset()
 	assert_false(ResourceSystem.is_node_registered(dummy),
@@ -323,10 +357,12 @@ func test_reset_clears_node_registry() -> void:
 
 
 # Inner-class fake ResourceNode for the registry tests. Has only what the
-# registry contract requires (a `kind` field). Real ResourceNode / Mazra'eh
-# extend Node3D, but the registry shouldn't care about Node3D-ness —
-# duck-typed on `kind`. Keeping the dummy small isolates the test from
-# the full ResourceNode hierarchy.
+# registry contract requires (a `kind` field for backward-compat with
+# v1.2.0 callers; the v1.2.1 register_node signature uses the explicit
+# kind arg, but the field still exists for cases where consumers want to
+# read the node's own kind for other reasons).
+# Real ResourceNode / Mazra'eh extend Node3D, but the registry shouldn't
+# care about Node3D-ness — explicit kind is the registry contract.
 class _FakeResourceNode extends Node:
 	var kind: StringName = &""
 
