@@ -53,36 +53,41 @@ class_name FarrConfig extends Resource
 ## Reference: 01_CORE_MECHANICS.md §9.3.
 @export var kaveh_resolve_window_ticks: int = 2700
 
-# --- Drain magnitudes (negative Farr deltas, expressed as negative floats) ---
+# --- DEPRECATED individual drain magnitudes (superseded by `drain_rates` dict below) ---
 # Reference: 01_CORE_MECHANICS.md §4.3 (Drains section).
-# FarrSystem passes these to apply_farr_change(); sign is negative.
+#
+# DEPRECATED — Phase 3 wave-close (2026-05-14).
+# Superseded by the `drain_rates: Dictionary` field below. The Phase 3
+# Farr-drain dispatcher (`scripts/autoload/farr_drain_dispatcher.gd`)
+# reads ONLY from `drain_rates` — none of the @export fields in this
+# block are live in the runtime. They're retained on the resource only
+# so old saved `balance.tres` files don't fail validation; they may be
+# removed in a Phase 4 cleanup pass alongside the cause-string-suffix
+# retirement noted in §6 v0.20.3. Do not add new triggers here — add
+# a new key to `drain_rates` and emit it from the relevant dispatcher.
 
-## Worker killed while idle and unarmed.
-## "Worker killed while idle and unarmed: −1 Farr each" — §4.3.
+## DEPRECATED. See `drain_rates[&"worker_killed_idle"]` (= 1.0; positive magnitude).
 @export var drain_idle_worker_killed: float = -1.0
 
-## Hero attacks an ally unit (friendly fire).
-## "Hero attacks an ally unit: −5 Farr" — §4.3.
+## DEPRECATED. See `drain_rates[&"hero_died"]` (= 5.0) — friendly-fire variant
+## will land as a separate key when Rostam ships in Phase 4.
 @export var drain_hero_attack_ally: float = -5.0
 
-## Hero killed while fleeing combat (facing away from enemy).
-## "Hero killed while fleeing combat: −10 Farr" — §4.3.
+## DEPRECATED. See `drain_rates[&"hero_died"]` (= 5.0) — flee/honest-battle
+## distinction will land as separate keys when Rostam death-trigger ships.
 @export var drain_hero_killed_fleeing: float = -10.0
 
-## Hero killed in honest battle (facing the enemy).
-## "−5 if killed in honest battle" — §7.3 Rostam death.
+## DEPRECATED. See `drain_rates[&"hero_died"]` (= 5.0).
 @export var drain_hero_killed_battle: float = -5.0
 
-## Loss of an Atashkadeh building (sacred flame extinguished).
-## "Loss of an Atashkadeh building: −5 Farr" — §4.3.
+## DEPRECATED. See `drain_rates[&"building_destroyed_atashkadeh"]` (= 5.0).
 @export var drain_atashkadeh_lost: float = -5.0
 
-## Per-kill drain when army outnumbers enemy by snowball_ratio:1 or more.
-## "−0.5 Farr per kill" — §4.3 snowball protection.
+## DEPRECATED. Snowball protection lands in Phase 4 with its own
+## `snowball_*` keys in `drain_rates`.
 @export var drain_snowball_per_kill: float = -0.5
 
-## Per-worker drain when destroying enemy economy while their military is broken.
-## "−1 Farr per worker" — §4.3 snowball protection.
+## DEPRECATED. Snowball protection — see note above.
 @export var drain_snowball_worker: float = -1.0
 
 ## Army size ratio that triggers snowball protection (attacker:defender).
