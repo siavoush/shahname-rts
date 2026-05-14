@@ -107,22 +107,38 @@ class_name MineNode extends ResourceNode
 - `max_workers = 2` (two kargar can share a mine)
 - Depletable: `current_stock` decrements each trip. When it reaches 0, `is_gatherable = false` and `EventBus.resource_node_depleted.emit(self)` fires (see §6)
 
-### 1.4 `Mazra'eh` (grain) — `ResourceNode` subclass, worker-gathered
+### 1.4 `Mazra'eh` (grain) — `Building` subclass with duck-typed gather surface (wave-1A, 2026-05-14)
 
-`Mazra'eh` is the player-built farm building. It extends `ResourceNode` and implements the same gather/extract API as `MineNode` so the worker's `Gathering` state treats both identically. The fertile-zone placement validation (§2.2) restricts where it can be built; the Building system owns its construction and HP.
+> **v1.2.0 correction (2026-05-14):** the v1 spec said `Mazraeh extends ResourceNode`. The wave-1A implementation (Room A Open Space, 2026-05-14) chose option (iii): `Mazra'eh extends Building` and duck-types the three-call API on itself. See §4.5 for the full rationale. The v1.1 §1.4 prose below is retained for history but the class hierarchy it describes is NOT shipped.
+
+`Mazra'eh` is the player-built farm building. It extends `Building` (not `ResourceNode`) to preserve the full building lifecycle: construction timer, HP/HealthComponent (wave 1C — not present in wave 1A), build-menu integration, the `&"buildings"` SceneTree group, and placement hooks. It duck-types the three-call gather API on itself so `UnitState_Gathering`'s `has_method(&"request_extract")` filter at line 143 discovers it without class-coupling.
 
 ```gdscript
-# buildings/mazraeh.gd
-class_name Mazraeh extends ResourceNode
+# game/scripts/world/buildings/mazraeh.gd  (world-builder)
+extends "res://scripts/world/buildings/building.gd"
+class_name Mazraeh
+
+# kind = &"mazraeh" (Building kind — set via KIND_MAZRAEH constant, dual-init).
+# Resource kind &"grain" is returned by complete_extract as Constants.KIND_GRAIN
+# in the { kind, amount_x100 } payload — NOT stored as a field here.
+
+const _WAVE_1A_EXTRACT_TICKS: int = 90         # 3s dwell at SIM_HZ=30
+const _WAVE_1A_YIELD_PER_TRIP_X100: int = 200  # 2 Grain per trip
+
+func request_extract(unit_id: int) -> bool: ...
+func complete_extract(unit_id: int) -> Dictionary: ...
+func release_extract(unit_id: int) -> void: ...
+var extract_ticks: int = _WAVE_1A_EXTRACT_TICKS  # read by UnitState_Gathering L210
 ```
 
-- `resource_kind = &"grain"`
-- `current_stock = -1` (infinite — a healthy farm yields indefinitely; see §1.5 below)
-- `max_workers` from `BalanceData.economy.resource_nodes.farm_max_workers` (see §7; default 1)
-- `is_gatherable = false` while under construction, set `true` when the construction-complete signal fires, set `false` permanently when the building takes fatal damage
-- No `NavigationObstacle3D` on the Mazra'eh — workers walk onto the farm tile to gather (mines are obstacles, farms are walk-on)
+- Grain yield: `_WAVE_1A_YIELD_PER_TRIP_X100 = 200` (2 Grain/trip). BalanceData-driven from wave 1B.
+- Infinite reserves: `complete_extract` never depletes — no `reserves_x100` sentinel field (Mazra'eh extends Building, not ResourceNode). Returns full payload unconditionally.
+- Single gather slot for wave 1A (`_occupied: Dictionary` with size ≤ 1).
+- `is_complete` (from Building base) gates `request_extract` — returns `false` before `place_at`.
+- No `NavigationObstacle3D` — workers walk onto the farm tile (mines are obstacles, farms are walk-on).
+- HP/HealthComponent: ships wave 1C. Destruction lifecycle is a forward-compat hook that cannot fire in wave 1A.
 
-**Rationale (per design chat resolution 2026-04-30):** workers gathering grain preserves the foundational RTS archetype where workers drive the economy. The earlier passive-generator alternative would have stripped that role for one resource type, breaking the worker's centrality and creating an awkward asymmetry between Coin (worker-gathered) and Grain (auto-generated). Worker-gathered grain is consistent with `01_CORE_MECHANICS.md` §3 ("Workers gather resources from map nodes" applied uniformly). The Div faction may receive different economics post-MVP — that is a separate design track.
+**Rationale (per design chat resolution 2026-04-30 + Room A 2026-05-14):** workers gathering grain preserves the foundational RTS archetype where workers drive the economy. The earlier passive-generator alternative would have stripped that role for one resource type, breaking the worker's centrality. The duck-type option (iii) over `extends ResourceNode` preserves the full Building lifecycle without multiple-inheritance gymnastics. See §4.5 for the detailed comparison.
 
 ### 1.5 Why `current_stock = -1` for `Mazra'eh`
 
@@ -220,14 +236,20 @@ func _sim_tick(dt: float) -> void:
 
 The `cleanup` phase coordinator calls this node's `_sim_tick` to flush the deferred emit. The signal fires exactly once, in the correct phase.
 
-### 3.4 Mazra'eh (`FarmNode`) lifecycle
+### 3.4 Mazra'eh lifecycle (wave 1A — partial; HP/destruction deferred to wave 1C)
 
-- `is_gatherable` starts `false` while under construction
-- Set to `true` by the Building system's construction-complete signal handler. Mazra'eh self-registers with `ResourceSystem` at the same moment (§2.3)
-- Set to `false` permanently when the building takes fatal damage (HealthComponent zero)
-- On destruction, the Mazra'eh emits `EventBus.resource_node_depleted.emit(self)` (deferred to `cleanup` phase via the same `_pending_depletion` pattern as `MineNode` §3.3) and deregisters from `ResourceSystem`. Consumers do not distinguish between mine-out-of-stock and farm-destroyed — both are "this node is no longer a viable target." The building then `queue_free`s normally; any worker still holding a ticket on this Mazra'eh sees `INVALID` next tick and transitions to `Idle` per §4.2
+> **v1.2.0 correction (2026-05-14):** the v1 spec described a full `is_gatherable` + `HealthComponent` depletion lifecycle. In wave 1A, HP/HealthComponent on buildings does not exist yet. The destruction lifecycle described below is the forward-intended design; the parts marked **[wave 1C]** are not yet implemented.
 
-Workers can walk onto the Mazra'eh's tile to gather — there is no `NavigationObstacle3D` on the farm. Destruction does not leave a navmesh-blocking ruin (unlike `MineNode` per §3.2); the farm is fully cleaned up on destruction.
+**Wave 1A (shipped):**
+- `is_complete` (Building base field) starts `false` at spawn; set `true` by `place_at`. This is the gate for `request_extract` — workers cannot gather from an unplaced Mazra'eh.
+- `_on_placement_complete` self-registers with `ResourceSystem.register_node(self)` (guarded by `has_method` — ships wave 1B).
+- Grain yield is infinite — `complete_extract` returns the full per-trip payload unconditionally; no depletion state.
+- No `NavigationObstacle3D` — workers walk onto the farm tile.
+
+**[wave 1C] Forward-intended destruction lifecycle:**
+- `is_gatherable` set `false` permanently when the building takes fatal damage (HealthComponent zero).
+- On destruction: Mazra'eh emits `EventBus.resource_node_depleted.emit(self)` (deferred to `cleanup` phase) and deregisters from `ResourceSystem`. Workers holding a gather slot at destruction time see an empty payload from `complete_extract` on the next completed trip and transition to Idle.
+- Destruction does not leave a navmesh-blocking ruin (unlike `MineNode` per §3.2); the farm is fully cleaned up on destruction.
 
 ---
 
