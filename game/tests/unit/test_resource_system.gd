@@ -211,6 +211,126 @@ func test_unknown_kind_logs_error_and_no_mutation() -> void:
 
 # === reset() symmetry =======================================================
 
+# === Node registry — Phase 3 session 2 wave 1A (Room A Decision 4) =========
+#
+# Per Room A's ratified decision (2026-05-14): ResourceSystem exposes
+# register_node / unregister_node so future AI consumers (Phase 6 scout AI,
+# Phase 3 DummyAI variants) can enumerate resource sources by kind without
+# walking the scene tree each time.
+#
+# Wave-1A scope: ship the API + idempotency + double-register-warning.
+# No consumer exists yet; the API surface lands so Mazra'eh's
+# _on_placement_complete can call register_node when the wave-1A Mazra'eh
+# ships in this same wave (world-builder's slice). Phase 6 / future
+# query-side helpers (get_nodes_of_kind, by_team filter) land when a
+# consumer demands them.
+
+func test_register_node_stores_a_resource_node() -> void:
+	# A duck-typed ResourceNode-like dummy: has a `kind` field. The registry
+	# doesn't class_name-check — it stores by node ref keyed on kind.
+	var fake_node: Node = Node.new()
+	fake_node.set_meta(&"kind", &"coin")  # ResourceNode exposes `kind` as a field;
+	                                       # the duck-type the registry needs is
+	                                       # readable via `.get(&"kind")`.
+	# Add a real field by extending Node — set() on Node creates a property
+	# only if the script defines it; metadata is the safer cross-field path.
+	# Better: use a small inner-class dummy with a `kind` field.
+	fake_node.free()
+	var dummy: _FakeResourceNode = _FakeResourceNode.new()
+	dummy.kind = &"coin"
+	add_child_autofree(dummy)
+	ResourceSystem.register_node(dummy)
+	# Verify the node is now in the registry by introspection helper.
+	var found: bool = ResourceSystem.is_node_registered(dummy)
+	assert_true(found,
+		"register_node stores the node — subsequent is_node_registered "
+		+ "returns true")
+
+
+func test_unregister_node_removes_a_registered_node() -> void:
+	var dummy: _FakeResourceNode = _FakeResourceNode.new()
+	dummy.kind = &"grain"
+	add_child_autofree(dummy)
+	ResourceSystem.register_node(dummy)
+	ResourceSystem.unregister_node(dummy)
+	var found: bool = ResourceSystem.is_node_registered(dummy)
+	assert_false(found,
+		"unregister_node removes the node — subsequent is_node_registered "
+		+ "returns false")
+
+
+func test_unregister_node_is_idempotent_on_unknown_node() -> void:
+	# Per Room A — "unregister of unknown is no-op." A Mazra'eh that
+	# never managed to register (perhaps because it destructs before
+	# its _on_placement_complete fires) should not crash the system on
+	# unregister-during-cleanup.
+	var unknown: _FakeResourceNode = _FakeResourceNode.new()
+	unknown.kind = &"grain"
+	add_child_autofree(unknown)
+	# Note: NEVER registered.
+	ResourceSystem.unregister_node(unknown)  # must not crash
+	assert_false(ResourceSystem.is_node_registered(unknown),
+		"unregister of an unknown node is a no-op (still not registered)")
+
+
+func test_double_register_emits_warning_but_does_not_duplicate() -> void:
+	# Per Room A — "double-register-warning." If a Mazra'eh's
+	# _on_placement_complete is somehow called twice (test fixture bug,
+	# future construction-state refactor), we want a loud warning so the
+	# bug is observable, but we DO NOT want the node listed twice in the
+	# registry (would double-count grain-source enumeration for AI).
+	var dummy: _FakeResourceNode = _FakeResourceNode.new()
+	dummy.kind = &"coin"
+	add_child_autofree(dummy)
+	ResourceSystem.register_node(dummy)
+	# Second registration — must not crash, must not duplicate.
+	ResourceSystem.register_node(dummy)
+	# Verify only one entry exists by counting.
+	var count: int = ResourceSystem.registered_node_count_for_kind(&"coin")
+	assert_eq(count, 1,
+		"double-register yields ONE entry, not two — registry is idempotent")
+
+
+func test_register_node_handles_multiple_kinds() -> void:
+	# A MineNode (&"coin") and a Mazra'eh (&"grain") should both register
+	# without colliding. Verified via the per-kind count helper.
+	var mine: _FakeResourceNode = _FakeResourceNode.new()
+	mine.kind = &"coin"
+	add_child_autofree(mine)
+	var farm: _FakeResourceNode = _FakeResourceNode.new()
+	farm.kind = &"grain"
+	add_child_autofree(farm)
+	ResourceSystem.register_node(mine)
+	ResourceSystem.register_node(farm)
+	assert_eq(ResourceSystem.registered_node_count_for_kind(&"coin"), 1,
+		"coin registry has 1 entry (the mine)")
+	assert_eq(ResourceSystem.registered_node_count_for_kind(&"grain"), 1,
+		"grain registry has 1 entry (the farm) — no cross-kind collision")
+
+
+func test_reset_clears_node_registry() -> void:
+	# reset() is called by MatchHarness between simulated matches. The
+	# node registry must be cleared too — otherwise a node from a prior
+	# match would linger and skew enumeration in the next.
+	var dummy: _FakeResourceNode = _FakeResourceNode.new()
+	dummy.kind = &"coin"
+	add_child_autofree(dummy)
+	ResourceSystem.register_node(dummy)
+	assert_true(ResourceSystem.is_node_registered(dummy))
+	ResourceSystem.reset()
+	assert_false(ResourceSystem.is_node_registered(dummy),
+		"reset() clears the node registry — match teardown discipline")
+
+
+# Inner-class fake ResourceNode for the registry tests. Has only what the
+# registry contract requires (a `kind` field). Real ResourceNode / Mazra'eh
+# extend Node3D, but the registry shouldn't care about Node3D-ness —
+# duck-typed on `kind`. Keeping the dummy small isolates the test from
+# the full ResourceNode hierarchy.
+class _FakeResourceNode extends Node:
+	var kind: StringName = &""
+
+
 func test_reset_restores_starting_values() -> void:
 	# Mutate, then reset, then verify we're back at the starting values.
 	_run_inside_tick(func() -> void:

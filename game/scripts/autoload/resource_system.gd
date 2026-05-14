@@ -293,6 +293,134 @@ func change_population_cap(
 	EventBus.resource_changed.emit(team, &"population_cap", effective_delta, post)
 
 
+# === Resource-node registry — Phase 3 session 2 wave 1A (Room A Decision 4) =
+#
+# Per the Room A Open Space ratified 2026-05-14, ResourceSystem exposes a
+# registry of ResourceNode-like nodes so future consumers (Phase 6 scout AI,
+# Phase 5 Kaveh Event scripting) can enumerate &"coin" / &"grain" sources by
+# kind without scene-tree walks. Wave 1A scope ships the API + reset
+# behavior; the query side (get_nodes_of_kind, by_team filter) lands when a
+# consumer demands it.
+#
+# Why on ResourceSystem (not on a new ResourceNodeRegistry autoload):
+# Mazra'eh's _on_placement_complete already calls into ResourceSystem (for
+# the chokepoint). Registering with the same autoload at the same seam
+# keeps the cross-cutting surface small. The MineNode wave-1A code shipped
+# without using this — mines were raycast-routed, not registry-enumerated.
+# Mazra'eh in wave 1A this session, and DummyAI in wave 3B, are the first
+# registry-using consumers (DummyAI may or may not — depends on its build
+# order shape per the Path C decision-log).
+#
+# Why duck-typed on `kind` (not class-checked on ResourceNode):
+# Mazra'eh extends Building, not ResourceNode (option (iii) per Room A —
+# duck-typed three-call API). A class_check `node is ResourceNode` would
+# reject Mazra'eh. The registry tolerates anything exposing a `kind`
+# StringName field via `.get(&"kind")`. Same pattern as
+# UnitState_Gathering's `has_method(&"request_extract")` filter.
+
+# Per-kind registry — Dictionary[StringName, Array[Node]] keyed by `kind`
+# (&"coin" / &"grain"). The values are Arrays-of-Nodes so iteration order is
+# stable across registrations (deterministic Phase 6 enumeration).
+#
+# A node's registration is keyed only on its `kind` at register-time; if a
+# node's kind changes after registration (shouldn't happen in practice —
+# Mazra'eh / MineNode don't mutate kind post-construction), the registry's
+# bucket WON'T follow. The double-register guard catches reregistration
+# under a different kind by emitting a warning.
+var _nodes_by_kind: Dictionary = {}
+
+
+## Register a resource-providing node so consumers can enumerate it.
+##
+## Callers: Mazra'eh's _on_placement_complete (wave 1A, world-builder's
+## slice). MineNode could call this too — wave 1A wave-1A MineNode does
+## NOT call it for backward-compat with the wave-1A raycast-routing path,
+## but ResourceSystem.reset() / register_node remain available if a
+## future MineNode self-register seam is added.
+##
+## Idempotency: registering the same node twice emits a warning and does
+## NOT duplicate the registry entry. The warning surfaces a buggy caller
+## that calls _on_placement_complete twice; the no-duplicate guard
+## preserves the AI's enumeration correctness even if the caller is buggy.
+##
+## Sanctioned-write context: this method may be called from off-tick
+## contexts (a building's `_ready` runs during scene-tree warm-up, before
+## SimClock first tick). The mutation is on the registry Dictionary
+## (not a sim-state field), so the SimNode _set_sim discipline doesn't
+## apply. The registry is a control-plane structure, not a sim-state
+## structure — same precedent as _coin_x100's initial _load_starting_values
+## write at _ready.
+##
+## node must expose a `kind: StringName` field readable via `.get(&"kind")`.
+## A null node or a node without `kind` produces a push_error and no-op.
+func register_node(node: Node) -> void:
+	if node == null or not is_instance_valid(node):
+		push_error(
+			"ResourceSystem.register_node: null or invalid node — no-op.")
+		return
+	var kind_v: Variant = node.get(&"kind")
+	if typeof(kind_v) != TYPE_STRING_NAME or StringName(kind_v) == &"":
+		push_error(
+			"ResourceSystem.register_node: node has no `kind` StringName "
+			+ "field (or it is empty). No-op. node=%s" % str(node))
+		return
+	var kind: StringName = StringName(kind_v)
+	# Ensure the per-kind array exists.
+	if not _nodes_by_kind.has(kind):
+		_nodes_by_kind[kind] = []
+	var bucket: Array = _nodes_by_kind[kind]
+	# Idempotency guard — warn but don't duplicate.
+	if bucket.has(node):
+		push_warning(
+			"ResourceSystem.register_node: node already registered "
+			+ "for kind &\"%s\". Ignoring second registration. " % kind
+			+ "(Caller may have called _on_placement_complete twice.)")
+		return
+	bucket.append(node)
+
+
+## Remove a node from the registry. Idempotent — unregistering an unknown
+## node is a no-op (no warn). Callers (Mazra'eh on destruction, MineNode
+## on depletion) call this from teardown paths where the node may or may
+## not be registered.
+func unregister_node(node: Node) -> void:
+	if node == null:
+		# Even a freed instance can be deregistered if we scan all buckets
+		# for the ref. But null is a hard no-op.
+		return
+	# Scan all buckets — the node may have been registered under a kind
+	# that's since changed (shouldn't happen, but the death-path code
+	# shouldn't have to know the node's kind to clean up after it).
+	for kind in _nodes_by_kind.keys():
+		var bucket: Array = _nodes_by_kind[kind]
+		if bucket.has(node):
+			bucket.erase(node)
+			# Don't return — defensively continue scanning in case a bug
+			# double-registered the node under two kinds. Harmless for the
+			# common case (single registration); diagnostic for the bad case.
+
+
+## Introspection helper — true if the node is currently in the registry
+## under any kind. Used by tests + the F4 debug overlay (Phase 4+); not a
+## hot-path consumer surface (Phase 6 AI uses the per-kind enumeration
+## helper instead).
+func is_node_registered(node: Node) -> bool:
+	if node == null:
+		return false
+	for kind in _nodes_by_kind.keys():
+		if (_nodes_by_kind[kind] as Array).has(node):
+			return true
+	return false
+
+
+## Per-kind count — tests + future enumeration scaffolding. The full
+## get_nodes_of_kind enumeration API lands when a consumer needs it.
+func registered_node_count_for_kind(kind: StringName) -> int:
+	if not _nodes_by_kind.has(kind):
+		return 0
+	return (_nodes_by_kind[kind] as Array).size()
+
+
 # === Test/harness helper ====================================================
 #
 # Mirrors FarrSystem.reset() — called by MatchHarness before each simulated
@@ -303,4 +431,8 @@ func reset() -> void:
 	_grain_x100.clear()
 	_population.clear()
 	_population_cap.clear()
+	# Wave-1A: also clear the node registry so a node from a prior simulated
+	# match doesn't linger and skew enumeration in the next. MatchHarness
+	# discipline.
+	_nodes_by_kind.clear()
 	_load_starting_values_from_balance_data()
