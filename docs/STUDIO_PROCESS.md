@@ -2,7 +2,7 @@
 title: Studio Process — How the Virtual Studio Operates
 type: process
 status: living
-version: 1.4.0
+version: 1.5.0
 owner: team
 summary: Operating contract for multi-agent collaboration — discussion patterns, facilitator role, retro practice, SemVer policy, mode separation, sync log.
 audience: all
@@ -21,7 +21,7 @@ ssot_for:
 references: [MANIFESTO.md, ARCHITECTURE.md]
 tags: [process, syncs, retros, ssot, modes, semver, frontmatter]
 created: 2026-04-30
-last_updated: 2026-05-13
+last_updated: 2026-05-14
 ---
 
 # Studio Process — How the Virtual Studio Operates
@@ -179,6 +179,15 @@ The lead's job is to **enable productive discussion**, not to be a switchboard f
 
 Agents have specialized expertise the lead does not. The lead does *not* substitute their judgment for the specialists'. The lead structures the conversation, surfaces tensions, and ratifies outcomes. Substantive technical decisions belong to the specialists.
 
+### Dispatch judgment — SendMessage-resume vs. fresh Agent spawn (2026-05-14)
+
+Per §12.5 and the §9 Decision-arc instance continuity rule, the lead has an additional routing responsibility in the persistent world: deciding when to **resume an existing persistent agent** vs. when to **spawn a fresh instance.** Defaults:
+
+- **Default: `SendMessage` to existing persistent instance.** For any specialist work that derives from a prior Open Space sync the agent participated in, or that builds on prior waves the agent shipped, OR for any wave-close review by the in-team reviewer trio. Continuity is the default because lived memory of debates / prior work is load-bearing.
+- **Exception: fresh `Agent` spawn.** For Tier-3 ephemeral one-shots (fix-wave / surgical bug-fix); for PR-time external-audit reviewers (where project-context-naivety is the value, per Two-class review architecture rule); when an agent's context has overflowed and must be cycled; when a role's domain shifts substantially mid-session.
+
+The judgment is the lead's. The bias is toward continuity unless there's a specific reason to break it. Per Manifesto Principle 6 (Partnership — take care of each other across time).
+
 ---
 
 ## 7. Artifacts and Where They Live
@@ -284,6 +293,8 @@ This section accumulates rules added/modified through retros. Each entry is date
 
 - *(2026-05-03, post-Phase-1-session-2)* **Wave-close review: at the end of each wave, BEFORE PR creation, the lead spawns `godot-code-reviewer` and `architecture-reviewer` in parallel against the wave's commit range.** Both produce structured review output (verdict, blocking issues, non-blocking suggestions, nits, what's clean). Blocking issues route back to the original agent for fix; non-blocking suggestions and nits surface in the PR description. The reviewers are read-only — they do not write code, do not push commits, do not modify the project beyond their review text. **Why added:** Phase 1 session 2 surfaced one bug at the lead's live-test (re-entrant signal recursion in `DoubleClickSelect`) that all 535 unit + integration tests had passed. Static review by an agent with Godot expertise OR architectural awareness would have caught it earlier. The trial run on PR #4 validated both agents catch real structural drift (Manifesto principle grading, contract-fit checks, layer-leak detection) even when the live-test surfaces nothing. The intervention is now under measurement as Experiment 02 in `docs/PROCESS_EXPERIMENTS.md`. Cites Manifesto Principle 1 (Truth-Seeking): trust but verify — peer review of code BEFORE merge is the test-side mirror of "lead verifies file diff against design decisions." The two agent definitions live in `.claude/agents/godot-code-reviewer.md` and `.claude/agents/architecture-reviewer.md`. ([Phase 1 session 2 retro](#phase-1-session-2--multi-select-formation-movement-hud-polish))
 
+  > ⚠️ **Note (2026-05-14, post-Phase-3-session-1):** the "lead spawns ... in parallel" wording above refers to historical fresh-dispatch mechanics. **Current mechanism** per the Agent persistence rule + Two-class review architecture rule (both 2026-05-14, below): reviewers are SESSION-PERSISTENT (lead `SendMessage`s existing instances at each wave-close), and a SECOND set of FRESH-spawn reviewers runs separately at PR-time. The wave-close review intent is unchanged; the dispatch shape evolved.
+
   **Lead workflow at wave close:**
   1. All wave commits land on the feature branch.
   2. Lead spawns BOTH reviewers in parallel (one Agent dispatch each, run_in_background=true) with the wave's commit range and known-context briefing.
@@ -332,6 +343,8 @@ This section accumulates rules added/modified through retros. Each entry is date
 
 - *(2026-05-12, post-Phase-2-session-2)* **Wave-close review is now PERMANENT (Experiment 02 graduated).** Two confirming sessions (Phase 1 sess 2 + Phase 2 sess 2). Every wave-close, lead dispatches `godot-code-reviewer` and `architecture-reviewer` in parallel BEFORE PR creation. Both produce structured review output. Blocking issues route back to original agents; non-blocking suggestions and nits go in the PR description. **Reviewers also post their full structured review as a GitHub PR comment via `gh pr review --comment` so the review trail is discoverable inline in the GitHub UI**, not just in agent chat / PR description. **Convergent findings — items flagged independently by both reviewers — auto-promote to LATER index items at the next retro.** Cites Manifesto Principle 1 (Truth-Seeking) and Principle 10 (Feedback Cycle).
 
+  > ⚠️ **Note (2026-05-14, post-Phase-3-session-1):** "lead dispatches ... in parallel" describes the historical fresh-spawn mechanic. Current mechanic is `SendMessage`-resume to persistent reviewers (see Agent persistence rule below). Reviewer count also evolved: the 2026-05-13 entry adds `shahnameh-loremaster` as a third reviewer when culturally invoked. **Convergent-finding promotion criterion** clarified: when ≥2 of the active reviewers (out of 2 or 3 depending on whether loremaster is invoked) flag the same item independently, it auto-promotes to a LATER index item at the next retro.
+
 - *(2026-05-12, post-Phase-2-session-2)* **Per-TDD-cycle commits + anti-loop brief language are PERMANENT (Experiment 03 graduated for sequential single-agent waves).** Verification-loop occurrences dropped from 2+ to 0 across Phase 2 session 2; lead-proxy commits dropped from 3 to 0. The anti-loop cycle (implement → pre-commit gate → `git diff --staged --stat` confirms only your files → commit → `git log -1` confirms SHA → THEN report back) is observably load-bearing for sequential single-agent dispatches. **All agent briefs include the cycle verbatim.** Per-TDD-cycle commits (commit per `red → green → refactor` pair, NOT batched at end-of-wave) suppress cross-agent contamination for sequential waves.
 
 - *(2026-05-12, post-Phase-2-session-2)* **Parallel-agent wave-close commit serialization is INSUFFICIENT and needs a structural fix (Experiment 04 forthcoming).** Phase 2 session 2's wave 1 had three parallel agents staging concurrently; the per-TDD-cycle discipline did NOT suppress the commit-race (`cac29cc` swept TuranKamandar; `3fefeea` swept TuranSavar — Pitfall #7's 2nd and 3rd occurrences). The race occurs at commit-write time when one agent's pre-commit gate (~2 min test runner) lets another agent's working-tree state mature into the commit. **Discipline-side mitigation alone is insufficient for parallel-agent waves.** Two structural alternatives queued for Open Space sync between Phase 2 close and Phase 3 kickoff:
@@ -340,7 +353,9 @@ This section accumulates rules added/modified through retros. Each entry is date
 
   Until Open Space resolves: **prefer sequential single-agent waves over parallel-agent waves when wave deliverables would otherwise share docs (`BUILD_LOG.md`, `ARCHITECTURE.md`)**. Phase 2 session 2's waves 2A / 2B / 3 (sequential) all shipped clean; wave 1's parallel-three stomped twice.
 
-- *(2026-05-13, Open Space sync, Phase 2 close → Phase 3 kickoff)* **Pitfall #7 mitigation RESOLVED: parallel-wave dispatches use `git worktree`-per-agent isolation. Option 2 (lead-orchestrated commit serialization) is VETOED.** Both engineering POVs (engine-architect on technical-foundation lens; gameplay-systems on DX lens) converge on Option 1 hybrid. Option 2 is rejected on two independent grounds: (a) wrong-layer — race is at working-tree level, not index level, so serializing the commit window doesn't close it; (b) fights the just-graduated per-TDD-cycle rule by incentivizing batched commits at wave-close. **The new permanent rule:**
+- *(2026-05-13, Open Space sync, Phase 2 close → Phase 3 kickoff)* **Pitfall #7 mitigation RATIFIED (NOT YET RUNTIME-VERIFIED — see ⚠️ note below): parallel-wave dispatches use `git worktree`-per-agent isolation. Option 2 (lead-orchestrated commit serialization) is VETOED.**
+
+  > ⚠️ **Status update (2026-05-14, post-Phase-3-session-1):** the worktree-per-agent design is sound at the layer it targets (working-tree race), but the Agent-tool's `isolation: "worktree"` parameter turned out to be **documented-but-unimplemented at the runtime layer.** Three parallel fix-wave agents dispatched with the parameter in Phase 3 session 1 shared the same working tree and hit the same Pitfall #7 race the resolution was supposed to close. See LATER L23 in `docs/ARCHITECTURE.md` §7. **Current working pattern:** sequential single-agent dispatch for any write-active wave; parallel only for read-only review agents. The design below remains correct *if* a real worktree is created (either by the runtime fixing the parameter, or by the lead manually pre-creating `git worktree add <path>` and passing the path in the brief). The 2026-05-14 "Process-mitigation runtime verification" rule was added in direct response to this incident — no future "structural fix" claim ratifies into §9 without runtime verification. Both engineering POVs (engine-architect on technical-foundation lens; gameplay-systems on DX lens) converge on Option 1 hybrid. Option 2 is rejected on two independent grounds: (a) wrong-layer — race is at working-tree level, not index level, so serializing the commit window doesn't close it; (b) fights the just-graduated per-TDD-cycle rule by incentivizing batched commits at wave-close. **The new permanent rule:**
 
   **Wave-mode declaration.** Every wave brief explicitly stamps a mode:
   - **`parallel-worktrees`** — wave has multiple INDEPENDENT deliverables touching DISTINCT code surfaces. Lead pre-creates a worktree per dispatched agent (`git worktree add ../<repo-name>-<dispatch-id> <branch>`) BEFORE dispatch. Each agent receives their worktree path in the brief; agent never manages worktree setup. Each worktree has independent `.uid` / `.import/` regeneration on first scene load (~1 min cost; one-time per worktree). All worktrees commit to the SAME branch; git serializes the underlying `.git` write lock. Push order is wave-close serialized by the lead.
@@ -367,6 +382,8 @@ This section accumulates rules added/modified through retros. Each entry is date
 - *(2026-05-13, Open Space sync, Phase 2 close → Phase 3 kickoff)* **Sim Contract amended to 1.4.0** with two paragraph-length addenda. **§1.3 init-time carve-out:** parent `_ready` writes to child component fields via plain `set()` BEFORE `SimClock` has run its first tick are exempt from the self-only-mutation rule. The exemption applies ONLY pre-first-tick; runtime component-to-component writes still require method-call discipline. **§1.5 tween-in-callback addendum:** tweens that write ONLY to UI-local state (fields not read by any sim consumer) may be started inside signal handlers. Tweens writing to sim-state fields must use queue-then-drain (next-frame deferral via `call_deferred`). Both addenda close spec-gaps flagged by reviewers in Phase 1 session 2 + Phase 2 session 2. See `docs/SIMULATION_CONTRACT.md` 1.4.0 for full text.
 
 - *(2026-05-13, post-Open-Space-sync)* **`shahnameh-loremaster` agent available for wave-close review trio on culturally-load-bearing surfaces.** Third reviewer agent (alongside `godot-code-reviewer` + `architecture-reviewer`) for waves that touch unit/building/hero naming, narrative content, symbolism, or any new mechanic with a Shahnameh referent. Definition: `.claude/agents/shahnameh-loremaster.md`. **Read-only; produces APPROVE / SUGGEST / FLAG / NEEDS-DESIGN-CHAT verdicts via SendMessage.** Does NOT invent design (gaps route via `QUESTIONS_FOR_DESIGN.md`). Does NOT hold unilateral veto (lead arbitrates conflicts with implementation constraints). **Dispatch judgment is lead's:** invoke when a wave touches culturally-resonant territory (new unit types in Phase 5+ roster, hero abilities, building thematic work, Kaveh Event presentation, campaign scenarios). Skip when work is purely technical (test infrastructure, pathfinding tuning, performance). Cites the CLAUDE.md rule "cultural authenticity and the Persian epic's themes treated as load-bearing design constraints, not flavor." First likely dispatch context: Phase 5 hero work (Rostam / Sohrab / Esfandiyar arcs).
+
+  > ⚠️ **Note (2026-05-14, post-Phase-3-session-1):** loremaster is also SESSION-PERSISTENT when invoked (Tier-1 per Agent persistence rule below). Lead `SendMessage`s existing instance at each culturally-relevant wave-close. Loremaster also has a NEW second dispatch context — **brief-time review for template-cloning surfaces** (first instance of a culturally-load-bearing template: first strings.csv pattern, first abstract base class header, first cultural-note block in a state script). See updated agent definition at `.claude/agents/shahnameh-loremaster.md`.
 
 - *(2026-05-14, post-Phase-3-session-1)* **Cross-cutting schema verification at wave-close — triangulated rule covering three layers.** When a wave introduces a new participant in a shared classification surface (new base class with `unit_id`/`team` duck-type, new SceneTree group membership, new entry in an input-handler dispatch chain, new autoload registry consumer), three complementary disciplines apply at wave-close BEFORE PR:
   1. **Code-review (architecture-reviewer):** grep every existing consumer of the schema (`is_in_group(&"X")`, `has_method(&"Y")`, duck-type filters reading `unit_id`/`team`) and verify each handles the new participant correctly. Cite consumer `file:line` in the verdict. **BLOCKING.** New base classes are never local changes; they extend every duck-type filter in the project.
@@ -668,7 +685,9 @@ Open Consultation is the right pattern for parameter-tuning where multiple agent
 
 *Shahnameh-loremaster first-session feedback:* the four findings caught at wave-close were all template seeds (strings.csv pattern, abstract base class header, cultural-note block in state script). Brief-time review for template-cloning surfaces would compress the loop and prevent follow-up-commit accumulation. Lands in the agent definition as a new dispatch context.
 
-*Lead's facilitator-with-continuity contribution (LLM adaptation note):* subagents are ephemeral; at retro time, specialist personas are FRESH instances reading post-hoc artifacts. They do post-hoc review well but cannot reconstruct in-the-moment lived friction. The LLM adaptation of "invite the people who lived it" is **capture the lived experience at peak-fresh in the wave-close report** — new mandatory "What tripped me up in this wave" section, first-person, ~1 paragraph. The lead is the ONLY continuous-lived-experience participant across waves; lead's facilitator contribution isn't optional flavor, it's the only inter-wave-friction signal the room has. Lands in §9.
+*Lead's facilitator-with-continuity contribution (initial LLM adaptation framing):* subagents are ephemeral; at retro time, specialist personas are FRESH instances reading post-hoc artifacts. They do post-hoc review well but cannot reconstruct in-the-moment lived friction. The LLM adaptation of "invite the people who lived it" is **capture the lived experience at peak-fresh in the wave-close report** — new mandatory "What tripped me up in this wave" section, first-person, ~1 paragraph. The lead is the ONLY continuous-lived-experience participant across waves; lead's facilitator contribution isn't optional flavor, it's the only inter-wave-friction signal the room has. Lands in §9.
+
+> ⚠️ **Refinement (2026-05-14, same-day follow-up):** the "subagents are ephemeral" framing above turned out to be a CHOICE I'd been making by reflex, not an inherent runtime constraint. The runtime supports persistent agents via `SendMessage`-resume. Siavoush flagged this and pushed the framing further: persistence must hold across the **decision-arc** (Open Space → implementation waves → retro), not just within a session. The lead is therefore NOT the only continuity participant in the persistent world — persistent specialists and reviewers are also continuity participants for their slice of the arc. Lead retains BROADER continuity (cross-agent, cross-session) but isn't unique. The "What tripped me up" wave-close section is now BACKUP CAPTURE (in case an agent has to be cycled mid-session), not primary signal. Primary signal is: ask the agent who lived the wave; they remember. See §9 rules: Agent persistence + Two-class review architecture + Decision-arc instance continuity, plus §12.5.
 
 *Inter-wave patterns (lead-only signal):*
 - **Compound-bug discipline.** BUG-08's fix didn't actually close the user-visible bug; BUG-10 was the real root cause. Reviewer trio shipped 4 commits on the wrong hypothesis. Defense-in-depth without verified prime mover means the next live-test IS the diagnostic.
@@ -677,16 +696,31 @@ Open Consultation is the right pattern for parameter-tuning where multiple agent
 - **Process-mitigation confidence calibration.** L23 (the unimplemented `isolation: "worktree"` runtime gap) showed document claims ≠ runtime behavior. Lands in §9 as a verification-before-ratification rule.
 - **Per-TDD-cycle commits at scale.** 49 commits, surgical cherry-picks worked cleanly even through the Pitfall #7 race. Positive reinforcement of existing graduated rule; no edit needed.
 
-*Changed in this doc:*
+*Changed in this doc (initial six rules):*
 - §9 rule added: **Cross-cutting schema verification at wave-close — triangulated rule covering three layers** (code-review BLOCKING grep + test-design crossover matrix + qa-side blindspot declaration). Convergent across 3 retros.
 - §9 rule added: **SSOT prose contradictions across docs are BLOCKING at wave-close review, not LATER.**
-- §9 rule added: **Wave-close reports include a "What tripped me up in this wave" first-person section.** LLM-adaptation of human-retro "invite the people who lived it" pattern.
+- §9 rule added: **Wave-close reports include a "What tripped me up in this wave" first-person section.** LLM-adaptation of human-retro "invite the people who lived it" pattern. (NOTE: refined by subsequent rules to BACKUP CAPTURE — primary signal is asking the persistent agent.)
 - §9 rule added: **Live-test cadence is the real acceptance funnel; PR opens after live-test reaches clean state.**
 - §9 rule added: **Process-mitigation claims that promise "structural fix" must include runtime verification before the §9 entry can land as ratified.**
 - §9 rule added: **`tools/run_game.sh` is the project's standard interactive-launch path.**
 - `.claude/agents/architecture-reviewer.md` updated: cross-cutting schema check elevated to BLOCKING priority-1; SSOT prose contradictions BLOCKING.
 - `.claude/agents/shahnameh-loremaster.md` updated: new section "Template-cloning surfaces — review at brief-time, not wave-close" added.
 - ARCHITECTURE.md §7 LATER index: L22 closed (Pitfall #5 prose was right — see §6 v0.20.8); L23 NEW (Agent-tool worktree-isolation runtime gap); L24 NEW (AttackMoveHandler same-issue-as-BUG-10 verification pending).
+
+*Changed in this doc (follow-up — same-day, in response to Siavoush's gap-finding on retro-time-agent ephemerality):*
+- §9 rule added: **Agent persistence — three tiers** (Tier-1 session-persistent reviewers, Tier-2 within-session specialist persistence, Tier-3 ephemeral one-shot).
+- §9 rule added: **Two-class review architecture — persistent in-team reviewers + ephemeral fresh-spawn PR-time external-audit reviewers.**
+- §9 rule added: **Decision-arc instance continuity** — SAME agent instances persist from Open Space → implementation waves → retro. Documents are not substitutes for agents-who-remember-arguing-the-rule.
+- §12.5 new subsection added: **"Mode separation is COGNITIVE, not INSTANCE separation"** — clarifies that the design/implementation mode boundary is about the kind of thinking the agents do, not about whether they're the same instances.
+- §6 new subsection added: **"Dispatch judgment — SendMessage-resume vs. fresh Agent spawn"** — lead's new routing responsibility in the persistent world.
+- NEW agent definition: `.claude/agents/peiman-manifesto-reviewer.md` — fresh-spawn at PR-time, audits against the canonical [Peiman Khorramshahi manifesto](https://github.com/peiman/manifesto). Deliberately project-context-naive.
+- `.claude/agents/architecture-reviewer.md` updated: dual-mode documented (Mode A persistent wave-close; Mode B fresh-instance PR-time).
+
+*Changed in this doc (consistency audit — Siavoush's request to check for surgical-change conflicts):*
+- Historical §9 entries (2026-05-03, 2026-05-12, 2026-05-13) annotated with ⚠️ inline cross-references to the 2026-05-14 persistence + two-class architecture rules. Archaeology preserved; current state signaled.
+- 2026-05-13 worktree-per-agent entry annotated: "RESOLVED" softened to "RATIFIED (NOT YET RUNTIME-VERIFIED)" with a ⚠️ status update pointing to LATER L23 + the 2026-05-14 "Process-mitigation runtime verification" rule.
+- §12.4 mode-switch wording clarified: "stand down from the team channel" now reads "shift OUT of deliberative team-channel participation INTO async implementation work" — they are NOT terminated, only their participation mode shifts. The instance persists across the mode boundary per §12.5.
+- Doc version bumped to 1.5.0 (per §13 SemVer policy — MINOR for additive rules + the §12.5 clarification; no breaking changes to prior workflow).
 
 *Pattern validation:*
 **Multi-agent retro with parallel-dispatched specialist agents works, BUT with the LLM-adaptation caveat: retro-time agents are fresh instances doing post-hoc review, not lived-experience memoir.** The convergent-finding pattern (3 of 4 agents triangulating from different layers) is strong evidence the format produces value, but the lived-experience component must be captured upstream at wave-close (new rule) rather than reconstructed at retro time. Lead's facilitator-with-contribution is load-bearing in LLM retros because lead is the only continuity-of-experience participant. Confirmed worth running at end of every implementation session.
@@ -757,8 +791,8 @@ Do not silently invent contract changes during implementation. The contract is t
 
 We don't drift between modes. We switch deliberately:
 
-- **Entering implementation mode** — after a Convergence Review ratifies (or after a phase plan is locked), the lead announces the switch and the agents stand down from the team channel. They work async until invited back.
-- **Returning to design mode** — when an architectural gap surfaces, when a phase ends and a retro is needed, or when a tier transition approaches, the lead reactivates the team and convenes a sync. Implementation work pauses on affected files.
+- **Entering implementation mode** — after a Convergence Review ratifies (or after a phase plan is locked), the lead announces the switch and the agents shift OUT of deliberative team-channel participation INTO async implementation work. They are NOT terminated (see §12.5 and the §9 Agent persistence rule — same instances persist across the mode switch); they simply stop participating in deliberative discussion and start receiving implementation dispatches via `SendMessage`. ⚠️ Earlier text said "stand down from the team channel" which was ambiguous; the current meaning is "stand down from deliberation, NOT from the system" — they remain alive and addressable.
+- **Returning to design mode** — when an architectural gap surfaces, when a phase ends and a retro is needed, or when a tier transition approaches, the lead reactivates the team channel and convenes a sync. Implementation work pauses on affected files. The SAME instances who were doing implementation work re-enter deliberation mode (per §12.5 — mode separation is cognitive, not instance separation).
 
 ### 12.5 Mode separation is COGNITIVE, not INSTANCE separation (2026-05-14)
 
