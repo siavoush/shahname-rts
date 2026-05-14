@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-08 (Phase 3 session 1 wave 1A)
+last_updated: 2026-05-08 (Phase 3 session 1 wave 1C)
 ---
 
 # Build Log
@@ -33,6 +33,92 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 ```
 
 ## Entries
+
+## 2026-05-08 — Phase 3 session 1 wave 1C (gameplay-systems): Khaneh + placement skeleton
+
+**Branch:** `feat/phase-3-session-1`
+
+**Shipped:**
+
+1. **Building abstract base + scene** (`game/scripts/world/buildings/building.gd` + `game/scenes/world/buildings/building.tscn`). Mirrors the ResourceNode → MineNode template from wave 1A. Schema: `kind` / `team` / `unit_id` (own static counter, separate from Unit) / `is_complete`. `place_at(world_pos, owner_team, placer_unit_id)` is the placement seam — sets the schema, fires `_on_placement_complete(placer_unit_id)` subclass hook. Joins the `&"buildings"` group on `_ready`. Base scene composition: MeshInstance3D placeholder (neutral grey BoxMesh 2×1.2×2), StaticBody3D + CollisionShape3D (BUG-07 lesson — click targets need a CollisionObject3D ancestor), NavigationObstacle3D (RESOURCE_NODE_CONTRACT §3.2 — the sanctioned runtime navmesh-carve pattern; runtime REBAKE is forbidden).
+
+2. **Khaneh — first concrete Building** (`game/scripts/world/buildings/khaneh.gd` + `game/scenes/world/buildings/khaneh.tscn`). Dual-init pattern (`kind = &"khaneh"` set in `_init` AND `_ready` per kargar.gd's header). `_on_placement_complete` bumps `ResourceSystem.change_population_cap(team, +10, &"khaneh_placed", self)` (wave 1B chokepoint) and emits `EventBus.building_placed(placer_unit_id, kind, team, position)`. Earthy tan placeholder `(0.78, 0.65, 0.45)` distinct from kargar sandy-brown, mine gold, unit blue-grey. `Khaneh.cost_coin()` static helper reads cost from BalanceData for the build menu. `BuildingStats` gained a `population_capacity` field; `balance.tres`'s `bldg_khaneh` populated with `population_capacity = 10` (kickoff placeholder; spec says +5) and `construction_ticks = 90` (session 2's progress-bar timer; session 1 uses INSTANT placement).
+
+3. **`UnitState_Constructing`** (`game/scripts/units/states/unit_state_constructing.gd`). `id = Constants.STATE_CONSTRUCTING`, `priority = 5`, `interrupt_level = COMBAT`. Same arrival-latch pattern as Gathering / Returning: enter resolves the payload (`building_kind` + `target_position`), kicks off the path; `_sim_tick` drives movement, latches arrival, counts 90-tick dwell (placeholder), fires placement. Placement step: affordability check via `ResourceSystem.coin_x100_for` → deduct cost via the `change_resource` chokepoint → instantiate Building scene from kind→path table → add as worker's-parent child → `building.place_at(target, team, unit_id)`. Cost deducted at placement, NOT at command dispatch (SC2 / AoE convention). No refund on interrupt. Registered on every Unit's FSM (combat units pay one RefCounted state instance overhead, tiny).
+
+4. **Constants + EventBus additions.** `Constants.COMMAND_CONSTRUCT = &"construct"` (distinct from `COMMAND_BUILD`, reserved for a future "queue production at building" flow). `EventBus.building_placed(unit_id, kind, team, position)` write-shaped signal (added to `_SINK_SIGNALS` for telemetry). `EventBus.build_placement_started(building_kind, cost_coin_x100)` read-shaped UI signal. `StateMachine._COMMAND_KIND_TO_STATE_ID` gained `&"construct" → &"constructing"` mapping.
+
+5. **Build menu UI** (`game/scenes/ui/build_menu.tscn` + `game/scripts/ui/build_menu.gd`). Bottom-right CanvasLayer-anchored Control panel. Visible when selection contains a Kargar (subscribes to `EventBus.selection_changed`), hidden otherwise. Pitfall #1 discipline: decorative children use `MOUSE_FILTER_PASS`; only the Khaneh Button uses `MOUSE_FILTER_STOP`. Button press emits `EventBus.build_placement_started(&"khaneh", 5000)` — does NOT mutate ResourceSystem (Pitfall #4). Tested directly. Translations added for `UI_BUILD_MENU_HEADER`, `UI_BUILDING_KHANEH_COST`, etc. (en column only; Persian Tier-2 schedule).
+
+6. **`BuildPlacementHandler` + ghost preview** (`game/scripts/input/build_placement_handler.gd` + `game/scenes/world/buildings/ghost_placement_preview.tscn`). Dedicated input handler sibling of ClickHandler. Subscribes to `build_placement_started` to enter placement mode, spawn the ghost, and listen for clicks. `_process` raycasts cursor each frame to update ghost position + green/red validity. Validity = on-terrain + non-overlap with existing buildings (via `&"buildings"` group iteration) + affordability. On confirm: dispatches `Unit.replace_command(COMMAND_CONSTRUCT, {building_kind, target_position})` to first Kargar in selection. On right-click / Escape: cancels. Sibling order: BEFORE ClickHandler so its `_unhandled_input` consumes the placement-mode click first (per the AttackMoveHandler precedent). Ghost preview INTENTIONALLY has no collision body (BUG-07 inverted: must not be raycast-target) and is NOT in the `&"buildings"` group (would self-flag every position as overlapping).
+
+7. **Integration test** (`game/tests/integration/test_phase_3_khaneh_placement.gd`). MatchHarness-based per Testing Contract §3.1 + wave-0 precedent. 4 tests cover the full live chain: Kargar selected → COMMAND_CONSTRUCT dispatched → walk → place → Coin deducted 50 + cap bumped 10 + building_placed emitted once, resource_changed signals for BOTH Coin AND population_cap, placed Khaneh carries StaticBody3D + NavigationObstacle3D (BUG-07 + Resource Node Contract §3.2 regression locks).
+
+8. **`docs/ARCHITECTURE.md` updated.** §2 "Building system" row promoted from 📋 Planned to ✅ Built (Khaneh + placement skeleton). §6 v0.20.4 entry with 7 architectural decisions documented.
+
+**Test-count delta:** 987 → 1059 (+72 net). 1056 passing, 3 pre-existing pending (FarrSystem fallback, navmap not ready, navmesh not ready), 0 failures.
+
+**Files created:**
+- `game/scripts/world/buildings/building.gd` (abstract base)
+- `game/scenes/world/buildings/building.tscn` (base scene template)
+- `game/scripts/world/buildings/khaneh.gd`
+- `game/scenes/world/buildings/khaneh.tscn`
+- `game/scripts/world/buildings/ghost_placement_preview.gd`
+- `game/scenes/world/buildings/ghost_placement_preview.tscn`
+- `game/scripts/units/states/unit_state_constructing.gd`
+- `game/scripts/ui/build_menu.gd` + `game/scenes/ui/build_menu.tscn`
+- `game/scripts/input/build_placement_handler.gd`
+- `game/tests/unit/test_building_base.gd` (15 tests)
+- `game/tests/unit/test_khaneh.gd` (12 tests)
+- `game/tests/unit/test_unit_state_constructing.gd` (12 tests)
+- `game/tests/unit/test_build_menu.gd` (13 tests)
+- `game/tests/unit/test_build_placement_handler.gd` (16 tests)
+- `game/tests/integration/test_phase_3_khaneh_placement.gd` (4 tests)
+
+**Files modified:**
+- `game/scripts/autoload/constants.gd` (COMMAND_CONSTRUCT)
+- `game/scripts/autoload/event_bus.gd` (building_placed, build_placement_started signals + forwarder)
+- `game/scripts/core/state_machine/state_machine.gd` (COMMAND_KIND_TO_STATE_ID entry)
+- `game/scripts/units/unit.gd` (register UnitState_Constructing)
+- `game/data/sub_resources/building_stats.gd` (population_capacity field)
+- `game/data/balance.tres` (Khaneh.population_capacity=10, construction_ticks=90)
+- `game/translations/strings.csv` + strings.en.translation (new keys)
+- `game/scenes/main.tscn` (wired BuildMenu + BuildPlacementHandler)
+- `docs/ARCHITECTURE.md` (§2 row, §6 v0.20.4)
+- `BUILD_LOG.md` (this entry)
+
+**Did not ship (deferred to session 2 or later):**
+- Mazra'eh / Ma'dan / Sarbaz-khaneh / Atashkadeh (session 2 deliverables).
+- Construction-in-progress visuals + progress bar (session 2 wave 1).
+- BuildingRegistry autoload for kind→PackedScene lookup (when the table grows >5 entries OR AI needs programmatic placement queries).
+- Building selection / production-queue panel (session 2+).
+
+**Live-game-broken-surface (Experiment 01):**
+1. *Runtime no unit test exercises:* Full LIVE chain — build menu button → BuildPlacementHandler enters placement mode → ghost preview follows cursor → confirm click → COMMAND_CONSTRUCT → Kargar walks → arrives → Khaneh appears via `instance` → NavigationObstacle3D dynamically carves the navmesh → future workers route around the Khaneh. Each link is unit-tested; the live chain is the lead's wave-close test.
+2. *Headless can't detect:* Ghost preview color contrast against sandy terrain (green/red — FarrGauge contrast lesson applies; lead retunes here if it bleeds). Khaneh tan-vs-sandy contrast (same lesson). Build menu readability at default 1280×720. Cursor-feel during placement.
+3. *Min interactive smoke:* Lead boots, selects Kargar, sees build menu bottom-right. Clicks Khaneh button → ghost preview tracks cursor in green over open terrain → red when hovering an existing building. Clicks valid terrain → Kargar walks, Khaneh appears, Coin decrements 50, pop cap increments 10. Right-clicks past the Khaneh with another Kargar — pathfinding routes around it.
+
+**Known Godot Pitfalls applied:**
+- **#1 (mouse_filter on Control nodes):** build menu's decorative children all use MOUSE_FILTER_PASS; only the Button uses STOP (Button default). Tested directly.
+- **#2 (FSM tick driver):** no new driver needed — existing `Unit._on_sim_phase` pumps `fsm.tick` during `&"movement"` phase, drives UnitState_Constructing the same way it drives Gathering / Returning.
+- **#4 (re-entrant signal mutation):** build menu button press emits a READ-shaped signal; no synchronous `ResourceSystem.change_resource` call. Cost deduction lives at placement time, on-tick, in UnitState_Constructing.
+- **#5 (sibling tree-order):** BuildPlacementHandler placed BEFORE ClickHandler in `main.tscn` so its `_unhandled_input` consumes the placement-mode click first (same shape as AttackMoveHandler / ClickHandler precedent).
+- **#7 (shared-doc staging race):** `git diff` of `unit.gd`, `state_machine.gd`, `event_bus.gd`, `constants.gd`, `building_stats.gd`, `balance.tres`, `main.tscn`, `strings.csv`, `docs/ARCHITECTURE.md`, `BUILD_LOG.md` confirmed only my additions before each per-TDD-cycle commit.
+- **#8 / #11 (queue_free + _test_run_tick):** integration test after_each frees buildings with synchronous `remove_child` + `free()` (not `queue_free`) so the `&"buildings"` group is empty at next `before_each`. Tests use group lookup as the "Khaneh placed" predicate, not `is_instance_valid`.
+- **BUG-07 lesson (Pitfall #12 candidate):** placed Khaneh inherits StaticBody3D + CollisionShape3D from the base building.tscn. Ghost preview INTENTIONALLY has no CollisionObject3D — placement raycast must hit terrain underneath, not the ghost itself. Asymmetry tested directly in `test_ghost_scene_has_no_collision_body` and `test_placed_khaneh_has_collision_body_and_nav_obstacle`.
+
+**Open questions / state for next session:** None blocking. Session 2 picks up Mazra'eh / Ma'dan / Sarbaz-khaneh / Atashkadeh and adds the construction timer + progress-bar UI. The `_BUILDING_SCENE_PATHS` dict in `unit_state_constructing.gd` is the extension seam; the `_CONSTRUCTING_DWELL_TICKS` constant is the placeholder timer to replace with BalanceData read.
+
+**Reviewer trio (Experiment 02 + 02 extension):** Wave 1C touches naming (Khaneh / خانه), Iran-house cultural framing, the placeholder material tone choice (Persian-village mud-brick). Recommend the `shahnameh-loremaster` agent in addition to the standard godot-code-reviewer + architecture-reviewer pair.
+
+**Commits (per-TDD-cycle, Experiment 03):**
+- `fe243c2` — Building abstract base + scene + EventBus signals + 15 tests
+- `83cbfa0` — Khaneh concrete + 12 tests + translations
+- `2621a16` — UnitState_Constructing + Unit registration + 12 tests
+- `d334a71` — Build menu UI + 13 tests + main.tscn wire
+- `1283518` — BuildPlacementHandler + ghost preview + 16 tests + main.tscn wire
+- `e006ade` — Integration test (MatchHarness) + 4 tests
+- (this commit) — Docs aggregator (BUILD_LOG + ARCHITECTURE.md §6 v0.20.4)
 
 ## 2026-05-08 — Phase 2 session 2 wave 3 (qa-engineer): integration tests for full RPS roster + live combat chain
 
