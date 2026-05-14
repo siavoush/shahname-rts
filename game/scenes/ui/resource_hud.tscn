@@ -6,6 +6,23 @@
 [node name="ResourceHUD" type="CanvasLayer"]
 script = ExtResource("1_hud")
 
+; Dark backdrop shelf for the top HUD. Lead live-test #2 surfaced
+; readability issues — white text on sandy terrain has poor contrast.
+; A dark ColorRect with alpha 0.65 reads through to the world but
+; ensures the labels (Coin / Grain / Pop / Farr) are legible at any
+; zoom level. The shelf is full-width so it visually anchors the top
+; of the screen as a proper HUD strip — future top-HUD additions
+; (tech-tier indicator, victory progress, etc.) plug into the same
+; backdrop without re-doing the contrast pass. Drawn FIRST (before
+; Margin in scene-tree order) so labels render on top.
+[node name="Background" type="ColorRect" parent="."]
+anchors_preset = 10 ; PRESET_TOP_WIDE
+anchor_right = 1.0
+offset_bottom = 80.0
+grow_horizontal = 2
+mouse_filter = 2 ; IGNORE — backdrop never consumes clicks (Pitfall #1)
+color = Color(0.08, 0.08, 0.1, 0.65)
+
 [node name="Margin" type="MarginContainer" parent="."]
 anchors_preset = 10
 anchor_right = 1.0
