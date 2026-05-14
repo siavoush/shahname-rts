@@ -152,17 +152,44 @@ func get_ghost() -> Node3D:
 func _ready() -> void:
 	if not EventBus.build_placement_started.is_connected(_on_build_placement_started):
 		EventBus.build_placement_started.connect(_on_build_placement_started)
+	# BUG-08 guard — auto-cancel placement if the selection no longer
+	# contains a Kargar mid-placement. Defends against ANY deselection
+	# path (Button-press race in deliverable 5 / BUG-08; control-group
+	# recall to a non-Kargar; scripted deselect_all; future paths). Without
+	# this guard, an orphaned ghost stays in the world and the next
+	# confirm-click silently fails on the empty-selection branch — the
+	# exact failure mode the lead live-tested at Phase 3 session 1 close.
+	if not EventBus.selection_changed.is_connected(_on_selection_changed):
+		EventBus.selection_changed.connect(_on_selection_changed)
 
 
 func _exit_tree() -> void:
 	if EventBus.build_placement_started.is_connected(_on_build_placement_started):
 		EventBus.build_placement_started.disconnect(_on_build_placement_started)
+	if EventBus.selection_changed.is_connected(_on_selection_changed):
+		EventBus.selection_changed.disconnect(_on_selection_changed)
 	_destroy_ghost()
 
 
 # ============================================================================
 # Signal handlers
 # ============================================================================
+
+# BUG-08 — auto-cancel placement when the selection no longer contains
+# a Kargar mid-placement. The selection_changed signal carries unit_ids,
+# but we route through SelectionManager.selected_units for live Node refs
+# (the live ref is needed for the _find_first_worker duck-type check).
+# Same defensive pattern as build_menu.gd::_on_selection_changed.
+func _on_selection_changed(_selected_unit_ids: Array) -> void:
+	if _placement_kind == &"":
+		return  # not in placement mode — nothing to guard.
+	var sel: Array = SelectionManager.selected_units
+	if _find_first_worker(sel) == null:
+		if DEBUG_LOG_CLICKS:
+			print("[build-placement] BUG-08 guard — selection lost its "
+				+ "Kargar mid-placement; auto-cancelling")
+		_cancel_placement()
+
 
 # Enter placement mode. Spawn the ghost preview as a child of the
 # scene-tree root so it lives in world space and survives until we

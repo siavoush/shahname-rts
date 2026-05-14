@@ -302,6 +302,77 @@ func test_cancel_placement_clears_state() -> void:
 
 
 # ---------------------------------------------------------------------------
+# BUG-08 — selection cleared mid-placement auto-cancels
+# ---------------------------------------------------------------------------
+# Lead's Phase 3 session 1 live-test: when a Button-press race or any other
+# path clears the selection while placement mode is active, the handler must
+# auto-cancel rather than leave the ghost orphaned. Without this guard the
+# only escape is a right-click / Escape, and meanwhile a stale ghost is in
+# the world and the next confirm-click silently fails on the empty-selection
+# branch.
+
+func test_selection_deselect_all_cancels_active_placement() -> void:
+	# Enter placement mode with a Kargar selected; then deselect all.
+	# The handler should auto-cancel placement (ghost despawned,
+	# _placement_kind cleared).
+	_handler = _spawn_handler()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	EventBus.build_placement_started.emit(&"khaneh", 5000)
+	assert_true(_handler.is_placement_active(),
+		"sanity: placement mode active after build_placement_started")
+	# This is the bug path: selection gets cleared while placement
+	# mode is active.
+	SelectionManager.deselect_all()
+	assert_false(_handler.is_placement_active(),
+		"BUG-08: deselect_all mid-placement must auto-cancel — "
+		+ "ghost orphaned otherwise")
+	assert_null(_handler.get_ghost(),
+		"BUG-08: ghost must be destroyed when selection clears mid-placement")
+	assert_eq(_handler.placement_kind(), &"",
+		"BUG-08: _placement_kind must be cleared on auto-cancel")
+
+
+func test_selection_replaced_with_combat_unit_cancels_active_placement() -> void:
+	# Variant: selection replaced with a non-Kargar unit (e.g., control
+	# group recall to a Piyade-only group). Same guard — no Kargar in
+	# the new selection means there's no worker to dispatch to.
+	_handler = _spawn_handler()
+	_kargar = _spawn_kargar()
+	_piyade = _spawn_piyade()
+	SelectionManager.select_only(_kargar)
+	EventBus.build_placement_started.emit(&"khaneh", 5000)
+	assert_true(_handler.is_placement_active(), "sanity")
+	# Replace selection with a non-worker.
+	SelectionManager.select_only(_piyade)
+	assert_false(_handler.is_placement_active(),
+		"BUG-08: replacing selection with a non-Kargar must auto-cancel "
+		+ "placement (no worker to dispatch to)")
+	assert_null(_handler.get_ghost(),
+		"BUG-08: ghost destroyed when selection no longer contains a Kargar")
+
+
+func test_selection_replaced_with_other_kargar_keeps_placement_active() -> void:
+	# Counter-case: if the new selection STILL contains a Kargar (a
+	# different worker, or the same one re-selected), the placement
+	# mode is preserved. We auto-cancel ONLY when there's no worker
+	# left to dispatch to.
+	_handler = _spawn_handler()
+	_kargar = _spawn_kargar()
+	var other_kargar: Variant = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	EventBus.build_placement_started.emit(&"khaneh", 5000)
+	assert_true(_handler.is_placement_active(), "sanity")
+	SelectionManager.select_only(other_kargar)
+	assert_true(_handler.is_placement_active(),
+		"BUG-08: replacing selection with a different Kargar must NOT "
+		+ "cancel placement — the new worker can build")
+	# Cleanup the additional kargar.
+	if is_instance_valid(other_kargar):
+		other_kargar.queue_free()
+
+
+# ---------------------------------------------------------------------------
 # Ghost preview — green/red color flip
 # ---------------------------------------------------------------------------
 
