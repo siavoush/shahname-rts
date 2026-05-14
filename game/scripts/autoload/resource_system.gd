@@ -160,7 +160,7 @@ func change_resource(
 	kind: StringName,
 	amount_x100: int,
 	reason: StringName,
-	source_unit: Object,
+	_source_unit: Object,
 ) -> void:
 	assert(SimClock.is_ticking(),
 		"Off-tick resource mutation: team=%d kind='%s' amount_x100=%d reason='%s'"
@@ -209,35 +209,13 @@ func change_resource(
 	else:
 		_set_sim(&"_grain_x100", store)
 
-	# Resolve source_unit_id for telemetry. -1 sentinel matches the convention
-	# used by apply_farr_change (see farr_system.gd). source_unit.unit_id when
-	# present, instance id fallback for diagnostics, -1 when null.
-	var source_unit_id: int = -1
-	if source_unit != null and is_instance_valid(source_unit):
-		var uid: Variant = source_unit.get(&"unit_id")
-		if typeof(uid) == TYPE_INT:
-			source_unit_id = int(uid)
-		else:
-			source_unit_id = source_unit.get_instance_id()
-	# source_unit_id is captured for forward-compat; the signal currently
-	# doesn't carry it (write-shaped resource_changed has team/kind/delta/total
-	# — the killer/source attribution is on the Farr signal, not here).
-	# Keep the resolution code; downstream tasks may need it.
-	# Silence the unused-warning by referencing once.
-	if source_unit_id == -2:
-		pass  # unreachable; keeps linter quiet
-	# (No-op: source_unit_id retained for future signal extension. Today's
-	# resource_changed is intentionally team/kind/delta-only — see signal
-	# declaration in event_bus.gd for rationale.)
-
-	# Reason is recorded in the F2 overlay (Phase 4); we don't emit it on the
-	# write-shaped signal because every consumer that needs the reason can
-	# subscribe to telemetry. Same precedent: farr_changed carries reason as
-	# a String for F2; resource_changed is leaner because the resource
-	# economy already has many more events than Farr.
-	if reason == &"":
-		pass
-
+	# source_unit + reason are captured in the parameter signature for
+	# forward-compat with future telemetry consumers (parallels
+	# apply_farr_change's signature). resource_changed is intentionally
+	# team/kind/delta/total-only today; reason lives in F2 overlay (Phase 4),
+	# source_unit_id resolution is a 3-line re-add when a consumer needs it
+	# (see git history pre-v1.2.2 for the resolution pattern). Per Manifesto
+	# Principle 4 (Lean Iteration): dead reference-only code deleted.
 	EventBus.resource_changed.emit(team, kind, effective_delta, post)
 
 
@@ -249,7 +227,7 @@ func change_population(
 	team: int,
 	delta: int,
 	reason: StringName,
-	source_unit: Object,
+	_source_unit: Object,
 ) -> void:
 	assert(SimClock.is_ticking(),
 		"Off-tick population mutation: team=%d delta=%d reason='%s'"
@@ -261,10 +239,11 @@ func change_population(
 	var effective_delta: int = post - pre
 	_population[team] = post
 	_set_sim(&"_population", _population)
-	# Same source_unit / reason capture rationale as change_resource — kept
-	# for telemetry symmetry; no signal field consumes them today.
-	if source_unit == null and reason == &"":
-		pass
+	# source_unit + reason capture parallels change_resource (above). Today's
+	# resource_changed signal is team/kind/delta/total-only; reason flows
+	# through F2 overlay. Dead reference-only code deleted v1.2.2 (Manifesto
+	# Principle 4); see change_resource for the same shape.
+	#
 	# Use the same EventBus signal for symmetry; resource_changed carries a
 	# StringName kind so population can ride the same channel under
 	# &"population". Avoids a second signal that the HUD would also need to
@@ -276,7 +255,7 @@ func change_population_cap(
 	team: int,
 	delta: int,
 	reason: StringName,
-	source_unit: Object,
+	_source_unit: Object,
 ) -> void:
 	assert(SimClock.is_ticking(),
 		"Off-tick population_cap mutation: team=%d delta=%d reason='%s'"
@@ -288,8 +267,6 @@ func change_population_cap(
 	var effective_delta: int = post - pre
 	_population_cap[team] = post
 	_set_sim(&"_population_cap", _population_cap)
-	if source_unit == null and reason == &"":
-		pass
 	EventBus.resource_changed.emit(team, &"population_cap", effective_delta, post)
 
 

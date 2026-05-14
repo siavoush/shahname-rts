@@ -2,9 +2,9 @@
 title: Resource Node Schema Contract
 type: contract
 status: ratified
-version: 1.2.1
+version: 1.2.2
 owner: world-builder
-summary: Resource gathering — ResourceNode hierarchy (MineNode + Mazra'eh-as-Building-subclass via duck-typing), three-call extract API (request_extract / complete_extract / release_extract), IDropoffTarget protocol, fertile-zone placement, EventBus signals, BalanceData keys. v1.2.1 surgical fix on ResourceSystem.register_node signature (explicit kind parameter — see §9.X).
+summary: Resource gathering — ResourceNode hierarchy (MineNode + Mazra'eh-as-Building-subclass via duck-typing), three-call extract API (request_extract / complete_extract / release_extract), IDropoffTarget protocol, fertile-zone placement, EventBus signals, BalanceData keys. v1.2.2 expands §4.5 to declare all 5 shipped Mazra'eh ResourceNode-shape fields + introduces §4.6 documenting the kind-vs-resource_kind separation for resource-producing Building subclasses.
 audience: all
 read_when: working-on-resources-mines-farms-gather-or-worker-ai
 prerequisites: [MANIFESTO.md, SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md]
@@ -23,7 +23,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [resources, mines, farms, gather, navigation, fertile-tiles, signals]
 created: 2026-04-30
 last_updated: 2026-05-14
-provenance: Outcome of Sync 4 — joint Constraint Negotiation between world-builder and gameplay-systems. Path 2 (workers gather grain) ratified by design chat 2026-04-30. Convergence Review revisions 2026-05-01. v1.2.0 wave-1A patch (2026-05-14) — §4 SSOT-fix to align consumer-facing API prose with shipped code (the wave-1A implementation walked away from the v1 begin_extract / tick_extract / ExtractResult-enum shape; this contract version documents the actual three-call API in flight) + Mazra'eh-as-duck-typed-Building-subclass shape from Room A Open Space. v1.2.1 surgical patch (2026-05-14) — ResourceSystem.register_node signature change to take kind as explicit parameter (`register_node(node, kind: StringName)`); v1.2.0 implementation read node.kind which collided with Mazra'eh's Building-kind field (&"mazraeh") vs the resource kind (&"grain"). v1.2.1 caught pre-consumption (no wave-1A consumer queries the registry yet) via world-builder's §4.5 prose review.
+provenance: Outcome of Sync 4 — joint Constraint Negotiation between world-builder and gameplay-systems. Path 2 (workers gather grain) ratified by design chat 2026-04-30. Convergence Review revisions 2026-05-01. v1.2.0 wave-1A patch (2026-05-14) — §4 SSOT-fix to align consumer-facing API prose with shipped code (the wave-1A implementation walked away from the v1 begin_extract / tick_extract / ExtractResult-enum shape; this contract version documents the actual three-call API in flight) + Mazra'eh-as-duck-typed-Building-subclass shape from Room A Open Space. v1.2.1 surgical patch (2026-05-14) — ResourceSystem.register_node signature change to take kind as explicit parameter (`register_node(node, kind: StringName)`); v1.2.0 implementation read node.kind which collided with Mazra'eh's Building-kind field (&"mazraeh") vs the resource kind (&"grain"). v1.2.1 caught pre-consumption (no wave-1A consumer queries the registry yet) via world-builder's §4.5 prose review. v1.2.2 (2026-05-14, gp-sys) — §4.5 expanded to declare all 5 SHIPPED Mazra'eh fields (resource_kind, reserves_x100, max_slots, is_gatherable, yield_per_trip_x100, plus extract_ticks) after world-builder's `6d73889` shipped the schema per arch-reviewer BLOCK-A. New §4.6 documents the kind-vs-resource_kind separation pattern for resource-producing Building subclasses (Building-identity kind + Resource-identity resource_kind on the same instance — the dual-field convention applies to Building subclasses only; ResourceNode subclasses keep `kind` as resource identity).
 ---
 
 # Resource Node Schema Contract
@@ -365,15 +365,22 @@ class_name Mazraeh
 # UnitState_Gathering's has_method(&"request_extract") filter discovers
 # Mazra'eh without needing it to extend ResourceNode.
 
-var kind: StringName = &"mazraeh"           # BUILDING kind (set via KIND_MAZRAEH constant; dual-init pattern). NOT the resource kind — that's passed explicitly to ResourceSystem.register_node, see below.
-var reserves_x100: int = -1                  # -1 sentinel = infinite (per §1.5); same field name as ResourceNode base
-var max_slots: int = 1                       # from BalanceData.economy.resource_nodes.farm_max_workers
-var extract_ticks: int = 90                  # from BalanceData — "tending" dwell, 3s at 30Hz
-var yield_per_trip_x100: int = 200           # from BalanceData — 2 Grain per trip
-var is_gatherable: bool = false              # flips true at construction-complete
-# (slot bookkeeping replicated from ResourceNode.gd, OR composed via small helper)
+# Building-identity field (inherited from Building base, set via dual-init pattern):
+var kind: StringName = &"mazraeh"             # BUILDING kind (KIND_MAZRAEH constant)
 
-func request_extract(unit_id: int) -> bool: ...   # see ResourceNode shape
+# ResourceNode-shape fields (declared on Mazra'eh so consumer duck-type checks
+# work — click_handler.gd:447 reads `&"is_gatherable" in n`, plus future
+# AI / save-game / introspection paths read the schema directly):
+var resource_kind: StringName = &"grain"      # RESOURCE kind for ResourceSystem registry seam
+var reserves_x100: int = -1                   # -1 sentinel = infinite (per §1.5)
+var max_slots: int = 1                        # single gather slot for wave 1A
+var is_gatherable: bool = true                # wave-1A: ready immediately on place_at
+                                              #   (wave-1C: gates on is_complete + HP)
+var yield_per_trip_x100: int = 200            # 2 Grain per trip (Room A R1-α dehqan-long-dwell tuning)
+var extract_ticks: int = 90                   # 3s dwell at 30Hz — "tending the field"
+
+# Three-call API (mirrors ResourceNode base shape — see §4.1):
+func request_extract(unit_id: int) -> bool: ...
 func complete_extract(unit_id: int) -> Dictionary: ...
 func release_extract(unit_id: int) -> void: ...
 ```
@@ -389,11 +396,31 @@ func release_extract(unit_id: int) -> void: ...
 - `reserves_x100 = -1` (infinite — per §1.5; same field name as ResourceNode base, distinct from §1's older `current_stock` shorthand). `complete_extract`'s decrement is a no-op for negative sentinels.
 - `extract_ticks = 90` (3s dwell) — longer than MineNode's 60-tick dwell. Reads visually as "tending the field" (dehqan stewardship — see Mazra'eh script header) rather than "extracting from the mine."
 - `yield_per_trip_x100 = 200` (2 Grain per trip) — smaller than MineNode's coin payload (1000 = 10 Coin). Long dwell + small payload combine for the trickle-yield visual.
-- `is_gatherable = false` while under construction; flips `true` when the building system's construction-complete signal fires.
-- Mazra'eh self-registers with `ResourceSystem.register_node(self, Constants.KIND_GRAIN)` at construction-complete. The **resource kind is passed explicitly** (`&"grain"`) because Mazra'eh's own `kind` field is `&"mazraeh"` (Building kind), NOT the resource kind. See v1.2.1 §9.X Resolved entry for the rationale. MineNode's call would be `register_node(self, Constants.KIND_COIN)`, but wave-1A MineNode uses the raycast-routing path and doesn't self-register yet.
+- `is_gatherable = true` from the moment of construction-complete (wave-1A simplification — `is_complete` from Building base gates placement, and once placement-complete fires, the building is ready to gather). Wave 1C will tie this more tightly to `is_complete` + HP state once the construction timer + HealthComponent ship.
+- Mazra'eh self-registers with `ResourceSystem.register_node(self, resource_kind)` at construction-complete — the `resource_kind` FIELD is passed (`&"grain"`), not a literal. The field IS the canonical SSOT for "what resource does this building produce?" See §4.6 for the kind-vs-resource_kind separation rationale; v1.2.1 §9.X for the API-discovery history.
 - No `NavigationObstacle3D` — workers walk ONTO the farm tile to gather (§3.2).
 
 The cultural-framing rationale for the long dwell lives in `mazraeh.gd`'s header — the *dehqan* (دهقان, landed cultivator) model from Ferdowsi's Shahnameh — and is referenced here for visibility but is NOT load-bearing for the API contract. Loremaster reviews the cultural framing at wave-close.
+
+### 4.6 The `kind` vs `resource_kind` separation (2026-05-14, v1.2.2)
+
+Resource-producing **Building** subclasses carry TWO StringName identity fields:
+
+| Field | Owned by | Purpose | Mazra'eh example | MineNode-as-ResourceNode equivalent |
+|---|---|---|---|---|
+| `kind` | Building base (set via `KIND_<NAME>` constant, dual-init pattern) | Building-identity — answers "what kind of building is this?" Used by build menu, save/load, telemetry, building-list iteration. | `&"mazraeh"` | n/a — MineNode extends ResourceNode, not Building |
+| `resource_kind` | Mazra'eh (and any future resource-producing Building subclass) | Resource-identity — answers "what kind of resource does this building produce?" Used by ResourceSystem registry, AI scout enumeration, gather-target selection. | `&"grain"` | MineNode's `kind = &"coin"` IS its resource identity — its Building-side identity doesn't exist because it's not a Building |
+
+The asymmetry exists because **MineNode** is a `ResourceNode` (resource-first identity — `kind` IS the resource kind), while **Mazra'eh** is a `Building` (building-first identity — `kind` is the Building kind, AND `resource_kind` carries the resource identity separately). Consumers that enumerate resource sources query `resource_kind` for Buildings and `kind` for ResourceNode subclasses; the ResourceSystem registry's explicit-kind parameter (§4.5 register_node signature) accepts either at the call site, decoupling registry consumers from the field-name asymmetry.
+
+**For future resource-producing Building subclasses** (post-MVP examples: a "Forester's Hut" producing wood, a "Fishery" producing fish, a Tier-2 "Caravanserai" producing trade-goods), the pattern is:
+- Building base supplies `kind = &"<subclass-name>"` via dual-init constant.
+- The subclass declares `var resource_kind: StringName = &"<resource-name>"` as an additional field.
+- The subclass's `_on_placement_complete` calls `ResourceSystem.register_node(self, resource_kind)`.
+
+The field is conventionally placed in a "ResourceNode-shape fields" block in the script, distinct from the Building-identity block, so a reader scanning the class can see the two layers without confusion.
+
+**For ResourceNode subclasses** (MineNode, future Mazra'eh-renamed-to-ResourceNode-subclass-if-anyone-ever-redesigns-it), `kind` carries the resource identity and `resource_kind` is unnecessary. The dual-field convention is Building-specific.
 
 ---
 
@@ -569,6 +596,8 @@ tick T75    Arrival at Throne. UnitState_Returning calls
   - §4.5 prose corrected: `kind = &"mazraeh"` (Building kind) + explicit Constants.KIND_GRAIN at register-call.
   - Discovered by: world-builder's post-commit §4.5 review (proper review discipline catching real bugs, not just prose). Captured for retro as a Manifesto Principle 1 (Truth-Seeking) success: empirical verification of contract claims against shipped code surfaces real issues even when the design has been ratified in Open Space. Cites the §9 2026-05-14 "SSOT prose contradictions are BLOCKING at wave-close" rule retroactively — the v1.2.0 prose error WAS a SSOT contradiction (doc claimed `kind = &"grain"`, code had `kind = &"mazraeh"`), and the deeper registry-key bug was the consequence.
 
+- *(2026-05-14, Phase 3 session 2 — wave 1A close-review trio findings, v1.2.2 schema alignment)* **§4.5 expanded to declare all 5 shipped Mazra'eh fields + §4.6 introduces the kind-vs-resource_kind separation pattern.** Arch-reviewer BLOCK-A (priority-0 cross-cutting) at close-review caught that `click_handler.gd:447` checks `&"is_gatherable" in n` AND `has_method(&"request_extract")` — Mazra'eh missing the `is_gatherable` field caused right-click-on-Mazra'eh to fall through silently. Arch-reviewer's PRIORITY-LOW preferred path was the `resource_kind` separate-field design (option (i) from my v1.2.1 fix-up discussion), which lead ratified as the canonical shape — world-builder shipped at `6d73889` adding all 5 fields: `is_gatherable: bool = true`, `resource_kind: StringName = Constants.KIND_GRAIN`, `reserves_x100: int = -1`, `max_slots: int = 1`, `yield_per_trip_x100: int = 200`. Plus `extract_ticks: int = 90` (already public but called out in §4.5 alongside the new five). World-builder also folded the call-site refinement: `register_node(self, resource_kind)` reads from the field, not the literal — the field is the canonical SSOT for "what resource does this building produce?" v1.2.2 §4.5 documents this state. v1.2.2 §4.6 introduces the kind-vs-resource_kind separation as a general convention for resource-producing Building subclasses (Mazra'eh today, future Atashkadeh / Caravanserai / Forester's Hut / Fishery post-MVP). Cites Manifesto Principle 8 (Separation of Concerns) — Building-identity (`kind`) and Resource-identity (`resource_kind`) are distinct concerns; conflating them is what produced the v1.2.0 registry-key bug. The option-(ii) explicit-kind register_node signature shipped at `2695fea` remains correct and complementary — the call site delegates to the field, the registry accepts the explicit kind, both layers serve different consumers (introspection vs registry bucket).
+
 ---
 
-*Status: v1.2.1 ratified. §1–§3 by world-builder; §4–§7 by gameplay-systems; §8 by gameplay-systems; §9 shared. v1 signed off by both authors 2026-04-30. v1.1 patch applied 2026-04-30 in response to design chat resolving §9 #4 to Path 2 (workers gather grain). v1.1.1 patch applied 2026-04-30: §6 `resource_node_depleted` updated from single-payload to dual-mode — Node ref for in-game consumers, MatchLogger sink destructures to serializable fields for NDJSON telemetry. Option (a) chosen per engine-architect's Convergence Review finding. v1.2.0 (2026-05-14, gp-sys) — §4 SSOT-fix to align consumer-facing API with shipped code + §4.5 Mazra'eh-as-duck-typed-Building documentation. v1.2.0 §1.4 + §3.4 caveat patched at `91f48ad` (world-builder). v1.2.1 (2026-05-14, gp-sys) — surgical patch on ResourceSystem.register_node signature to take explicit kind parameter; v1.2.0 §4.5 prose corrected (Mazra'eh's `kind` is the Building kind `&"mazraeh"`, NOT the resource kind `&"grain"`).*
+*Status: v1.2.2 ratified. §1–§3 by world-builder; §4–§7 by gameplay-systems; §8 by gameplay-systems; §9 shared. v1 signed off by both authors 2026-04-30. v1.1 patch applied 2026-04-30 in response to design chat resolving §9 #4 to Path 2 (workers gather grain). v1.1.1 patch applied 2026-04-30: §6 `resource_node_depleted` updated from single-payload to dual-mode — Node ref for in-game consumers, MatchLogger sink destructures to serializable fields for NDJSON telemetry. Option (a) chosen per engine-architect's Convergence Review finding. v1.2.0 (2026-05-14, gp-sys) — §4 SSOT-fix to align consumer-facing API with shipped code + §4.5 Mazra'eh-as-duck-typed-Building documentation. v1.2.0 §1.4 + §3.4 caveat patched at `91f48ad` (world-builder). v1.2.1 (2026-05-14, gp-sys) — surgical patch on ResourceSystem.register_node signature to take explicit kind parameter; v1.2.0 §4.5 prose corrected (Mazra'eh's `kind` is the Building kind `&"mazraeh"`, NOT the resource kind `&"grain"`). v1.2.2 (2026-05-14, gp-sys) — §4.5 schema declaration expanded to all 5 shipped fields after world-builder's `6d73889` (BLOCK-A) shipped the field shape; §4.6 introduced documenting the kind-vs-resource_kind separation pattern for resource-producing Building subclasses.*
