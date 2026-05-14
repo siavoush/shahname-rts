@@ -370,15 +370,33 @@ func test_mazraeh_calls_fogsystem_register_when_available() -> void:
 # Schema fields — ClickHandler._is_resource_node_shaped() seam + RNC §4.5
 # ---------------------------------------------------------------------------
 
-func test_mazraeh_has_is_gatherable_true() -> void:
+func test_mazraeh_has_is_gatherable_field() -> void:
 	# click_handler.gd:447-460: checks `&"is_gatherable" in n` in addition to
 	# has_method(&"request_extract"). Without this field, right-click on a
 	# placed Mazra'eh silently drops and workers never receive a gather command.
+	# Default is false (not gatherable until placement completes — forward-compat
+	# with wave 1C construction timer; default-false means future Building
+	# subclasses authored from this template won't accidentally allow gathering
+	# during construction).
 	_mazraeh = _spawn_mazraeh()
 	assert_true(&"is_gatherable" in _mazraeh,
 		"Mazra'eh must expose is_gatherable property for ClickHandler discovery")
+	assert_false(_mazraeh.is_gatherable,
+		"Mazra'eh.is_gatherable must be false before placement completes")
+
+
+func test_mazraeh_is_gatherable_flips_on_placement() -> void:
+	# _on_placement_complete() must flip is_gatherable false → true.
+	# Wave 1A: immediate flip (no construction timer). Wave 1C: this flip moves
+	# to _on_construction_complete(); the default-false stays.
+	_mazraeh = _spawn_mazraeh()
+	assert_false(_mazraeh.is_gatherable,
+		"is_gatherable must be false before place_at")
+	SimClock._is_ticking = true
+	_mazraeh.place_at(Vector3.ZERO, Constants.TEAM_IRAN, 1)
+	SimClock._is_ticking = false
 	assert_true(_mazraeh.is_gatherable,
-		"Mazra'eh.is_gatherable must be true")
+		"is_gatherable must be true after place_at (_on_placement_complete flip)")
 
 
 func test_mazraeh_resource_kind_is_grain() -> void:

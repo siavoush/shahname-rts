@@ -113,7 +113,13 @@ const _WAVE_1A_EXTRACT_TICKS: int = 90  # 3s dwell (cultural long-dwell, Room A)
 #
 # click_handler.gd:447-460 checks: has_method(&"request_extract") AND
 # &"is_gatherable" in n — both must pass or right-clicks fall through silently.
-var is_gatherable: bool = true
+#
+# Default false: Mazra'eh is not gatherable until placement completes.
+# _on_placement_complete() flips this to true (wave 1A: immediate, no timer).
+# Wave 1C construction-timer: the flip moves to _on_construction_complete().
+# Default-false ensures any future Building subclass using this template as a
+# reference does not accidentally allow gathering during construction.
+var is_gatherable: bool = false
 var resource_kind: StringName = Constants.KIND_GRAIN
 var reserves_x100: int = -1   # -1 sentinel = infinite (never depletes)
 var max_slots: int = 1         # single-slot for wave 1A
@@ -147,6 +153,9 @@ func _autoload_or_null(autoload_name: StringName) -> Node:
 # Registers this Mazra'eh as a grain gather target so ResourceSystem and
 # UnitState_Gathering can discover it. Emits building_placed for telemetry.
 func _on_placement_complete(placer_unit_id: int) -> void:
+	# Mark gatherable now that placement is complete. Wave 1C moves this flip
+	# to _on_construction_complete() when the construction timer ships.
+	is_gatherable = true
 	# ResourceSystem.register_node ships in wave 1A (gp-sys slice). Guard with
 	# has_method for forward-compat with tests that load Mazra'eh without
 	# the autoload available. Pass resource_kind (&"grain") — Mazra'eh.kind is
