@@ -385,6 +385,42 @@ This section accumulates rules added/modified through retros. Each entry is date
 
 - *(2026-05-14, post-Phase-3-session-1)* **`tools/run_game.sh` is the project's standard interactive-launch path.** Wrapper script in `tools/` runs Godot against the project and tees stdout+stderr to `/tmp/shahnameh.log`. Claude Code sessions read the log via `Read` / `tail` — no copy-paste round-trips. **Why added:** Phase 3 session 1's BUG-10 diagnosis (Godot `_unhandled_input` reverse-sibling-order) took one round-trip via log piping vs. the 3+ rounds it would have taken via copy-paste. The infra paid off on first deployment. Set as default launch for all future live-test sessions. Lead's kickoff docs should mention `tools/run_game.sh` as the canonical launch command. Cites Manifesto Principle 4 (Lean Iteration — cheap infra, compounding returns). [Phase 3 session 1 retro](#phase-3-session-1--economic-loop-foundation)
 
+- *(2026-05-14, post-Phase-3-session-1 follow-up)* **Agent persistence: persistent-by-default for in-team reviewers and within-session specialists; ephemeral for fix-wave / one-shot agents; fresh-spawn for PR-time external-audit reviewers.** Subagent runtimes support both ephemeral (one dispatch + stand-down) and persistent (SendMessage resumes with full context) lifecycles. The lead's prior pattern was reflexive-shutdown after each wave; the new default is persistence for roles where institutional memory compounds. Three tiers:
+
+  - **Tier 1 — Session-persistent reviewers (default).** `architecture-reviewer`, `godot-code-reviewer`, `shahnameh-loremaster` (when culturally invoked). Spawn once at session start; the lead `SendMessage`s them at each wave-close; they reply with structured review carrying memory of prior waves. Their pattern-recognition compounds — wave 1B's review benefits from wave 1A's context. Stand down only at session close.
+  - **Tier 2 — Within-session specialist persistence (default for multi-wave specialists).** If `gameplay-systems` ships waves 1A, 1B, and 1C in the same session, it is the SAME persistent instance across all three — not three fresh dispatches. Wave 1B's implementation benefits from wave 1A's lived friction. Cycle the instance (stand down + fresh spawn) only when context overflows or when the role's domain shifts substantially mid-session.
+  - **Tier 3 — Ephemeral one-shot agents (no change).** Fix-wave agents, surgical bug-fix dispatches, parallel-trial agents that ship one specific deliverable. Spawn fresh, ship, stand down. No persistence value.
+
+  **Why added:** Phase 3 session 1's retro surfaced a "lived experience gap" between agents that shipped work and agents dispatched at retro time. The gap was framed as inherent ephemerality, but a closer reading of the runtime confirms persistence is supported — the lead was choosing ephemerality by reflex. Siavoush flagged this directly: terminal lifespan is weeks (using `claude --resume` to skip auto-compact on updates), so session-persistent agents accumulate real institutional memory across many waves. The §9 rule about "What tripped me up in this wave" (2026-05-14 batch) becomes BACKUP CAPTURE rather than primary signal in the persistent-default world — primary signal is "ask the agent who lived the wave; they remember."
+
+  **Note on PR-time fresh instances:** there is a distinct fourth class — **fresh-spawn at PR-time** — for roles whose value depends on project-context-naivety. See the next §9 rule (Persistent/fresh review architecture) for details.
+
+  Cites Manifesto Principle 5 (Platforms, Not Features — persistent agents are platforms for accumulating institutional memory) and Principle 10 (Feedback Cycle — agents that remember can compound their own learning). [Phase 3 session 1 retro follow-up](#phase-3-session-1--economic-loop-foundation)
+
+- *(2026-05-14, post-Phase-3-session-1 follow-up)* **Two-class review architecture: persistent in-team reviewers + ephemeral fresh-spawn PR-time external-audit reviewers.** Two different review stages, two different reviewer classes, two different lenses.
+
+  **Stage 1 — Wave-close review (in-team, persistent).** At each wave-close before PR creation: persistent reviewers (`architecture-reviewer`, `godot-code-reviewer`, `shahnameh-loremaster` if invoked) review the wave's commits. They have session memory — they remember prior waves, prior decisions, prior verdicts. Their value: **catch drift WITHIN the team's worldview** — "this wave is contradicting what you yourself approved in wave 1A."
+
+  **Stage 2 — PR-time review (external audit, fresh-spawn).** When the lead opens a PR to main, BEFORE merge: two fresh-spawned reviewers run in parallel.
+   - **Fresh-instance `architecture-reviewer`** (same agent definition as the persistent one; new instance with no session memory). Reads the whole PR diff at once, against `ARCHITECTURE.md` + contracts. Different lens from the persistent instance: catches "we incrementally agreed to N small things; the sum has drifted from where we started." The persistent instance approves each wave one at a time, in context; the fresh instance asks "considered as one merged change, does this PR's full shape match the target architecture?"
+   - **`peiman-manifesto-reviewer`** (new role, agent definition at `.claude/agents/peiman-manifesto-reviewer.md`). Audits the PR against the **canonical** [Peiman Khorramshahi manifesto](https://github.com/peiman/manifesto) — the 10 principles for building things that last. Reads ONLY the PR diff and the canonical manifesto. Deliberately does NOT read the project's `MANIFESTO.md` (that's the project's *interpretation* — reading it anchors the reviewer to the team's worldview), nor the contracts, nor `ARCHITECTURE.md`, nor any other agent definition. Catches **drift OF the team's worldview itself** — the slow normalization the in-room agents can't see because they've all watched it happen.
+
+  Both PR-time reviewers terminate after the PR merges (or closes). The persistent wave-close reviewers stay alive for the next session.
+
+  **The two PR-time reviewers do not communicate with the persistent instances of the same agent definition.** Contamination by accumulated context defeats the fresh-eyes purpose. Lead is the only synthesizer of both PR-time verdicts.
+
+  **Why added:** Phase 3 session 1's retro made two structural observations: (a) persistent reviewers accumulate valuable memory but (b) accumulation creates anchoring that hides systemic drift. The two-class architecture captures both: persistent for compounding memory at wave-close, fresh for adversarial audit at PR-time. The "Peiman" naming is intentional — پیمان is Persian for *covenant / promise / oath*, and the manifesto IS the project's covenant. The reviewer is its keeper.
+
+  **Workflow:**
+  1. Session start → lead spawns Tier-1 persistent reviewers.
+  2. Each wave-close → lead `SendMessage`s persistent reviewers with the wave's commit range. Reviews come back. Lead addresses blockers, opens PR after all waves shipped clean.
+  3. PR creation → lead spawns fresh-instance `architecture-reviewer` + `peiman-manifesto-reviewer` in parallel. They review the whole PR against architecture+contracts and canonical manifesto respectively.
+  4. PR-time blockers route back: architectural drift → fixes commits to PR; manifesto violations → discussion (some are blocking, some surface design-chat questions via `QUESTIONS_FOR_DESIGN.md`).
+  5. PR merges → fresh-spawn reviewers terminate. Persistent reviewers continue for next session.
+  6. Session close (only when terminal will shut down for Claude Code update or end-of-project) → persistent reviewers stand down.
+
+  Cites Manifesto Principle 1 (Truth-Seeking — adversarial fresh-eyes catches what in-room familiarity can't) and Principle 7 (SSOT — the canonical manifesto, not the local interpretation, is the source of truth for the project's promises). [Phase 3 session 1 retro follow-up](#phase-3-session-1--economic-loop-foundation)
+
 ---
 
 ## 10. Sync Log
