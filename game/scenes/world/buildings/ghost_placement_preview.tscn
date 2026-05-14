@@ -1,0 +1,53 @@
+[gd_scene load_steps=4 format=3 uid="uid://shahnameh_ghost_placement_preview"]
+
+; ghost_placement_preview.tscn — translucent cursor-following ghost shown
+; during the building-placement flow.
+;
+; Phase 3 session 1 wave 1C deliverable 6. Per
+; 02f_PHASE_3_KICKOFF.md §3 wave 1C.
+;
+; Composition (deliberately minimal):
+;   Node3D (root, ghost_placement_preview.gd script)
+;     └── MeshInstance3D (BoxMesh 2.0×1.2×2.0 matching Khaneh; translucent
+;                          material; starts red — invalid until first
+;                          valid-cursor-position update from the handler)
+;
+; What's deliberately NOT in this scene:
+;   - NO StaticBody3D / CollisionShape3D — ghost must not be a
+;     click-target (BUG-07 lesson INVERTED for the ghost: it must NOT
+;     have collision so the placement raycast hits the terrain
+;     underneath).
+;   - NO NavigationObstacle3D — ghost is visual-only; no navmesh carve.
+;   - NOT in the &"buildings" group (ghost_placement_preview.gd does
+;     NOT call add_to_group). The validity-check overlap test iterates
+;     that group; including the ghost would make it report
+;     "overlapping itself."
+
+[ext_resource type="Script" path="res://scripts/world/buildings/ghost_placement_preview.gd" id="1_ghost"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_ghost"]
+; Match Khaneh's BoxMesh size exactly so the preview footprint reflects
+; what will be placed.
+size = Vector3(2.0, 1.2, 2.0)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ghost"]
+; Translucent placeholder. Color starts RED — invalid — and the
+; handler will flip to green via set_validity(true) on the first
+; valid cursor position. Transparency mode = ALPHA so the world
+; reads through.
+albedo_color = Color(0.85, 0.3, 0.3, 0.45)
+transparency = 1 ; TRANSPARENCY_ALPHA
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — same pipeline as units / buildings.
+
+
+[node name="GhostPlacementPreview" type="Node3D"]
+script = ExtResource("1_ghost")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+; Y-offset = half-height (0.6) so the ghost's bottom face sits on the
+; terrain plane (Y=0). Matches the building.tscn base scene's
+; mesh-bottom-at-y=0 convention — when the player confirms placement,
+; the placed Khaneh lands at the SAME visual Y as the ghost showed.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
+mesh = SubResource("BoxMesh_ghost")
+material_override = SubResource("StandardMaterial3D_ghost")

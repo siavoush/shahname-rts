@@ -58,6 +58,14 @@ const _COMMAND_KIND_TO_STATE_ID: Dictionary = {
 	&"attack_move": &"attack_move",  # Phase 2 session 1 wave 2B
 	&"gather": &"gathering",
 	&"build": &"moving",        # build → walk to site → constructing (rider)
+	# Phase 3 session 1 wave 1C — COMMAND_CONSTRUCT routes the worker
+	# DIRECTLY to UnitState_Constructing (no Moving rider). The
+	# construction state owns the walk + dwell + placement in one
+	# state; the &"build" → &"moving" mapping above is reserved for a
+	# future flow where the player commands the worker to a site
+	# without specifying the building (older RTS-style queue-from-
+	# building-at-arrival pattern).
+	&"construct": &"constructing",
 	&"ability": &"casting",
 }
 
