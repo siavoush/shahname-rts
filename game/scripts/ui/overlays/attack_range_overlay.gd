@@ -41,11 +41,15 @@ extends Control
 ##   SelectionManager.* mutators are called from inside the handler.
 ##
 ## Sim Contract §1.5 fit:
-##   `_process` is NOT used here — entries refresh only when selection
-##   changes (signal-driven). `_draw` uses the live Camera3D for projection
-##   per frame; that's a UI off-tick read of a Node3D's `transform`, which
-##   Sim Contract §1.5 explicitly allows. No sim-state mutation. No
-##   write-shaped EventBus.*.emit. No `apply_*` calls.
+##   `_process` is used for one purpose only: refresh each entry's `world_pos`
+##   from its bound unit's live `global_position` (BUG-09 fix, 2026-05-14).
+##   Entry add/remove remains signal-driven (handle_selection_changed); only
+##   the per-frame *position* update is in `_process`. The handler does NOT
+##   mutate sim state, does NOT emit any EventBus signals, and does NOT call
+##   any `apply_*` functions — lint L1/L2 patterns do not match. Per Sim
+##   Contract §1.5 and §3.4, off-tick reads of `Node3D.global_position` are
+##   explicitly allowed. `_draw` continues to use the live Camera3D for
+##   projection per frame.
 ##
 ## Live-game-broken-surface answers (Experiment 01):
 ##
@@ -107,8 +111,13 @@ const _CIRCLE_GROUND_Y: float = 0.05
 # State (read-only from outside)
 # ============================================================================
 
-# The current circle entries. Refreshed on every EventBus.selection_changed.
-# Each entry: { unit_id: int, world_pos: Vector3, radius: float }.
+# The current circle entries. The entry SET is refreshed on
+# EventBus.selection_changed (add/remove). Each entry's `world_pos` is
+# refreshed every frame in `_process` from `unit.global_position` so the
+# yellow circles track moving units live (BUG-09).
+# Each entry: { unit_id: int, unit: Node3D, world_pos: Vector3, radius: float }.
+# The `unit` ref is the source of truth for `world_pos`; we filter it via
+# is_instance_valid before each per-frame read.
 # Tests read this back via the public `entries()` accessor.
 var _entries: Array = []
 
@@ -191,11 +200,46 @@ func handle_selection_changed(_selected_unit_ids: Array) -> void:
 			world_pos = unit3d.global_position
 		fresh.append({
 			&"unit_id": unit_id,
+			&"unit": unit3d,
 			&"world_pos": world_pos,
 			&"radius": attack_range,
 		})
 	_entries = fresh
 	queue_redraw()
+
+
+# ============================================================================
+# Per-frame position refresh — BUG-09
+# ============================================================================
+# Each frame, walk the existing entries and refresh `world_pos` from the
+# bound unit's current global_position. Entry SET membership is NOT touched
+# here — only positions. Freed units are filtered defensively; the next
+# selection_changed broadcast is what removes them from `_entries`. This is
+# the minimum fix for BUG-09: selected units that move (right-click
+# destination) now drag their yellow attack-range circle along with them.
+#
+# Read-only — no sim mutation, no EventBus emit, no `apply_*` call. Per Sim
+# Contract §1.5 and §3.4, off-tick reads of Node3D.global_position are
+# explicitly allowed. Per-frame cost: O(selected_units) ≤ ~20 in MVP.
+
+func _process(_delta: float) -> void:
+	if _entries.is_empty():
+		return
+	var dirty: bool = false
+	for entry in _entries:
+		var unit3d: Variant = entry.get(&"unit")
+		if unit3d == null or not is_instance_valid(unit3d):
+			# Bound unit was freed between broadcasts. Skip — the next
+			# selection_changed signal clears the entry. Do NOT mutate
+			# the entry set here; that's the signal handler's job.
+			continue
+		var live_pos: Vector3 = (unit3d as Node3D).global_position
+		var prev_pos: Vector3 = entry.get(&"world_pos", Vector3.ZERO)
+		if live_pos != prev_pos:
+			entry[&"world_pos"] = live_pos
+			dirty = true
+	if dirty:
+		queue_redraw()
 
 
 # Public accessors — for tests and the (future) lead's live inspection.
