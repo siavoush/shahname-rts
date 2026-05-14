@@ -124,6 +124,13 @@ const _UnitStateDyingScript: Script = preload("res://scripts/units/states/unit_s
 # itself (one per unit, tiny).
 const _UnitStateGatheringScript: Script = preload("res://scripts/units/states/unit_state_gathering.gd")
 const _UnitStateReturningScript: Script = preload("res://scripts/units/states/unit_state_returning.gd")
+# Phase 3 wave 1C — building-placement state. Registered on every Unit
+# (including combat units) so transition_to(&"constructing") always lands
+# cleanly. Combat units never receive a COMMAND_CONSTRUCT, so the
+# registered-but-never-entered cost is one RefCounted state instance per
+# unit, tiny. Same "register on every Unit" rationale as the wave-1A
+# gather states.
+const _UnitStateConstructingScript: Script = preload("res://scripts/units/states/unit_state_constructing.gd")
 
 
 ## Snapshot of the most-recently-dispatched Command, populated by
@@ -285,6 +292,10 @@ func _ready() -> void:
 		fsm.register(_UnitStateGatheringScript.new())
 	if not fsm._states.has(&"returning"):
 		fsm.register(_UnitStateReturningScript.new())
+	# Phase 3 wave 1C — building placement state. See preload-const
+	# header above for the "register on every Unit" rationale.
+	if not fsm._states.has(Constants.STATE_CONSTRUCTING):
+		fsm.register(_UnitStateConstructingScript.new())
 	# init() lands the unit on the starting state and connects the
 	# death-preempt signal. Subclasses that want a different starting
 	# state can call fsm.init(&"<id>") before super._ready (init is
