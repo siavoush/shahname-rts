@@ -14,6 +14,9 @@
 #   6. Placement side-effects (_on_placement_complete emits building_placed).
 #   7. No NavigationObstacle3D (workers walk onto the farm, not around it).
 #   8. Flat visual silhouette (BoxMesh 4.0 × 0.3 × 4.0, green color).
+#   9. Schema fields (is_gatherable, resource_kind, reserves_x100, max_slots,
+#      yield_per_trip_x100) — ClickHandler._is_resource_node_shaped() seam
+#      and RESOURCE_NODE_CONTRACT §4.5 alignment.
 extends GutTest
 
 
@@ -118,9 +121,8 @@ func test_mazraeh_complete_extract_never_triggers_depletion() -> void:
 
 
 func test_mazraeh_remains_gatherable_after_many_trips() -> void:
-	# Drive 100 trips — Mazra'eh must remain is_complete and never flip
-	# a depletion flag. (Mazra'eh has no is_gatherable; the seam is
-	# is_complete remaining true and request_extract continuing to return true.)
+	# Drive 100 trips — Mazra'eh must remain is_complete and is_gatherable,
+	# and request_extract must keep returning true (never depletes).
 	_mazraeh = _spawn_mazraeh()
 	SimClock._is_ticking = true
 	_mazraeh.place_at(Vector3.ZERO, Constants.TEAM_IRAN, 1)
@@ -362,6 +364,53 @@ func test_mazraeh_calls_fogsystem_register_when_available() -> void:
 	# If we get here without error, the guard did not throw on missing singleton.
 	assert_true(_mazraeh.is_complete,
 		"Mazra'eh placement must complete without error when FogSystem is absent")
+
+
+# ---------------------------------------------------------------------------
+# Schema fields — ClickHandler._is_resource_node_shaped() seam + RNC §4.5
+# ---------------------------------------------------------------------------
+
+func test_mazraeh_has_is_gatherable_true() -> void:
+	# click_handler.gd:447-460: checks `&"is_gatherable" in n` in addition to
+	# has_method(&"request_extract"). Without this field, right-click on a
+	# placed Mazra'eh silently drops and workers never receive a gather command.
+	_mazraeh = _spawn_mazraeh()
+	assert_true(&"is_gatherable" in _mazraeh,
+		"Mazra'eh must expose is_gatherable property for ClickHandler discovery")
+	assert_true(_mazraeh.is_gatherable,
+		"Mazra'eh.is_gatherable must be true")
+
+
+func test_mazraeh_resource_kind_is_grain() -> void:
+	_mazraeh = _spawn_mazraeh()
+	assert_true(&"resource_kind" in _mazraeh,
+		"Mazra'eh must expose resource_kind property (RNC §4.5 schema)")
+	assert_eq(_mazraeh.resource_kind, Constants.KIND_GRAIN,
+		"Mazra'eh.resource_kind must equal Constants.KIND_GRAIN")
+
+
+func test_mazraeh_reserves_x100_is_infinite_sentinel() -> void:
+	_mazraeh = _spawn_mazraeh()
+	assert_true(&"reserves_x100" in _mazraeh,
+		"Mazra'eh must expose reserves_x100 property (RNC §4.5 schema)")
+	assert_eq(_mazraeh.reserves_x100, -1,
+		"Mazra'eh.reserves_x100 must be -1 (infinite sentinel — never depletes)")
+
+
+func test_mazraeh_max_slots_is_one() -> void:
+	_mazraeh = _spawn_mazraeh()
+	assert_true(&"max_slots" in _mazraeh,
+		"Mazra'eh must expose max_slots property (RNC §4.5 schema)")
+	assert_eq(_mazraeh.max_slots, 1,
+		"Mazra'eh.max_slots must be 1 for wave 1A")
+
+
+func test_mazraeh_yield_per_trip_x100_is_two_hundred() -> void:
+	_mazraeh = _spawn_mazraeh()
+	assert_true(&"yield_per_trip_x100" in _mazraeh,
+		"Mazra'eh must expose yield_per_trip_x100 property (RNC §4.5 schema)")
+	assert_eq(_mazraeh.yield_per_trip_x100, 200,
+		"Mazra'eh.yield_per_trip_x100 must be 200 (2 Grain/trip, Room A R1-α)")
 
 
 func test_mazraeh_material_is_green_not_neutral_grey() -> void:

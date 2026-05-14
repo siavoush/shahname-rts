@@ -103,8 +103,21 @@ const KIND_MAZRAEH: StringName = &"mazraeh"
 
 # Wave-1A hardcoded tunables. TODO(phase-3-wave-1B): read from BalanceData
 # once FogConfig + economy sub-resources ship.
-const _WAVE_1A_EXTRACT_TICKS: int = 90         # 3s dwell (cultural long-dwell, Room A)
-const _WAVE_1A_YIELD_PER_TRIP_X100: int = 200  # 2 Grain per trip
+const _WAVE_1A_EXTRACT_TICKS: int = 90  # 3s dwell (cultural long-dwell, Room A)
+
+# === Duck-typed ResourceNode schema fields ===================================
+#
+# These fields match the ResourceNode property surface (RESOURCE_NODE_CONTRACT
+# §4.5) so ClickHandler._is_resource_node_shaped() and any future consumer that
+# reads the schema can discover this node without isinstance checks.
+#
+# click_handler.gd:447-460 checks: has_method(&"request_extract") AND
+# &"is_gatherable" in n — both must pass or right-clicks fall through silently.
+var is_gatherable: bool = true
+var resource_kind: StringName = Constants.KIND_GRAIN
+var reserves_x100: int = -1   # -1 sentinel = infinite (never depletes)
+var max_slots: int = 1         # single-slot for wave 1A
+var yield_per_trip_x100: int = 200  # 2 Grain per trip (Room A R1-α)
 
 
 func _init() -> void:
@@ -116,6 +129,18 @@ func _ready() -> void:
 	super._ready()
 
 
+# === Autoload helper =========================================================
+
+# GDScript autoloads are SceneTree children, not C++ singletons.
+# Engine.has_singleton() / Engine.get_singleton() are INERT for them.
+# This pattern (from farr_gauge.gd:257) is the correct autoload discovery.
+func _autoload_or_null(autoload_name: StringName) -> Node:
+	var tree: SceneTree = Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return null
+	return tree.root.get_node_or_null(NodePath(autoload_name))
+
+
 # === Placement side-effect ===================================================
 
 # Called from Building.place_at after position / team / is_complete are set.
@@ -124,25 +149,16 @@ func _ready() -> void:
 func _on_placement_complete(placer_unit_id: int) -> void:
 	# ResourceSystem.register_node ships in wave 1A (gp-sys slice). Guard with
 	# has_method for forward-compat with tests that load Mazra'eh without
-	# the autoload available.
-	#
-	# v1.2.1 (2026-05-14): the signature is register_node(node, kind:
-	# StringName) — we pass Constants.KIND_GRAIN explicitly. Mazra'eh's own
-	# `kind` field is &"mazraeh" (Building kind) — passing it implicitly
-	# would register Mazra'eh under &"mazraeh", not &"grain", and any future
-	# AI consumer enumerating grain sources would miss it.
+	# the autoload available. Pass resource_kind (&"grain") — Mazra'eh.kind is
+	# &"mazraeh" (Building kind) so implicit would register under the wrong bucket.
 	if ResourceSystem.has_method(&"register_node"):
-		ResourceSystem.register_node(self, Constants.KIND_GRAIN)
-	# FogSystem ships in wave 3A. Mazra'eh is a fog ENTITY (tracked via
-	# get_last_seen) but NOT a vision source (farms don't see — ai-eng CC-2).
-	# sight_radius_cells=0, is_static=true. Guard is forward-compat: no-op
-	# until FogSystem exists. Same guard pattern for all future Building subclasses.
-	# Use Engine.get_singleton() + Object call — FogSystem class_name not declared
-	# yet (ships wave 3A); bare identifier would fail GDScript parse.
-	if Engine.has_singleton(&"FogSystem"):
-		var _fog: Object = Engine.get_singleton(&"FogSystem")
-		if _fog.has_method(&"register_vision_source"):
-			_fog.call(&"register_vision_source", self, team, 0, true)
+		ResourceSystem.register_node(self, resource_kind)
+	# FogSystem ships in wave 3A. Forward-compat guard: use SceneTree autoload
+	# pattern (Engine.has_singleton does NOT find GDScript autoloads — they are
+	# SceneTree children, not C++ singletons). Sight=0, is_static=true.
+	var _fog_node: Node = _autoload_or_null(&"FogSystem")
+	if _fog_node != null and _fog_node.has_method(&"register_vision_source"):
+		_fog_node.call(&"register_vision_source", self, team, 0, true)
 	EventBus.building_placed.emit(placer_unit_id, kind, team, global_position)
 
 
@@ -168,7 +184,7 @@ func request_extract(unit_id: int) -> bool:
 		return false
 	if _occupied.has(unit_id):
 		return false
-	if _occupied.size() >= 1:  # single-slot for wave 1A
+	if _occupied.size() >= max_slots:
 		return false
 	_occupied[unit_id] = true
 	return true
@@ -189,7 +205,7 @@ func complete_extract(unit_id: int) -> Dictionary:
 	if not _occupied.has(unit_id):
 		return {&"kind": &"", &"amount_x100": 0}
 	_occupied.erase(unit_id)
-	return {&"kind": Constants.KIND_GRAIN, &"amount_x100": _WAVE_1A_YIELD_PER_TRIP_X100}
+	return {&"kind": Constants.KIND_GRAIN, &"amount_x100": yield_per_trip_x100}
 
 
 ## The UnitState_Gathering state reads extract_ticks at slot-grant time
@@ -209,11 +225,13 @@ func occupied_slots() -> int:
 
 ## Returns true when world_pos is on a fertile tile — used by the build menu
 ## to grey the Mazra'eh button when the cursor is off fertile terrain.
-## Guards with has_method in case TerrainSystem ships after wave 1A.
+## TerrainSystem is a GDScript autoload (SceneTree child, not C++ singleton);
+## Engine.has_singleton() would always return false — use SceneTree root instead.
 static func is_valid_placement(world_pos: Vector3) -> bool:
-	if not Engine.has_singleton(&"TerrainSystem"):
+	var tree: SceneTree = Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return true  # permissive fallback (headless test, no scene tree)
+	var terrain: Node = tree.root.get_node_or_null(NodePath(&"TerrainSystem"))
+	if terrain == null or not terrain.has_method(&"is_fertile_tile"):
 		return true  # permissive fallback until TerrainSystem ships (wave 3A+)
-	var terrain: Object = Engine.get_singleton(&"TerrainSystem")
-	if not terrain.has_method(&"is_fertile_tile"):
-		return true
 	return terrain.is_fertile_tile(world_pos)
