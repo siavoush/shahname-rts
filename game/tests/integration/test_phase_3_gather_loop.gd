@@ -22,6 +22,7 @@ const KargarScene: PackedScene = preload("res://scenes/units/kargar.tscn")
 const MineNodeScene: PackedScene = preload(
 	"res://scenes/world/resource_nodes/mine_node.tscn")
 const UnitScript: Script = preload("res://scripts/units/unit.gd")
+const ClickHandlerScript: Script = preload("res://scripts/input/click_handler.gd")
 
 
 var harness: Variant = null
@@ -213,3 +214,117 @@ func test_gathering_kargar_death_drains_farr_half() -> void:
 	assert_almost_eq(farr_before - farr_after, 0.5, 1e-4,
 		"gathering Kargar death drops Farr by 0.5 (lighter drain — "
 		+ "worker was contributing)")
+
+
+# ---------------------------------------------------------------------------
+# Flow 5 — Phase 3 wave-1B BUG-07 regression: raycast → resolver → gather.
+# ---------------------------------------------------------------------------
+#
+# The bug: mine_node.tscn shipped without a CollisionShape3D, so
+# ClickHandler._raycast_from_screen (collide_with_bodies=true, areas=false)
+# could never hit the mine. The raycast struck the terrain instead; the
+# resolver walked terrain.parent looking for a `request_extract` ancestor,
+# found none, and the click fell through to a Move command — never a Gather.
+#
+# This test exercises the resolver step that the production raycast feeds:
+# we instantiate a real MineNode scene, locate its physics body (the body the
+# raycast WOULD hit), and build a hit Dictionary whose `collider` IS that
+# body — exactly what `intersect_ray` returns. We then call
+# `process_right_click_hit` (the same routing layer the production
+# `_handle_right_click` calls after the raycast resolves).
+#
+# Why not drive `_handle_right_click(screen_pos)` directly:
+#   That path requires a live Camera3D + Viewport + physics world to exist
+#   in headless GUT. Setting up a deterministic Camera3D-aligned-on-mine in
+#   a headless test is fragile (viewport size race, camera transform on the
+#   wrong frame, etc.). The teammate brief explicitly sanctioned this as
+#   the "next-best" version: drive the resolver with a hit dict whose
+#   collider is the real CollisionShape3D's parent body, matching what the
+#   raycast would have produced if the body existed.
+#
+# Fails-before / passes-after:
+#   BEFORE FIX: mine_node.tscn has no CollisionShape3D under any
+#     CollisionObject3D. `_find_body_in_subtree(_mine)` returns null, the
+#     test asserts non-null on that body and fails.
+#   AFTER FIX: a StaticBody3D-containing-CylinderShape3D sits under
+#     MineNode. The body is found; the synthetic hit routes through
+#     `_resolve_resource_node_from_hit` which walks body.get_parent()
+#     and finds the MineNode (carries `request_extract`); the gather
+#     dispatch fires; Kargar.replace_command pushes COMMAND_GATHER.
+
+class _GatherCaptureKargar extends RefCounted:
+	var unit_id: int = -1
+	var unit_type: StringName = &"kargar"
+	var team: int = Constants.TEAM_IRAN
+	var command_queue: Object = null  # ClickHandler._is_unit_shaped requires presence
+	var last_kind: StringName = &""
+	var last_payload: Dictionary = {}
+	var call_count: int = 0
+	func replace_command(kind: StringName, payload: Dictionary) -> void:
+		call_count += 1
+		last_kind = kind
+		last_payload = payload
+
+
+# Recursively find the first CollisionObject3D (StaticBody3D / Area3D / etc.)
+# inside `root`'s subtree. This is what the raycast would hit — the resolver
+# walks up from this body to find the MineNode root.
+func _find_body_in_subtree(root: Node) -> CollisionObject3D:
+	if root is CollisionObject3D:
+		return root
+	for child in root.get_children():
+		var found: CollisionObject3D = _find_body_in_subtree(child)
+		if found != null:
+			return found
+	return null
+
+
+func test_right_click_on_mine_dispatches_gather_via_live_raycast_path() -> void:
+	# Build the same handler the production scene wires up.
+	var handler: Node = ClickHandlerScript.new()
+	add_child_autofree(handler)
+	handler.set_test_mode(true)
+
+	# Real MineNode scene — the scene-file fix is what this test exercises.
+	_mine = MineNodeScene.instantiate()
+	add_child_autofree(_mine)
+	_mine.global_position = Vector3(5.0, 0.0, 0.0)
+
+	# Locate the physics body the raycast would strike. BUG-07: before the fix
+	# this returns null because the scene has no CollisionShape3D under any
+	# CollisionObject3D. After the fix, a StaticBody3D-containing-CylinderShape3D
+	# is present.
+	var body: CollisionObject3D = _find_body_in_subtree(_mine)
+	assert_not_null(body,
+		"BUG-07 regression: mine_node.tscn MUST contain a CollisionObject3D "
+		+ "(StaticBody3D + CollisionShape3D) so the production raycast "
+		+ "(collide_with_bodies=true) can resolve it as a gather target. "
+		+ "FAIL HERE before the fix; PASS after.")
+
+	# Capture-style worker — duck-typed surface ClickHandler._is_worker_shaped
+	# probes: unit_type == &"kargar" + replace_command + command_queue.
+	var worker: _GatherCaptureKargar = _GatherCaptureKargar.new()
+	worker.unit_id = 7
+	SelectionManager.select(worker)
+
+	# Build a hit Dictionary in the exact shape `intersect_ray` returns when
+	# the raycast lands on a CollisionObject3D inside the MineNode subtree.
+	# This is the input the production `_handle_right_click` hands to
+	# `process_right_click_hit` after `_raycast_from_screen` resolves.
+	var hit: Dictionary = {
+		&"collider": body,
+		&"position": _mine.global_position,
+		&"normal": Vector3.UP,
+	}
+	handler.process_right_click_hit(hit)
+
+	# AFTER FIX: the resolver walked body.parent → MineNode, found
+	# `request_extract`, dispatched a Gather command.
+	assert_eq(worker.call_count, 1,
+		"Kargar must receive exactly one command from the right-click")
+	assert_eq(worker.last_kind, Constants.COMMAND_GATHER,
+		"BUG-07: right-click on mine MUST dispatch COMMAND_GATHER, not "
+		+ "COMMAND_MOVE. Before the fix, the raycast missed the mine and "
+		+ "the routing fell through to the move-command branch.")
+	assert_eq(worker.last_payload.get(&"target_node"), _mine,
+		"gather payload carries the MineNode itself as target_node")

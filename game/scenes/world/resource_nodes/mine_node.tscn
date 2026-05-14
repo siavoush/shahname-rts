@@ -1,4 +1,4 @@
-[gd_scene load_steps=4 format=3 uid="uid://shahnameh_mine_node"]
+[gd_scene load_steps=5 format=3 uid="uid://shahnameh_mine_node"]
 
 ; mine_node.tscn — Coin MineNode scene.
 ;
@@ -19,10 +19,6 @@
 ;   - MeshInstance3D: the yellow cylinder.
 ;
 ; What's deliberately NOT in the scene:
-;   - CollisionShape3D — Phase 3 wave 1A doesn't need physics on mines.
-;     Workers pathfind to global_position; they don't bump the mine.
-;     Wave 1B may add a CollisionShape3D for click-to-target if the input
-;     layer needs raycast hits on the mine.
 ;   - NavigationObstacle3D — per RESOURCE_NODE_CONTRACT.md §3.2: mines
 ;     SHOULD carry NavigationObstacle3D so the navmesh routes around them.
 ;     Wave 1A skips this — the wave-1A reserves spawn at known sandy spots
@@ -54,6 +50,18 @@ height = 0.5
 albedo_color = Color(0.85, 0.7, 0.2, 1.0)
 shading_mode = 2 ; SHADING_MODE_PER_PIXEL — matches the unit material pipeline
 
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_mine"]
+; Phase 3 wave 1B BUG-07 fix: click-target collision body for the right-click
+; raycast. Shape matches the visual cylinder (radius 0.75, height 0.5). Sized
+; so the navmesh's walkable surface keeps the mine's center reachable —
+; collision radius 0.75 m on a 256 m map with NAV_AGENT_RADIUS=0.5 leaves
+; ample clearance around the center so MovementComponent.request_repath
+; (mine.global_position) resolves. (If the navmesh ever rejects the center
+; in practice, escalate per kickoff comment — do NOT switch to a layer-mask
+; workaround without coordination.)
+radius = 0.75
+height = 0.5
+
 
 [node name="MineNode" type="Node3D"]
 script = ExtResource("1_mine")
@@ -66,3 +74,27 @@ script = ExtResource("1_mine")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25, 0)
 mesh = SubResource("CylinderMesh_mine")
 material_override = SubResource("StandardMaterial3D_mine")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="."]
+; Phase 3 wave 1B BUG-07 fix: ClickHandler._raycast_from_screen runs with
+; collide_with_bodies=true / collide_with_areas=false, so the raycast only
+; hits CollisionObject3D bodies. Without a body in this subtree, the
+; raycast walks past the mine and strikes the terrain — the resolver
+; (_resolve_resource_node_from_hit) finds no `request_extract` ancestor
+; on the terrain's parent chain and the right-click falls through to a
+; Move command. Adding a StaticBody3D + CollisionShape3D here makes the
+; mine visible to the raycast; the resolver walks body.parent → MineNode
+; (which carries `request_extract`) and dispatches COMMAND_GATHER per the
+; ClickHandler dispatch table.
+;
+; Default collision_layer = 1, collision_mask = 1 — matches the existing
+; unit.tscn / terrain.tscn convention. The raycast's mask is 0xFFFFFFFF
+; (all-layers) so any layer would work; staying on layer 1 keeps the scene
+; consistent with the other CollisionObject3Ds in the project.
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticBody3D"]
+; Same Y-offset as the visual (0.25) so the body's centre sits where the
+; rendered cylinder's centre sits — clicking the visible silhouette hits
+; the collision shape with no off-by-half-height surprises.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25, 0)
+shape = SubResource("CylinderShape3D_mine")
