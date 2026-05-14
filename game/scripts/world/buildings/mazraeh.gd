@@ -56,7 +56,9 @@ extends "res://scripts/world/buildings/building.gd"
 ##     L143 ("request_extract") is the seam; no UnitState_Gathering changes.
 ##   - reserves_x100 = -1 sentinel (infinite, per ResourceNode contract §1.5
 ##     and resource_node.gd complete_extract branch on line 174). Mazra'eh
-##     does not deplete; it stops yielding only when destroyed.
+##     does not deplete. Building destruction lifecycle (HP/HealthComponent)
+##     ships in session-2 wave 1C — until then, deregistration on destruction
+##     is a forward-compat hook that cannot fire.
 ##   - extract_ticks = 90 (3s at SIM_HZ=30 — cultural long-dwell).
 ##   - grain_yield_per_trip_x100 = 200 (2 Grain/trip at BalanceData default).
 ##   - _on_placement_complete: register with ResourceSystem as a gather target.
@@ -75,12 +77,13 @@ extends "res://scripts/world/buildings/building.gd"
 ##
 ## Why extend Building (not ResourceNode):
 ##   Mazra'eh needs the full Building lifecycle: construction timer (wave 1C),
-##   HP, build-menu integration, the &"buildings" SceneTree group, placement
-##   hooks. ResourceNode has none of that — it is designed for permanent map
-##   features (mines), not player-built structures. The duck-typed API (three
-##   methods on this class that mirror ResourceNode's surface) is the clean
-##   seam. The alternative — multiple inheritance, or an Interface node — is
-##   out of scope for GDScript. Duck-type + has_method is idiomatic GDScript.
+##   HP/HealthComponent (also wave 1C — not present in wave 1A), build-menu
+##   integration, the &"buildings" SceneTree group, placement hooks.
+##   ResourceNode has none of that — it is designed for permanent map features
+##   (mines), not player-built structures. The duck-typed API (three methods on
+##   this class that mirror ResourceNode's surface) is the clean seam. The
+##   alternative — multiple inheritance, or an Interface node — is out of scope
+##   for GDScript. Duck-type + has_method is idiomatic GDScript.
 ##
 ## Why extend by path-string (not class_name):
 ##   Same class_name registry race as khaneh.gd / mine_node.gd (see those

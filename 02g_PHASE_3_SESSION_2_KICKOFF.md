@@ -114,7 +114,10 @@ The Convergence Review is the convergent moment of decision-arc continuity: the 
 | Sight-radius BalanceData values authored when FOG_DATA_CONTRACT field names firm | balance-eng | Wave 3A | Pre-condition | balance-eng authors values when wave 3A names land |
 | Turan infinite-resource init: option A (DummyAI seeds via `&"dummy_ai_infinite_seed"` reason) | gp-sys F3 (lead-recommend A) | Wave 3B | BLOCKING choice | Wave 3B brief locks Option A |
 | Mazra'eh fog-footprint boundary test (single-cell vs 2×2 cell coverage) | gp-sys F4 | Wave 4 (qa) | Test coverage | Wave 4 brief surfaces |
-| Engine-architect async pre-sign-off on Sim Contract v1.5.0 §2 addendum (new `&"fog_update"` phase) | ai-eng CC-3 | **Pre-wave-3A** | Lead action | Lead pings engine-architect immediately after Convergence close |
+| Engine-architect async pre-sign-off on Sim Contract v1.5.0 §2 addendum (new `&"fog_update"` phase) | ai-eng CC-3 | **Pre-wave-3A** | Lead action | ✅ **APPROVED 2026-05-14 by engine-architect-p3s2** with 3 wave-3A flags (see below) |
+| **NEW Wave 3A FLAG #1 (BLOCKING-but-trivial):** `Constants.PHASES` array DUPLICATES `SimClock.PHASES` and has a regression test (`test_constants.gd:24`) asserting equality. Wave 3A must patch BOTH, add `Constants.PHASE_FOG_UPDATE = &"fog_update"`, update the equality test | engine-architect CC-3 review | Wave 3A | BLOCKING-trivial | Wave 3A brief surfaces |
+| **NEW Wave 3A FLAG #2 (non-blocking):** FOG_DATA_CONTRACT §4.3 example code shows `_on_unit_health_zero(unit: Node)` but actual `EventBus.unit_health_zero` signal is `(unit_id: int)`. fog_system.gd implementation must look up unit by ID (like FarrDrainDispatcher pattern) | engine-architect CC-3 review | Wave 3A | Implementation correction | World-builder folds into fog_system.gd |
+| **NEW Wave 3A FLAG #3 (advisory):** v1.5.0 addendum prose should add one sentence: "fog and SpatialIndex share the same one-tick-stale staleness contract for AI reads," plus a fog read-discipline rule ("read fog only from phases AT OR AFTER fog_update") | engine-architect CC-3 review | Wave 3A | Doc prose enhancement | World-builder folds into Sim Contract v1.5.0 addendum text |
 
 **Process insight (worth retro capture):**
 
@@ -125,6 +128,20 @@ ai-eng's CC-1 + CC-2 findings came specifically from their session-1 muscle memo
 > *In async Constraint Negotiation, when accepting another agent's position, quote a SPECIFIC LINE from their message rather than referring to a label. Labels like "R1-α" / "R1-β" get redefined mid-conversation; specific quoted parameters do not.*
 
 The 9 cross-fire instances of async state-staleness today validate this. Going to retro entry at session close.
+
+**NEW process rule surfaced by Siavoush mid-wave-1A (2026-05-14):**
+
+> **Design-phase artifacts commit BEFORE implementation begins, as their own standalone commits — never bundled with the wave that implements them.**
+
+**Canonical incident:** world-builder's `3e167f1 feat(world): Wave 1A — Mazra'eh building + FOG_DATA_CONTRACT v1.3.0` bundled Room B's ratified design artifact (FOG_DATA_CONTRACT.md v1.3.0) with the implementation that ships *against* it (Mazra'eh class + scene + tests). The design doc is the OUTPUT of Room B; the implementation is the BEGINNING of wave 1A. Conflating them in one commit obscures the design/implementation boundary in trunk history.
+
+**The bug was in the dispatch brief, not the agent's execution.** Lead's wave-1A brief to world-builder explicitly said "FOG_DATA_CONTRACT.md v1.3.0 as part of your wave-1A slice." World-builder followed literally.
+
+**Going forward:** every dispatch brief explicitly separates:
+1. **Pre-wave design-artifact commits** (lead-driven OR specialist-driven, but standalone — no implementation files in the same commit). For session 2 still pending: gp-sys's RESOURCE_NODE_CONTRACT.md v1.2.0 §4 SSOT-fix patch ships as **wave-1A commit 1** (NOT commit 3 as my earlier brief said).
+2. **Wave implementation commits** (per-TDD-cycle, against the ratified design).
+
+This rule lands in STUDIO_PROCESS.md §9 at session-close retro. **The world-builder bundled commit `3e167f1` stays as-is** (not reverted — feature branch only, never pushed, history archaeology preserved) and is referenced as the canonical incident.
 
 ### 2.4 Resolved decisions (filled at sync close)
 
