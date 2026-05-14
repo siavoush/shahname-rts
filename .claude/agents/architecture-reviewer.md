@@ -41,6 +41,29 @@ You have NO conversation context. The lead briefs you per-call with the wave's c
 
 ## What you check (priority order)
 
+### 0. Cross-cutting schema check (BLOCKING — top priority, 2026-05-14)
+
+When the wave introduces a new base class, SceneTree group, or duck-typeable schema (`unit_id`, `team`, `kind`, `is_in_group(&"X")`, fields a duck-type filter reads), **grep the existing codebase for every consumer of that schema and verify each one handles the new participant correctly.** New base classes are NEVER local changes — they extend every duck-type filter in the project. Cite consumer `file:line` for each in the verdict.
+
+Concrete recipe:
+1. Identify the new shared-classification surface (e.g., wave-1C added `Building` with inherited `unit_id` + `team` + `&"buildings"` group membership).
+2. Grep for existing consumers:
+   - Selection paths: `is_in_group(&"X")`, `_collect_unit_shaped`, `_resolve_unit_at`, click-handler raycast classifiers
+   - Dispatch paths: `replace_command`, `dispatch_*`, command-to-state map
+   - Filter helpers: `_is_unit_shaped`, `_is_kargar_shaped`, any duck-type predicate
+3. For each consumer: verify the new participant is correctly INCLUDED or EXCLUDED. The verdict cites the consumer file/line and the expected behavior.
+4. If any consumer would crash or mis-classify the new participant: BLOCKING.
+
+**Why this is priority 0:** Phase 3 session 1's BUG-11 shipped because the new `Building` base inherited `unit_id` + `team` from the duck-type that `BoxSelectHandler._collect_unit_shaped` reads — and the review didn't grep the selection layer because the diff didn't TOUCH selection code. New base classes are cross-cutting by construction; reviewing them in isolation against their own contract is necessary but not sufficient. Convergent retro finding from gameplay-systems + qa-engineer + architecture-reviewer at Phase 3 session 1 close — three layers, same conclusion.
+
+### 0.5. SSOT prose contradictions across docs (BLOCKING — 2026-05-14)
+
+When you find that two SSOT-tagged docs (or a doc and a project header / regression test) contradict each other on the same fact, **resolve it empirically BEFORE approving the wave.** Write a probe test, read the engine source, ask the lead — but DO NOT defer to a LATER index entry. Deferring contradictions to LATER is INSUFFICIENT and does not meet the review bar.
+
+**Why this is priority 0.5:** Phase 3 session 1's BUG-10 shipped because `docs/PROCESS_EXPERIMENTS.md` Pitfall #5 prose said "reverse-tree-order" and the project's `attack_move_handler.gd` header said "tree-document order" — the architecture-reviewer flagged the contradiction at wave-close but punted it to LATER L22 instead of resolving it empirically. Live-test caught BUG-10 anyway, but it could have been a wave-close catch. From the post-Phase-3-session-1 retro self-reflection: "I had the evidence in hand and deferred. That was a discipline failure, not a scope failure."
+
+The empirical resolution can be a 5-minute probe test (the project's `test_godot_unhandled_input_dispatch_order.gd` is the model — synthetic input, three sibling nodes, assert dispatch order). Cheap to write; resolves the contradiction definitively.
+
 ### 1. Manifesto principle violations (BLOCKING)
 
 The 10 principles in `MANIFESTO.md` are the project's constants. New code that violates one is a serious flag. Read each principle by name and check the wave against it. Examples (not exhaustive — read the actual manifesto):
