@@ -1373,6 +1373,43 @@ Wave 3 ships integration tests covering the Phase 3 economic loop end-to-end. Fi
 
 ---
 
+### v0.20.6 — Phase 3 session 1 wave-close: reviewer-trio follow-up commits (2026-05-14)
+
+Three reviewer agents (godot-code-reviewer, architecture-reviewer, shahnameh-loremaster) ran in parallel after wave 3 landed. Verdicts: arch APPROVE, godot COMMENT (no blockers), loremaster NEEDS_REFINEMENT (one user-visible change). Nine consolidated follow-up commits address every blocking + recommended finding plus the loremaster's escalations to design chat.
+
+**Reviewer findings addressed:**
+
+- **godot NB-1**: missing Pitfall #5 regression test for BuildPlacementHandler-vs-ClickHandler sibling order. Closed by commit `4cc9af8` — two new tests in `test_phase_3_khaneh_placement.gd` (one paired with main.tscn, one standalone) mirroring the AttackMoveHandler precedent at `test_phase_2_session_1_combat.gd:1026` and `:1118`. Test count 1088 → 1090 (+2).
+- **godot NB-2 + arch drift-1**: `build_placement_handler.gd:30-41` header documented the WRONG sibling-order convention ("LATER than ClickHandler / REVERSE tree order"). Closed by commit `37334a3` — header rewritten to match the AttackMoveHandler precedent's "tree-document order; lower-index sibling runs first" convention, references the new regression-lock tests.
+- **arch drift-2**: §2 "ResourceNode + MineNode + Mazra'eh" row marked 📋 Planned but MineNode shipped wave 1A. Closed by commit `a299dee` — row split into "ResourceNode + MineNode (Coin)" ✅ Built and "Mazra'eh (Fertile / Grain)" 📋 Planned.
+- **arch drift-3**: `FarrConfig.gd` legacy `drain_*` @export fields are dead code superseded by the `drain_rates` dict (wave 1B). Closed by commit `c66cc2d` — per-field DEPRECATED markers plus a block-header note pointing readers to `drain_rates`. Fields retained for `balance.tres` backward compat; Phase 4 cleanup pass can remove.
+- **loremaster required**: `strings.csv` `BLDG_KHANEH,House,` inverted the spec's "Khaneh (house)" Persian-primary convention and broke pattern symmetry with `UNIT_KARGAR,Kargar,`. Closed by commit `f0e79ce` — strings.csv "House" → "Khaneh" ×3 rows + regenerated `.translation` + downstream comment / scene-fallback references updated. Loremaster's Q3 ranking: Khaneh > Hearth > Home > Dwelling > Hall > House.
+- **loremaster recommended (Returning state)**: `unit_state_returning.gd` lacked a cultural-note block while sibling states Gathering and Constructing both carried substantive Shahnameh-rooted rationale. Closed by commit `b0c4f73` — adds reciprocal king/people / *farr*-makes-tribute-fruitful framing per §3 + §4 of the core mechanics.
+- **loremaster recommended (Building base)**: abstract base needed a cross-faction caveat header note acknowledging Iran-bias in the current concrete subclass before Turan housing analogues ship. Closed by commit `30afe83` — header note flags the asymmetry and references the loremaster's candidate Turan-side referents (Piran's hospitality, Manijeh's loyalty, *otaq* tradition; NOT Afrasiyab) per `00_SHAHNAMEH_RESEARCH.md` §7 "worthy rivals" rule.
+- **loremaster Q4 (addendum)**: Khaneh header phrase "separates civilization from raid and steppe" nudged toward a settled=civilized / nomadic=barbaric binary that the Shahnameh itself complicates. Closed by commit `194f807` — replaced with "anchors the Iranian dynasties' relationship to land and people (distinct from, but not morally above, Turan's mobile counterpart)." Worth fixing NOW because this header is the template every future Iran-building's cultural-note block clones.
+- **loremaster Q1/Q2/Q3 escalations**: three design-chat questions appended to `QUESTIONS_FOR_DESIGN.md`. Q1 (en-side naming convention — Persian primary vs English gloss; partially blocks session-2 build-menu extensions), Q2 (Coin vs Sekkeh — paired with Q1, loremaster recommends keeping "Coin"), Q3 (Turan housing analogue — Otag / Khargah / Cherahgah ranking; not blocking session 1). Closed (appended) by commit `ea70023`.
+
+**Verdict notes not actioned:**
+
+- **godot cosmetic (NB nit on `_cached_unit_id` declaration position in `unit_state_gathering.gd`)**: declared as "cosmetic; not a defect" — skipped per cost/value.
+- **godot future-scope flag**: Pitfall #5 prose in `docs/PROCESS_EXPERIMENTS.md:84-86` says "reverse-tree-order" but the codified regression tests treat "earlier = first." Convention in code is right; the pitfall doc's prose mislabels it. Outside this wave's scope — deferred to next session-close docs-audit pass. **NEW LATER L22 added below.**
+- **loremaster optional polish**: add `UI_BUILDING_KHANEH_TOOLTIP` key carrying "Hearth"/"household"/"civic-anchor" English semantics. Not in scope for wave-close fix set; deferred to UI polish pass when tooltips ship project-wide.
+
+**Test-count delta:** 1088 → 1090 (+2 sibling-order regression tests). 3 pre-existing risky/pending unchanged. 0 failures. Lint clean every commit. Pre-commit gate green every commit.
+
+**Commit chain (1/9 → 9/9):**
+- `4cc9af8` — Pitfall #5 regression lock for BuildPlacementHandler
+- `37334a3` — corrected BPH sibling-order header
+- `a299dee` — split §2 ResourceNode row (MineNode ✅ Built, Mazra'eh deferred)
+- `c66cc2d` — DEPRECATED legacy FarrConfig drain_* fields
+- `f0e79ce` — Khaneh button label "Khaneh" instead of "House"
+- `b0c4f73` — UnitState_Returning cultural-note block
+- `30afe83` — Building base cross-faction caveat
+- `194f807` — Khaneh header softens Iran-Turan binary
+- `ea70023` — Q1/Q2/Q3 escalations to QUESTIONS_FOR_DESIGN.md
+
+---
+
 Architectural / project-wide deferred work. Each entry has a brief description, the canonical surfacing source (commit + §6 entry), and the priority class:
 - **🔴 Phase-blocking** — must ship before the named phase can complete its milestone. Owns a slot in the implementation plan.
 - **🟡 Scale-blocking** — works fine at MVP scale; visibly fails as unit/building counts grow toward production. Surfaces when N exceeds the empirical threshold.
@@ -1403,6 +1440,7 @@ Promoted from §6 entry prose at session-close retros so they're indexable rathe
 | L19 | **`F3` AI state debug overlay** | 🟢 (Phase 6 with AI) | CLAUDE.md + Phase 6 plan | Renders AI controller state per unit (idle / attacking / fleeing / etc.) as floating text or color-coded silhouettes. Surfaces with `DummyAIController` shipping. |
 | ~~L20~~ | ~~**Pitfall #7 mitigation needs single owning surface**~~ — **CLOSED 2026-05-13.** Open Space sync resolved this: mitigation = `git worktree`-per-agent for parallel waves; sequential-shared-tree for single-deliverable / heavy-shared-doc waves; Option 2 (lead commit serialization) VETOED. Single owning surface: `STUDIO_PROCESS.md` §9 2026-05-13 entry. See §6 v0.20.0 entry for the full Constraint Negotiation outcome. Decision opens **Experiment 04** — first formal trial Phase 3 session 2. | — | arch-reviewer-pr9 framing (Phase 2 sess 2 close) → resolved by engine-architect + gameplay-systems Constraint Negotiation | — |
 | L21 | **`docs/PITFALLS.md` as project-level top-level pitfall doc** | 🟡 (when 3rd Pitfall-class concept emerges) | arch-reviewer-pr9 framing (Phase 2 sess 2 close) | **NEW 2026-05-12.** Currently engine-level Pitfalls live in `docs/PROCESS_EXPERIMENTS.md` Known Godot Pitfalls section (engine foot-guns); process-level Pitfalls (Pitfall #7 cross-agent commit-race) live in `STUDIO_PROCESS.md` §9; some hybrid (the queue_free + _test_run_tick interaction) crosses both. When a third hybrid concept emerges, the cross-doc navigation becomes painful — promote to a single `docs/PITFALLS.md` that indexes by class (engine / process / hybrid). Defer until concrete third instance. |
+| L22 | **Pitfall #5 prose audit in `docs/PROCESS_EXPERIMENTS.md`** | 🟢 (next docs-audit pass) | godot-code-reviewer-p3s1 wave-close (2026-05-14) | **NEW 2026-05-14.** `docs/PROCESS_EXPERIMENTS.md:84-86` describes Pitfall #5 as "reverse-tree-order: later siblings get `_unhandled_input` first." The codified project convention (per `attack_move_handler.gd` header, `build_placement_handler.gd` header post-`37334a3`, and regression tests `amh.get_index() < ch.get_index()` / `bph.get_index() < ch.get_index()`) is "tree-document order: lower-index sibling runs first." Runtime is correct; the pitfall doc's prose mislabels the direction. Cheap to fix; deferred to next session-close docs pass to avoid wave-close-fix-set churn. |
 
 **How to add to this list:** at session-close retro, scan §6 entries and BUILD_LOG retros for "LATER items surfaced." Promote architectural / scale-blocking ones here with the priority class. Keep §6 entries focused on "what shipped this wave + why"; the LATER index is the cross-wave aggregation.
 

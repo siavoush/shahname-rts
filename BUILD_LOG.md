@@ -34,6 +34,55 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-14 — Phase 3 session 1 wave-close: reviewer-trio follow-up commits
+
+**Branch:** `feat/phase-3-session-1`
+**Agents:** godot-code-reviewer + architecture-reviewer + shahnameh-loremaster (parallel, read-only), lead-driven follow-up commit set.
+**Commits:** 9 (4cc9af8 → ea70023).
+**Test delta:** 1088 → 1090 (+2 Pitfall #5 regression locks). 3 pre-existing risky/pending. 0 failures. Lint clean every commit.
+
+**What shipped:** the 9-commit consolidated follow-up addresses every blocking + recommended finding from the three reviewer agents.
+
+**Reviewer verdicts:**
+- godot-code-reviewer: **COMMENT** (no blockers; NB-1 + NB-2 + cosmetic NB-3)
+- architecture-reviewer: **APPROVE** (4 non-blocking drift findings)
+- shahnameh-loremaster: **NEEDS_REFINEMENT** (one user-visible string change required + 3 doc-symmetry recommendations + 3 design-chat escalations)
+
+**Findings → commits:**
+- `4cc9af8` — godot NB-1: Pitfall #5 regression test pair for BPH-vs-ClickHandler sibling order (mirrors AttackMoveHandler precedent).
+- `37334a3` — godot NB-2 + arch drift-1: `build_placement_handler.gd:30-41` header rewritten — actual project convention is "tree-document order; lower-index sibling runs first," not the "REVERSE tree order" the header claimed.
+- `a299dee` — arch drift-2: §2 build-state row split. MineNode ✅ Built (was hidden inside a still-Planned row); Mazra'eh stays 📋 Planned for session 2.
+- `c66cc2d` — arch drift-3: 7 legacy `FarrConfig.drain_*` @export fields marked DEPRECATED (superseded by `drain_rates` dict in wave 1B). Retained for `balance.tres` backward compat; Phase 4 cleanup pass can remove.
+- `f0e79ce` — loremaster required: `strings.csv` "House" → "Khaneh" ×3 + regenerated `.translation` + downstream comment / scene-fallback references. Persian-primary label per spec §5 + UNIT_KARGAR precedent + loremaster Q3 ranking.
+- `b0c4f73` — loremaster recommended (Returning state): cultural-note block added for sibling-state symmetry. Frames the deposit beat as the reciprocal king/people relationship Ferdowsi describes.
+- `30afe83` — loremaster recommended (Building base): cross-faction caveat header note. Flags that the current concrete subclass (Khaneh) is Iran-coded and that future Turan housing analogues MUST carry parallel substantive cultural rationale per `00_SHAHNAMEH_RESEARCH.md` §7 "worthy rivals."
+- `194f807` — loremaster Q4 (addendum): Khaneh header phrase "separates civilization from raid and steppe" → "anchors the Iranian dynasties' relationship to land and people (distinct from, but not morally above, Turan's mobile counterpart)." Worth fixing now since this header is the template every future Iran-building's cultural-note block clones.
+- `ea70023` — loremaster escalations: Q1 (en-side naming convention) + Q2 (Coin vs Sekkeh) + Q3 (Turan housing analogue) appended to `QUESTIONS_FOR_DESIGN.md`.
+
+**Verdict notes not actioned:**
+- godot NB-3 (`_cached_unit_id` declaration position): declared cosmetic / not a defect. Skipped.
+- godot future-scope flag: Pitfall #5 prose in `PROCESS_EXPERIMENTS.md:84-86` says "reverse-tree-order" but codified convention is "earlier=first." **LATER L22 added** for next session-close docs-audit pass.
+- loremaster optional polish: `UI_BUILDING_KHANEH_TOOLTIP` key. Not in scope for wave-close fix set; deferred to UI tooltip pass.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:**
+- Q1: UI primary-name convention — Persian word vs English gloss (partially blocks session-2 build menu).
+- Q2: Coin vs Sekkeh resource name (paired with Q1; loremaster recommends "Coin").
+- Q3: Turan housing analogue — Otag / Khargah / Cherahgah candidates; whether Building base needs a `cultural_idiom` field.
+
+**Decisions made independently:**
+- Strings.csv "House" → "Khaneh" applied without escalation because it brings the implementation BACK to the spec (`01_CORE_MECHANICS.md` §5 "Khaneh (house)" — Persian primary) and matches the established `UNIT_KARGAR,Kargar,` pattern. Loremaster Q1 still escalates the GENERAL convention rule for session-2 inheritance.
+- Cultural-note tightening in `khaneh.gd` applied without escalation because the change is a rationale-comment refinement (not a gameplay/narrative shift) and the loremaster explicitly recommended it as cheap-to-fix-now given the template-cloning risk.
+- Turan-side cultural-rationale candidates surfaced (Piran's hospitality, Manijeh's loyalty, *otaq* tradition) but escalated as Q3 rather than committed to. The naming choice is design-chat scope.
+
+**Cross-agent coordination:** Three reviewer agents in parallel (read-only — no commit race). qa-wave-3 (writer) ran sequentially with the reviewers; reviewer trio dispatched while wave-3 still in flight against `feat/phase-3-session-1`, but reviewers' read-only access avoided the Pitfall #7 staging race. Lead-driven follow-up commits applied AFTER qa-wave-3 landed all 6 commits to avoid shared-doc race.
+
+**State for next session:**
+- Phase 3 session 1 ready for PR. Branch `feat/phase-3-session-1` is clean, lint passes, 1090 tests passing, 0 failures.
+- Wave-close ceremony: lead live-test (smoke gather loop + build Khaneh + verify Farr drain on Kargar death) → open PR to main.
+- Pitfall #5 prose in `PROCESS_EXPERIMENTS.md:84-86` needs a docs-audit at next session-close (LATER L22).
+
+---
+
 ## 2026-05-14 — Phase 3 wave 3 (qa-engineer): integration tests for the Phase 3 economic loop
 
 **Branch:** `feat/phase-3-session-1`
