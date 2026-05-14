@@ -12,8 +12,9 @@ extends "res://scripts/world/buildings/building.gd"
 ## §2.4 (Room A resolution: trip-based long-dwell with R1-α cultural texture).
 ##
 ## Cultural note — dehqan (دهقان), the landed cultivator:
-##   The *dehqan* (lit. "lord of the village") is among the Shahnameh's most
-##   resonant social figures. Ferdowsi himself was dehqan stock — the opening
+##   The *dehqan* (lit. "landed cultivator", sometimes glossed "lord of the
+##   village") is among the Shahnameh's most resonant social figures.
+##   Ferdowsi himself was dehqan stock — the opening
 ##   lines of the Shahnameh invoke the dehqan tradition of preserving the
 ##   ancient stories as an act of stewardship. The dehqan is not a peasant;
 ##   he is a custodian of ancestral memory, attached to a specific parcel of
@@ -41,12 +42,14 @@ extends "res://scripts/world/buildings/building.gd"
 ##   Cross-faction caveat (per building.gd header's shahnameh-loremaster note):
 ##   Turan's relationship to grain is not the same as Iran's. The Turanian
 ##   nomadic tradition does not anchor dignity to farmed land — it anchors it
-##   to the *otaq* (tent household), the loyalty of mounted riders, the
-##   Khan's favor. A Turan-side grain analogue (if one ships) should carry a
-##   distinct cultural frame — perhaps raided grain stores, or tribute fields
-##   managed at a distance, or trade-route provisioning via caravan nodes.
-##   The current Mazra'eh is explicitly an Iran-side building; do not clone
-##   it as a Turan building without a loremaster review (flag for session 3+).
+##   to the *otaq* (tent household, Q3-pending), the herd, and the trade-route.
+##   A Turan-side grain analogue, when it ships, will most likely take the form
+##   of a **karavan** (کاروان) — a mobile caravan unit that travels between hubs
+##   and arrives with Grain payloads on a timer, vulnerable to interception.
+##   This is mechanically distinct from a static gather node and preserves the
+##   Turan-as-mobile identity attested in 00_SHAHNAMEH_RESEARCH.md §natural-core.
+##   Do not clone Mazra'eh as a Turan building (flagged for session N when Turan
+##   economy ships; will require fresh loremaster review).
 ##
 ## What lives here vs in Building base:
 ##   - kind = &"mazraeh" (dual-init pattern as in khaneh.gd).
