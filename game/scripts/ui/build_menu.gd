@@ -153,9 +153,12 @@ func _refresh_from_selection() -> void:
 
 
 # Refresh the button label text. tr() resolves UI_BUILDING_KHANEH_COST
-# against strings.csv ("House (%d Coin)"). The cost is the static
-# BalanceData value (Khaneh.cost_coin()); a future preview-affordability
-# pass could grey the button when the player can't afford it.
+# against strings.csv ("Khaneh (%d Coin)" — Persian name as primary label
+# per shahnameh-loremaster review 2026-05-14; the canonical en-side
+# convention is Persian-primary, English in tooltip if added). The cost
+# is the static BalanceData value (Khaneh.cost_coin()); a future
+# preview-affordability pass could grey the button when the player
+# can't afford it.
 func _refresh_button_labels() -> void:
 	_header_label.text = tr("UI_BUILD_MENU_HEADER")
 	var cost: int = _KhanehScript.call(&"cost_coin")

@@ -194,9 +194,11 @@ func test_khaneh_button_label_shows_cost() -> void:
 	_kargar = _spawn_kargar()
 	SelectionManager.select_only(_kargar)
 	var btn: Button = _menu.get_node(^"Root/Margin/VBox/KhanehButton")
-	# tr("UI_BUILDING_KHANEH_COST") → "House (%d Coin)" → "House (50 Coin)".
+	# tr("UI_BUILDING_KHANEH_COST") → "Khaneh (%d Coin)" → "Khaneh (50 Coin)".
 	# (tr returns the key itself when no translation is set up — strings.csv
-	# fills the en column so "House (50 Coin)" is the expected runtime value.)
+	# fills the en column so "Khaneh (50 Coin)" is the expected runtime value.
+	# Loremaster review 2026-05-14: Persian-primary label per the established
+	# UNIT_KARGAR convention.)
 	assert_true(btn.text.contains("50"),
 		"KhanehButton label must include the cost (50) — got '%s'" % btn.text)
 
