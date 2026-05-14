@@ -1,0 +1,95 @@
+[gd_scene load_steps=5 format=3 uid="uid://shahnameh_mazraeh_building"]
+
+; mazraeh.tscn — Mazra'eh (Iran grain farm) building scene.
+;
+; Source: 01_CORE_MECHANICS.md §5 — "Mazra'eh (farm) — Grain source.
+; Workers gather Grain here. Place on fertile-tile terrain."
+;
+; Phase 3 session 2 wave 1A — 02g_PHASE_3_SESSION_2_KICKOFF.md §3.
+; Room A resolution (2026-05-14): trip-based long-dwell (R1-α), existing
+; three-call API duck-typed on the Building subclass. See §2.4 for log.
+;
+; Why standalone (NOT inheriting building.tscn):
+;   building.tscn includes a NavigationObstacle3D. Mazra'eh explicitly
+;   MUST NOT have a NavigationObstacle3D — workers walk ONTO the farm tile,
+;   not around it (RESOURCE_NODE_CONTRACT §3.2 + Room A §2.4 reaffirmation).
+;   In Godot 4, removing an inherited node from a packed scene instance
+;   requires the INSTANCE_STATE_DELETED marker, which adds brittle coupling.
+;   A standalone scene that replicates only the needed nodes is cleaner and
+;   matches the mine_node.tscn precedent (mine_node.tscn is also standalone,
+;   not inheriting resource_node.tscn).
+;
+; Visual placeholder per CLAUDE.md "colored rectangles for buildings":
+;   - BoxMesh 4.0 × 0.3 × 4.0 — wide and flat (a field, not a structure).
+;     Height 0.3 reads as terrain-adjacent. Width 4×4 world units covers
+;     ~2 navmesh cells — workers step onto it without routing around it.
+;   - Agricultural green Color(0.55, 0.75, 0.35) — clearly a crop field.
+;     Distinct from:
+;       * Khaneh tan (0.78, 0.65, 0.45)
+;       * MineNode gold (0.85, 0.7, 0.2)
+;       * Kargar sandy-brown (0.65, 0.5, 0.3)
+;       * Terrain sandy/beige (contrast lesson from Phase 2 session 1 fix).
+;
+; Composition:
+;   - Root: Node3D (extends Building via mazraeh.gd duck-typed gather API)
+;     ├── MeshInstance3D    flat green box (the field)
+;     └── StaticBody3D      click-target collision body (BUG-07 lesson)
+;         └── CollisionShape3D BoxShape3D matching the mesh
+;
+; NavigationObstacle3D: intentionally ABSENT. Workers walk onto the field
+; tile. If the navmesh ever refuses to route onto the farm footprint,
+; escalate via QUESTIONS_FOR_DESIGN.md — do NOT add an obstacle as a
+; workaround without coordination.
+
+[ext_resource type="Script" path="res://scripts/world/buildings/mazraeh.gd" id="1_mazraeh"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_mazraeh"]
+; Flat field silhouette — 4.0 wide × 0.3 tall × 4.0 deep.
+; The 0.3 height reads as "terrain feature" not "structure" — the farm
+; is a patch of cultivated ground, not a building in the conventional sense.
+; Y-offset on the MeshInstance3D node will be half-height (0.15) to sit
+; flush on terrain.
+size = Vector3(4.0, 0.3, 4.0)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_mazraeh"]
+; Agricultural green per Room A cultural-texture resolution. The dehqan
+; farm should read as "plant" from across the map — contrast-checked
+; against the sandy terrain (FarrGauge Phase 2 session 1 lesson: low
+; saturation bleeds into terrain; lead live-tests post-wave-1A).
+albedo_color = Color(0.55, 0.75, 0.35, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — matches unit / mine pipeline.
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_mazraeh"]
+; Collision shape matches the visual mesh for click-target accuracy.
+; BUG-07 lesson: without a CollisionObject3D ancestor, raycasts walk
+; through the building and hit the terrain. The StaticBody3D below
+; provides the ancestor; this shape ensures clicks land on the field area.
+; Slight Z-expand vs XZ mesh to match the 4×4 footprint.
+size = Vector3(4.0, 0.3, 4.0)
+
+
+[node name="Mazraeh" type="Node3D"]
+script = ExtResource("1_mazraeh")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+; Y-offset = half-height (0.15) so the flat box's BOTTOM face sits flush
+; on the terrain plane (Y=0). Same convention as mine_node.tscn (0.25 for
+; the half-height cylinder) and building.tscn (0.6 for the half-height box).
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.15, 0)
+mesh = SubResource("BoxMesh_mazraeh")
+material_override = SubResource("StandardMaterial3D_mazraeh")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="."]
+; BUG-07 lesson — Phase 3 wave 1B: ClickHandler._raycast_from_screen has
+; collide_with_bodies=true / collide_with_areas=false. Without this body,
+; right-clicks on the farm tile miss the Mazra'eh and land a Move command
+; on the terrain below it. The StaticBody3D makes the farm click-targetable;
+; the resolver walks body.parent → Mazraeh (which carries request_extract
+; via duck-type) and dispatches COMMAND_GATHER.
+; collision_layer = 1, collision_mask = 1 — matches project convention.
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticBody3D"]
+; Y-offset matches the visual (0.15) so the collision shape's centre is
+; co-located with the rendered field's centre.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.15, 0)
+shape = SubResource("BoxShape3D_mazraeh")
