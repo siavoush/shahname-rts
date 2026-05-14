@@ -96,13 +96,99 @@ After Rooms A + B + the DummyAI sync land their decision-logs, the lead reconven
 
 The Convergence Review is the convergent moment of decision-arc continuity: the agents who debated are the same instances who will implement, and the convergence is THEIR shared commitment to the ratified shape, not the lead's pronouncement.
 
+### 2.5 Convergence Review verdict + cross-wave action list (2026-05-14)
+
+**Verdict: RATIFY × 4.** All four specialists (gp-sys, world-builder, ai-eng, balance-eng) returned RATIFY. Wave 1A dispatch unblocked. Three decisions ratified as mutually consistent; specialists ran 23 distinct cross-cutting interaction checks across the three decision-logs; 4 forward-compat / cross-wave findings surfaced; none block wave 1A.
+
+**Convergence Review findings — consolidated cross-wave action list:**
+
+| Finding | Source | Target | Type | Resolution |
+|---|---|---|---|---|
+| `Engine.has_singleton("FogSystem")` guard on Mazra'eh `_on_placement_complete` | gp-sys F2 | **Wave 1A** | Forward-compat | gp-sys bakes guard into world-builder's Mazra'eh before commit |
+| `building.get_footprint_aabb() -> AABB` method on Building base | Room B v1.3.0 | **Wave 1A** | Cross-wave dep | gp-sys adds method as wave 1A sub-deliverable; 2×2 cell fallback already documented in FOG_DATA_CONTRACT |
+| Sarbaz-khaneh: `Engine.has_singleton` guard for FogSystem registration | gp-sys F2 | Wave 2A | BLOCKING | Wave 2A brief surfaces |
+| Sarbaz-khaneh: team-aware `unit_kind` parameter (`&"piyade"` vs `&"turan_piyade"`) | DummyAI sync | Wave 2A | BLOCKING | Wave 2A brief surfaces |
+| Sarbaz-khaneh: `_on_placement_complete` MUST emit `EventBus.building_placed` with Khaneh-compatible signature | ai-eng CC-1 | Wave 2A | BLOCKING | Wave 2A brief surfaces |
+| `EventBus.building_placed` payload extension: include building's own `unit_id` | gp-sys F1 + world-builder LATER-fog-3 | Wave 3A | Cross-wave | World-builder extends signal in wave 3A; gp-sys updates Khaneh + Mazra'eh emit sites in same wave |
+| FogSystem building-registration: signal-driven ONLY (NOT group-iteration at boot); read team AFTER `is_complete = true` | ai-eng CC-2 | Wave 3A | Required | World-builder folds into FogSystem implementation; documented in fog system header |
+| Sight-radius BalanceData values authored when FOG_DATA_CONTRACT field names firm | balance-eng | Wave 3A | Pre-condition | balance-eng authors values when wave 3A names land |
+| Turan infinite-resource init: option A (DummyAI seeds via `&"dummy_ai_infinite_seed"` reason) | gp-sys F3 (lead-recommend A) | Wave 3B | BLOCKING choice | Wave 3B brief locks Option A |
+| Mazra'eh fog-footprint boundary test (single-cell vs 2×2 cell coverage) | gp-sys F4 | Wave 4 (qa) | Test coverage | Wave 4 brief surfaces |
+| Engine-architect async pre-sign-off on Sim Contract v1.5.0 §2 addendum (new `&"fog_update"` phase) | ai-eng CC-3 | **Pre-wave-3A** | Lead action | Lead pings engine-architect immediately after Convergence close |
+
+**Process insight (worth retro capture):**
+
+ai-eng's CC-1 + CC-2 findings came specifically from their session-1 muscle memory of shipping Khaneh + BuildPlacementHandler (v0.20.4 wave 1C). **This is the decision-arc continuity rule (§12.5) paying off concretely** — a fresh-instance reviewer at PR-time would likely not have caught these spec-gaps because they're about boot-order subtleties from a wave the reviewer would not have lived through. Validates the persistence-by-default architectural choice from 2026-05-14 retro.
+
+**Retro suggestion captured from gp-sys's Room A reflection:**
+
+> *In async Constraint Negotiation, when accepting another agent's position, quote a SPECIFIC LINE from their message rather than referring to a label. Labels like "R1-α" / "R1-β" get redefined mid-conversation; specific quoted parameters do not.*
+
+The 9 cross-fire instances of async state-staleness today validate this. Going to retro entry at session close.
+
 ### 2.4 Resolved decisions (filled at sync close)
 
-> **Room A — Mazra'eh per-tick yield:** *(awaiting sync)*
+> **Room A — Mazra'eh per-tick yield contract — RESOLVED 2026-05-14, world-builder-p3s2 + gp-sys-p3s2, Pattern B (2 rounds, clean close):**
 >
-> **Room B — Fog data layer schema:** *(awaiting sync)*
+> *Process note: clean convergence — agents independently read the shipped wave-1A code before continuing negotiation. The "path (a) vs path (b)" kickoff framing dissolved once both agents agreed on what the existing code actually does. Truth-Seeking discipline (Manifesto Principle 1) collapsed the apparent disagreement.*
 >
-> **DummyAI behavior:** *(awaiting sync)*
+> - **API surface:** Mazra'eh implements the EXISTING three-call API on ResourceNode: `request_extract` / `complete_extract` / `release_extract`. No new methods. `tick_extract` from contract v1 §4 is a deprecated design artifact (wave-1A deliberately walked away from it).
+> - **Inheritance:** Mazra'eh extends `Building`, implements three-call API as duck-typed methods on itself. `UnitState_Gathering`'s existing `has_method(&"request_extract")` filter at line 143 is the seam — no UnitState_Gathering changes. Extending Building preserves construction lifecycle / HP / `&"buildings"` group / placement hooks / build-menu integration.
+> - **Visual / cultural frame: "stewardship of the land" via long dwell + small payload.** The *dehqan* (دهقان — landed cultivator) model: the kargar dwells at the farm 3 seconds before returning. `extract_ticks = 90` (3s at 30Hz, vs MineNode's 60), `grain_yield_per_trip_x100 = 200` (2 Grain/trip, vs Coin's 1000 = 10/trip). Both BalanceData-driven; balance-engineer tunes from playtest.
+> - **NavigationObstacle3D: ABSENT on Mazra'eh.** Workers walk ONTO the farm tile (not around it). Contract §3.2 already specifies; reaffirmed.
+> - **RESOURCE_NODE_CONTRACT.md patches to v1.2.0 as wave-1A sub-deliverable.** Two patches:
+>   - (a) **SSOT contradiction fix (per §9 2026-05-14 rule).** §4 still describes the v1 `begin_extract` / `tick_extract` / `release_extract` API with `ExtractResult` enum. Shipped code uses `request_extract` / `complete_extract` / `release_extract` with Dictionary payload. **gp-sys rewrites §4 to match shipped code.** world-builder reviews before commit.
+>   - (b) **Mazra'eh duck-type seam documented:** §4 rewrite documents Mazra'eh as the first non-mine ResourceNode consumer — duck-type pattern, `has_method` filter, cultural BalanceData tunables.
+> - **Cultural-note block:** world-builder writes the 2-3 paragraph Shahnameh cultural framing for Mazra'eh's script header (citing *dehqan*, 01_CORE_MECHANICS.md §3, and the Room A cultural-frame resolution). gp-sys reviews for structural consistency with Khaneh's header. Loremaster reviews at wave-close.
+>
+> **Implementation ownership (decision-arc continuity):**
+> - **world-builder:** Mazra'eh class file + scene, fertile-tile zone setup, cultural header text.
+> - **gp-sys:** RESOURCE_NODE_CONTRACT.md v1.2.0 §4 rewrite (SSOT fix), UnitState_Gathering (no changes needed), `ResourceSystem.register_node` additions for wave-1A.
+>
+> **Room B — Fog data layer schema — RESOLVED 2026-05-14, world-builder-p3s2 (author) + ai-eng-p3s2 + gp-sys-p3s2 (reviewers), Pattern A (1 author round each reviewer, clean close):**
+>
+> *Process note: clean convergence. v1.0.0 → v1.1.0 incorporated gp-sys pre-flight concerns + v1.1.0 → v1.2.0 incorporated ai-eng round-1 clarifications. Both reviewers ratified after author's single revision pass. Round limit of 3 respected with margin.*
+>
+> **Ratified contract — `docs/FOG_DATA_CONTRACT.md` v1.3.0** (v1.0.0 → v1.1.0 [gp-sys pre-flight] → v1.2.0 [ai-eng tick clarification] → v1.3.0 [gp-sys surgical fixes: §5.2 entity_id prose, §3.2 footprint extraction via `building.get_footprint_aabb()` method])**:**
+>
+> - **Grid:** 4m cells (2× nav cell = `FOG_CELL_SIZE = 4`). 64×64 = 4096 cells per team on Khorasan map. PackedByteArray — 4096 bytes per visibility layer.
+> - **Storage:** Two layers per team — `_currently_visible` (cleared+rebuilt each fog_update) + `_ever_seen` (append-only, eternal for MVP). 16KB total — negligible.
+> - **Sight radii:** Integer cell counts in BalanceData (e.g., `sight_kargar_cells = 3` = 12m at 4m/cell). No float math in per-tick hot path per Sim Contract §1.6.
+> - **Vision source registration:** `register_vision_source(node, team_id, sight_radius_cells, is_static=false) -> int` handle. `deregister_vision_source(handle)`. `is_static=true` for buildings (cache cell-set once at registration); `is_static=false` for units (recompute each tick).
+> - **Building footprint reveal:** Full footprint — any cell of AABB visible ⇒ building visible. Cell-set stored at registration, not recomputed per tick.
+> - **Phase ordering:** SimClock.PHASES becomes `input → fog_update → ai → movement → spatial_rebuild → combat → farr → cleanup`. Two-pass: fog_update (Pass 1 recompute) + cleanup (Pass 2 death-freeze via `EventBus.unit_health_zero → _pending_death_freeze → cleanup seal with sealed=true`).
+> - **Consumer API (three functions):**
+>   - `is_visible_to(team_id: int, world_pos: Vector3) -> bool` — O(1), two-integer-divide + flat array lookup.
+>   - `get_last_seen(team_id: int, entity_id: int, entity_kind: StringName) -> Dictionary` — entity_kind=`&"unit"`|`&"building"` handles separate ID counter namespaces (Building uses `_next_building_id` distinct from Unit's). Returns `{position: Vector3, tick: int}` or `{}`. **Tick field is the sim-tick when entity was LAST ACTUALLY VISIBLE** (not last fog_update run — written only when `_currently_visible` contains the entity's cell). Phase 6 pursuit-freshness scoring requires this — ai-eng explicit call-out.
+>   - `get_scout_candidates(team_id: int, max_results: int) -> Array[Vector3]` — world-space Vector3 (Y=0). ai-eng confirmed Vector3 over Vector2i: keeps `FOG_CELL_SIZE` encapsulated inside FogSystem; AI move-dispatch takes Vector3 natively. SSOT discipline.
+> - **Entity registration:** FogSystem subscribes to EventBus `unit_spawned` / `unit_died` / `building_placed` / `building_destroyed`. Phase 3 fallback: `get_tree().get_nodes_in_group(&"units")` + `&"buildings"` iteration if signals don't exist yet.
+> - **Sim Contract patch:** Insert `&"fog_update"` phase before `&"ai"` in SimClock.PHASES. Requires `docs/SIMULATION_CONTRACT.md` v1.5.0 §2 addendum (world-builder writes addendum text as wave-3A sub-deliverable; engine-architect signs off — one-line change).
+> - **Determinism:** Integer circle test `dx*dx + dy*dy <= r*r`. No sqrt, no floats. Recomputed from scratch each tick. Stable iteration order via Dictionary insertion order.
+> - **EventBus signals added (read-shaped):** `fog_visibility_changed(team_id, tick)` + `fog_cell_first_seen(team_id, cell)` for Phase 5 minimap/shader consumers.
+> - **Cross-wave dependency (surfaced in Room B v1.3.0):** FogSystem (wave 3A) consumes `building.get_footprint_aabb() -> AABB` — a Building base class method that gp-sys adds as part of wave 1A. Contract documents a 2×2 cell fallback if wave ordering flips. **Wave 1A's brief will surface this as a sub-deliverable for gp-sys.**
+>
+> **Cross-cutting with Room A (confirmed by ai-eng in Round 1):** NONE. Mazra'eh's grain-gather is independent of fog. DummyAI (wave 3B) consumes only `is_visible_to` — simplest call, no dependency on `get_last_seen` / `get_scout_candidates` complexity.
+>
+> **Implementation ownership (decision-arc continuity):**
+> - **world-builder:** `game/scripts/autoload/fog_system.gd` (FogSystem autoload), `game/scripts/world/fog_config.gd` (FogConfig Resource), wave-3A. Plus Sim Contract v1.5.0 §2 addendum text.
+> - **engine-architect:** Signs off on SimClock.PHASES patch + Sim Contract v1.5.0. One-line change.
+> - **ai-engineer:** Phase 6 consumer. Implements `get_scout_candidates` call + `get_last_seen` pursuit-freshness logic against this contract.
+> - **gameplay-systems:** Phase 5 Kaveh Event consumer reads `get_last_seen(&"building")` for scripted targeting.
+>
+> **DummyAI behavior — RATIFIED 2026-05-14, ai-eng-p3s2 + balance-eng-p3s2, Pattern B (2 rounds, under round-limit):**
+>
+> *Process note: an earlier ai-eng-only synthesis crossed-in-flight with balance-eng's round-2 spec; ai-eng conceded the four divergences (timing, composition ceiling, phase names, target order). balance-eng's round-2 spec is canonical; both participants ratify. Lead also made the symmetric mistake of landing the earlier synthesis into §2.4 before the round was double-signed-off — capture for retro: in Pattern B, the room is not closed until both sides ratify the SAME version.*
+>
+> - **Source of units:** Path C hybrid (lead-proposed middle ground). DummyAI calls `place_at` to instantiate ONE Sarbaz-khaneh at match-start (tick 0) at Turan home `(0, 0.5, 24)`, bypassing the worker construction state (no TuranKargar exists this session). Sarbaz-khaneh queues TuranPiyade through wave-2A's real production pipeline. **Infinite-resource bypass for Turan team only** (DummyAI does not call `ResourceSystem.change_resource`); Iran side runs real cost-gating throughout. Rationale: wave-4 qa asserts against real production events (stronger Phase-3-completeness signal than scripted spawn), within the ~100-line cap by skipping Turan economy work.
+> - **Probe-attack timing:** **tick 10800 (minute 6)**. Comfortable buffer regardless of where wave-1C lands Sarbaz-khaneh `construction_ticks`. If `construction_ticks` lands above 1200 (40s+), tune probe cap up by 1 post-wave-1C (balance-eng's call).
+> - **Probe-attack composition:** adaptive, **floor 3 / ceiling 5**. All currently-alive TuranPiyade at tick 10800, capped at min(alive, 5). Floor 3: if alive < 3, defer 600 ticks (20s) and retry once. After retry: fire with absolute minimum 2; below 2, skip probe entirely and log via telemetry.
+> - **Target priority cascade:** **(1) first-placed Iran Throne** (Phase 4 deliverable — checked first now so Phase 4 extension is no diff, falls through on absence), **(2) first-placed Iran Khaneh** (loremaster's "raid on settled hearth" framing), **(3) centroid of alive Iran units** at tick 10800, **(4) `Vector3(0, 0.5, 0)`** inert last-resort.
+> - **Phase structure:** **3 named transitions** — `BUILDUP_START` (tick 0: place Sarbaz-khaneh + start queuing) → `PROBE_FIRED` (tick 10800 OR retry+600) → `POST_PROBE` (post-attack; Sarbaz-khaneh keeps queuing but produced Piyade are orderless; Phase 6 owns continuation).
+> - **Telemetry hooks:** `EventBus.dummy_ai_phase_changed(phase_name: String, tick: int)`, `EventBus.dummy_ai_unit_queued(unit_type: StringName, tick: int)`, `EventBus.dummy_ai_probe_attack_launched(unit_ids: Array, target_position: Vector3, tick: int)`. Wave-4 qa asserts against these.
+> - **On-tick discipline:** DummyAIController is a Node child of World, composes/extends a SimNode. All mutations + probe-dispatch run inside `_sim_tick`. Phase transitions latch on tick count (`SIM_HZ * 360 = 10800` for probe trigger). Tests run headless at full speed; probe fires at tick 10800 exactly. Sim Contract §1.6 determinism preserved.
+> - **Phase 6 boundary:** POST_PROBE is a stub. No second wave, no continuation logic in DummyAI. Phase 6's full FSM Turan AI owns everything after the probe fires.
+>
+> **CROSS-WAVE FLAG (lead lands in wave 2A brief as BLOCKING):** Sarbaz-khaneh's production queue MUST be team-aware. Iran's Sarbaz-khaneh produces Piyade; Turan's must produce TuranPiyade. Either via internal team-conditional mapping in Sarbaz-khaneh, OR via explicit `unit_kind` parameter to the queue API. If wave 2A ships Iran-only Piyade-hardcoded production, wave 3B is blocked. gp-sys's wave 2A dispatch brief will surface this requirement before the wave begins.
 
 ## 3. The Phase 3 session-2 scoped slice
 
