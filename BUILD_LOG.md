@@ -34,6 +34,37 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-14 — Phase 3 session 1 wave-close: BUG-11 — buildings leaked into box-select
+
+**Branch:** `feat/phase-3-session-1`
+**Driver:** lead. Surfaced via `/tmp/shahnameh.log` (the new `tools/run_game.sh` log piping caught the script error directly — no copy-paste needed).
+**Commits:** 1 (code fix + 3 tests + docs).
+**Test delta:** 1102 → **1105** (+3). 1102 passing + 3 pre-existing risky/pending. 0 failures. Lint clean.
+
+**What shipped:**
+
+Phase 3 wave-1C introduced the Building base class. Buildings inherit `unit_id` + `team` and pass the duck-type filter in `BoxSelectHandler._collect_unit_shaped`. Box-dragging across a placed Khaneh therefore included it in the selection; the next right-click crashed inside `GroupMoveController.dispatch_group_move` calling `replace_command` on the Khaneh (Building doesn't have that method).
+
+**Fix (two-axis defense):**
+- Primary: `_collect_unit_shaped` skips nodes in the `&"buildings"` group.
+- Belt-and-braces: `dispatch_group_move` skips entries without `replace_command`.
+
+**Verdict notes:**
+
+- Buildings are not currently selectable via any path post-fix. Left-click already ignored them (ClickHandler classifies the StaticBody3D's collider as "non-unit"). Box-select now also skips them. Future Phase 4+ production-UI flow will introduce a separate building-selection mode that doesn't mix with unit selections.
+- `tools/run_game.sh` paid off on its first deployment — the script error in `/tmp/shahnameh.log` was readable from the Claude session without copy-paste, leading to a root-cause diagnosis in one round-trip.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** None.
+
+**Decisions made independently:**
+- Used the `&"buildings"` group as the filter token rather than a `replace_command` method check at the selection layer. Group is semantic intent ("I am a Building"); method check is operational consequence ("can I take commands"). Cleaner to filter on intent at the selection boundary; the method check is the dispatch-layer safety net.
+
+**State for next session:**
+- Re-run live-test #2 with box-drag across the placed Khaneh — should NOT include the Khaneh in selection. Right-click after should issue a normal move command to the Kargars, no script error.
+- If lead's full 6-test sweep passes, the PR is ready to open.
+
+---
+
 ## 2026-05-14 — Phase 3 session 1 wave-close: BUG-10 sibling-order convention reversal
 
 **Branch:** `feat/phase-3-session-1`

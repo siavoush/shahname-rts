@@ -257,3 +257,58 @@ func test_multi_unit_dispatch_goes_through_replace_command() -> void:
 		assert_false(seen_targets.has(t),
 			"each unit's dispatched target must be distinct (saw duplicate %s)" % t)
 		seen_targets.append(t)
+
+
+# ---------------------------------------------------------------------------
+# BUG-11 defense-in-depth — dispatch skips entries without replace_command.
+#
+# Lead-reported (Phase 3 session 1 live-test #2): right-clicking with a
+# Khaneh in the selection crashed at `live[i].replace_command(...)` because
+# Building doesn't have `replace_command`. Primary fix is at the
+# box-select layer (filter the `&"buildings"` group). This is the
+# belt-and-braces guard at the dispatch layer — any non-Unit Node that
+# somehow leaks into the selection in the future is safely skipped.
+# ---------------------------------------------------------------------------
+
+# A bare Node mimicking the unit-id+team shape but without replace_command —
+# stand-in for a Building, or any future non-movable scene-tree resident.
+class NonMovableNode extends Node:
+	var unit_id: int = 999
+	var team: int = 1
+
+
+func test_dispatch_skips_entries_without_replace_command() -> void:
+	# Mixed array: 2 FakeUnits (have replace_command) + 1 NonMovableNode.
+	var fake_a: FakeUnit = FakeUnit.new()
+	fake_a.unit_id = 1
+	var fake_b: FakeUnit = FakeUnit.new()
+	fake_b.unit_id = 2
+	var non_movable: NonMovableNode = NonMovableNode.new()
+	add_child_autofree(non_movable)
+	var units: Array = [fake_a, non_movable, fake_b]
+
+	GroupMoveControllerScript.dispatch_group_move(units, Vector3(10.0, 0.0, 10.0))
+
+	# Both FakeUnits must have been dispatched to.
+	assert_eq(fake_a.call_count, 1,
+		"FakeUnit A must receive replace_command (Building-shaped sibling skipped)")
+	assert_eq(fake_b.call_count, 1,
+		"FakeUnit B must receive replace_command (Building-shaped sibling skipped)")
+	# NonMovableNode must NOT have crashed the dispatch — the test reaching
+	# this assertion at all means the has_method guard caught the case.
+	assert_eq(fake_a.last_kind, Constants.COMMAND_MOVE,
+		"Dispatched kind = COMMAND_MOVE for FakeUnit A")
+	assert_eq(fake_b.last_kind, Constants.COMMAND_MOVE,
+		"Dispatched kind = COMMAND_MOVE for FakeUnit B")
+
+
+func test_dispatch_single_non_movable_no_crash() -> void:
+	# Edge case: ONLY a non-movable in the array. Should be a no-op, not a
+	# crash — same shape as the all-freed-units case.
+	var non_movable: NonMovableNode = NonMovableNode.new()
+	add_child_autofree(non_movable)
+	GroupMoveControllerScript.dispatch_group_move(
+		[non_movable], Vector3(5.0, 0.0, 5.0))
+	# Reaching this line without ScriptError is the assertion.
+	assert_true(true,
+		"dispatch_group_move with only a non-movable Node must not crash")

@@ -1373,6 +1373,36 @@ Wave 3 ships integration tests covering the Phase 3 economic loop end-to-end. Fi
 
 ---
 
+### v0.20.9 — Phase 3 session 1 wave-close: BUG-11 — buildings leaked into selection (2026-05-14)
+
+Lead live-test #2 surfaced (via `/tmp/shahnameh.log` diagnostic — the new `tools/run_game.sh` log piping paid off immediately):
+
+```
+[click] RIGHT press at screen=(686.0, 389.0)
+[click] RIGHT: move command target=(...) selected=2
+SCRIPT ERROR: Invalid call. Nonexistent function 'replace_command' in base 'Node3D (Khaneh)'.
+  at: dispatch_group_move (res://scripts/movement/group_move_controller.gd:104)
+```
+
+**Root cause:** Buildings (Khaneh, future Mazra'eh / Sarbaz-khaneh / Atashkadeh) inherit `unit_id` + `team` from the Building base class and pass the duck-type check in `BoxSelectHandler._collect_unit_shaped` (`(&"unit_id" in node) and (&"team" in node) and (node is Node3D)`). Box-dragging across a placed Khaneh therefore included it in the selection. On the next right-click, `GroupMoveController.dispatch_group_move` iterated the selection and called `replace_command` on each entry — which exists on Unit but not on Building. Crash.
+
+This is a Phase 3 wave-1C regression: Buildings didn't exist before, so the duck-type filter (originally written when only Units existed) was permissive enough.
+
+**Fix — two-axis defense:**
+- **Primary (selection layer):** `BoxSelectHandler._collect_unit_shaped` now also checks `not node.is_in_group(&"buildings")`. The group membership is the canonical "I'm a building, not a unit" marker; every Building joins it on `_ready` per §6 v0.20.4.
+- **Defense-in-depth (dispatch layer):** `GroupMoveController.dispatch_group_move` now skips any entry without a `replace_command` method (`has_method(&"replace_command")` check). Even if a non-Unit Node leaks into a future selection path, dispatch is safe.
+
+**Tests added:**
+- `test_box_select_handler.gd::test_collect_unit_shaped_skips_buildings_group` — sets up a FakeUnit + FakeBuilding under a parent, walks the collector, asserts only the unit is collected.
+- `test_group_move_controller.gd::test_dispatch_skips_entries_without_replace_command` — mixed array of FakeUnits + a Building-shaped Node without `replace_command`; asserts only the FakeUnits receive `replace_command`.
+- `test_group_move_controller.gd::test_dispatch_single_non_movable_no_crash` — edge case (only a non-movable in the array); asserts no crash, behaves like all-freed-units case.
+
+**Test count delta:** 1102 → **1105** (+3). 1102 passing + 3 pre-existing risky/pending. 0 failures. Lint clean.
+
+**Behavior change for the player:** box-dragging across a Khaneh no longer adds the Khaneh to the selection. Buildings are not currently selectable via any path (left-click resolution already ignores them per ClickHandler's "non-unit" classification). Phase 4+ will add a separate building-selection / production-UI flow that's not a mixed-selection mode.
+
+---
+
 ### v0.20.8 — Phase 3 session 1 wave-close: BUG-10 sibling-order convention reversal (2026-05-14)
 
 Lead live-test #2 surfaced that the BUG-08 fix-wave (v0.20.7) did NOT close the Khaneh-placement bug despite both defenses landing. Diagnostic log evidence ran the project's documented `_unhandled_input` convention through reality:

@@ -276,3 +276,53 @@ func test_shift_state_uses_press_time_value() -> void:
 	assert_true(SelectionManager.is_selected(preexisting),
 		"Shift held at press → preexisting selection preserved")
 	assert_true(SelectionManager.is_selected(inside))
+
+
+# ===========================================================================
+# BUG-11 regression — buildings excluded from box-select
+# ===========================================================================
+# Lead live-test #2: right-click after box-dragging over a placed Khaneh
+# crashed because GroupMoveController called replace_command on the
+# Khaneh (which inherits unit_id + team from the Building base but lacks
+# replace_command). Primary fix: BoxSelectHandler._collect_unit_shaped
+# now skips anything in the `&"buildings"` group. This test pins that
+# filter so a future refactor can't regress it.
+
+# Building-shaped Node3D — same unit_id + team duck-type as a unit, plus
+# the `&"buildings"` group membership the real Building base joins on
+# _ready. No replace_command (mirrors the real Building's surface).
+class FakeBuilding extends Node3D:
+	var unit_id: int = -1
+	var team: int = 1  # Constants.TEAM_IRAN
+
+	func _init() -> void:
+		add_to_group(&"buildings")
+
+
+func test_collect_unit_shaped_skips_buildings_group() -> void:
+	# Spawn 1 unit + 1 building under a fresh parent. Walk via the public
+	# scene-traversal seam.
+	var parent: Node = Node.new()
+	add_child_autofree(parent)
+	var unit: FakeUnit = FakeUnit.new()
+	unit.unit_id = 1
+	parent.add_child(unit)
+	var building: FakeBuilding = FakeBuilding.new()
+	building.unit_id = 2
+	parent.add_child(building)
+
+	# Confirm the building actually joined the group (sanity — guards the
+	# test against a future Building refactor that forgets the group).
+	assert_true(building.is_in_group(&"buildings"),
+		"FakeBuilding must be in the &\"buildings\" group (mirrors real Building)")
+
+	var out: Array = []
+	handler._collect_unit_shaped(parent, out)
+
+	# Only the unit should be in the result. The building's unit_id + team
+	# match the duck-type but the group filter excludes it.
+	assert_eq(out.size(), 1,
+		"_collect_unit_shaped must skip nodes in the &\"buildings\" group "
+		+ "(BUG-11 — Buildings inherit unit_id + team but aren't movable units)")
+	assert_eq(out[0], unit,
+		"The single result must be the FakeUnit, not the FakeBuilding")
