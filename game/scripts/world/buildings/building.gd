@@ -56,6 +56,24 @@ extends Node3D
 ##
 ## Source: 01_CORE_MECHANICS.md §5 (building list); CLAUDE.md "colored
 ## rectangles for buildings with floating text labels" placeholder rule.
+##
+## Cross-faction caveat (shahnameh-loremaster review 2026-05-14):
+##   The current concrete subclass (Khaneh) is shaped around the Iranian
+##   side of the Iran-Turan opposition: settled household, population
+##   cap as "people-of-the-land grown into soldier-supply." The
+##   abstract seam itself (place_at + _on_placement_complete hook) is
+##   faction-neutral — a Turan-side analogue (steppe-tent / yurt:
+##   *otaq* or *khargah*, both Shahnameh-attested) can plug into the
+##   same hook and bump pop-cap identically. But the cultural-rationale
+##   header block IS Iran-coded for now (see khaneh.gd). When the first
+##   Turan building ships (Phase 3 session 2 / Phase 4), it MUST carry
+##   a parallel substantive cultural-note block — per
+##   00_SHAHNAMEH_RESEARCH.md §7's "design Turan as worthy rivals, not
+##   cartoon villains" rule. Suggested Turan-side referents: Piran's
+##   hospitality of Siavush, Manijeh's palace, Afrasiyab's court scenes
+##   (NOT Afrasiyab himself — he's the antagonist; the Turan-people
+##   dignity comes from Piran / Manijeh / the otaq tradition). Flagged
+##   for whoever owns Turan-side building work in the upcoming sessions.
 
 # === Schema fields ===========================================================
 
