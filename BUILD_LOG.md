@@ -2446,3 +2446,36 @@ L13 closed. Both Phase 2 integration test files that bypassed MatchHarness have 
 **State for next session:**
 - **Khaneh + placement (wave 1C).** Right-click-build flow + NavigationObstacle3D + population_cap increment via `ResourceSystem.change_population_cap` (sister chokepoint shipped this wave for forward-compat).
 - **HealthComponent cause-string augmentation cleanup.** Now that the dispatcher owns the worker-killed-idle path via FSM state lookup, the `"_idle_worker"` suffix in HealthComponent.\_apply_damage_x100 is dead code from the dispatcher's perspective. F2 debug overlay (Phase 4) decides whether the suffix carries telemetry value or can be removed entirely.
+
+---
+
+## 2026-05-14 — Phase 3 Session 2 Wave 1A (world-builder-p3s2)
+
+**Branch:** `feat/phase-3-session-2` **Commit:** `3e167f1`
+
+**What shipped:**
+
+1. `game/scripts/world/buildings/mazraeh.gd` — Mazra'eh (Iran grain farm) as first Building subclass with duck-typed ResourceNode gather surface. Extends Building (not ResourceNode) for full construction lifecycle. Implements request_extract / complete_extract / release_extract duck-typed. extract_ticks=90 (3s, dehqan cultural long-dwell, Room A §2.4), grain_yield_per_trip_x100=200 (2 Grain/trip). FogSystem guard in _on_placement_complete per Convergence Review gp-sys F2 — uses Engine.get_singleton + Object.call pattern because FogSystem class_name doesn't exist until wave 3A (GDScript parse-time identifier validation would fail otherwise). No NavigationObstacle3D (workers walk onto the farm tile). Single gather slot for wave 1A.
+
+2. `game/scenes/world/buildings/mazraeh.tscn` — Standalone scene (not inheriting building.tscn to avoid NavigationObstacle3D inheritance). BoxMesh 4×0.3×4, Color(0.55, 0.75, 0.35) agricultural green. StaticBody3D for click-target raycast (BUG-07 lesson).
+
+3. `game/tests/unit/test_mazraeh.gd` — 23 unit tests. All pass. Covers scene smoke, kind identity, Building inheritance chain, never-depletes semantics, duck-typed API, placement side-effects, no-obstacle assertion, visual differentiation, FogSystem guard no-crash test (absent-singleton path). Test count delta: +23 tests. Total suite: 2981 pass, 0 fail.
+
+4. `docs/FOG_DATA_CONTRACT.md` v1.3.0 — Ratified fog-of-war data layer schema from Room B. 4m cells, two-layer PackedByteArray, three consumer API functions (is_visible_to, get_last_seen, get_scout_candidates), two-pass fog design, LATER-fog-3 note documenting building_placed signal payload mismatch for wave 3A.
+
+**What didn't ship (world-builder's future waves):**
+- FogSystem autoload + FogConfig Resource (wave 3A)
+- Sim Contract v1.5.0 §2 addendum text (wave 3A pre-condition)
+- LATER-fog-3 resolution: EventBus.building_placed signal extension to carry building's own unit_id (wave 3A)
+
+**Bugs / unexpected findings:**
+- GDScript parse-time identifier validation: `Engine.has_singleton("FogSystem") and FogSystem.has_method(...)` fails to parse because GDScript validates `FogSystem` as an undeclared identifier even inside a runtime-guard branch. Required Engine.get_singleton() + Object.call() pattern. Same lesson applies to all future forward-compat singleton guards where the class hasn't shipped yet.
+
+**Cross-wave dependencies gp-sys owns (surface in wave 1A retro):**
+- `building.get_footprint_aabb() -> AABB` method on Building base (needed by FogSystem wave 3A)
+- RESOURCE_NODE_CONTRACT.md v1.2.0 §4 SSOT rewrite
+- ResourceSystem.register_node / unregister_node (wave 1B)
+
+**Open questions added to `QUESTIONS_FOR_DESIGN.md`:** None.
+
+**Cultural-naming questions for loremaster:** The cultural note block uses "dehqan (دهقان) — landed cultivator / lord of the village" as the framing for the 90-tick long-dwell mechanic. Loremaster should review: (1) is "lord of the village" the right translation register for a gameplay context, or is "custodian of ancestral land" more precise? (2) The cross-faction caveat (Turan grain analogue should use raided stores / tribute fields / caravan nodes, not another Mazra'eh clone) — does loremaster concur or suggest a different framing for the flag?
