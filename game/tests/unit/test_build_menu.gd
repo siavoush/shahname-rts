@@ -92,20 +92,44 @@ func test_scene_loads() -> void:
 # Mouse filter discipline — Pitfall #1
 # ---------------------------------------------------------------------------
 
-func test_decorative_controls_use_mouse_filter_pass() -> void:
-	# Per kickoff §3 wave 1C — "Container MOUSE_FILTER_PASS (lets click
-	# events bubble to handler); Button MOUSE_FILTER_STOP (only the
-	# button is interactive)." Mirrors the SelectedUnitPanel discipline.
+func test_root_uses_mouse_filter_stop_bug08_shield() -> void:
+	# BUG-08 fix: the Root Control must use MOUSE_FILTER_STOP so the
+	# ENTIRE menu surface is an input shield — clicks within the menu's
+	# screen rect never fall through to _unhandled_input regardless of
+	# the Button's action_mode default (ACTION_MODE_BUTTON_RELEASE) or
+	# any future button-property change.
+	#
+	# Pitfall #1 deeper read: the original wave-1C choice of PASS for
+	# Root relied on visibility=false as the primary defense when the
+	# menu is hidden. STOP is strictly safer when the menu IS visible:
+	# the Button's STOP captures clicks on the button itself, but
+	# clicks on decorative menu surface (background, padding) on PRESS
+	# would otherwise leak to ClickHandler + BPH _unhandled_input on
+	# the PRESS edge (Button.action_mode = ACTION_MODE_BUTTON_RELEASE
+	# only consumes on RELEASE), triggering ClickHandler's
+	# deselect-all-on-empty-terrain branch. STOP blocks that path.
 	_menu = _spawn_menu()
 	var root: Control = _menu.get_node(^"Root")
+	assert_eq(root.mouse_filter, Control.MOUSE_FILTER_STOP,
+		"BUG-08: Root must use MOUSE_FILTER_STOP — the entire menu "
+		+ "surface is an input shield, defending against Button "
+		+ "action_mode-on-press fall-through")
+
+
+func test_decorative_controls_use_mouse_filter_pass() -> void:
+	# Decorative children stay PASS so input layering inside the menu
+	# (button highlighted on hover, etc.) keeps working. Only the Root
+	# is STOP — clicks INSIDE the menu rect get captured at Root; the
+	# button (also STOP, the default) catches them on the way through.
+	# Background/Margin/VBox/Header all PASS because they're never the
+	# intended click target.
+	_menu = _spawn_menu()
 	var bg: ColorRect = _menu.get_node(^"Root/Background")
 	var margin: MarginContainer = _menu.get_node(^"Root/Margin")
 	var vbox: VBoxContainer = _menu.get_node(^"Root/Margin/VBox")
 	var header: Label = _menu.get_node(^"Root/Margin/VBox/HeaderLabel")
 	# MOUSE_FILTER_PASS = 1 (Godot enum). Tests against the enum value
 	# directly to avoid binding to a name; the property compares int.
-	assert_eq(root.mouse_filter, Control.MOUSE_FILTER_PASS,
-		"Root must use MOUSE_FILTER_PASS (Pitfall #1)")
 	assert_eq(bg.mouse_filter, Control.MOUSE_FILTER_PASS,
 		"Background ColorRect must use MOUSE_FILTER_PASS (decorative)")
 	assert_eq(margin.mouse_filter, Control.MOUSE_FILTER_PASS,

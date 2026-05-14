@@ -14,12 +14,21 @@
 ;                 ├── HeaderLabel ("Build")
 ;                 └── KhanehButton ("Khaneh (50 Coin)")
 ;
-; Pitfall #1 mitigation — mouse_filter discipline:
-;   - Root, Background, Margin, VBox, HeaderLabel: MOUSE_FILTER_PASS
-;     (value 1). Background clicks fall through to the world when the
-;     menu is visible-but-not-on-button; when the menu is hidden, the
-;     Control's visible=false is the primary defense (PASS is the
-;     belt-and-braces).
+; Pitfall #1 mitigation + BUG-08 fix — mouse_filter discipline:
+;   - Root: MOUSE_FILTER_STOP (value 0). BUG-08 fix — the entire menu
+;     surface is an input shield. Clicks within the menu rect never
+;     fall through to _unhandled_input regardless of the Button's
+;     action_mode default (ACTION_MODE_BUTTON_RELEASE). Before this
+;     fix, the PRESS edge of a click on the button leaked to
+;     ClickHandler's _unhandled_input + BPH's _unhandled_input,
+;     triggering deselect-all-on-empty-terrain (since BPH's
+;     _placement_kind == &"" at PRESS — placement mode is only entered
+;     on RELEASE when the Button's pressed signal fires). Result:
+;     selection wiped before placement mode begins, menu hides itself,
+;     ghost ends up orphaned. STOP at Root blocks the PRESS edge.
+;   - Background, Margin, VBox, HeaderLabel: MOUSE_FILTER_PASS (value 1).
+;     Decorative children — clicks layer inward to the Button. Only the
+;     Root needs to be a shield; children pass through.
 ;   - KhanehButton: MOUSE_FILTER_STOP (value 0, the Button default —
 ;     omitting the override is intentional so the click reliably
 ;     lands on the button itself).
@@ -53,7 +62,7 @@ offset_left = -216.0
 offset_top = -136.0
 offset_right = -16.0
 offset_bottom = -16.0
-mouse_filter = 1 ; MOUSE_FILTER_PASS — clicks fall through; the button STOPs.
+mouse_filter = 0 ; MOUSE_FILTER_STOP — BUG-08 fix; menu surface is a click shield.
 grow_horizontal = 0
 grow_vertical = 0
 

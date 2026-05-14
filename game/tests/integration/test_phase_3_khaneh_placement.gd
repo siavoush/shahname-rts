@@ -325,3 +325,101 @@ func test_pitfall_5_build_placement_handler_before_click_handler_standalone() ->
 	assert_true(bph.get_index() < ch.get_index(),
 		"Pitfall #5: BuildPlacementHandler (idx=%d) must appear BEFORE ClickHandler (idx=%d) "
 		% [bph.get_index(), ch.get_index()])
+
+
+# ---------------------------------------------------------------------------
+# Flow 6 — BUG-08 regression: defense-in-depth against the Button-press race
+# that wiped selection mid-placement.
+#
+# Lead-reported (Phase 3 session 1 live-test): clicking the Khaneh button
+# wiped the Kargar selection and orphaned the placement ghost. The path:
+#   - Button.action_mode defaults to ACTION_MODE_BUTTON_RELEASE.
+#   - The PRESS edge of a left-click on the button leaked to
+#     ClickHandler._unhandled_input and BPH._unhandled_input.
+#   - BPH's _placement_kind was still &"" at PRESS (placement mode
+#     only enters on RELEASE when the Button's `pressed` signal fires).
+#   - ClickHandler raycast-missed (Button rect has no 3D collider) →
+#     SelectionManager.deselect_all() fires.
+#   - RELEASE: Button's `pressed` fires → build_placement_started →
+#     BPH enters placement mode + spawns ghost.
+#   - BuildMenu hides itself (no Kargar in selection anymore).
+#   - User clicks terrain to confirm → BPH's confirm-click hits the
+#     empty-selection branch and silently cancels.
+#
+# Two-layered fix:
+#   (1) Root Control's mouse_filter = MOUSE_FILTER_STOP — the entire menu
+#       surface is an input shield. Clicks inside the menu rect never
+#       leak to _unhandled_input regardless of Button.action_mode. The
+#       structural assertion lives in test_build_menu.gd::test_root_uses_
+#       mouse_filter_stop_bug08_shield — headless Input.parse_input_event
+#       cannot faithfully reproduce live-game Control GUI dispatch, so
+#       the .tscn property assertion is the discriminating regression
+#       lock for fix #1.
+#   (2) BPH subscribes to EventBus.selection_changed — if the selection
+#       loses its Kargar mid-placement (because of fix-#1 escaping OR
+#       any future deselection path), BPH auto-cancels placement so the
+#       ghost doesn't orphan. Unit-tested in
+#       test_build_placement_handler.gd::test_selection_*.
+#
+# This integration test exercises fix #2 end-to-end at the system level
+# on main.tscn (real BPH + BuildMenu + ClickHandler sibling order):
+#   - Spawn a Kargar, select it, fire build_placement_started.
+#   - Simulate the failure: SelectionManager.deselect_all (what
+#     ClickHandler did before fix #1 in the lead's bug).
+#   - Assert: BPH auto-cancelled — ghost gone, _placement_kind cleared.
+# Without fix #2 this fails — the ghost is orphaned and the next
+# confirm-click silently dies on the empty-selection branch.
+# ---------------------------------------------------------------------------
+
+func test_bug08_selection_wipe_mid_placement_auto_cancels_via_bph() -> void:
+	var main_node: Node = MainScene.instantiate()
+	add_child_autofree(main_node)
+	await get_tree().process_frame
+
+	var bph: Node = main_node.get_node_or_null("BuildPlacementHandler")
+	var menu: Node = main_node.get_node_or_null("BuildMenu")
+	assert_not_null(bph, "main.tscn must contain BuildPlacementHandler")
+	assert_not_null(menu, "main.tscn must contain BuildMenu")
+	if bph == null:
+		return
+
+	# Spawn a Kargar reachable by SelectionManager / handlers.
+	var KargarSceneRef: PackedScene = preload("res://scenes/units/kargar.tscn")
+	var kargar: Variant = KargarSceneRef.instantiate()
+	kargar.team = Constants.TEAM_IRAN
+	main_node.add_child(kargar)
+	kargar.global_position = Vector3(0.0, 0.0, 0.0)
+
+	SelectionManager.select_only(kargar)
+	await get_tree().process_frame
+
+	# Enter placement mode via the build_placement_started signal —
+	# the same payload the BuildMenu's `pressed` handler emits on RELEASE.
+	EventBus.build_placement_started.emit(&"khaneh", 5000)
+	assert_true(bph.is_placement_active(),
+		"sanity: placement mode active after build_placement_started")
+	assert_not_null(bph.get_ghost(),
+		"sanity: ghost spawned in placement mode")
+
+	# Reproduce the bug's failure surface: selection wiped mid-placement.
+	# This is exactly what ClickHandler would do on the PRESS-edge fall-
+	# through before fix #1, and is also the failure mode of any future
+	# deselect path (control-group recall to a non-Kargar, scripted clear,
+	# F-key triggered clear, etc.).
+	SelectionManager.deselect_all()
+	await get_tree().process_frame
+
+	# After fix #2: BPH must have auto-cancelled — ghost gone,
+	# _placement_kind back to &"". Before fix #2 the ghost is orphaned
+	# and the next confirm-click silently dies on the empty-selection
+	# branch — the lead-reported symptom.
+	assert_false(bph.is_placement_active(),
+		"BUG-08 fix #2: BPH must auto-cancel placement when the "
+		+ "selection lost its Kargar mid-placement")
+	assert_null(bph.get_ghost(),
+		"BUG-08 fix #2: ghost must be destroyed when placement auto-"
+		+ "cancels — orphaned ghost is the lead-reported symptom")
+
+	# Cleanup.
+	if is_instance_valid(kargar):
+		kargar.queue_free()

@@ -44,13 +44,20 @@ extends CanvasLayer
 ## is pressed. If a future preview-cost-reservation feature wants to
 ## visually deduct, route through call_deferred.
 ##
-## Pitfall #1 awareness (mouse_filter on Control nodes): every
-## decorative Control (MarginContainer, VBoxContainer, the menu label)
-## uses MOUSE_FILTER_PASS so background clicks fall through to the
-## world (the menu doesn't eat clicks in its rect when it's hidden —
-## visibility = false on the root Control is the primary defense, but
-## belt-and-braces). Only the actual Button uses MOUSE_FILTER_STOP so
-## the button itself reliably catches the click.
+## Pitfall #1 awareness (mouse_filter on Control nodes) + BUG-08 fix:
+## the Root Control uses MOUSE_FILTER_STOP — the entire menu surface
+## is an input shield, so clicks within the menu's screen rect never
+## fall through to _unhandled_input handlers (ClickHandler / BPH).
+## Decorative children (Background, MarginContainer, VBoxContainer,
+## HeaderLabel) use MOUSE_FILTER_PASS so clicks layer inward to the
+## Button. Without Root=STOP, the PRESS edge of a click on the Button
+## (Button.action_mode defaults to ACTION_MODE_BUTTON_RELEASE) leaks
+## to ClickHandler's _unhandled_input + BPH's, triggering deselect-
+## all-on-empty-terrain because BPH's _placement_kind is still &"" on
+## PRESS (placement mode is only entered on RELEASE when the Button's
+## pressed signal fires). Result before the fix: selection wiped
+## before placement starts, menu hides itself (no Kargar selected),
+## ghost orphaned. Lead-reported as BUG-08 at Phase 3 session 1 close.
 ##
 ## Sim Contract / lint compliance:
 ##   - i18n: every visible string flows through tr(). Strings:
