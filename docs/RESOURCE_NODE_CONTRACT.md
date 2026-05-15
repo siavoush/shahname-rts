@@ -2,7 +2,7 @@
 title: Resource Node Schema Contract
 type: contract
 status: ratified
-version: 1.3.0
+version: 1.3.1
 owner: world-builder
 summary: Resource gathering — ResourceNode hierarchy (MineNode + Mazra'eh-as-Building-subclass via duck-typing), three-call extract API (request_extract / complete_extract / release_extract), IDropoffTarget protocol, fertile-zone placement, EventBus signals, BalanceData keys. v1.2.2 expands §4.5 to declare all 5 shipped Mazra'eh ResourceNode-shape fields + introduces §4.6 documenting the kind-vs-resource_kind separation for resource-producing Building subclasses. v1.2.3 surgical correction — §4.5 example + prose align with shipped is_gatherable = false default + flip-on-placement. v1.3.0 (wave 1B) — new §4.7 documents the extraction-modifier-emitter pattern (Ma'dan as canonical example, ResourceNode register_extraction_modifier / effective_yield_per_trip_x100 API, stacking-rule policy, navmesh-obstacle-reinforces-cultural-framing convention).
 audience: all
@@ -14,15 +14,18 @@ ssot_for:
   - state-side dwell counter pattern (extract_ticks field on node, countdown on UnitState_Gathering)
   - IDropoffTarget duck-typed protocol
   - fertile-zone placement (Array[Vector2i] map metadata, WorldGrid.is_fertile)
-  - NavigationObstacle3D ownership (mine scenes carry it; farms don't)
+  - NavigationObstacle3D ownership (mine scenes carry it; farms don't) — see §3.2 for current inert-under-shipped-architecture status
   - depletion lifecycle (queue_free.call_deferred for mines; building-destruction for farms)
   - four resource-node EventBus signals
   - resource_node_depleted dual-mode payload (API ref + telemetry destructure)
   - ResourceNodeConfig keys (mine + farm yield/stock/workers)
+  - extraction-modifier-emitter pattern (Ma'dan canonical example, ResourceNode register_extraction_modifier API)
+  - modifier-stacking policy (default first-registered-wins per BalanceData modifier_stacks)
+  - navmesh-obstacle-reinforces-cultural-framing convention (§4.7.5 documented INTENT — mechanical half inert; see §3.2)
 references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md]
 tags: [resources, mines, farms, gather, navigation, fertile-tiles, signals]
 created: 2026-04-30
-last_updated: 2026-05-14
+last_updated: 2026-05-15
 provenance: Outcome of Sync 4 — joint Constraint Negotiation between world-builder and gameplay-systems. Path 2 (workers gather grain) ratified by design chat 2026-04-30. Convergence Review revisions 2026-05-01. v1.2.0 wave-1A patch (2026-05-14) — §4 SSOT-fix to align consumer-facing API prose with shipped code (the wave-1A implementation walked away from the v1 begin_extract / tick_extract / ExtractResult-enum shape; this contract version documents the actual three-call API in flight) + Mazra'eh-as-duck-typed-Building-subclass shape from Room A Open Space. v1.2.1 surgical patch (2026-05-14) — ResourceSystem.register_node signature change to take kind as explicit parameter (`register_node(node, kind: StringName)`); v1.2.0 implementation read node.kind which collided with Mazra'eh's Building-kind field (&"mazraeh") vs the resource kind (&"grain"). v1.2.1 caught pre-consumption (no wave-1A consumer queries the registry yet) via world-builder's §4.5 prose review. v1.2.2 (2026-05-14, gp-sys) — §4.5 expanded to declare all 5 SHIPPED Mazra'eh fields (resource_kind, reserves_x100, max_slots, is_gatherable, yield_per_trip_x100, plus extract_ticks) after world-builder's `6d73889` shipped the schema per arch-reviewer BLOCK-A. New §4.6 documents the kind-vs-resource_kind separation pattern for resource-producing Building subclasses (Building-identity kind + Resource-identity resource_kind on the same instance — the dual-field convention applies to Building subclasses only; ResourceNode subclasses keep `kind` as resource identity). v1.2.3 (2026-05-14, gp-sys, re-review BLOCK-C) — §4.5 example + prose `is_gatherable` default corrected from `true` to `false` to align with shipped code post-`3183c7c` (Mazra'eh now defaults `false`, `_on_placement_complete` flips to `true`; default-false enforces forward-compat lock against gather-during-construction for future Building subclasses). Regression-test locked at `test_mazraeh.gd:388`. v1.3.0 (2026-05-15, gp-sys, wave 1B Commit 4) — new §4.7 documents the extraction-modifier-emitter pattern shipped in wave 1B (Ma'dan canonical example): ResourceNode base `register_extraction_modifier` / `unregister_extraction_modifier` / `effective_yield_per_trip_x100` API (shipped at 3d7b722), modifier-emitter duck-typed surface (`yield_multiplier_x100()` method), stacking-rule policy (default first-registered-wins per design Q3), modifier-emitter Building convention (no resource_kind, no gather schema, finds target via `&"resource_nodes"` group), navmesh-obstacle-reinforces-cultural-framing convention (lead's 2026-05-15 ratification — modifier-frame buildings have obstacle; resource-producing-frame buildings like Mazra'eh do not).
 ---
 
@@ -205,12 +208,25 @@ The Mazra'eh self-registers with `ResourceSystem` when its construction-complete
 
 ### 3.2 `NavigationObstacle3D` ownership
 
+> **⚠️ v1.3.1 honesty correction (2026-05-15, engine-architect-p3s2 wave-1B live-test investigation):** The previous version of this section claimed `NavigationObstacle3D` children carve the navmesh dynamically at runtime without a rebake. That claim is **structurally false under the shipped architecture**. The actual current state, verified empirically during wave-1B live-test:
+>
+> - **`PathScheduler` (`navigation_agent_path_scheduler.gd:96`) uses `NavigationServer3D.map_get_path()`** — this query reads the navmesh that was baked once at `terrain.gd:_ready()` and ignores dynamic `NavigationObstacle3D` children entirely.
+> - **No `NavigationAgent3D` exists anywhere in the project** — `grep -rn NavigationAgent3D game --include='*.gd' --include='*.tscn'` returns a single forward-looking comment. Without a NavigationAgent3D consumer, dynamic obstacles also have no RVO-steering effect.
+> - **`MovementComponent` writes `global_position` directly inside `_sim_tick`** — bypasses physics entirely. `move_and_slide()` is never called for navigation. The CharacterBody3D unit base is a CharacterBody3D in name only.
+> - **Net effect: every `NavigationObstacle3D` child on every Building / mine scene is currently INERT.** Workers walk THROUGH placed buildings (Khaneh, Ma'dan, future Sarbaz-khaneh). Pre-existing project-wide since wave 1C session 1; surfaced empirically at wave 1B session 2 live-test.
+> - **The "no runtime navmesh REBAKE" rule** (single bake at `terrain.gd:_ready()`, no further `bake_navigation_mesh()` calls) survives unchanged. That rule was the right discipline; this contract's claim of "dynamic carve via NavigationObstacle3D" misread how Godot 4's NavigationObstacle3D works. In Godot 4, `NavigationObstacle3D` has two modes: (a) static carve — requires `affect_navigation_mesh = true` + `vertices` polygon + triggers an automatic region rebake; (b) dynamic RVO avoidance — requires `NavigationAgent3D.avoidance_enabled = true` on agents + has zero effect on `map_get_path` queries. Neither was wired correctly; obstacles in radius-only mode without an agent are inert.
+> - **Wave 1C architecture spike (engine-architect-p3s2 leads, Task #120):** the resolution path will be chosen between (Path A) `affect_navigation_mesh = true` + `vertices` polygon — engine-managed localized region rebake, NOT manual full-map rebake — to be evaluated against the surviving "no full-map rebake" rule; OR (Path B) `NavigationAgent3D` + RVO migration — agent-driven path queries + steering. Path C (manual full-map rebake) remains forbidden. Decision memo + updated §3.2 v1.4.0 prose ship from that spike.
+
+**Pre-v1.3.1 prose retained below for archaeology — DO NOT TRUST as current behavior:**
+
 Each `MineNode` scene includes a `NavigationObstacle3D` child configured at authoring time. **No runtime code adds, removes, or resizes this obstacle.** When the mine depletes:
 
-- The obstacle stays active — depleted mines remain physically impassable.
-- This is intentional: derelict mine ruins are navigational obstacles, consistent with the Shahnameh setting.
+- The obstacle stays active — depleted mines remain physically impassable. ← FALSE per v1.3.1 honesty correction above.
+- This is intentional: derelict mine ruins are navigational obstacles, consistent with the Shahnameh setting. ← intent is correct; mechanical implementation is inert.
 
-**Design escalation (ruins clearing):** Whether workers can later "clear" depleted mine ruins (removing the obstacle, reclaiming the cell) is a gameplay question outside this contract's scope. Escalated to `QUESTIONS_FOR_DESIGN.md`. If ruins clearing ships, it will update this contract in a future sync.
+**Note (engine-architect-p3s2 wave-1B finding):** `mine_node.tscn` doesn't actually have a `NavigationObstacle3D` child at all (despite this section's prose). The mine_node.tscn:21-27 comment acknowledges the gap as "wave 1B adds the obstacle alongside NavigationRegion3D bake setup" — wave 1B never did, and even if it had, the obstacle would have been inert per the v1.3.1 honesty correction above. Wave 1C spike resolves whether to add it and what config it should have.
+
+**Design escalation (ruins clearing):** Whether workers can later "clear" depleted mine ruins (removing the obstacle, reclaiming the cell) is a gameplay question outside this contract's scope. Escalated to `QUESTIONS_FOR_DESIGN.md`. If ruins clearing ships, it will update this contract in a future sync. **Implementation depends on the wave 1C spike's resolution** — under Path A (region-rebake), obstacles can be removed by setting `affect_navigation_mesh = false` and the engine reverts the local navmesh region; under Path B (RVO), an obstacle removal disables the agent's avoidance contribution but path queries weren't affected anyway.
 
 ### 3.3 Depletion signal emission timing
 
