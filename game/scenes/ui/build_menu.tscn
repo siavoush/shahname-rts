@@ -12,7 +12,10 @@
 ;         └── Margin (MarginContainer, padded)
 ;             └── VBox (VBoxContainer)
 ;                 ├── HeaderLabel ("Build")
-;                 └── KhanehButton ("Khaneh (50 Coin)")
+;                 ├── KhanehButton ("Khaneh (50 Coin)")
+;                 └── MazraehButton ("Mazra'eh (60 Coin)") — wave 1A late-add.
+;                   Agricultural-green tint distinguishes from Khaneh's earthy
+;                   tan. Order is chronological: Khaneh first, Mazra'eh second.
 ;
 ; Pitfall #1 mitigation + BUG-08 fix — mouse_filter discipline:
 ;   - Root: MOUSE_FILTER_STOP (value 0). BUG-08 fix — the entire menu
@@ -59,7 +62,7 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = -216.0
-offset_top = -136.0
+offset_top = -176.0
 offset_right = -16.0
 offset_bottom = -16.0
 mouse_filter = 0 ; MOUSE_FILTER_STOP — BUG-08 fix; menu surface is a click shield.
@@ -100,3 +103,14 @@ horizontal_alignment = 1 ; HORIZONTAL_ALIGNMENT_CENTER
 ; build_menu.gd connects .pressed in _ready.
 layout_mode = 2
 text = "Khaneh (50 Coin)"
+
+[node name="MazraehButton" type="Button" parent="Root/Margin/VBox"]
+; Wave 1A late-add — the Mazra'eh placement entry point. Same
+; MOUSE_FILTER_STOP default as KhanehButton. Agricultural-green hint
+; (0.45, 0.55, 0.30) — a darker, plant-tinted variant of the Mazra'eh
+; scene's field color (0.55, 0.75, 0.35) so the button reads as related
+; to the field placeholder without being so bright it overwhelms the
+; dark HUD palette.
+layout_mode = 2
+text = "Mazra'eh (60 Coin)"
+self_modulate = Color(0.45, 0.55, 0.30, 1.0)

@@ -232,6 +232,34 @@ func occupied_slots() -> int:
 
 # === Placement validation ====================================================
 
+## Read the Mazra'eh's coin cost from BalanceData (in whole coin, not
+## fixed-point). Used by the build menu to display the price next to
+## the button. Same defensive fall-through as Khaneh.cost_coin —
+## missing file / missing entry / wrong type all return 0 so the UI
+## stays alive when BalanceData is misconfigured.
+##
+## Static-side-only helper — exposed as a class function so the build
+## menu can read the cost without instantiating a Mazra'eh scene just
+## to inspect a number. Mirrors khaneh.gd::cost_coin exactly.
+static func cost_coin() -> int:
+	var path: String = Constants.PATH_BALANCE_DATA
+	if not FileAccess.file_exists(path):
+		return 0
+	var bd: Resource = load(path)
+	if bd == null:
+		return 0
+	var bldgs: Variant = bd.get(&"buildings")
+	if typeof(bldgs) != TYPE_DICTIONARY:
+		return 0
+	var stats: Variant = (bldgs as Dictionary).get(KIND_MAZRAEH, null)
+	if stats == null:
+		return 0
+	var coin_v: Variant = stats.get(&"coin_cost")
+	if typeof(coin_v) != TYPE_INT and typeof(coin_v) != TYPE_FLOAT:
+		return 0
+	return int(coin_v)
+
+
 ## Returns true when world_pos is on a fertile tile — used by the build menu
 ## to grey the Mazra'eh button when the cursor is off fertile terrain.
 ## TerrainSystem is a GDScript autoload (SceneTree child, not C++ singleton);

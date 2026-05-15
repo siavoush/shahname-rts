@@ -431,6 +431,20 @@ func test_mazraeh_yield_per_trip_x100_is_two_hundred() -> void:
 		"Mazra'eh.yield_per_trip_x100 must be 200 (2 Grain/trip, Room A R1-α)")
 
 
+# ---------------------------------------------------------------------------
+# Static cost helper — read by BuildMenu for the button label
+# ---------------------------------------------------------------------------
+
+func test_mazraeh_cost_coin_returns_balance_data_value() -> void:
+	# Mirrors Khaneh.cost_coin coverage. BalanceData ships
+	# bldgs.mazraeh.coin_cost = 60 (per balance.tres lines 243-249).
+	# The static helper exists so the BuildMenu can read the cost
+	# without instantiating a Mazra'eh scene.
+	var cost: int = MazraehScript.call(&"cost_coin")
+	assert_eq(cost, 60,
+		"Mazraeh.cost_coin() must return 60 (BalanceData coin_cost)")
+
+
 func test_mazraeh_material_is_green_not_neutral_grey() -> void:
 	# Placeholder visual differentiation: agricultural green (0.55, 0.75, 0.35)
 	# vs base Building grey (0.55, 0.55, 0.55). Green channel must be dominant.
