@@ -97,6 +97,7 @@ const _BuildingScript: Script = preload(
 # this table — for now it lives here.
 const _BUILDING_SCENE_PATHS: Dictionary = {
 	&"khaneh": "res://scenes/world/buildings/khaneh.tscn",
+	&"mazraeh": "res://scenes/world/buildings/mazraeh.tscn",
 }
 
 
