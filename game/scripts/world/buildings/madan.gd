@@ -18,36 +18,67 @@ extends "res://scripts/world/buildings/building.gd"
 ## resource and does NOT register with ResourceSystem.register_node. Its
 ## entire effect is the buff it applies to adjacent MineNodes.
 ##
-## Cultural note: Ma'dan (مَعدَن — *ma'dan*, "mine, source") is the Persian
-## word for the mineral deposit itself. The building represents the mining
-## operation — the wooden frame, the worker platform, the toolset — that
-## the Iranian dynasties' mints depended on for the coinage of legitimate
-## kingship (per the Shahnameh's coin-as-sovereignty mechanic; cf. Kavus
-## and Khosrow's minted reigns, the Sassanian-era contested mints). Mining
-## in pre-Islamic Iran was both economic infrastructure AND a marker of a
-## ruler's reach — the king who could keep his mines productive was a king
-## who could pay his soldiers. The Ma'dan buff (yield multiplier) is the
-## gameplay surfacing of this: just owning a mine is one thing; investing
-## in its operation amplifies the return. Mirrors AoE2's mining-camp +
-## raw-mine separation more than SC2's refinery-on-geyser overlap (per
-## arch-reviewer's Option B framing 2026-05-14).
+## Cultural note (labor-organization frame — per loremaster brief-time SUGGEST
+## 2026-05-15; see 00_SHAHNAMEH_RESEARCH.md §1 lines 86-88 Pishdadian triad).
 ##
-##   **TODO(loremaster-brief-time-review):** specific Shahnameh referent for
-##   Ma'dan/mining — looking for a particular character, scene, or episode
-##   that anchors mining as a dynastic concern. The above is a thematic
-##   sketch; awaiting loremaster's framing pass.
+## *Ma'dan* (لit. "ore-source", the *generative place* where the earth yields
+## metal; the same word in classical Persian extends metaphorically to
+## *ma'dan-e elm* — "source of knowledge" — reflecting a reading of the
+## underground as a *source* rather than merely a worksite). The gloss
+## "mine" is too narrow — industrial-revolution baggage compresses what is,
+## in Ferdowsi's frame, the place where the substance of the earth is in
+## ongoing relation to the people who know how to bring it out.
 ##
-## Cross-faction caveat (loremaster review pending):
-##   Turan's mining analogue is NOT a clone of Ma'dan. Steppe / nomadic
-##   cultures relate to mineral resources differently — through tribute,
-##   trade-route control, or raid-spoils rather than fixed-infrastructure
-##   mining operations. When Turan's Tier 2 economic mechanics land
-##   (post-MVP), expect a distinct shape: a "Tribute Tent" or
-##   "Caravan-route Mark" or similar mobile/abstract mechanic. DO NOT
-##   bake Ma'dan-style fixed mining into the Building base class — keep
-##   the base faction-neutral and let Turan-side authors define their
-##   own buff-emitter convention. Per 00_SHAHNAMEH_RESEARCH.md §7's
-##   "design Turan as worthy rivals, not cartoon villains" rule.
+## The Shahnameh anchors Ma'dan in the Pishdadian-age civilizational-
+## invention triad — Hushang, Tahmuras, Jamshid — three kings whose reigns
+## carry the discoveries that make settled Iran possible:
+##   - **Hushang** strikes a stone and discovers fire — the first
+##     transformation of inert matter into useful energy.
+##   - **Tahmuras Divband** ("the Div-binder") subdues the divs and
+##     forces them to teach writing, weaving, the elements of craft —
+##     knowledge wrested from chaos and made transmissible.
+##   - **Jamshid** discovers iron in the earth, teaches the working
+##     of metal, invents armor, founds the order of social classes
+##     including the smiths. Jamshid is the load-bearing anchor: every
+##     subsequent Shahnameh moment in which a king mints coin, an
+##     armorer forges a weapon, or Kaveh raises his blacksmith's banner
+##     against Zahhak is unthinkable without Jamshid's metallurgical
+##     gift. The mine is where Jamshid's inheritance is *practiced*.
+##
+## Crucially: Ma'dan is NOT the moment of discovery — that is a one-time
+## mythic event in the Pishdadian age — but the gameplay surfacing of the
+## *inherited practice*: how organized labor around an ore body, carrying
+## the techniques Jamshid bequeathed, extracts more than scattered effort
+## would. **This is a labor-organization frame, NOT a civic-continuity
+## frame** (cf. Khaneh / Mazra'eh, which are civic-anchor buildings tied
+## to settled household and land continuity). Ma'dan's anchor type is
+## the practice-of-craft, transmitted across generations from the
+## Pishdadian gift to the player's worker organizing extraction at the
+## seam.
+##
+## Cross-faction caveat (loremaster leading hypothesis — per their
+## brief-time SUGGEST 2026-05-15):
+##
+## Turan's Coin economy almost certainly routes through ***baj*** (باج,
+## tribute) — extraction via demand rather than via labor-on-ore. Turan
+## kings (Afrasiyab and predecessors) accumulate wealth through tribute
+## from subject peoples, raided arms from defeated armies, control of
+## trade caravans across the steppe corridors — NOT through fixed
+## mining infrastructure organizing local labor. This is the leading
+## hypothesis (cf. *karavan* for Mazra'eh's grain analogue) — singular,
+## not a list.
+##
+## **Structural mismatch sharper than Mazra'eh.** For grain, both factions
+## conceivably build farms (the Mazra'eh template could clone). For coin,
+## Turan plausibly DOES NOT build mines at all in the leading-hypothesis
+## economy — they take coin from those who mine. A naive clone-Ma'dan-to-
+## Turan would be design-broken-by-template-inertia. DO NOT bake Ma'dan-
+## style fixed-mining-buff into the Building base class — when Turan's
+## Tier 2 economic mechanics ship (post-MVP), expect a fundamentally
+## different shape (a tribute-event mechanic? A raid-spoils accumulator?).
+## Per 00_SHAHNAMEH_RESEARCH.md §7's "design Turan as worthy rivals,
+## not cartoon villains" rule: each faction's economy reflects its
+## social organization; copy/paste between them produces hollow design.
 ##
 ## What lives here vs in the base class:
 ##   - kind = &"madan" (dual-init pattern as in khaneh.gd / mazraeh.gd).
