@@ -140,6 +140,157 @@ func occupied_slots() -> int:
 	return _occupied.size()
 
 
+# === Extraction-modifier registry — wave 1B (Ma'dan) ========================
+#
+# Buff-emitter buildings (Ma'dan today; future post-MVP economic-multiplier
+# Building subclasses) register on a target ResourceNode to amplify its
+# complete_extract payload. Per Open Space Room A Option B (2026-05-14):
+# Ma'dan is NOT a separate resource source — it modifies the MineNode it's
+# placed near.
+#
+# Three-call API (mirrors the worker-slot three-call API in spirit):
+#   register_extraction_modifier(modifier_node) -> bool
+#     Returns true on register, false on rejection. Rejection cases:
+#       - modifier_node is null / invalid → push_error + false.
+#       - modifier_node already registered on this node → silent false.
+#       - The first registered modifier's modifier_stacks is false AND
+#         there's already a modifier registered → silent false. Per design
+#         Q3 (2026-05-14, lead's update 2026-05-15): default not-stacking
+#         (first-registered-wins) — the first Ma'dan to bond a mine takes
+#         the buff slot; subsequent Ma'dans within range place but do
+#         not contribute.
+#   unregister_extraction_modifier(modifier_node) -> void
+#     Idempotent. Mirrors release_extract. Called by modifier-emitter
+#     destruction paths (wave 1C+ when destruction lifecycle ships).
+#   effective_yield_per_trip_x100() -> int
+#     Composes base yield_per_trip_x100 with registered modifiers. With
+#     no modifiers, returns yield_per_trip_x100 unchanged (zero overhead
+#     for plain MineNodes). With modifiers, applies the first modifier's
+#     yield_multiplier_x100 (per Q3 not-stacking).
+#
+# Modifier nodes are duck-typed: they must expose `yield_multiplier_x100() -> int`
+# (instance method, not static). Madan.yield_multiplier_x100 reads from
+# BalanceData buildings.madan.modifier_value_x100 (150 = 1.5x at MVP).
+#
+# Why on ResourceNode base (not just MineNode):
+# The buff-emitter pattern is faction-neutral. A future post-MVP buff
+# building modifying a different ResourceNode subclass plugs into the
+# same API. Cost on the base: ~4 fields + 3 methods. Trivial.
+
+## Array of registered modifier-emitter Nodes. Order is insertion order —
+## first-registered wins per the non-stacking design Q3 default.
+var _modifiers: Array[Node] = []
+
+
+## Register a modifier-emitter node on this ResourceNode. Caller is the
+## modifier-emitter's _on_placement_complete (Madan's call site at
+## madan.gd:160-162, guarded with has_method until this API ships).
+##
+## Returns true on register, false on rejection. See header for cases.
+##
+## Per design Q3 (2026-05-14): modifier_stacks defaults false. Each call
+## reads BalanceData buildings.<modifier_kind>.modifier_stacks via the
+## modifier node's `kind` field. With stacking off and a modifier already
+## registered, additional registers silently no-op.
+func register_extraction_modifier(modifier_node: Node) -> bool:
+	if modifier_node == null or not is_instance_valid(modifier_node):
+		push_error(
+			"ResourceNode.register_extraction_modifier: null or invalid "
+			+ "modifier_node — no-op.")
+		return false
+	if _modifiers.has(modifier_node):
+		# Same-modifier double-register guard. Silent to keep teardown
+		# paths quiet (Mazra'eh-style cleanup might re-register on a
+		# wave-1C respawn pattern).
+		return false
+	# Stacking check. If non-empty AND non-stacking semantics: reject.
+	# Read the stacking policy from the FIRST registered modifier's
+	# BalanceData entry (the assumption is that all modifier-emitters
+	# of the same kind have the same stacking policy; at MVP all
+	# modifier-emitters are Ma'dan so this is consistent).
+	if _modifiers.size() > 0 and not _modifier_stacks(_modifiers[0]):
+		return false
+	_modifiers.append(modifier_node)
+	return true
+
+
+## Remove a modifier-emitter from the registry. Idempotent — unregistering
+## an unknown node is a no-op. Mirrors release_extract.
+func unregister_extraction_modifier(modifier_node: Node) -> void:
+	if modifier_node == null:
+		return
+	if _modifiers.has(modifier_node):
+		_modifiers.erase(modifier_node)
+
+
+## Returns the effective yield per trip in x100 fixed-point, composing the
+## base yield_per_trip_x100 with registered modifiers' multipliers.
+##
+## With no modifiers: returns yield_per_trip_x100 unchanged.
+## With one modifier (the wave-1B MVP case): returns
+##   base * modifier.yield_multiplier_x100 / 100
+## With multiple modifiers + stacking=false: same as one-modifier (only
+##   the first applies; subsequent registers are rejected).
+## With multiple modifiers + stacking=true (post-MVP design space):
+##   compounds multiplicatively. Implemented for forward-compat but
+##   currently unreachable since stacking=false is locked at MVP.
+func effective_yield_per_trip_x100() -> int:
+	if _modifiers.is_empty():
+		return yield_per_trip_x100
+	# Compose multiplicatively. At MVP with stacking=false there's only
+	# one modifier in the array, so this loop runs exactly once.
+	var effective: int = yield_per_trip_x100
+	for m in _modifiers:
+		if m == null or not is_instance_valid(m):
+			continue
+		if not m.has_method(&"yield_multiplier_x100"):
+			continue
+		var mult_x100: int = int(m.call(&"yield_multiplier_x100"))
+		if mult_x100 <= 0:
+			continue
+		# effective * mult_x100 / 100 — order matters for integer rounding.
+		# Multiply first, then divide, to preserve precision at small
+		# scales (e.g., yield 1000 * 150 / 100 = 1500, not (1000/100)*150).
+		effective = effective * mult_x100 / 100
+	return effective
+
+
+## Modifier count for tests + F4 debug overlay. Production consumers
+## branch on register_extraction_modifier's bool return / on
+## effective_yield_per_trip_x100, not on this counter.
+func registered_modifier_count() -> int:
+	return _modifiers.size()
+
+
+# Read the stacking policy from the modifier-emitter's BalanceData entry.
+# At MVP only Ma'dan has a non-zero modifier_value_x100; its BalanceData
+# entry carries modifier_stacks=false per balance-engineer's d798e78.
+# Defensive fall-through (missing BalanceData / missing field) returns
+# false — the conservative default per design Q3.
+func _modifier_stacks(modifier_node: Node) -> bool:
+	if modifier_node == null or not is_instance_valid(modifier_node):
+		return false
+	var kind_v: Variant = modifier_node.get(&"kind")
+	if typeof(kind_v) != TYPE_STRING_NAME:
+		return false
+	var path: String = Constants.PATH_BALANCE_DATA
+	if not FileAccess.file_exists(path):
+		return false
+	var bd: Resource = load(path)
+	if bd == null:
+		return false
+	var bldgs: Variant = bd.get(&"buildings")
+	if typeof(bldgs) != TYPE_DICTIONARY:
+		return false
+	var stats: Variant = (bldgs as Dictionary).get(StringName(kind_v), null)
+	if not (stats is Resource):
+		return false
+	var stacks_v: Variant = stats.get(&"modifier_stacks")
+	if typeof(stacks_v) != TYPE_BOOL:
+		return false
+	return bool(stacks_v)
+
+
 # === Three-call API (per kickoff doc) ========================================
 
 ## Worker requests a gather slot. Returns true if granted, false otherwise.
@@ -190,7 +341,10 @@ func complete_extract(unit_id: int) -> Dictionary:
 		return {&"kind": &"", &"amount_x100": 0}
 	_occupied.erase(unit_id)
 	# Determine the chunk size. For finite reserves, never overdraw.
-	var amount_x100: int = yield_per_trip_x100
+	# Wave 1B: read the effective yield (base composed with registered
+	# extraction modifiers, e.g., adjacent Ma'dan buildings). For nodes
+	# with no modifiers this returns yield_per_trip_x100 unchanged.
+	var amount_x100: int = effective_yield_per_trip_x100()
 	if reserves_x100 >= 0 and amount_x100 > reserves_x100:
 		amount_x100 = reserves_x100
 	if reserves_x100 >= 0:
