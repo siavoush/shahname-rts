@@ -13,9 +13,14 @@
 ;             └── VBox (VBoxContainer)
 ;                 ├── HeaderLabel ("Build")
 ;                 ├── KhanehButton ("Khaneh (50 Coin)")
-;                 └── MazraehButton ("Mazra'eh (60 Coin)") — wave 1A late-add.
-;                   Agricultural-green tint distinguishes from Khaneh's earthy
-;                   tan. Order is chronological: Khaneh first, Mazra'eh second.
+;                 ├── MazraehButton ("Mazra'eh (60 Coin)") — wave 1A late-add.
+;                 │   Agricultural-green tint distinguishes from Khaneh's
+;                 │   earthy tan.
+;                 └── MadanButton ("Ma'dan (40 Coin)") — wave 1B late-add
+;                   bundled with the building scene per the wave-1A
+;                   late-add lesson. Stone-grey/metal tint distinguishes
+;                   from Khaneh/Mazra'eh. Order is chronological:
+;                   Khaneh → Mazra'eh → Ma'dan.
 ;
 ; Pitfall #1 mitigation + BUG-08 fix — mouse_filter discipline:
 ;   - Root: MOUSE_FILTER_STOP (value 0). BUG-08 fix — the entire menu
@@ -114,3 +119,18 @@ text = "Khaneh (50 Coin)"
 layout_mode = 2
 text = "Mazra'eh (60 Coin)"
 self_modulate = Color(0.45, 0.55, 0.30, 1.0)
+
+[node name="MadanButton" type="Button" parent="Root/Margin/VBox"]
+; Wave 1B — the Ma'dan placement entry point. Same MOUSE_FILTER_STOP
+; default as the other buttons. Stone-grey hint (0.55, 0.55, 0.55) —
+; a darker, neutral-tone variant of the Ma'dan scene's industrial-grey
+; color (0.5, 0.5, 0.55) so the button reads as related to the building
+; without overwhelming the dark HUD. The button's "metal/iron" tint
+; (slight B-channel weight vs RG) carries the same coding as the scene.
+;
+; build_menu.gd connects .pressed in _ready (mirrors KhanehButton /
+; MazraehButton wire-up). The button emits build_placement_started with
+; Madan.KIND_MADAN + cost_x100 to enter placement mode.
+layout_mode = 2
+text = "Ma'dan (40 Coin)"
+self_modulate = Color(0.55, 0.55, 0.60, 1.0)

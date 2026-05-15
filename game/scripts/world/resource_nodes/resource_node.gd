@@ -111,6 +111,28 @@ var is_gatherable: bool = true
 var _occupied: Dictionary = {}  # unit_id (int) -> true
 
 
+# === Group membership =======================================================
+#
+# Self-add to &"resource_nodes" group on _ready so consumers (Ma'dan's
+# placement adjacency search, future Phase 6 AI scouting, telemetry sinks)
+# can enumerate the canonical resource-source list without walking the
+# entire SceneTree or relying on ResourceSystem.register_node (which the
+# wave-1A MineNode path does NOT call — see register_node v1.2.1 §9.X note
+# in RESOURCE_NODE_CONTRACT.md).
+#
+# Mirrors the &"buildings" group convention from Building._ready. Mazra'eh
+# (which extends Building, not ResourceNode) is NOT in &"resource_nodes"
+# even though it duck-types the gather API — Mazra'eh is in &"buildings"
+# instead. Consumers iterating &"resource_nodes" specifically want
+# MineNode-shape source nodes (map-placed, raycast-routed coin/grain
+# sources). Wave-1B Ma'dan's adjacency-search iterates this group.
+#
+# Added in wave 1B (2026-05-15) as the cross-cutting seam for Ma'dan's
+# nearest-mine discovery. Existing MineNode behavior unchanged.
+func _ready() -> void:
+	add_to_group(&"resource_nodes")
+
+
 ## Returns the count of slots currently occupied. Used by tests and the F4
 ## debug overlay; production consumers branch on request_extract's bool
 ## return, not this counter.

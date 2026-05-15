@@ -1,0 +1,120 @@
+[gd_scene load_steps=5 format=3 uid="uid://shahnameh_madan_building"]
+
+; madan.tscn — Ma'dan (Iran mining-operation building) scene.
+;
+; Source: 01_CORE_MECHANICS.md §5 — "Ma'dan (mine) — Worker-staffed coin
+; extraction at mine nodes — 40 coin."
+; (Note: spec lists 40 Coin; wave-1B uses 75 Coin per design Q5 — balance-
+; engineer's tunable. The shipping cost lives in BalanceData / the
+; _WAVE_1B_COIN_COST placeholder until that ships.)
+;
+; Phase 3 session 2 wave 1B — 02g_PHASE_3_SESSION_2_KICKOFF.md §3 wave-1B.
+; Open Space Room A ratified Option B (2026-05-14): Ma'dan is a buff-emitter
+; that modifies the MineNode it's placed adjacent to, NOT a separate
+; resource source. See madan.gd header for the design rationale.
+;
+; Why standalone (NOT inheriting building.tscn):
+;   Same rationale as mazraeh.tscn — the inheritance machinery for
+;   removing NavigationObstacle3D from a packed base is brittle. For
+;   Ma'dan specifically: design Q (escalated to QUESTIONS_FOR_DESIGN.md
+;   if needed) is "should Ma'dan carve the navmesh?" The Khaneh/mine
+;   precedent says yes (placed structures should be navmesh obstacles),
+;   so Ma'dan DOES carry a NavigationObstacle3D. Mazra'eh does NOT
+;   (workers walk onto the farm); Ma'dan DOES (workers route AROUND
+;   the mining infrastructure). Standalone scene replicates the needed
+;   nodes explicitly per the mine_node.tscn / mazraeh.tscn precedent.
+;
+; Visual placeholder per CLAUDE.md "colored rectangles for buildings":
+;   - BoxMesh 2.5 × 1.0 × 2.5 — slightly smaller footprint than Khaneh's
+;     2.0×1.2×2.0, taller than Mazra'eh's flat field. Reads as
+;     "industrial structure" sitting next to a mine.
+;   - Stone-grey color Color(0.5, 0.5, 0.55) — neutral mineral tone.
+;     Distinct from:
+;       * Khaneh tan (0.78, 0.65, 0.45)
+;       * Mazra'eh green (0.55, 0.75, 0.35)
+;       * MineNode gold (0.85, 0.7, 0.2) — the mine itself; Ma'dan sits
+;         adjacent and reads as the operation infrastructure
+;       * Kargar sandy-brown (0.65, 0.5, 0.3)
+;     Slight blue tint on the grey (B=0.55 vs RG=0.5) hints at "metal/iron"
+;     so it doesn't read as ambiguous concrete.
+;
+; Composition:
+;   - Root: Node3D (extends Building via madan.gd; class_name Madan)
+;     ├── MeshInstance3D       stone-grey 2.5×1.0×2.5 box
+;     ├── StaticBody3D         click-target collision body (BUG-07 lesson)
+;     │   └── CollisionShape3D BoxShape3D matching the mesh
+;     └── NavigationObstacle3D dynamic navmesh carve (workers route around)
+;
+; NavigationObstacle3D radius: 1.5 (matches the building.tscn base default —
+; Ma'dan's 2.5m footprint diagonal is ~3.5m, half-diagonal ~1.75m; the 1.5
+; radius is slightly tight but consistent with the existing Building
+; precedent. Concrete tuning is design-pass territory if path-finding
+; complaints appear.
+
+[ext_resource type="Script" path="res://scripts/world/buildings/madan.gd" id="1_madan"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_madan"]
+; Industrial-structure silhouette — 2.5 wide × 1.0 tall × 2.5 deep.
+; Wider/taller than mazraeh's flat field, slightly more compact than
+; Khaneh's house. Reads as "operation rig adjacent to the mineral seam."
+size = Vector3(2.5, 1.0, 2.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_madan"]
+; Stone-grey with a slight blue tint (B=0.55 vs RG=0.5) to read as
+; "metal/iron" — distinct from Khaneh's earthy tan and Mazra'eh's green.
+; Per arch-reviewer's Option B framing: Ma'dan is the OPERATION, the
+; mine itself stays gold. The grey reads as industrial against the
+; sandy terrain and the gold mine.
+albedo_color = Color(0.5, 0.5, 0.55, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — matches unit / mine pipeline.
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_madan"]
+; Collision shape matches the visual mesh for click-target accuracy.
+; BUG-07 lesson: without a CollisionObject3D ancestor, raycasts walk
+; through the building and hit the terrain. The StaticBody3D below
+; provides the ancestor; this shape ensures clicks land on the rig area.
+size = Vector3(2.5, 1.0, 2.5)
+
+
+[node name="Madan" type="Node3D"]
+script = ExtResource("1_madan")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+; Y-offset = half-height (0.5) so the box's BOTTOM face sits flush on
+; the terrain plane (Y=0). Same convention as building.tscn (0.6),
+; mazraeh.tscn (0.15), mine_node.tscn (0.25).
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+mesh = SubResource("BoxMesh_madan")
+material_override = SubResource("StandardMaterial3D_madan")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="."]
+; BUG-07 lesson — ClickHandler._raycast_from_screen has
+; collide_with_bodies=true / collide_with_areas=false. The StaticBody3D
+; makes the Ma'dan click-targetable. Note: Ma'dan is NOT a gather
+; target (no is_gatherable field, no request_extract method) — clicks on
+; it select the building per the BUG-11 selection-exclusion pattern
+; (selection layer should EXCLUDE buildings, including Ma'dan, from
+; unit-shaped click filters via the &"buildings" group membership).
+; collision_layer = 1, collision_mask = 1 — matches project convention.
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticBody3D"]
+; Y-offset matches the visual (0.5) so the collision shape's centre is
+; co-located with the rendered rig's centre.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+shape = SubResource("BoxShape3D_madan")
+
+[node name="NavigationObstacle3D" type="NavigationObstacle3D" parent="."]
+; RESOURCE_NODE_CONTRACT §3.2 sanctioned pattern — runtime navmesh carve
+; via NavigationObstacle3D (NOT runtime navmesh REBAKE, which is forbidden).
+; Ma'dan is structural; workers route AROUND it. Mazra'eh is the
+; counter-example (no obstacle — workers walk ONTO the farm). Ma'dan
+; sits at the mining-operation surface; physical access to the seam
+; itself is via the MineNode (which has its own obstacle).
+;
+; Y-offset matches the mesh (0.5) so the obstacle's centre is where the
+; visible Ma'dan's centre is. Radius 1.5 — matches building.tscn base;
+; tighter than the 2.5m footprint diagonal but consistent with the
+; precedent. Path-finding regressions surface in live-test if the
+; radius is wrong.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+radius = 1.5

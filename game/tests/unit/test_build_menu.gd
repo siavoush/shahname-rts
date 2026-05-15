@@ -88,6 +88,8 @@ func test_scene_loads() -> void:
 		"BuildMenu must expose the KhanehButton")
 	assert_not_null(_menu.get_node_or_null(^"Root/Margin/VBox/MazraehButton"),
 		"BuildMenu must expose the MazraehButton (wave 1A late-add)")
+	assert_not_null(_menu.get_node_or_null(^"Root/Margin/VBox/MadanButton"),
+		"BuildMenu must expose the MadanButton (wave 1B)")
 
 
 # ---------------------------------------------------------------------------

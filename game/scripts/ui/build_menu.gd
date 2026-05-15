@@ -93,6 +93,11 @@ const _COLOR_BUTTON_NORMAL: Color = Color(0.45, 0.38, 0.25)
 # field placeholder color but darker so it reads against the dark HUD).
 const _COLOR_BUTTON_MAZRAEH: Color = Color(0.45, 0.55, 0.30)
 
+# Button color — stone/metal grey for the Ma'dan (related to the
+# building scene's industrial-grey but darker so it reads against the
+# dark HUD).
+const _COLOR_BUTTON_MADAN: Color = Color(0.55, 0.55, 0.60)
+
 
 # === Node refs =============================================================
 # Resolved @onready against the build_menu.tscn structure.
@@ -102,6 +107,7 @@ const _COLOR_BUTTON_MAZRAEH: Color = Color(0.45, 0.55, 0.30)
 @onready var _header_label: Label = $Root/Margin/VBox/HeaderLabel
 @onready var _khaneh_button: Button = $Root/Margin/VBox/KhanehButton
 @onready var _mazraeh_button: Button = $Root/Margin/VBox/MazraehButton
+@onready var _madan_button: Button = $Root/Margin/VBox/MadanButton
 
 
 # === Lifecycle =============================================================
@@ -118,6 +124,8 @@ func _ready() -> void:
 		_khaneh_button.pressed.connect(_on_khaneh_button_pressed)
 	if not _mazraeh_button.pressed.is_connected(_on_mazraeh_button_pressed):
 		_mazraeh_button.pressed.connect(_on_mazraeh_button_pressed)
+	if not _madan_button.pressed.is_connected(_on_madan_button_pressed):
+		_madan_button.pressed.connect(_on_madan_button_pressed)
 
 	# Subscribe to selection changes. Read-shaped signal; we only update
 	# UI-local visibility / button text in the handler.
@@ -138,6 +146,9 @@ func _exit_tree() -> void:
 	if _mazraeh_button != null \
 			and _mazraeh_button.pressed.is_connected(_on_mazraeh_button_pressed):
 		_mazraeh_button.pressed.disconnect(_on_mazraeh_button_pressed)
+	if _madan_button != null \
+			and _madan_button.pressed.is_connected(_on_madan_button_pressed):
+		_madan_button.pressed.disconnect(_on_madan_button_pressed)
 	if EventBus.selection_changed.is_connected(_on_selection_changed):
 		EventBus.selection_changed.disconnect(_on_selection_changed)
 
@@ -185,6 +196,8 @@ func _refresh_button_labels() -> void:
 	_khaneh_button.text = tr("UI_BUILDING_KHANEH_COST") % [khaneh_cost]
 	var mazraeh_cost: int = _MazraehScript.call(&"cost_coin")
 	_mazraeh_button.text = tr("UI_BUILDING_MAZRAEH_COST") % [mazraeh_cost]
+	var madan_cost: int = _MadanScript.call(&"cost_coin")
+	_madan_button.text = tr("UI_BUILDING_MADAN_COST") % [madan_cost]
 
 
 # === Button handler ========================================================
@@ -202,6 +215,12 @@ func _on_mazraeh_button_pressed() -> void:
 	# x100 fixed-point per Sim Contract §1.6 (whole-coin → coin_x100).
 	var cost_x100: int = _MazraehScript.call(&"cost_coin") * 100
 	EventBus.build_placement_started.emit(_MazraehScript.KIND_MAZRAEH, cost_x100)
+
+
+func _on_madan_button_pressed() -> void:
+	# x100 fixed-point per Sim Contract §1.6 (whole-coin → coin_x100).
+	var cost_x100: int = _MadanScript.call(&"cost_coin") * 100
+	EventBus.build_placement_started.emit(_MadanScript.KIND_MADAN, cost_x100)
 
 
 # === Duck-type helpers ====================================================
@@ -225,3 +244,4 @@ func _is_kargar_shaped(n: Object) -> bool:
 # codebase).
 const _KhanehScript: Script = preload("res://scripts/world/buildings/khaneh.gd")
 const _MazraehScript: Script = preload("res://scripts/world/buildings/mazraeh.gd")
+const _MadanScript: Script = preload("res://scripts/world/buildings/madan.gd")

@@ -189,6 +189,32 @@ func test_enter_accepts_mazraeh_building_kind() -> void:
 		"enter must issue a path request to the build site for Mazra'eh")
 
 
+# Wave-1B (2026-05-15): Ma'dan ships as the second non-resource-producing
+# Building subclass (Mazra'eh was the resource-producing case; Ma'dan is
+# the modifier-emitter shape). Like Mazra'eh, Ma'dan must be in the
+# _BUILDING_SCENE_PATHS dict so the construction state accepts the kind
+# without aborting — the wave-1A late-add discipline lesson applied
+# pre-emptively this wave by shipping the dict entry in the same commit
+# as the Ma'dan class + scene + build menu button.
+func test_enter_accepts_madan_building_kind() -> void:
+	_unit = _spawn_kargar(Vector3.ZERO)
+	_unit.current_command = {
+		"kind": &"construct",
+		"payload": {
+			&"building_kind": &"madan",
+			&"target_position": Vector3(5.0, 0.0, 0.0),
+		},
+	}
+	_unit.fsm.transition_to(&"constructing")
+	_tick_fsm()
+	# State must NOT abort to idle — the kind is recognized.
+	assert_ne(_unit.fsm.current.id, &"idle",
+		"Constructing must accept &\"madan\" building_kind — present in "
+		+ "_BUILDING_SCENE_PATHS at wave-1B Commit 1 (late-add discipline)")
+	assert_gt(_mock.call_log.size(), 0,
+		"enter must issue a path request to the build site for Ma'dan")
+
+
 func test_enter_bails_to_idle_on_missing_target_position() -> void:
 	_unit = _spawn_kargar()
 	_unit.current_command = {
