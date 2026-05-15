@@ -2,9 +2,9 @@
 title: Resource Node Schema Contract
 type: contract
 status: ratified
-version: 1.2.3
+version: 1.3.0
 owner: world-builder
-summary: Resource gathering — ResourceNode hierarchy (MineNode + Mazra'eh-as-Building-subclass via duck-typing), three-call extract API (request_extract / complete_extract / release_extract), IDropoffTarget protocol, fertile-zone placement, EventBus signals, BalanceData keys. v1.2.2 expands §4.5 to declare all 5 shipped Mazra'eh ResourceNode-shape fields + introduces §4.6 documenting the kind-vs-resource_kind separation for resource-producing Building subclasses. v1.2.3 surgical correction — §4.5 example + prose align with shipped is_gatherable = false default + flip-on-placement (regression-test locked at test_mazraeh.gd:388).
+summary: Resource gathering — ResourceNode hierarchy (MineNode + Mazra'eh-as-Building-subclass via duck-typing), three-call extract API (request_extract / complete_extract / release_extract), IDropoffTarget protocol, fertile-zone placement, EventBus signals, BalanceData keys. v1.2.2 expands §4.5 to declare all 5 shipped Mazra'eh ResourceNode-shape fields + introduces §4.6 documenting the kind-vs-resource_kind separation for resource-producing Building subclasses. v1.2.3 surgical correction — §4.5 example + prose align with shipped is_gatherable = false default + flip-on-placement. v1.3.0 (wave 1B) — new §4.7 documents the extraction-modifier-emitter pattern (Ma'dan as canonical example, ResourceNode register_extraction_modifier / effective_yield_per_trip_x100 API, stacking-rule policy, navmesh-obstacle-reinforces-cultural-framing convention).
 audience: all
 read_when: working-on-resources-mines-farms-gather-or-worker-ai
 prerequisites: [MANIFESTO.md, SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md]
@@ -23,7 +23,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [resources, mines, farms, gather, navigation, fertile-tiles, signals]
 created: 2026-04-30
 last_updated: 2026-05-14
-provenance: Outcome of Sync 4 — joint Constraint Negotiation between world-builder and gameplay-systems. Path 2 (workers gather grain) ratified by design chat 2026-04-30. Convergence Review revisions 2026-05-01. v1.2.0 wave-1A patch (2026-05-14) — §4 SSOT-fix to align consumer-facing API prose with shipped code (the wave-1A implementation walked away from the v1 begin_extract / tick_extract / ExtractResult-enum shape; this contract version documents the actual three-call API in flight) + Mazra'eh-as-duck-typed-Building-subclass shape from Room A Open Space. v1.2.1 surgical patch (2026-05-14) — ResourceSystem.register_node signature change to take kind as explicit parameter (`register_node(node, kind: StringName)`); v1.2.0 implementation read node.kind which collided with Mazra'eh's Building-kind field (&"mazraeh") vs the resource kind (&"grain"). v1.2.1 caught pre-consumption (no wave-1A consumer queries the registry yet) via world-builder's §4.5 prose review. v1.2.2 (2026-05-14, gp-sys) — §4.5 expanded to declare all 5 SHIPPED Mazra'eh fields (resource_kind, reserves_x100, max_slots, is_gatherable, yield_per_trip_x100, plus extract_ticks) after world-builder's `6d73889` shipped the schema per arch-reviewer BLOCK-A. New §4.6 documents the kind-vs-resource_kind separation pattern for resource-producing Building subclasses (Building-identity kind + Resource-identity resource_kind on the same instance — the dual-field convention applies to Building subclasses only; ResourceNode subclasses keep `kind` as resource identity). v1.2.3 (2026-05-14, gp-sys, re-review BLOCK-C) — §4.5 example + prose `is_gatherable` default corrected from `true` to `false` to align with shipped code post-`3183c7c` (Mazra'eh now defaults `false`, `_on_placement_complete` flips to `true`; default-false enforces forward-compat lock against gather-during-construction for future Building subclasses). Regression-test locked at `test_mazraeh.gd:388`.
+provenance: Outcome of Sync 4 — joint Constraint Negotiation between world-builder and gameplay-systems. Path 2 (workers gather grain) ratified by design chat 2026-04-30. Convergence Review revisions 2026-05-01. v1.2.0 wave-1A patch (2026-05-14) — §4 SSOT-fix to align consumer-facing API prose with shipped code (the wave-1A implementation walked away from the v1 begin_extract / tick_extract / ExtractResult-enum shape; this contract version documents the actual three-call API in flight) + Mazra'eh-as-duck-typed-Building-subclass shape from Room A Open Space. v1.2.1 surgical patch (2026-05-14) — ResourceSystem.register_node signature change to take kind as explicit parameter (`register_node(node, kind: StringName)`); v1.2.0 implementation read node.kind which collided with Mazra'eh's Building-kind field (&"mazraeh") vs the resource kind (&"grain"). v1.2.1 caught pre-consumption (no wave-1A consumer queries the registry yet) via world-builder's §4.5 prose review. v1.2.2 (2026-05-14, gp-sys) — §4.5 expanded to declare all 5 SHIPPED Mazra'eh fields (resource_kind, reserves_x100, max_slots, is_gatherable, yield_per_trip_x100, plus extract_ticks) after world-builder's `6d73889` shipped the schema per arch-reviewer BLOCK-A. New §4.6 documents the kind-vs-resource_kind separation pattern for resource-producing Building subclasses (Building-identity kind + Resource-identity resource_kind on the same instance — the dual-field convention applies to Building subclasses only; ResourceNode subclasses keep `kind` as resource identity). v1.2.3 (2026-05-14, gp-sys, re-review BLOCK-C) — §4.5 example + prose `is_gatherable` default corrected from `true` to `false` to align with shipped code post-`3183c7c` (Mazra'eh now defaults `false`, `_on_placement_complete` flips to `true`; default-false enforces forward-compat lock against gather-during-construction for future Building subclasses). Regression-test locked at `test_mazraeh.gd:388`. v1.3.0 (2026-05-15, gp-sys, wave 1B Commit 4) — new §4.7 documents the extraction-modifier-emitter pattern shipped in wave 1B (Ma'dan canonical example): ResourceNode base `register_extraction_modifier` / `unregister_extraction_modifier` / `effective_yield_per_trip_x100` API (shipped at 3d7b722), modifier-emitter duck-typed surface (`yield_multiplier_x100()` method), stacking-rule policy (default first-registered-wins per design Q3), modifier-emitter Building convention (no resource_kind, no gather schema, finds target via `&"resource_nodes"` group), navmesh-obstacle-reinforces-cultural-framing convention (lead's 2026-05-15 ratification — modifier-frame buildings have obstacle; resource-producing-frame buildings like Mazra'eh do not).
 ---
 
 # Resource Node Schema Contract
@@ -422,6 +422,77 @@ The asymmetry exists because **MineNode** is a `ResourceNode` (resource-first id
 The field is conventionally placed in a "ResourceNode-shape fields" block in the script, distinct from the Building-identity block, so a reader scanning the class can see the two layers without confusion.
 
 **For ResourceNode subclasses** (MineNode, future Mazra'eh-renamed-to-ResourceNode-subclass-if-anyone-ever-redesigns-it), `kind` carries the resource identity and `resource_kind` is unnecessary. The dual-field convention is Building-specific.
+
+### 4.7 Extraction-modifier registry — buff-emitter pattern (2026-05-15, v1.3.0)
+
+A second category of non-resource-producing Building subclass: the **modifier-emitter**. Where the §4.5/4.6 pattern documents Buildings that PRODUCE a resource (Mazra'eh, future Atashkadeh-variant farms), this section documents Buildings that AMPLIFY an existing ResourceNode's payload (Ma'dan today; future post-MVP economic-multiplier buildings).
+
+**Motivating example — Ma'dan (مَعدَن, "ore-source"):** Per Open Space Room A Option B (2026-05-14), Ma'dan is NOT a separate resource source registering under `&"coin"`. Instead, Ma'dan is placed adjacent to an existing MineNode and registers as that mine's *extraction modifier*. The mine's `complete_extract()` returns the multiplied payload (base × Ma'dan's `yield_multiplier_x100 / 100`). The labor-organization framing (per loremaster brief-time review 2026-05-15, see `madan.gd` header) maps directly: the mine is the canonical resource, the Ma'dan is the organized labor amplifying its output. Mirrors AoE2's Mining Camp + raw resource node pattern.
+
+#### 4.7.1 ResourceNode base API (shipped at 3d7b722)
+
+```gdscript
+# scripts/world/resource_nodes/resource_node.gd
+
+var _modifiers: Array[Node] = []          # registered modifier-emitter nodes
+
+## Register a modifier-emitter on this ResourceNode. Returns true on
+## success, false on rejection (null/invalid, same-modifier-twice, OR
+## stacking=false-and-already-registered).
+func register_extraction_modifier(modifier_node: Node) -> bool: ...
+
+## Idempotent removal. Mirrors release_extract pattern.
+func unregister_extraction_modifier(modifier_node: Node) -> void: ...
+
+## Compose base yield_per_trip_x100 with registered modifiers' multipliers.
+## With no modifiers: returns base unchanged (zero overhead for plain MineNodes).
+## With one modifier: base * modifier.yield_multiplier_x100 / 100.
+## With multiple modifiers + stacking=true: compounds multiplicatively
+## (post-MVP forward-compat; stacking=false is locked at MVP).
+func effective_yield_per_trip_x100() -> int: ...
+```
+
+`ResourceNode.complete_extract()` reads `effective_yield_per_trip_x100()` instead of the raw `yield_per_trip_x100` field. The change is invisible for mines with no adjacent modifier (effective == base); for mines with a registered modifier the payload's `amount_x100` reflects the multiplied value. **Reserves decrement by the EFFECTIVE amount** — a buffed mine depletes faster per trip, which is correct semantics: the multiplier amplifies the worker's haul AND the mine's wear.
+
+#### 4.7.2 Modifier-emitter duck-typed surface
+
+A modifier-emitter must expose one instance method, duck-typed by `has_method` check:
+
+```gdscript
+## Required on modifier-emitter Buildings.
+## Returns the yield multiplier in x100 fixed-point.
+## Convention: 150 = 1.5x, 200 = 2.0x, 100 = no-op (1.0x).
+func yield_multiplier_x100() -> int: ...
+```
+
+The ResourceNode does not class-check the modifier — it duck-types on the method. This keeps the base class faction-neutral; a future post-MVP Turan-specific modifier-emitter plugs into the same surface without any Building base extension.
+
+#### 4.7.3 Stacking rule
+
+Per design Q3 (Open Space 2026-05-14, lead's 2026-05-15 confirmation):
+
+- Default `modifier_stacks = false` (in BalanceData per `building_stats.gd:modifier_stacks`).
+- With `stacks=false` and a modifier already registered, additional `register_extraction_modifier` calls return false silently. **First-registered-wins.** Subsequent modifier-emitters within range still place as buildings; they just do not contribute to the mine's effective yield.
+- With `stacks=true` (post-MVP forward-compat; not exercised at MVP), modifiers compound multiplicatively in `effective_yield_per_trip_x100`.
+
+The stacking policy is read from the FIRST registered modifier's BalanceData entry. At MVP this is consistent because all modifier-emitters of the same kind share the policy; at post-MVP scale where mixed-stacking-policy modifiers might register, the first-registered policy wins by precedent (predictable, not surprising).
+
+#### 4.7.4 Modifier-emitter Building convention
+
+A modifier-emitter Building subclass:
+
+- Declares `kind = &"<subclass-name>"` via dual-init constant (same as any Building subclass — see §4.6 for the convention).
+- Does NOT declare `resource_kind` (it does not produce a resource).
+- Does NOT register with `ResourceSystem.register_node` (the ResourceNode it modifies is already the canonical registry entry).
+- Does NOT declare ResourceNode-shape gather schema fields (no `is_gatherable`, no `reserves_x100`, no `max_slots`, no `yield_per_trip_x100`). The `click_handler._is_resource_node_shaped` check correctly excludes modifier-emitters from gather routing.
+- In `_on_placement_complete`: finds the nearest matching ResourceNode within `modifier_radius_m` (from BalanceData), calls `target_node.register_extraction_modifier(self)`. Wave-1B Ma'dan iterates the `&"resource_nodes"` SceneTree group (added in wave-1B base `_ready`) for this discovery.
+- Implements `yield_multiplier_x100() -> int` returning the BalanceData-driven multiplier (with defensive fallback per Khaneh/Mazra'eh precedent).
+
+#### 4.7.5 Navmesh-obstacle convention reinforces cultural framing
+
+Per lead's 2026-05-15 ratification (Wave 1B Commit 1 review): modifier-emitter Buildings carry a `NavigationObstacle3D` so workers route AROUND them — a structural worksite, not soft terrain. **Contrast with resource-producing Buildings** like Mazra'eh, which deliberately have NO obstacle so workers walk ONTO the farm. The contrast is mechanically functional (Mazra'eh's gather geometry needs workers to step onto the tile; Ma'dan's gather geometry has workers approach the mine itself, with Ma'dan adjacent to it) AND culturally aligned (Mazra'eh's *dehqan* stewardship implies the field IS walked; Ma'dan's labor-organization frame implies the operation IS routed around).
+
+The pattern: in future Building subclasses, the obstacle / no-obstacle choice should reflect the building's cultural-mechanical category. Anchor-frame buildings tied to soft terrain (farms, perhaps future orchards): no obstacle. Modifier-frame or structural-frame buildings (Ma'dan, future Atashkadeh, fortifications): obstacle. Documented here for the precedent.
 
 ---
 
