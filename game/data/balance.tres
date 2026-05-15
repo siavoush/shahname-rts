@@ -248,6 +248,52 @@ grain_cost = 0
 construction_ticks = 600
 farr_per_tick = 0.0
 
+; Ma'dan (مَعدَن, mine / source) — 01_CORE_MECHANICS.md §5
+; Buff-emitter building. When placed within modifier_radius_m of a MineNode,
+; registers itself with that mine and multiplies effective coin_yield_per_trip
+; by modifier_value_x100 / 100 (fixed-point per Sim Contract §1.6).
+;
+; Cost: "40 coin" per spec (01_CORE_MECHANICS.md §5 table — explicit, not a
+; suggestion). grain_cost = 0: Tier-1 infrastructure, no grain gate.
+;
+; modifier_value_x100 = 150 → 1.5× yield multiplier. 50% boost is meaningful
+; without becoming degenerate. 2.0× (200) would trivialize economy — two Ma'dans
+; on one mine would double income before mid-game pressure arrives.
+;
+; modifier_radius_m = 4.0 → matches FOG_DATA_CONTRACT cell size ("one cell of
+; adjacency" framing from kickoff §3 wave 1B). Stored as float; this is a
+; spatial config, not a fixed-point gameplay value.
+;
+; modifier_stacks = false → first-registered-wins; multiple Ma'dans on the same
+; mine do NOT compound. Stacking would create a "pile Ma'dans on one mine"
+; degenerate strategy. Kickoff default confirmed — no reason to flip.
+;
+; HP 300.0 = Mazra'eh parity: mine enhancers and farms are both soft economy
+; targets, should fall to the same sustained raiding pressure.
+;
+; construction_ticks = 600 = Mazra'eh parity: consistent build-time feel for
+; Tier-1 economy buildings. The construction-timer wave (1C) uses a 90-tick
+; placeholder via UnitState_Constructing; 600 is the BalanceData canonical
+; value that wave 1C will wire when the real timer ships.
+;
+; NEW FIELDS (modifier_value_x100, modifier_radius_m, modifier_stacks):
+; BuildingStats script does not yet declare these @export fields — gp-sys adds
+; them in wave 1B. Godot .tres tolerates extra fields gracefully; pre-shipped
+; here so gp-sys reads final values directly (per lead recommendation, kickoff).
+;
+; DECISIONS.md ref: wave 1B Option B — Ma'dan is a buff-emitter, NOT a Coin
+; producer. Ma'dan does NOT produce Coin itself; it boosts adjacent MineNodes.
+[sub_resource type="Resource" id="bldg_madan"]
+script = ExtResource("3_bldgstats")
+max_hp = 300.0
+coin_cost = 40
+grain_cost = 0
+construction_ticks = 600
+farr_per_tick = 0.0
+modifier_value_x100 = 150
+modifier_radius_m = 4.0
+modifier_stacks = false
+
 ; Atashkadeh (fire temple) — 01_CORE_MECHANICS.md §5
 ; +1 Farr/min passive = 1/1800 Farr/tick ≈ 0.000556 Farr/tick
 ; Cost: "150 coin, 50 grain". Prerequisite for Tier 2 advance.
@@ -419,7 +465,7 @@ hard_attack_army_threshold = 16
 
 [resource]
 script = ExtResource("1_balancedata")
-constants_version = "2026-05-08-phase-2-session-2-rps-roster"
+constants_version = "2026-05-15-phase-3-session-2-wave-1b-madan"
 units = {
 &"kargar": SubResource("unit_kargar"),
 &"piyade": SubResource("unit_piyade"),
@@ -435,6 +481,7 @@ buildings = {
 &"throne": SubResource("bldg_throne"),
 &"khaneh": SubResource("bldg_khaneh"),
 &"mazraeh": SubResource("bldg_mazraeh"),
+&"madan": SubResource("bldg_madan"),
 &"atashkadeh": SubResource("bldg_atashkadeh")
 }
 farr = SubResource("farr_cfg")
