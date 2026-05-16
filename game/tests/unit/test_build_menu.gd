@@ -86,6 +86,10 @@ func test_scene_loads() -> void:
 		"BuildMenu must expose a Root Control")
 	assert_not_null(_menu.get_node_or_null(^"Root/Margin/VBox/KhanehButton"),
 		"BuildMenu must expose the KhanehButton")
+	assert_not_null(_menu.get_node_or_null(^"Root/Margin/VBox/MazraehButton"),
+		"BuildMenu must expose the MazraehButton (wave 1A late-add)")
+	assert_not_null(_menu.get_node_or_null(^"Root/Margin/VBox/MadanButton"),
+		"BuildMenu must expose the MadanButton (wave 1B)")
 
 
 # ---------------------------------------------------------------------------
@@ -274,3 +278,80 @@ func test_button_press_does_not_deduct_coin_synchronously() -> void:
 	assert_eq(coin_before, coin_after,
 		"Button press must NOT deduct Coin synchronously (Pitfall #4 — "
 		+ "deduction happens at placement, not at button press)")
+
+
+# ---------------------------------------------------------------------------
+# Mazra'eh button — wave-1A late-add for live-test
+# ---------------------------------------------------------------------------
+# Per session-2 wave-1A late-add brief: wave 1A shipped Mazra'eh class +
+# scene but the build menu only exposed Khaneh, blocking live-test. The
+# tests below mirror the Khaneh coverage so the new button has parity
+# coverage: visibility (gated on Kargar selection), button press emits
+# build_placement_started with KIND_MAZRAEH + cost_x100, and the label
+# refreshes to the BalanceData cost via tr().
+
+func test_mazraeh_button_visible_when_kargar_selected() -> void:
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var root: Control = _menu.get_node(^"Root")
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/MazraehButton")
+	assert_true(root.visible,
+		"BuildMenu root must be visible when a Kargar is selected")
+	assert_true(btn.visible,
+		"MazraehButton must be visible (parent visible, button visible)")
+
+
+func test_mazraeh_button_uses_mouse_filter_stop() -> void:
+	# Same Pitfall #1 invariant as the Khaneh button — STOP by default
+	# so the click reliably lands on the button itself.
+	_menu = _spawn_menu()
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/MazraehButton")
+	assert_eq(btn.mouse_filter, Control.MOUSE_FILTER_STOP,
+		"MazraehButton must use MOUSE_FILTER_STOP (Pitfall #1)")
+
+
+func test_mazraeh_button_label_shows_cost() -> void:
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/MazraehButton")
+	# tr("UI_BUILDING_MAZRAEH_COST") → "Mazra'eh (%d Coin)" →
+	# "Mazra'eh (60 Coin)" per balance.tres bldg_mazraeh.coin_cost=60.
+	assert_true(btn.text.contains("60"),
+		"MazraehButton label must include the cost (60) — got '%s'" % btn.text)
+
+
+func test_mazraeh_button_press_emits_build_placement_started_with_kind_mazraeh() -> void:
+	var captured: Array = []
+	var handler: Callable = func(kind: StringName, cost: int) -> void:
+		captured.append({&"kind": kind, &"cost": cost})
+	EventBus.build_placement_started.connect(handler)
+
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/MazraehButton")
+	btn.pressed.emit()
+	EventBus.build_placement_started.disconnect(handler)
+	assert_eq(captured.size(), 1,
+		"build_placement_started fires exactly once per MazraehButton press")
+	var ev: Dictionary = captured[0]
+	assert_eq(ev[&"kind"], &"mazraeh",
+		"Signal carries building_kind = &\"mazraeh\"")
+	assert_eq(ev[&"cost"], 6000,
+		"Signal carries cost_coin_x100 = 6000 (60 Coin × 100)")
+
+
+func test_mazraeh_button_press_does_not_deduct_coin_synchronously() -> void:
+	# Pitfall #4 symmetry: the Mazra'eh button is UI-shaped too. No
+	# Coin mutation at press time — deduction happens at placement.
+	var coin_before: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/MazraehButton")
+	btn.pressed.emit()
+	var coin_after: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	assert_eq(coin_before, coin_after,
+		"MazraehButton press must NOT deduct Coin synchronously (Pitfall #4)")

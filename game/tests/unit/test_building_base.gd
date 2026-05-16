@@ -243,3 +243,74 @@ func test_on_placement_complete_runs_after_state_writes() -> void:
 		"state writes (team) complete BEFORE the subclass hook fires")
 	assert_true(capture.is_complete,
 		"is_complete is true by the time the subclass hook runs")
+
+
+# ---------------------------------------------------------------------------
+# get_footprint_aabb — Phase 3 session 2 wave 1A (Room B v1.3.0 §3.2 dep)
+# ---------------------------------------------------------------------------
+#
+# Wave-1A cross-wave deliverable per Convergence Review Finding-1 & Room B's
+# §3.2: gameplay-systems owns Building.get_footprint_aabb() so FogSystem
+# (wave 3A) can compute building visibility footprints without reaching into
+# CollisionShape3D scene-tree paths. Returns the building's world-aligned
+# footprint AABB.
+#
+# Two behavioral cases tested:
+#   1. With the base scene's MeshInstance3D (2.0 × 1.2 × 2.0 BoxMesh + Y-offset),
+#      get_footprint_aabb() returns an AABB sized 2 × 1.2 × 2 centered on
+#      global_position (Y-offset accounted for in the local-to-world
+#      transformation).
+#   2. With no MeshInstance3D / no recognizable shape, the fallback is a
+#      2×2 FOG_CELL default (8m × 0 × 8m AABB centered on global_position).
+#      Per FOG_DATA_CONTRACT v1.3.0 §3.2 fallback clause.
+
+func test_building_get_footprint_aabb_returns_mesh_extent() -> void:
+	# Spawn from the base scene — exercises the path the live game uses
+	# (scene has the BoxMesh 2.0×1.2×2.0). place_at sets global_position
+	# so get_footprint_aabb's world-space output is deterministic.
+	_building = _spawn_building()
+	_building.place_at(Vector3(10.0, 0.0, 5.0), Constants.TEAM_IRAN, 1)
+	var aabb: AABB = _building.get_footprint_aabb()
+	# The base BoxMesh is 2.0 × 1.2 × 2.0; AABB.size matches.
+	assert_almost_eq(aabb.size.x, 2.0, 0.0001,
+		"AABB.size.x matches the BoxMesh X extent (2.0)")
+	assert_almost_eq(aabb.size.z, 2.0, 0.0001,
+		"AABB.size.z matches the BoxMesh Z extent (2.0)")
+	# AABB.position is the min corner — for a 2×2 footprint centered on
+	# the building's global_position, min.x = position.x - 1.0, etc.
+	# (Y is allowed to vary — fog ignores Y; only XZ is load-bearing.)
+	var center_x: float = aabb.position.x + aabb.size.x * 0.5
+	var center_z: float = aabb.position.z + aabb.size.z * 0.5
+	assert_almost_eq(center_x, 10.0, 0.0001,
+		"AABB centered on building's global_position.x (10.0)")
+	assert_almost_eq(center_z, 5.0, 0.0001,
+		"AABB centered on building's global_position.z (5.0)")
+
+
+func test_building_get_footprint_aabb_fallback_when_no_mesh() -> void:
+	# Construct a Building WITHOUT a MeshInstance3D / CollisionShape3D
+	# subtree — exercise the 2×2 fog-cell fallback clause (FOG_DATA_CONTRACT
+	# v1.3.0 §3.2). The script alone, no scene wrapper, has no children, so
+	# get_footprint_aabb() must fall back to the default.
+	#
+	# Note: Building.new() without add_child won't get a unit_id (skip the
+	# add_child_autofree path that runs _ready). We construct with no
+	# children added, manually set global_position, then call the method.
+	var bare_building: Variant = BuildingScript.new()
+	# Free at end; we never added it as a child so .free() is needed.
+	bare_building.global_position = Vector3(0.0, 0.0, 0.0)
+	var aabb: AABB = bare_building.get_footprint_aabb()
+	# Fallback per kickoff brief: size = (2 * FOG_CELL_SIZE, 0, 2 * FOG_CELL_SIZE)
+	# = (8, 0, 8) since FOG_CELL_SIZE = 4 per FOG_DATA_CONTRACT §1.1.
+	assert_almost_eq(aabb.size.x, 8.0, 0.0001,
+		"fallback AABB X extent = 8m (2 × 4m fog cell)")
+	assert_almost_eq(aabb.size.z, 8.0, 0.0001,
+		"fallback AABB Z extent = 8m (2 × 4m fog cell)")
+	# Centered on global_position(0,0,0) → AABB.position = (-4, ?, -4).
+	var center_x: float = aabb.position.x + aabb.size.x * 0.5
+	var center_z: float = aabb.position.z + aabb.size.z * 0.5
+	assert_almost_eq(center_x, 0.0, 0.0001,
+		"fallback AABB centered on global_position.x")
+	assert_almost_eq(center_z, 0.0, 0.0001,
+		"fallback AABB centered on global_position.z")
+	bare_building.free()

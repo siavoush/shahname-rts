@@ -159,6 +159,62 @@ func test_enter_bails_to_idle_on_unknown_building_kind() -> void:
 		"Constructing bails to Idle when building_kind is not in scene table")
 
 
+# Wave-1A live-test fix (2026-05-14): Mazra'eh was missing from
+# _BUILDING_SCENE_PATHS at line 98-100, causing the worker to bail to Idle
+# when the build menu's Mazra'eh button dispatched COMMAND_CONSTRUCT with
+# building_kind=&"mazraeh". Same shape as the original Khaneh BUG-08.
+# Mirrors test_enter_reads_payload_and_requests_repath but for Mazra'eh —
+# the positive-case assertion is that the state does NOT abort to idle
+# (it transitions through to moving toward the target).
+func test_enter_accepts_mazraeh_building_kind() -> void:
+	_unit = _spawn_kargar(Vector3.ZERO)
+	_unit.current_command = {
+		"kind": &"construct",
+		"payload": {
+			&"building_kind": &"mazraeh",
+			&"target_position": Vector3(5.0, 0.0, 0.0),
+		},
+	}
+	_unit.fsm.transition_to(&"constructing")
+	_tick_fsm()
+	# State must NOT abort to idle — the kind is recognized, the state
+	# proceeds to drive movement toward the build site.
+	assert_ne(_unit.fsm.current.id, &"idle",
+		"Constructing must accept &\"mazraeh\" building_kind — present in "
+		+ "_BUILDING_SCENE_PATHS after wave-1A late-add fix")
+	# Mock scheduler must have received one repath request to the target —
+	# confirms the state entered the moving phase (mirrors the khaneh test
+	# at line 110).
+	assert_gt(_mock.call_log.size(), 0,
+		"enter must issue a path request to the build site for Mazra'eh")
+
+
+# Wave-1B (2026-05-15): Ma'dan ships as the second non-resource-producing
+# Building subclass (Mazra'eh was the resource-producing case; Ma'dan is
+# the modifier-emitter shape). Like Mazra'eh, Ma'dan must be in the
+# _BUILDING_SCENE_PATHS dict so the construction state accepts the kind
+# without aborting — the wave-1A late-add discipline lesson applied
+# pre-emptively this wave by shipping the dict entry in the same commit
+# as the Ma'dan class + scene + build menu button.
+func test_enter_accepts_madan_building_kind() -> void:
+	_unit = _spawn_kargar(Vector3.ZERO)
+	_unit.current_command = {
+		"kind": &"construct",
+		"payload": {
+			&"building_kind": &"madan",
+			&"target_position": Vector3(5.0, 0.0, 0.0),
+		},
+	}
+	_unit.fsm.transition_to(&"constructing")
+	_tick_fsm()
+	# State must NOT abort to idle — the kind is recognized.
+	assert_ne(_unit.fsm.current.id, &"idle",
+		"Constructing must accept &\"madan\" building_kind — present in "
+		+ "_BUILDING_SCENE_PATHS at wave-1B Commit 1 (late-add discipline)")
+	assert_gt(_mock.call_log.size(), 0,
+		"enter must issue a path request to the build site for Ma'dan")
+
+
 func test_enter_bails_to_idle_on_missing_target_position() -> void:
 	_unit = _spawn_kargar()
 	_unit.current_command = {

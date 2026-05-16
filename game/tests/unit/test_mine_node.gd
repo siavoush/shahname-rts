@@ -192,3 +192,19 @@ func test_scene_has_meshinstance3d_child() -> void:
 	var mesh: Node = _node.get_node_or_null(^"MeshInstance3D")
 	assert_not_null(mesh,
 		"MineNode scene includes a MeshInstance3D placeholder visual")
+
+
+# Wave 1B (2026-05-15): ResourceNode base self-adds to &"resource_nodes"
+# group on _ready. This is the cross-cutting seam for Ma'dan's nearest-mine
+# discovery — Ma'dan iterates &"resource_nodes" group to find adjacent
+# mines within radius. Future Phase 6 AI scouting consumers use the same
+# seam.
+#
+# Mirrors the &"buildings" group convention from Building._ready. The
+# group join is added in wave 1B (resource_node.gd) — backward-compat
+# safe because nothing in wave 1A consumed the group.
+func test_mine_node_joins_resource_nodes_group() -> void:
+	_node = _spawn_mine()
+	assert_true(_node.is_in_group(&"resource_nodes"),
+		"MineNode must join &\"resource_nodes\" group via ResourceNode._ready "
+		+ "(wave 1B seam for Ma'dan adjacency discovery)")

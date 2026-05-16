@@ -160,7 +160,7 @@ func change_resource(
 	kind: StringName,
 	amount_x100: int,
 	reason: StringName,
-	source_unit: Object,
+	_source_unit: Object,
 ) -> void:
 	assert(SimClock.is_ticking(),
 		"Off-tick resource mutation: team=%d kind='%s' amount_x100=%d reason='%s'"
@@ -209,35 +209,13 @@ func change_resource(
 	else:
 		_set_sim(&"_grain_x100", store)
 
-	# Resolve source_unit_id for telemetry. -1 sentinel matches the convention
-	# used by apply_farr_change (see farr_system.gd). source_unit.unit_id when
-	# present, instance id fallback for diagnostics, -1 when null.
-	var source_unit_id: int = -1
-	if source_unit != null and is_instance_valid(source_unit):
-		var uid: Variant = source_unit.get(&"unit_id")
-		if typeof(uid) == TYPE_INT:
-			source_unit_id = int(uid)
-		else:
-			source_unit_id = source_unit.get_instance_id()
-	# source_unit_id is captured for forward-compat; the signal currently
-	# doesn't carry it (write-shaped resource_changed has team/kind/delta/total
-	# — the killer/source attribution is on the Farr signal, not here).
-	# Keep the resolution code; downstream tasks may need it.
-	# Silence the unused-warning by referencing once.
-	if source_unit_id == -2:
-		pass  # unreachable; keeps linter quiet
-	# (No-op: source_unit_id retained for future signal extension. Today's
-	# resource_changed is intentionally team/kind/delta-only — see signal
-	# declaration in event_bus.gd for rationale.)
-
-	# Reason is recorded in the F2 overlay (Phase 4); we don't emit it on the
-	# write-shaped signal because every consumer that needs the reason can
-	# subscribe to telemetry. Same precedent: farr_changed carries reason as
-	# a String for F2; resource_changed is leaner because the resource
-	# economy already has many more events than Farr.
-	if reason == &"":
-		pass
-
+	# source_unit + reason are captured in the parameter signature for
+	# forward-compat with future telemetry consumers (parallels
+	# apply_farr_change's signature). resource_changed is intentionally
+	# team/kind/delta/total-only today; reason lives in F2 overlay (Phase 4),
+	# source_unit_id resolution is a 3-line re-add when a consumer needs it
+	# (see git history pre-v1.2.2 for the resolution pattern). Per Manifesto
+	# Principle 4 (Lean Iteration): dead reference-only code deleted.
 	EventBus.resource_changed.emit(team, kind, effective_delta, post)
 
 
@@ -249,7 +227,7 @@ func change_population(
 	team: int,
 	delta: int,
 	reason: StringName,
-	source_unit: Object,
+	_source_unit: Object,
 ) -> void:
 	assert(SimClock.is_ticking(),
 		"Off-tick population mutation: team=%d delta=%d reason='%s'"
@@ -261,10 +239,11 @@ func change_population(
 	var effective_delta: int = post - pre
 	_population[team] = post
 	_set_sim(&"_population", _population)
-	# Same source_unit / reason capture rationale as change_resource — kept
-	# for telemetry symmetry; no signal field consumes them today.
-	if source_unit == null and reason == &"":
-		pass
+	# source_unit + reason capture parallels change_resource (above). Today's
+	# resource_changed signal is team/kind/delta/total-only; reason flows
+	# through F2 overlay. Dead reference-only code deleted v1.2.2 (Manifesto
+	# Principle 4); see change_resource for the same shape.
+	#
 	# Use the same EventBus signal for symmetry; resource_changed carries a
 	# StringName kind so population can ride the same channel under
 	# &"population". Avoids a second signal that the HUD would also need to
@@ -276,7 +255,7 @@ func change_population_cap(
 	team: int,
 	delta: int,
 	reason: StringName,
-	source_unit: Object,
+	_source_unit: Object,
 ) -> void:
 	assert(SimClock.is_ticking(),
 		"Off-tick population_cap mutation: team=%d delta=%d reason='%s'"
@@ -288,9 +267,147 @@ func change_population_cap(
 	var effective_delta: int = post - pre
 	_population_cap[team] = post
 	_set_sim(&"_population_cap", _population_cap)
-	if source_unit == null and reason == &"":
-		pass
 	EventBus.resource_changed.emit(team, &"population_cap", effective_delta, post)
+
+
+# === Resource-node registry — Phase 3 session 2 wave 1A (Room A Decision 4) =
+#
+# Per the Room A Open Space ratified 2026-05-14, ResourceSystem exposes a
+# registry of ResourceNode-like nodes so future consumers (Phase 6 scout AI,
+# Phase 5 Kaveh Event scripting) can enumerate &"coin" / &"grain" sources by
+# kind without scene-tree walks. Wave 1A scope ships the API + reset
+# behavior; the query side (get_nodes_of_kind, by_team filter) lands when a
+# consumer demands it.
+#
+# Why on ResourceSystem (not on a new ResourceNodeRegistry autoload):
+# Mazra'eh's _on_placement_complete already calls into ResourceSystem (for
+# the chokepoint). Registering with the same autoload at the same seam
+# keeps the cross-cutting surface small. The MineNode wave-1A code shipped
+# without using this — mines were raycast-routed, not registry-enumerated.
+# Mazra'eh in wave 1A this session, and DummyAI in wave 3B, are the first
+# registry-using consumers (DummyAI may or may not — depends on its build
+# order shape per the Path C decision-log).
+#
+# Why duck-typed on `kind` (not class-checked on ResourceNode):
+# Mazra'eh extends Building, not ResourceNode (option (iii) per Room A —
+# duck-typed three-call API). A class_check `node is ResourceNode` would
+# reject Mazra'eh. The registry tolerates anything exposing a `kind`
+# StringName field via `.get(&"kind")`. Same pattern as
+# UnitState_Gathering's `has_method(&"request_extract")` filter.
+
+# Per-kind registry — Dictionary[StringName, Array[Node]] keyed by the
+# RESOURCE kind passed explicitly at register-time (&"coin" / &"grain").
+# The values are Arrays-of-Nodes so iteration order is stable across
+# registrations (deterministic Phase 6 enumeration).
+#
+# v1.2.1 fix-up rationale (2026-05-14): the original v1.2.0 read kind from
+# `node.kind`. That worked for MineNode (whose `kind = &"coin"` is the
+# resource kind) but BROKE for Mazra'eh (which extends Building, so
+# `kind = &"mazraeh"` is the Building kind, NOT the resource kind &"grain").
+# A consumer asking `get_nodes_of_kind(&"grain")` would have missed Mazra'eh
+# entirely. Decoupling registered-kind from node-kind via the explicit
+# parameter eliminates the ambiguity at the seam between MineNode-as-
+# ResourceNode and Mazra'eh-as-Building.
+#
+# A node's registration is keyed only on the kind passed at register-time;
+# the registry does not introspect node.kind. The double-register guard
+# (same node, same kind, twice) catches buggy callers; double-register
+# under DIFFERENT kinds is allowed (a hypothetical hybrid node could
+# legitimately register under multiple kinds).
+var _nodes_by_kind: Dictionary = {}
+
+
+## Register a resource-providing node so consumers can enumerate it.
+##
+## The `kind` parameter is the RESOURCE kind (&"coin" / &"grain"), passed
+## explicitly by the caller. It does NOT have to match the node's `kind`
+## field — for Mazra'eh (which extends Building, so `node.kind = &"mazraeh"`
+## is the Building kind), the caller passes `&"grain"` here. The registry
+## stores the node under the EXPLICIT kind, not the node's field.
+##
+## Callers:
+##   - Mazra'eh's _on_placement_complete: `register_node(self, Constants.KIND_GRAIN)`
+##   - Future MineNode self-register seam: `register_node(self, Constants.KIND_COIN)`
+##   - Phase 5+ resource sources: caller-decided kind.
+##
+## Idempotency: registering the SAME node under the SAME kind twice emits a
+## warning and does NOT duplicate. Registering the SAME node under
+## DIFFERENT kinds is allowed (hypothetical hybrid node case) — both buckets
+## carry the ref; unregister_node clears all buckets.
+##
+## Sanctioned-write context: this method may be called from off-tick
+## contexts (a building's _on_placement_complete runs from inside the
+## worker's _sim_tick, which is on-tick; but for symmetry with the
+## off-tick Mazra'eh-construction case in wave 1C, the registry is a
+## control-plane structure, not a sim-state structure — same precedent
+## as _coin_x100's initial _load_starting_values write at _ready).
+##
+## kind must be a non-empty StringName. An empty kind or null/invalid node
+## produces a push_error and no-op.
+func register_node(node: Node, kind: StringName) -> void:
+	if node == null or not is_instance_valid(node):
+		push_error(
+			"ResourceSystem.register_node: null or invalid node — no-op.")
+		return
+	if kind == &"":
+		push_error(
+			"ResourceSystem.register_node: empty kind StringName. No-op. "
+			+ "node=%s" % str(node))
+		return
+	# Ensure the per-kind array exists.
+	if not _nodes_by_kind.has(kind):
+		_nodes_by_kind[kind] = []
+	var bucket: Array = _nodes_by_kind[kind]
+	# Idempotency guard — warn but don't duplicate.
+	if bucket.has(node):
+		push_warning(
+			"ResourceSystem.register_node: node already registered "
+			+ "for kind &\"%s\". Ignoring second registration. " % kind
+			+ "(Caller may have called _on_placement_complete twice.)")
+		return
+	bucket.append(node)
+
+
+## Remove a node from the registry. Idempotent — unregistering an unknown
+## node is a no-op (no warn). Callers (Mazra'eh on destruction, MineNode
+## on depletion) call this from teardown paths where the node may or may
+## not be registered.
+func unregister_node(node: Node) -> void:
+	if node == null:
+		# Even a freed instance can be deregistered if we scan all buckets
+		# for the ref. But null is a hard no-op.
+		return
+	# Scan all buckets — the node may have been registered under a kind
+	# that's since changed (shouldn't happen, but the death-path code
+	# shouldn't have to know the node's kind to clean up after it).
+	for kind in _nodes_by_kind.keys():
+		var bucket: Array = _nodes_by_kind[kind]
+		if bucket.has(node):
+			bucket.erase(node)
+			# Don't return — defensively continue scanning in case a bug
+			# double-registered the node under two kinds. Harmless for the
+			# common case (single registration); diagnostic for the bad case.
+
+
+## Introspection helper — true if the node is currently in the registry
+## under any kind. Used by tests + the F4 debug overlay (Phase 4+); not a
+## hot-path consumer surface (Phase 6 AI uses the per-kind enumeration
+## helper instead).
+func is_node_registered(node: Node) -> bool:
+	if node == null:
+		return false
+	for kind in _nodes_by_kind.keys():
+		if (_nodes_by_kind[kind] as Array).has(node):
+			return true
+	return false
+
+
+## Per-kind count — tests + future enumeration scaffolding. The full
+## get_nodes_of_kind enumeration API lands when a consumer needs it.
+func registered_node_count_for_kind(kind: StringName) -> int:
+	if not _nodes_by_kind.has(kind):
+		return 0
+	return (_nodes_by_kind[kind] as Array).size()
 
 
 # === Test/harness helper ====================================================
@@ -303,4 +420,8 @@ func reset() -> void:
 	_grain_x100.clear()
 	_population.clear()
 	_population_cap.clear()
+	# Wave-1A: also clear the node registry so a node from a prior simulated
+	# match doesn't linger and skew enumeration in the next. MatchHarness
+	# discipline.
+	_nodes_by_kind.clear()
 	_load_starting_values_from_balance_data()

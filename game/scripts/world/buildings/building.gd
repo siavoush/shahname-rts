@@ -192,3 +192,80 @@ func place_at(world_pos: Vector3, owner_team: int, placer_unit_id: int) -> void:
 ## with apply_farr_change / change_resource's source_unit pattern.
 func _on_placement_complete(_placer_unit_id: int) -> void:
 	pass
+
+
+# === Footprint API ===========================================================
+#
+# Phase 3 session 2 wave 1A — cross-wave deliverable for Room B's
+# FOG_DATA_CONTRACT.md v1.3.0 §3.2. FogSystem (wave 3A) consumes this method
+# to compute building visibility footprints in fog cells without reaching
+# into per-scene CollisionShape3D paths. Centralizing the footprint contract
+# on the Building base lets each subclass override for non-rectangular cases
+# while the default (BoxMesh / BoxShape3D) covers Khaneh, Mazra'eh,
+# Sarbaz-khaneh, Atashkadeh at MVP scale.
+#
+# The 8m × 0 × 8m fallback (= 2 × FOG_CELL_SIZE on a 4m fog grid) handles
+# the wave-ordering edge case where a Building instance is queried before a
+# scene-level mesh/shape is wired up. FogSystem's per-tick cost on a 2×2
+# cell footprint is still O(1) per source, so the fallback is non-catastrophic.
+
+## Fog-cell fallback constant. Per FOG_DATA_CONTRACT v1.3.0 §1.1, the fog
+## grid uses 4m cells; the fallback is 2×2 cells = 8m on a side. Hardcoded
+## here rather than read from FogConfig because the constant is
+## documentation-of-intent — a Building's "I have no mesh" fallback should
+## not depend on whether the fog autoload has loaded. When FogConfig ships
+## in wave 3A, world-builder may switch this to read from BalanceData;
+## that's a one-line follow-up and not a wave-1A concern.
+const _FOOTPRINT_FALLBACK_SIZE_M: float = 8.0
+
+
+## Returns the building's world-aligned footprint AABB.
+##
+## Used by FogSystem (wave 3A) to compute the cells a building reveals when
+## visible. The AABB position is the min-corner in world coordinates; size
+## is the extent. Y is included for completeness but consumers (fog) ignore
+## it — visibility is XZ-only.
+##
+## Default implementation: scan for a MeshInstance3D child, take its
+## local-space AABB, translate by the mesh's transform + the building's
+## global_position. Covers the Phase 3 Building subtree shape (see
+## scenes/world/buildings/building.tscn): root Node3D → MeshInstance3D
+## with a BoxMesh sized to the building's silhouette. Concrete subclasses
+## that ship the standard mesh layout get correct footprints for free.
+##
+## Fallback: if no MeshInstance3D is found in the subtree, return an AABB
+## sized _FOOTPRINT_FALLBACK_SIZE_M centered on global_position. Per
+## FOG_DATA_CONTRACT v1.3.0 §3.2: "If wave 3A (FogSystem) ships before
+## wave 1A (Mazra'eh + the method), FogSystem falls back to a 2×2 default
+## per the base implementation's fallback clause." The fallback is also
+## the right answer for hypothetical mesh-less Building instances (tests
+## that .new() the script without instantiating a scene).
+##
+## Subclass override pattern: a future building with a non-box silhouette
+## (e.g., L-shaped Sarbaz-khaneh barracks) overrides this to return a
+## custom AABB based on its scene composition.
+func get_footprint_aabb() -> AABB:
+	var mesh: MeshInstance3D = find_child("MeshInstance3D", true, false) as MeshInstance3D
+	if mesh != null and mesh.mesh != null:
+		# Mesh local AABB → world AABB. The mesh node may carry a local
+		# transform (the base scene Y-offsets the MeshInstance3D by 0.6 so
+		# the mesh sits on top of the terrain plane). We compose the
+		# mesh's local-relative transform with the building's global
+		# transform to get the AABB in world space.
+		var local_aabb: AABB = mesh.mesh.get_aabb()
+		# Transform from the mesh's local space to world space.
+		# mesh.global_transform converts mesh-local to world. Apply to
+		# both corners; rebuild AABB from min/max.
+		var world_xform: Transform3D = mesh.global_transform
+		var world_aabb: AABB = world_xform * local_aabb
+		# AABB may have negative size components if the transform is
+		# unusual; AABB.abs() normalizes.
+		return world_aabb.abs()
+	# Fallback: 8m × 0 × 8m centered on global_position. Y size = 0 keeps
+	# the AABB "flat" for fog; fog ignores Y anyway, but emitting a 0-Y
+	# size avoids carrying noise into downstream consumers.
+	var half: float = _FOOTPRINT_FALLBACK_SIZE_M * 0.5
+	return AABB(
+		global_position - Vector3(half, 0.0, half),
+		Vector3(_FOOTPRINT_FALLBACK_SIZE_M, 0.0, _FOOTPRINT_FALLBACK_SIZE_M),
+	)

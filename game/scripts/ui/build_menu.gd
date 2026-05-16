@@ -14,13 +14,15 @@ extends CanvasLayer
 ##     Sessoin 2's Sarbaz-khaneh production panel will be a SEPARATE
 ##     CanvasLayer; the build menu is worker-only.
 ##
-## Building list (Phase 3 session 1 wave 1C):
-##   - Khaneh (the only building this session). Cost surfaced via
-##     `Khaneh.cost_coin()`.
+## Building list:
+##   - Khaneh (wave 1C session 1). Cost via `Khaneh.cost_coin()`.
+##   - Mazra'eh (session 2 wave 1A late-add — enables wave-1A live-test
+##     by exposing a UI path to instantiate the grain farm in-game).
+##     Cost via `Mazraeh.cost_coin()`.
 ##
-## Session 2+ extends the list to Mazra'eh / Ma'dan / Sarbaz-khaneh /
-## Atashkadeh as those concrete Buildings ship. The button table here
-## is the place to extend.
+## Session 2+ extends the list to Ma'dan / Sarbaz-khaneh / Atashkadeh
+## as those concrete Buildings ship. The button table here is the
+## place to extend.
 ##
 ## Reads:
 ##   - EventBus.selection_changed (read-shaped) to know when to show /
@@ -61,8 +63,9 @@ extends CanvasLayer
 ##
 ## Sim Contract / lint compliance:
 ##   - i18n: every visible string flows through tr(). Strings:
-##     UI_BUILD_MENU_HEADER, UI_BUILDING_KHANEH_COST. The Persian
-##     column stays empty per Tier 2 schedule.
+##     UI_BUILD_MENU_HEADER, UI_BUILDING_KHANEH_COST,
+##     UI_BUILDING_MAZRAEH_COST. The Persian column stays empty per
+##     Tier 2 schedule.
 ##   - No sim-state writes. UI reads only. The build_placement_started
 ##     emission is read-shaped (no consumer mutates sim state in the
 ##     handler — BuildPlacementHandler's handler is also UI-shaped;
@@ -86,6 +89,15 @@ const _COLOR_BG: Color = Color(0.1, 0.1, 0.12, 0.75)
 # Button color — earthy tan to subtly hint at the Khaneh's material.
 const _COLOR_BUTTON_NORMAL: Color = Color(0.45, 0.38, 0.25)
 
+# Button color — agricultural green for the Mazra'eh (related to the
+# field placeholder color but darker so it reads against the dark HUD).
+const _COLOR_BUTTON_MAZRAEH: Color = Color(0.45, 0.55, 0.30)
+
+# Button color — stone/metal grey for the Ma'dan (related to the
+# building scene's industrial-grey but darker so it reads against the
+# dark HUD).
+const _COLOR_BUTTON_MADAN: Color = Color(0.55, 0.55, 0.60)
+
 
 # === Node refs =============================================================
 # Resolved @onready against the build_menu.tscn structure.
@@ -94,6 +106,8 @@ const _COLOR_BUTTON_NORMAL: Color = Color(0.45, 0.38, 0.25)
 @onready var _vbox: VBoxContainer = $Root/Margin/VBox
 @onready var _header_label: Label = $Root/Margin/VBox/HeaderLabel
 @onready var _khaneh_button: Button = $Root/Margin/VBox/KhanehButton
+@onready var _mazraeh_button: Button = $Root/Margin/VBox/MazraehButton
+@onready var _madan_button: Button = $Root/Margin/VBox/MadanButton
 
 
 # === Lifecycle =============================================================
@@ -108,6 +122,10 @@ func _ready() -> void:
 	# per click; we emit build_placement_started in the handler.
 	if not _khaneh_button.pressed.is_connected(_on_khaneh_button_pressed):
 		_khaneh_button.pressed.connect(_on_khaneh_button_pressed)
+	if not _mazraeh_button.pressed.is_connected(_on_mazraeh_button_pressed):
+		_mazraeh_button.pressed.connect(_on_mazraeh_button_pressed)
+	if not _madan_button.pressed.is_connected(_on_madan_button_pressed):
+		_madan_button.pressed.connect(_on_madan_button_pressed)
 
 	# Subscribe to selection changes. Read-shaped signal; we only update
 	# UI-local visibility / button text in the handler.
@@ -125,6 +143,12 @@ func _exit_tree() -> void:
 	if _khaneh_button != null \
 			and _khaneh_button.pressed.is_connected(_on_khaneh_button_pressed):
 		_khaneh_button.pressed.disconnect(_on_khaneh_button_pressed)
+	if _mazraeh_button != null \
+			and _mazraeh_button.pressed.is_connected(_on_mazraeh_button_pressed):
+		_mazraeh_button.pressed.disconnect(_on_mazraeh_button_pressed)
+	if _madan_button != null \
+			and _madan_button.pressed.is_connected(_on_madan_button_pressed):
+		_madan_button.pressed.disconnect(_on_madan_button_pressed)
 	if EventBus.selection_changed.is_connected(_on_selection_changed):
 		EventBus.selection_changed.disconnect(_on_selection_changed)
 
@@ -168,8 +192,12 @@ func _refresh_from_selection() -> void:
 # can't afford it.
 func _refresh_button_labels() -> void:
 	_header_label.text = tr("UI_BUILD_MENU_HEADER")
-	var cost: int = _KhanehScript.call(&"cost_coin")
-	_khaneh_button.text = tr("UI_BUILDING_KHANEH_COST") % [cost]
+	var khaneh_cost: int = _KhanehScript.call(&"cost_coin")
+	_khaneh_button.text = tr("UI_BUILDING_KHANEH_COST") % [khaneh_cost]
+	var mazraeh_cost: int = _MazraehScript.call(&"cost_coin")
+	_mazraeh_button.text = tr("UI_BUILDING_MAZRAEH_COST") % [mazraeh_cost]
+	var madan_cost: int = _MadanScript.call(&"cost_coin")
+	_madan_button.text = tr("UI_BUILDING_MADAN_COST") % [madan_cost]
 
 
 # === Button handler ========================================================
@@ -178,8 +206,21 @@ func _refresh_button_labels() -> void:
 # ResourceSystem.change_resource synchronously. The cost is deducted at
 # placement time in UnitState_Constructing's on-arrival step.
 func _on_khaneh_button_pressed() -> void:
+	# x100 fixed-point per Sim Contract §1.6 (whole-coin → coin_x100).
 	var cost_x100: int = _KhanehScript.call(&"cost_coin") * 100
 	EventBus.build_placement_started.emit(_KhanehScript.KIND_KHANEH, cost_x100)
+
+
+func _on_mazraeh_button_pressed() -> void:
+	# x100 fixed-point per Sim Contract §1.6 (whole-coin → coin_x100).
+	var cost_x100: int = _MazraehScript.call(&"cost_coin") * 100
+	EventBus.build_placement_started.emit(_MazraehScript.KIND_MAZRAEH, cost_x100)
+
+
+func _on_madan_button_pressed() -> void:
+	# x100 fixed-point per Sim Contract §1.6 (whole-coin → coin_x100).
+	var cost_x100: int = _MadanScript.call(&"cost_coin") * 100
+	EventBus.build_placement_started.emit(_MadanScript.KIND_MADAN, cost_x100)
 
 
 # === Duck-type helpers ====================================================
@@ -202,3 +243,5 @@ func _is_kargar_shaped(n: Object) -> bool:
 # order can still race — same defensive pattern as the rest of the
 # codebase).
 const _KhanehScript: Script = preload("res://scripts/world/buildings/khaneh.gd")
+const _MazraehScript: Script = preload("res://scripts/world/buildings/mazraeh.gd")
+const _MadanScript: Script = preload("res://scripts/world/buildings/madan.gd")

@@ -211,6 +211,162 @@ func test_unknown_kind_logs_error_and_no_mutation() -> void:
 
 # === reset() symmetry =======================================================
 
+# === Node registry — Phase 3 session 2 wave 1A (Room A Decision 4) =========
+#
+# Per Room A's ratified decision (2026-05-14): ResourceSystem exposes
+# register_node / unregister_node so future AI consumers (Phase 6 scout AI,
+# Phase 3 DummyAI variants) can enumerate resource sources by kind without
+# walking the scene tree each time.
+#
+# Wave-1A scope: ship the API + idempotency + double-register-warning.
+# No consumer exists yet; the API surface lands so Mazra'eh's
+# _on_placement_complete can call register_node when the wave-1A Mazra'eh
+# ships in this same wave (world-builder's slice). Phase 6 / future
+# query-side helpers (get_nodes_of_kind, by_team filter) land when a
+# consumer demands them.
+#
+# v1.2.1 fix-up (2026-05-14): API now takes kind as an explicit parameter:
+# `register_node(node, kind: StringName)`. Original v1.2.0 derived kind from
+# `node.kind` field, but that breaks for Mazra'eh (which extends Building,
+# so `node.kind = &"mazraeh"` is the Building kind, NOT the resource kind
+# &"grain"). Caller passes the RESOURCE kind explicitly — eliminates the
+# field-name ambiguity at the seam between MineNode (kind IS resource kind)
+# and Mazra'eh-as-Building (kind is Building kind).
+
+func test_register_node_stores_under_explicit_kind() -> void:
+	# Caller passes the resource kind explicitly. The node's `kind` field
+	# (if any) is ignored — the registry trusts the caller's intent.
+	var dummy: _FakeResourceNode = _FakeResourceNode.new()
+	dummy.kind = &"coin"  # node's own kind (may be Building kind, doesn't matter)
+	add_child_autofree(dummy)
+	ResourceSystem.register_node(dummy, &"coin")
+	var found: bool = ResourceSystem.is_node_registered(dummy)
+	assert_true(found,
+		"register_node(node, &\"coin\") stores the node — "
+		+ "is_node_registered returns true")
+	assert_eq(ResourceSystem.registered_node_count_for_kind(&"coin"), 1,
+		"node lands in the &\"coin\" bucket")
+
+
+func test_register_node_decouples_node_kind_from_registered_kind() -> void:
+	# v1.2.1 motivating case: Mazra'eh has `kind = &"mazraeh"` (Building kind)
+	# but registers as a GRAIN source. The registered kind is the explicit
+	# parameter, not the node.kind field.
+	var mazraeh_like: _FakeResourceNode = _FakeResourceNode.new()
+	mazraeh_like.kind = &"mazraeh"  # Building kind (irrelevant to registry)
+	add_child_autofree(mazraeh_like)
+	ResourceSystem.register_node(mazraeh_like, &"grain")  # resource kind explicit
+	assert_eq(ResourceSystem.registered_node_count_for_kind(&"grain"), 1,
+		"Mazra'eh-like (kind=&\"mazraeh\") registers under explicit &\"grain\"")
+	assert_eq(ResourceSystem.registered_node_count_for_kind(&"mazraeh"), 0,
+		"Mazra'eh-like does NOT register under its Building kind &\"mazraeh\" — "
+		+ "the explicit registered kind is the authority")
+
+
+func test_unregister_node_removes_a_registered_node() -> void:
+	var dummy: _FakeResourceNode = _FakeResourceNode.new()
+	dummy.kind = &"grain"
+	add_child_autofree(dummy)
+	ResourceSystem.register_node(dummy, &"grain")
+	ResourceSystem.unregister_node(dummy)
+	var found: bool = ResourceSystem.is_node_registered(dummy)
+	assert_false(found,
+		"unregister_node removes the node — subsequent is_node_registered "
+		+ "returns false")
+
+
+func test_unregister_node_no_kind_arg_finds_node_under_any_kind() -> void:
+	# unregister_node intentionally does NOT take a kind argument — it scans
+	# all buckets. This matters because the caller's death/teardown path may
+	# not remember which kind the node was registered under (the registered
+	# kind is decided at register-time and lives in the registry, not on the
+	# node itself). The scan is O(num_kinds) — trivial at MVP scale (~2-3 kinds).
+	var dummy: _FakeResourceNode = _FakeResourceNode.new()
+	dummy.kind = &"mazraeh"  # Building kind
+	add_child_autofree(dummy)
+	ResourceSystem.register_node(dummy, &"grain")  # registered under resource kind
+	# The caller's teardown path calls unregister_node(self) — no kind argument.
+	ResourceSystem.unregister_node(dummy)
+	assert_false(ResourceSystem.is_node_registered(dummy),
+		"unregister_node(node) finds and removes the node regardless of "
+		+ "which kind bucket holds it — no kind argument needed")
+
+
+func test_unregister_node_is_idempotent_on_unknown_node() -> void:
+	# Per Room A — "unregister of unknown is no-op." A Mazra'eh that
+	# never managed to register (perhaps because it destructs before
+	# its _on_placement_complete fires) should not crash the system on
+	# unregister-during-cleanup.
+	var unknown: _FakeResourceNode = _FakeResourceNode.new()
+	unknown.kind = &"grain"
+	add_child_autofree(unknown)
+	# Note: NEVER registered.
+	ResourceSystem.unregister_node(unknown)  # must not crash
+	assert_false(ResourceSystem.is_node_registered(unknown),
+		"unregister of an unknown node is a no-op (still not registered)")
+
+
+func test_double_register_emits_warning_but_does_not_duplicate() -> void:
+	# Per Room A — "double-register-warning." If a Mazra'eh's
+	# _on_placement_complete is somehow called twice (test fixture bug,
+	# future construction-state refactor), we want a loud warning so the
+	# bug is observable, but we DO NOT want the node listed twice in the
+	# registry (would double-count grain-source enumeration for AI).
+	var dummy: _FakeResourceNode = _FakeResourceNode.new()
+	dummy.kind = &"coin"
+	add_child_autofree(dummy)
+	ResourceSystem.register_node(dummy, &"coin")
+	# Second registration with the SAME kind — must not crash, must not duplicate.
+	ResourceSystem.register_node(dummy, &"coin")
+	# Verify only one entry exists by counting.
+	var count: int = ResourceSystem.registered_node_count_for_kind(&"coin")
+	assert_eq(count, 1,
+		"double-register yields ONE entry, not two — registry is idempotent")
+
+
+func test_register_node_handles_multiple_kinds() -> void:
+	# A MineNode (registered as &"coin") and a Mazra'eh (registered as
+	# &"grain") should both register without colliding. Verified via the
+	# per-kind count helper.
+	var mine: _FakeResourceNode = _FakeResourceNode.new()
+	mine.kind = &"coin"  # matches registered kind for MineNode (kind IS resource kind)
+	add_child_autofree(mine)
+	var farm: _FakeResourceNode = _FakeResourceNode.new()
+	farm.kind = &"mazraeh"  # Mazra'eh case — kind is Building kind
+	add_child_autofree(farm)
+	ResourceSystem.register_node(mine, &"coin")
+	ResourceSystem.register_node(farm, &"grain")  # explicit resource kind
+	assert_eq(ResourceSystem.registered_node_count_for_kind(&"coin"), 1,
+		"coin registry has 1 entry (the mine)")
+	assert_eq(ResourceSystem.registered_node_count_for_kind(&"grain"), 1,
+		"grain registry has 1 entry (the farm) — no cross-kind collision")
+
+
+func test_reset_clears_node_registry() -> void:
+	# reset() is called by MatchHarness between simulated matches. The
+	# node registry must be cleared too — otherwise a node from a prior
+	# match would linger and skew enumeration in the next.
+	var dummy: _FakeResourceNode = _FakeResourceNode.new()
+	dummy.kind = &"coin"
+	add_child_autofree(dummy)
+	ResourceSystem.register_node(dummy, &"coin")
+	assert_true(ResourceSystem.is_node_registered(dummy))
+	ResourceSystem.reset()
+	assert_false(ResourceSystem.is_node_registered(dummy),
+		"reset() clears the node registry — match teardown discipline")
+
+
+# Inner-class fake ResourceNode for the registry tests. Has only what the
+# registry contract requires (a `kind` field for backward-compat with
+# v1.2.0 callers; the v1.2.1 register_node signature uses the explicit
+# kind arg, but the field still exists for cases where consumers want to
+# read the node's own kind for other reasons).
+# Real ResourceNode / Mazra'eh extend Node3D, but the registry shouldn't
+# care about Node3D-ness — explicit kind is the registry contract.
+class _FakeResourceNode extends Node:
+	var kind: StringName = &""
+
+
 func test_reset_restores_starting_values() -> void:
 	# Mutate, then reset, then verify we're back at the starting values.
 	_run_inside_tick(func() -> void:

@@ -39,3 +39,42 @@ class_name BuildingStats extends Resource
 ## (02f_PHASE_3_KICKOFF.md §3) opted for +10 as the placeholder starting
 ## point pending playtest; balance-engineer tunes via balance.tres.
 @export var population_capacity: int = 0
+
+
+# === Modifier-emitter fields (wave 1B — Ma'dan) =============================
+#
+# Ma'dan is the first non-resource-producing Building subclass that
+# modifies adjacent ResourceNodes' extraction yield. Per Open Space Room A
+# Option B (2026-05-14): Ma'dan does NOT register as a resource source;
+# instead it registers as an `extraction_modifier` on the nearest MineNode
+# within `modifier_radius_m`, and MineNode.effective_yield_per_trip_x100
+# composes the base yield with the modifier's value.
+#
+# These three fields are zero/false for non-modifier buildings (Khaneh,
+# Mazra'eh, Atashkadeh, Throne, etc.) — they're only read by code that
+# specifically queries them on a Building. Balance-engineer's d798e78
+# ships `bldg_madan` with modifier_value_x100 = 150 / modifier_radius_m
+# = 4.0 / modifier_stacks = false. RNC v1.3.0 (wave-1B Commit 4) documents
+# the modifier-emitter pattern.
+
+## Yield multiplier in x100 fixed-point applied by this modifier-emitter
+## to the bonded ResourceNode's yield_per_trip_x100. 150 = 1.5x. 0 means
+## "not a modifier-emitter" (the default — Khaneh / Mazra'eh / etc.).
+##
+## When a registered modifier exists on a MineNode, its
+## effective_yield_per_trip_x100() returns:
+##   base_yield_x100 * modifier_value_x100 / 100
+## per design Q2 (1.5x default).
+@export var modifier_value_x100: int = 0
+
+## Search radius in world metres for the modifier-emitter to discover its
+## target ResourceNode. The Ma'dan finds the nearest MineNode within
+## modifier_radius_m and registers as that mine's extraction modifier.
+## 0 means "not a modifier-emitter" (the default).
+@export var modifier_radius_m: float = 0.0
+
+## Whether multiple modifier-emitters can compound their effects on the
+## same target. Per kickoff design Q3 (2026-05-14): default false
+## (first-registered-wins). When true, modifiers compound multiplicatively
+## (1.5x × 1.5x = 2.25x for two Ma'dans on one mine).
+@export var modifier_stacks: bool = false
