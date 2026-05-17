@@ -81,11 +81,15 @@ class_name UnitState_Constructing extends "res://scripts/core/state_machine/unit
 ##     2. Emit Building.construction_progress_updated(percent_x100)
 ##        where percent_x100 = elapsed * 10000 / total. The UI progress
 ##        bar consumes this signal.
-##   When the dwell completes:
-##     1. Building._on_construction_complete fires — Stage 2 operational
+##   When the dwell completes (Stage 2):
+##     1. Building._on_construction_complete fires — operational
 ##        activation (Mazra'eh.is_gatherable flips, Ma'dan registers
 ##        with the adjacent mine, etc.).
-##     2. The worker transitions back to Idle.
+##     2. Building.construction_finalized(placer_unit_id) signal emits
+##        — the externally-observable completion signal. UI / telemetry
+##        consumers connect here; resolves the progress-overlay
+##        hide-trigger gap (Task #139).
+##     3. The worker transitions back to Idle.
 ##
 ##   The progress signal does NOT fire at the completion tick — Stage 2
 ##   activation is the distinct "we're done" signal. Per the Building
@@ -332,12 +336,27 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 	# Dwell complete — fire Stage 2 operational activation. Per the
 	# Building.construction_progress_updated signal header: we do NOT
 	# emit progress at 10000 here; the _on_construction_complete hook
-	# IS the completion signal, distinct from progress.
+	# and the construction_finalized signal together signal completion.
+	#
+	# Emit ORDERING is load-bearing per the construction_finalized signal
+	# header on Building base: the virtual hook fires FIRST (operational
+	# side-effects apply — is_gatherable flips, modifier registers), THEN
+	# the signal fires. UI / telemetry consumers connecting to
+	# construction_finalized see post-Stage-2 state on readout.
 	if _building_ref != null and is_instance_valid(_building_ref):
 		var placer_unit_id: int = -1
 		if ctx != null and &"unit_id" in ctx:
 			placer_unit_id = int(ctx.unit_id)
 		_building_ref.call(&"_on_construction_complete", placer_unit_id)
+		# Emit construction_finalized AFTER the virtual runs — the
+		# externally-observable Stage-2 completion signal. Resolves the
+		# ui-developer-p3s3 progress-overlay hide-trigger gap (Task #139).
+		# is_instance_valid re-check is belt-and-braces against a
+		# subclass _on_construction_complete that queue_frees self
+		# (no concrete subclass does this today, but the guard is cheap).
+		if is_instance_valid(_building_ref):
+			_building_ref.emit_signal(
+				&"construction_finalized", placer_unit_id)
 	_operationally_complete = true
 	_request_idle(ctx)
 

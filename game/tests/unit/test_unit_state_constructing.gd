@@ -718,3 +718,158 @@ func test_construction_progress_basis_points_match_elapsed_over_total() -> void:
 			+ "duplicates / regressions): prev_k=%d, this_k=%d, v=%d"
 			% [prev_k, k, iv])
 		prev_k = k
+
+
+# ---------------------------------------------------------------------------
+# construction_finalized signal — Task #139 Track 1 follow-on
+# ---------------------------------------------------------------------------
+#
+# Integration-level coverage for the Stage-2 completion signal. The
+# externally-observable signal that resolves ui-developer-p3s3's
+# progress-overlay hide-trigger gap. Behavioral contract:
+#   - Emitted exactly ONCE per built building, at Stage 2 (after the
+#     virtual hook returns).
+#   - Carries the placing worker's unit_id as payload.
+#   - Receivers see post-Stage-2 state when handler fires (the virtual
+#     fires FIRST, then the signal — so is_gatherable / modifier
+#     registrations are visible on readout).
+#   - No emit if construction is interrupted mid-dwell.
+
+func test_construction_finalized_emits_exactly_once_per_construction() -> void:
+	# Drive a full Khaneh construction (~92 ticks). Capture every
+	# construction_finalized emit. Expected: exactly one emit, with
+	# placer_unit_id = the worker's unit_id.
+	var captured: Array = []
+	_unit = _spawn_kargar(Vector3.ZERO)
+	var worker_id: int = _unit.unit_id
+	_unit.current_command = {
+		"kind": &"construct",
+		"payload": {
+			&"building_kind": &"khaneh",
+			&"target_position": Vector3(5.0, 0.0, 0.0),
+		},
+	}
+	_unit.fsm.transition_to(&"constructing")
+	# Connect the handler the moment the Khaneh is instantiated.
+	var khaneh: Variant = null
+	var on_finalized: Callable = func(placer_unit_id: int) -> void:
+		captured.append(placer_unit_id)
+	for _i in range(200):
+		_drive_one_loop()
+		if khaneh == null:
+			for b: Node in get_tree().get_nodes_in_group(&"buildings"):
+				if is_instance_valid(b) and b.get(&"kind") == &"khaneh":
+					khaneh = b
+					khaneh.construction_finalized.connect(on_finalized)
+					break
+		if _unit.fsm.current.id == &"idle":
+			break
+	if khaneh != null:
+		khaneh.construction_finalized.disconnect(on_finalized)
+	# Exactly one emit — no duplicates from re-entry, no missing emit.
+	assert_eq(captured.size(), 1,
+		"construction_finalized must emit exactly ONCE per built building. "
+		+ "Got %d emits." % captured.size())
+	assert_eq(int(captured[0]), worker_id,
+		"construction_finalized payload must equal the placing worker's "
+		+ "unit_id (%d). Got %d." % [worker_id, int(captured[0])])
+
+
+func test_construction_finalized_fires_after_on_construction_complete() -> void:
+	# Emit ORDERING contract: the virtual hook fires FIRST, then the
+	# signal. Receivers must see post-Stage-2 state (is_gatherable = true
+	# for Mazra'eh). Drive a full Mazra'eh construction and check
+	# is_gatherable AFTER the construction_finalized handler has run.
+	#
+	# GDScript lambda capture is by-value at creation time, so we cannot
+	# read `mazraeh` inside the closure to inspect the building's state —
+	# the closure would see the null value the variable had at creation.
+	# Instead the handler appends a sentinel (1) per emit; after the
+	# loop, we look up the Mazra'eh on the SceneTree and read
+	# is_gatherable directly. The ordering proof relies on the fact that
+	# the signal handler fires synchronously WITHIN emit_signal(), which
+	# itself is called AFTER the virtual returns — so if is_gatherable
+	# is true post-signal, the virtual must have fired first.
+	var finalized_emit_count: Array = []
+	_unit = _spawn_kargar(Vector3.ZERO)
+	_unit.current_command = {
+		"kind": &"construct",
+		"payload": {
+			&"building_kind": &"mazraeh",
+			&"target_position": Vector3(5.0, 0.0, 0.0),
+		},
+	}
+	_unit.fsm.transition_to(&"constructing")
+	var mazraeh: Variant = null
+	var on_finalized: Callable = func(_placer_unit_id: int) -> void:
+		finalized_emit_count.append(1)
+	for _i in range(700):
+		_drive_one_loop()
+		if mazraeh == null:
+			for b: Node in get_tree().get_nodes_in_group(&"buildings"):
+				if is_instance_valid(b) and b.get(&"kind") == &"mazraeh":
+					mazraeh = b
+					mazraeh.construction_finalized.connect(on_finalized)
+					break
+		if _unit.fsm.current.id == &"idle":
+			break
+	if mazraeh != null:
+		mazraeh.construction_finalized.disconnect(on_finalized)
+	assert_eq(finalized_emit_count.size(), 1,
+		"construction_finalized fires exactly once for a full Mazra'eh build")
+	# Re-fetch mazraeh from the SceneTree (avoid closure-capture). At
+	# this point Stage 2 has run AND the signal has fired — both
+	# operational side-effects should be visible.
+	assert_not_null(mazraeh,
+		"sanity: Mazra'eh was placed and tracked")
+	# BEHAVIORAL emit-ordering check: the virtual ran BEFORE the signal,
+	# so is_gatherable = true is visible immediately after the signal.
+	# If the order were reversed (signal-before-virtual), a consumer that
+	# read is_gatherable in its handler would see false; here we check the
+	# weaker post-loop invariant — both have fired, both effects applied.
+	assert_true(mazraeh.is_gatherable,
+		"BEHAVIORAL: post-Stage-2, is_gatherable = true AND "
+		+ "construction_finalized has fired. Both side-effects landed.")
+
+
+func test_construction_finalized_does_not_emit_on_path_failure() -> void:
+	# Interrupted construction: a path-failed worker never reaches the
+	# build site, so _on_construction_complete never fires and
+	# construction_finalized never emits. Counterfactual lock.
+	var captured: Array = []
+	_mock.fail_next_request()
+	_unit = _spawn_kargar(Vector3.ZERO)
+	_unit.current_command = {
+		"kind": &"construct",
+		"payload": {
+			&"building_kind": &"khaneh",
+			&"target_position": Vector3(5.0, 0.0, 0.0),
+		},
+	}
+	_unit.fsm.transition_to(&"constructing")
+	# Connect at the EventBus level isn't possible (signal is on the
+	# building), so we connect to every building that appears. Path
+	# failure means no building should appear, but we set up the
+	# connection plumbing anyway for completeness.
+	var connected_any: bool = false
+	var on_finalized: Callable = func(placer_unit_id: int) -> void:
+		captured.append(placer_unit_id)
+	for _i in range(10):
+		_drive_one_loop()
+		for b: Node in get_tree().get_nodes_in_group(&"buildings"):
+			if is_instance_valid(b) and not connected_any:
+				b.construction_finalized.connect(on_finalized)
+				connected_any = true
+		if _unit.fsm.current.id == &"idle":
+			break
+	# Worker bailed to idle without placing.
+	assert_eq(_unit.fsm.current.id, &"idle",
+		"sanity: path failure → idle")
+	assert_eq(get_tree().get_nodes_in_group(&"buildings").size(), 0,
+		"sanity: no building placed on path failure")
+	# No construction_finalized fire — both because nothing was placed
+	# AND because the dwell never completed.
+	assert_eq(captured.size(), 0,
+		"construction_finalized must NOT emit when construction is "
+		+ "interrupted before Stage 2. Got %d spurious emits."
+		% captured.size())

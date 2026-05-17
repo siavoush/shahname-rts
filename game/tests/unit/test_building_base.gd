@@ -423,3 +423,65 @@ func test_construction_progress_updated_no_double_emit_is_track1_responsibility(
 		+ "Track 1 (UnitState_Constructing) enforces the no-double-emit rule.")
 
 	_building.construction_progress_updated.disconnect(_on_progress_signal)
+
+
+# ---------------------------------------------------------------------------
+# construction_finalized signal — Task #139 Track 1 follow-on
+# ---------------------------------------------------------------------------
+#
+# Per ui-developer-p3s3's integration brief: the progress-bar UI Control
+# needs an externally-observable Stage-2 completion signal. Mirrors the
+# construction_progress_updated test shape. Integration-level coverage
+# (drive a full Khaneh construction, assert exactly-once emit at Stage 2)
+# lives in test_unit_state_constructing.gd.
+
+var _finalized_received: Array = []
+
+
+func _on_finalized_signal(placer_unit_id: int) -> void:
+	_finalized_received.append(placer_unit_id)
+
+
+func test_construction_finalized_signal_exists() -> void:
+	# Declaration check — consumers (ui-dev Track 2A overlay, telemetry)
+	# connect by name; if the signal doesn't exist, connect() raises an
+	# error silently and the UI never resolves a hide-trigger.
+	_building = _spawn_building()
+	assert_true(_building.has_signal(&"construction_finalized"),
+		"Building must declare construction_finalized signal "
+		+ "(Task #139 — externally-observable Stage-2 completion)")
+
+
+func test_construction_finalized_emits_correct_placer_unit_id() -> void:
+	# Per signal signature `construction_finalized(placer_unit_id: int)`:
+	# the handler receives the exact placer_unit_id value emitted. Locks
+	# the int payload contract.
+	_building = _spawn_building()
+	_finalized_received.clear()
+	_building.construction_finalized.connect(_on_finalized_signal)
+
+	_building.emit_signal(&"construction_finalized", 42)
+
+	assert_eq(_finalized_received.size(), 1,
+		"Handler must be called exactly once per emit")
+	assert_eq(_finalized_received[0], 42,
+		"Handler must receive the exact placer_unit_id value (42)")
+
+	_building.construction_finalized.disconnect(_on_finalized_signal)
+
+
+func test_construction_finalized_handles_negative_one_sentinel() -> void:
+	# placer_unit_id can be -1 (forward-compat sentinel when the placing
+	# worker is unknown / died — per signal header). emit_signal must
+	# accept it without coercion / error.
+	_building = _spawn_building()
+	_finalized_received.clear()
+	_building.construction_finalized.connect(_on_finalized_signal)
+
+	_building.emit_signal(&"construction_finalized", -1)
+
+	assert_eq(_finalized_received.size(), 1)
+	assert_eq(_finalized_received[0], -1,
+		"-1 sentinel passes through to handler unchanged")
+
+	_building.construction_finalized.disconnect(_on_finalized_signal)

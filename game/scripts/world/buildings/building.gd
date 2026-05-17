@@ -26,6 +26,9 @@ extends Node3D
 ##         arrival: the building begins functioning (Mazra'eh flips
 ##         is_gatherable, Ma'dan registers as an extraction modifier
 ##         on the adjacent mine, Atashkadeh would start emitting Farr).
+##         The construction_finalized(placer_unit_id) signal emits
+##         immediately after the virtual hook returns — that is the
+##         externally-observable completion signal for UI / telemetry.
 ##     The two stages exist because a Khaneh now takes ~3s of dwell and
 ##     Mazra'eh / Ma'dan take ~20s. The structural placement happens
 ##     immediately on arrival so the player sees feedback (the building
@@ -125,6 +128,55 @@ extends Node3D
 ## declaration is Track 2B's deliverable. The signal name and int signature
 ## are load-bearing — any rename requires coordinating with gp-sys + ui-dev.
 signal construction_progress_updated(percent_x100: int)
+
+
+## Emitted by UnitState_Constructing._sim_tick immediately AFTER the
+## _on_construction_complete virtual fires on this building — the
+## externally-observable completion signal for the two-stage lifecycle.
+##
+## placer_unit_id is the Kargar.unit_id of the worker that built this
+## building; matches the value passed to _on_construction_complete.
+## May be -1 if the worker died mid-construction (forward-compat — the
+## current Track 1 implementation tears down the construction state on
+## death, so this signal does not fire in that path).
+##
+## Why this signal exists alongside the virtual hook (per ui-developer-p3s3
+## integration brief, Task #139): the progress-bar UI Control needs an
+## externally-observable hide-trigger. The available signals at Stage 2
+## without this addition were:
+##   - is_complete flips at Stage 1 (too early — the bar should still
+##     show during construction).
+##   - construction_progress_updated is clamped strictly below 10000
+##     (the no-double-emit rule means progress never reaches 100%).
+##   - _on_construction_complete is a virtual method, not a signal —
+##     not observable from outside the building.
+## So the UI overlay couldn't resolve a clean hide-trigger. This signal
+## closes the gap: connect once at building_placed, disconnect on
+## construction_finalized.
+##
+## Emitter contract (load-bearing, mirrors construction_progress_updated):
+##   - Emitted exactly ONCE per built building, at Stage 2 (after the
+##     virtual hook runs and operational side-effects have applied —
+##     Mazra'eh.is_gatherable = true is visible to receivers).
+##   - Emitted from inside UnitState_Constructing._sim_tick (on-tick by
+##     construction). Consumers may mutate spatial/resource state without
+##     an _is_ticking guard.
+##   - Emit ORDERING: the virtual `_on_construction_complete` fires
+##     FIRST, then this signal. Receivers see post-Stage-2 state on
+##     readout (is_gatherable, registered modifiers, etc).
+##   - No emit if construction is interrupted mid-dwell (worker killed,
+##     player cancels). Same contract as construction_progress_updated:
+##     interruption produces no completion signal.
+##
+## Why emit from UnitState_Constructing (not from base _on_construction_complete):
+##   Mirroring construction_progress_updated's pattern keeps a single
+##   driver (the construction state) for all externally-observable
+##   lifecycle events. Subclass overrides (Mazra'eh, Ma'dan) currently do
+##   not call super._on_construction_complete; forcing them to remember
+##   `super.` to preserve a base-class emit is the kind of constraint
+##   that catches nobody until a UI hide bug ships. The state-driven
+##   emit fires unconditionally.
+signal construction_finalized(placer_unit_id: int)
 
 
 # === Schema fields ===========================================================
@@ -263,6 +315,7 @@ func _on_placement_complete(_placer_unit_id: int) -> void:
 ##       → _on_placement_complete (sub-frame, same tick)
 ##   ...construction_ticks ticks elapse...
 ##   _on_construction_complete (Stage 2)   ← operational arrival
+##       → construction_finalized signal emits (externally-observable)
 ##
 ## Subclasses override for *operational* side-effects — things gated on
 ## the construction timer completing so the building cannot function
