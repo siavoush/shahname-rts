@@ -355,3 +355,73 @@ func test_mazraeh_button_press_does_not_deduct_coin_synchronously() -> void:
 	var coin_after: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
 	assert_eq(coin_before, coin_after,
 		"MazraehButton press must NOT deduct Coin synchronously (Pitfall #4)")
+
+
+# ---------------------------------------------------------------------------
+# Sarbaz-khaneh button (Wave 2A)
+# ---------------------------------------------------------------------------
+
+func test_sarbaz_khaneh_button_visible_when_kargar_selected() -> void:
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var root: Control = _menu.get_node(^"Root")
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/SarbazKhanehButton")
+	assert_true(root.visible,
+		"BuildMenu root must be visible when a Kargar is selected")
+	assert_true(btn.visible,
+		"SarbazKhanehButton must be visible (parent visible, button visible)")
+
+
+func test_sarbaz_khaneh_button_uses_mouse_filter_stop() -> void:
+	# Same Pitfall #1 invariant as Khaneh/Mazra'eh/Ma'dan buttons.
+	_menu = _spawn_menu()
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/SarbazKhanehButton")
+	assert_eq(btn.mouse_filter, Control.MOUSE_FILTER_STOP,
+		"SarbazKhanehButton must use MOUSE_FILTER_STOP (Pitfall #1)")
+
+
+func test_sarbaz_khaneh_button_label_shows_cost() -> void:
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/SarbazKhanehButton")
+	# tr("UI_BUILDING_SARBAZ_KHANEH_COST") → "Sarbaz-khaneh (%d Coin)" →
+	# "Sarbaz-khaneh (100 Coin)" per balance.tres bldg_sarbaz_khaneh.coin_cost=100.
+	assert_true(btn.text.contains("100"),
+		"SarbazKhanehButton label must include the cost (100) — got '%s'" % btn.text)
+
+
+func test_sarbaz_khaneh_button_press_emits_build_placement_started_with_kind() -> void:
+	var captured: Array = []
+	var handler: Callable = func(kind: StringName, cost: int) -> void:
+		captured.append({&"kind": kind, &"cost": cost})
+	EventBus.build_placement_started.connect(handler)
+
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/SarbazKhanehButton")
+	btn.pressed.emit()
+	EventBus.build_placement_started.disconnect(handler)
+	assert_eq(captured.size(), 1,
+		"build_placement_started fires exactly once per SarbazKhanehButton press")
+	var ev: Dictionary = captured[0]
+	assert_eq(ev[&"kind"], &"sarbaz_khaneh",
+		"Signal carries building_kind = &\"sarbaz_khaneh\"")
+	assert_eq(ev[&"cost"], 10000,
+		"Signal carries cost_coin_x100 = 10000 (100 Coin × 100)")
+
+
+func test_sarbaz_khaneh_button_press_does_not_deduct_coin_synchronously() -> void:
+	# Pitfall #4 symmetry: the Sarbaz-khaneh button is UI-shaped too. No
+	# Coin mutation at press time — deduction happens at placement.
+	var coin_before: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/SarbazKhanehButton")
+	btn.pressed.emit()
+	var coin_after: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	assert_eq(coin_before, coin_after,
+		"SarbazKhanehButton press must NOT deduct Coin synchronously (Pitfall #4)")
