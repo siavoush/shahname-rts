@@ -74,6 +74,7 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 - Three waves available, lead-orchestrated choice: **Wave 2B** (Tier-2 Sowari-khaneh + Tirandazi — Phase 4 entrance), **Wave 3A** (Fog-of-war data layer — world-builder, Task #71's prerequisite), **Wave 3B** (DummyAIController — ai-engineer, Task #71).
 - Open carry-forward SUGGEST items from PR #19 reviewers: BUILDING_CONTRACT.md authoring (NICE-TO-HAVE per architecture-reviewer; recommend before Phase 4 starts).
 - Pitfall #15 audit clean — future inherited-scene-with-nested-overrides authors should use the regression-test pattern from `test_sarbaz_khaneh_scene.gd::test_collision_shape_matches_mesh_footprint` as the canonical scaffold.
+- **L24 (AttackMoveHandler sibling-order audit, 🟡 in ARCHITECTURE §7) silently aging** — open since 2026-05-14, no verification across ~4 sessions. Add to next live-test cadence: Shift+A → left-click empty terrain. If broken, apply the §7 L24 prescribed fix (flip regression tests at `test_phase_2_session_1_combat.gd:1026` + `:1118` from `<` to `>`). Surfaced by engine-architect-p3s2 in cross-doc audit 2026-05-17.
 
 **Open questions added to QUESTIONS_FOR_DESIGN.md:**
 - Builder worker position during construction (inside vs outside the structure) — strategic implication for harassment-vulnerability balance.

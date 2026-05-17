@@ -115,17 +115,23 @@ When adding a new virtual hook to `building.gd` (my file), scan ALL existing sub
 
 **Why:** `910bd9a` — added `_on_placement_complete` rebake logic to Building base; all three subclasses (Khaneh, Mazra'eh, Ma'dan) had silent overrides with no super call. Caught reactively mid-wave. This is world-builder's responsibility as Building base owner — do not rely on gp-sys catching it.
 
-### NavigationObstacle3D — shipped state (Wave 1C close, 2026-05-17)
+### NavigationObstacle3D — RESOLVED state (Wave 1D close, 2026-05-17)
 
-Wave 1C shipped a three-layer configuration toward L25; **L25 itself is UNRESOLVED and deferred to a dedicated wave** per lead's option-B decision (2026-05-17). Live-test gate (Task #138) failed even after all three layers landed — units still walk through buildings. The shipped layers are forward-investment, not a closed mechanism:
+L25 + L26 RESOLVED at Wave 1D (`df25033` → PR #18 / `7e4c365`). The canonical pipeline is the explicit four-call form in `building.gd._on_placement_complete`:
 
-- `affect_navigation_mesh = true` (`90d39bd`) + `carve_navigation_mesh = true` (`bc34c39`) + footprint vertices on all building scenes and mine_node.tscn — flags + geometry are in place but currently inert.
-- Explicit `bake_navigation_mesh(false)` call from `Building._on_placement_complete` (`910bd9a`) — fires correctly, but obstacle polygon doesn't contribute to the carved navmesh.
-- `SOURCE_GEOMETRY_ROOT_NODE_CHILDREN` in `terrain.gd:_configure_navmesh()` (`be8c355`) — parser scope widened to scene-tree root, but carve still doesn't fire in the queryable navmesh.
+```gdscript
+NavigationServer3D.parse_source_geometry_data(nav_mesh, source, get_tree().root)
+NavigationServer3D.bake_from_source_geometry_data(nav_mesh, source)
+```
 
-The unresolved hypothesis surface (R4-α / R4-β / R4-γ / R4-δ / R4-ε) is documented in `docs/WAVE_1C_NAVMESH_SPIKE.md` v0.2.0 + `docs/ARCHITECTURE.md` §7 L25/L26. The dedicated wave inherits this state — the three shipped layers are correct steps that the eventual fix builds on, not work to roll back.
+Root cause of the four-round Wave 1C diagnostic: `region.bake_navigation_mesh()` convenience wrapper hardcodes `this` as the parse root, defeating `SOURCE_GEOMETRY_ROOT_NODE_CHILDREN` source-geometry-mode. Validated against Godot 4.6 source. The convenience wrapper is FORBIDDEN by L6 lint (async-variant guard at `tools/lint_simulation.sh`).
 
-**Implication for new building types added before the dedicated navmesh wave closes:** clone the shipped pattern (dual flags + vertices polygon + super() in `_on_placement_complete`). Document in the `.tscn` header that the obstacle is inert pending L25 resolution.
+**Canonical pattern for any new Building subclass:**
+1. NavigationObstacle3D in scene with `affect_navigation_mesh = true` + `carve_navigation_mesh = true` + vertices polygon sized per RNC §3.2 v1.4.0.
+2. `super._on_placement_complete(_placer_unit_id)` as the first line of subclass override — base owns the navmesh rebake (super-call discipline per §9 session-4 sweep rule).
+3. NO subclass-side `region.bake_navigation_mesh()` call — base handles it via the explicit pipeline.
+
+See WAVE_1C_NAVMESH_SPIKE.md v1.0.0 Round 4 resolution + RNC §3.2 v1.4.0 positive prose for full archaeology + canonical-incident citation.
 
 ---
 

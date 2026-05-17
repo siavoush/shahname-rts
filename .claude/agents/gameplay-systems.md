@@ -33,10 +33,10 @@ You own the core gameplay mechanics that make this an RTS:
 
 - `game/scripts/systems/` — resource manager, combat system, Farr system, tech system, production system
 - `game/scripts/units/` — unit base scripts, hero scripts, worker scripts (NOT state machine states — those belong to AI Engineer)
-- `game/scripts/buildings/` — building scripts, construction logic
+- `game/scripts/world/buildings/` — building scripts, construction logic
 - `game/scripts/constants.gd` — ALL gameplay constants live here. You are the primary maintainer.
 - `game/scenes/units/` — unit scenes
-- `game/scenes/buildings/` — building scenes
+- `game/scenes/world/buildings/` — building scenes
 
 ## Key Constraints
 
