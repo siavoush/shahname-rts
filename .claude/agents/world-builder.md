@@ -87,13 +87,36 @@ Mazra'eh's wave-1A cultural-note (commit `f3474bb`) hits all four; Ma'dan's wave
 
 Two Pitfall #7 incidents this session both involved your commits (`3e167f1` bundling, `1e8a213` misattribution). Both would have been prevented by unconditional pathspec form. From session 3 forward: every `git commit` uses `git commit -m "..." -- <explicit file list>` regardless of whether you believe you're the only active committer. The "I'm alone right now" assumption is empirically wrong twice — don't trust it again.
 
-### NavigationObstacle3D L25 spike — your scene-file readiness
+### Broadcast-before-stash (personal commitment, session-3 retro 2026-05-17)
 
-Wave 1C architecture spike (engine-architect leads) will resolve via Path A (engine-managed localized region rebake via `affect_navigation_mesh = true` + `vertices` polygon) or Path B (NavigationAgent3D + RVO migration). Your scene files (`mazraeh.tscn`, `madan.tscn`, `building.tscn`, `khaneh.tscn`, `mine_node.tscn`) carry NavigationObstacle3D nodes that need updating either way. Lead's preference is Path A; expect a brief from engine-architect with specific scene-edit instructions per spike outcome. Maintain the §4.7.5 cultural-mechanical-correspondence convention (Mazra'eh walkable, Ma'dan/Khaneh route-around) under whichever path the spike ratifies.
+Before ANY `git stash push` that touches files modified by another agent in the current wave, broadcast `[stashing: <files>]` to lead via SendMessage. Non-optional even when the stash feels local and you intend to restore immediately.
 
-### Wave 1C readiness
+**Canonical failure:** `90d39bd` prep — stashed parallel agents' WIP without broadcast. From their view their state vanished unexpectedly. Same unconditional rule shape as pathspec discipline.
 
-- **`_on_construction_complete()` hook on Building base** (moves the `is_gatherable = true` flip from `_on_placement_complete`). Your domain — Building base class.
-- **HealthComponent scaffolding** if it ships alongside construction-timer. Coordinate with gp-sys.
-- **UI progress bar** — recommendation per session-2 retro: ui-developer owns the progress-bar node/shader; you emit the `construction_progress_updated` signal from Building on each construction tick. Clean separation of concerns.
-- **mine_node.tscn NavigationObstacle3D addition (L26)** if Path A is ratified — adds the obstacle with `affect_navigation_mesh = true` + footprint vertices.
+### Scene-config-as-forward-investment discipline (session-3 retro 2026-05-17)
+
+When shipping inert scene config that depends on a downstream wave to activate (NavigationObstacle3D flags, signal connections, footprint vertices), the `.tscn` comment MUST cite:
+1. The dependent wave/task number.
+2. The specific mechanism that will fire it (which call, which signal, which bake trigger).
+
+**Pre-commit checklist step 2.5:** "Is this config inert? If yes — name the activating mechanism. If the mechanism is in a later wave, cite it in the .tscn comment AND flag it in your message to lead."
+
+**Why:** 4-round navmesh diagnostic (Tasks #135→#141→#144→#147). Each round shipped structurally correct config that looked complete in isolation. The question "what actually triggers this?" was never asked until the behavioral test failed. Inert config creates false confidence — the full chain only closes at the final piece.
+
+### super()-call discipline on Building virtuals (session-3 retro 2026-05-17)
+
+When adding a new virtual hook to `building.gd` (my file), scan ALL existing subclasses for overrides of that method in the same commit and add `super.<hook>()` as their first line.
+
+**Why:** `910bd9a` — added `_on_placement_complete` rebake logic to Building base; all three subclasses (Khaneh, Mazra'eh, Ma'dan) had silent overrides with no super call. Caught reactively mid-wave. This is world-builder's responsibility as Building base owner — do not rely on gp-sys catching it.
+
+### NavigationObstacle3D — shipped state (Wave 1C close, 2026-05-17)
+
+Wave 1C shipped a three-layer configuration toward L25; **L25 itself is UNRESOLVED and deferred to a dedicated wave** per lead's option-B decision (2026-05-17). Live-test gate (Task #138) failed even after all three layers landed — units still walk through buildings. The shipped layers are forward-investment, not a closed mechanism:
+
+- `affect_navigation_mesh = true` (`90d39bd`) + `carve_navigation_mesh = true` (`bc34c39`) + footprint vertices on all building scenes and mine_node.tscn — flags + geometry are in place but currently inert.
+- Explicit `bake_navigation_mesh(false)` call from `Building._on_placement_complete` (`910bd9a`) — fires correctly, but obstacle polygon doesn't contribute to the carved navmesh.
+- `SOURCE_GEOMETRY_ROOT_NODE_CHILDREN` in `terrain.gd:_configure_navmesh()` (`be8c355`) — parser scope widened to scene-tree root, but carve still doesn't fire in the queryable navmesh.
+
+The unresolved hypothesis surface (R4-α / R4-β / R4-γ / R4-δ / R4-ε) is documented in `docs/WAVE_1C_NAVMESH_SPIKE.md` v0.2.0 + `docs/ARCHITECTURE.md` §7 L25/L26. The dedicated wave inherits this state — the three shipped layers are correct steps that the eventual fix builds on, not work to roll back.
+
+**Implication for new building types added before the dedicated navmesh wave closes:** clone the shipped pattern (dual flags + vertices polygon + super() in `_on_placement_complete`). Document in the `.tscn` header that the obstacle is inert pending L25 resolution.

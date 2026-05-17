@@ -38,6 +38,35 @@ Keep entries terse. Long questions fragment the design chat's attention.
 ## Open questions
 
 
+## 2026-05-17 — Dedicated navmesh-carve investigation wave: scope + timing
+
+**Context:** Phase 3 session 3 wave 1C shipped construction-timer + UI progress bar + Ma'dan-over-mine placement validity cleanly. The wave's navmesh sub-track (originally a 2-track time-budget per WAVE_1C_NAVMESH_SPIKE.md) hit 4 rounds of diagnostic + implementation without producing a working carve. Lead decided 2026-05-17 to PUNT the navmesh problem to its own dedicated wave with proper time budget — wave 1C closes cleanly without it, with workers-walk-through-buildings documented as L25-still-open in ARCHITECTURE.md §7.
+
+**Question:** When should the dedicated navmesh-investigation wave land in `02_IMPLEMENTATION_PLAN.md`? Three positions plausible:
+
+(a) **Insert as wave 1D / 1.5 before wave 2A** — block military production (Sarbaz-khaneh, units, combat) until pathing-around-buildings works. Cleanest from a "movement gameplay should be correct before combat ships" perspective, but delays the dopamine-loop completion.
+
+(b) **Run in parallel with wave 2A** — engine-architect-p3s2 dedicated to navmesh investigation (their persistent context inherits the 4-round diagnostic), while world-builder + gp-sys + ui-developer continue Sarbaz-khaneh + unit production on wave 2A. Risk: navmesh wave might still be open at Phase 4 boundary.
+
+(c) **Defer to Phase 4 with Path B (NavigationAgent3D + RVO migration) as the planned scope** — accept walk-through for the remaining Phase 3 waves; commit to the multi-week Path B as part of Phase 4's broader engine work. Removes the "is this a 1-line fix or a multi-week fix?" uncertainty.
+
+**Diagnostic carry-forward (inherited by the dedicated wave):**
+- `docs/WAVE_1C_NAVMESH_SPIKE.md` v0.2.0 (post-Phase-2C close) contains the 4-round mechanism-correction archaeology.
+- `docs/ARCHITECTURE.md` §7 L25 entry contains empirical findings (waypoint signature, nav map state, qa-engineer's probe data).
+- Currently shipped scene-config + code-path are forward-investment (dual-flag + manual rebake + ROOT_NODE_CHILDREN parser-scope); the dedicated wave inherits this as starting state, not as a rollback obligation.
+
+**Why this routes to design chat:** Implementation Plan ownership lives in the design chat per CLAUDE.md. Lead has scoping intuition but the priority ordering of "must-have-before-X" lives in design.
+
+**Blocking scope:**
+- NOT blocking for session 3 close — wave 1C closes with navmesh as known-issue.
+- Possibly blocking for wave 2A (Sarbaz-khaneh + unit production) IF combat-positioning becomes a near-term design requirement.
+
+**Suggested decision shape (lead's framing, not design directive):**
+- Option (b) — parallel — preserves session momentum on military/combat while the navmesh wave runs.
+- Option (c) — defer to Phase 4 with Path B — is the most honest scoping if the team's bandwidth and the design's tolerance for walk-through together support it.
+- Option (a) — block 2A — is over-cautious unless combat positioning is imminent.
+
+
 ## 2026-05-17 — Turan economy shape: tribute + raid + caravan, NOT mirror-buildings
 
 **Context:** Phase 3 session 2 waves 1A + 1B shipped Mazra'eh + Ma'dan with cross-faction caveats that lock leading-hypotheses for Turan's equivalents: *karavan* (کاروان, mobile caravan unit — wave 1A Mazra'eh's cross-faction caveat per loremaster-p3s2 brief-time review) and *baj* (باج, tribute-collection — wave 1B Ma'dan's cross-faction caveat per loremaster-p3s2 brief-time review + lead's 2026-05-15 ratification). Both shipped cultural-note blocks state explicitly: "Do not clone [Mazra'eh/Ma'dan] as a Turan building." Two waves of independent loremaster framing converge on the same architectural-frame: **Turan's economy ships through tribute + raid-acquisition + caravan-trade, NOT through mirror-buildings-of-Iran.**

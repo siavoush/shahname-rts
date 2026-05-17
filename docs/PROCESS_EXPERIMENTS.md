@@ -176,13 +176,98 @@ The same gotcha bites `Object.is_class(name)` for the same reason — it walks C
 
 **Regression coverage.** `tests/integration/test_madan_buffs_mine_extraction.gd::test_madan_class_name_is_madan_no_apostrophe` (lines ~353-372) uses `Script.get_global_name()` and asserts `&"Madan"`. Use as the canonical pattern for future class-name regression-lock tests across the project (Mazra'eh, Khaneh, future Sarbaz-khaneh, etc.).
 
+### #14 — GDScript lambda capture of reassigned locals is unreliable
+
+**Mechanism.** GDScript lambda expressions (`func(...): ...`) capture enclosing-scope locals **by value at lambda-creation time**. If the captured local is reassigned in the enclosing scope AFTER the lambda is created, the closure does NOT see the new value — the lambda holds its capture-time snapshot. Tests that use a lambda to read a state value that gets mutated by a subsequent operation (e.g., a signal handler, a state-transition, an await) will assert against the stale snapshot, not the engine's current state.
+
+This is distinct from Pitfall #9 (the candidate "primitive-int capture-by-value" pattern that was REJECTED for lack of evidence in Phase 2 session 1). Pitfall #14 is the broader, evidence-backed form: ALL reassigned locals, not just primitive ints. The mechanism is consistent — GDScript closures snapshot at creation, not lazy-read at invocation. Promoted to permanent at Phase 3 session 3 close after two independent incidents:
+
+**Canonical incident 1 (gp-sys-p3s3, session-3 wave-1C Track 1 follow-on).** During development of the construction_finalized emit-ordering test (now in `test_unit_state_constructing.gd`), gp-sys-p3s3's first version used a lambda closing over `mazraeh.is_gatherable` for the post-emit readout:
+
+```gdscript
+# WRONG — lambda captures mazraeh.is_gatherable by value at lambda-creation
+var captured_value: bool
+var handler = func(_placer_id: int) -> void:
+    captured_value = mazraeh.is_gatherable   # ← This reads the CURRENT value
+                                              #   when the lambda fires (correct
+                                              #   in this case), but the broader
+                                              #   pattern below fails.
+
+# WORSE — typical pattern where the bug shows up
+var observed_state: Variant = null
+var watcher = func(_placer_id: int) -> void:
+    observed_state = mazraeh.is_gatherable
+# ... later in test ...
+some_signal.connect(watcher)
+some_signal.emit(0)   # watcher runs; observed_state gets a value
+mazraeh.is_gatherable = true   # ← reassignment AFTER lambda creation
+                                #   doesn't propagate to the lambda's captured
+                                #   snapshot if the captured local was a LOCAL
+                                #   to the test method that the lambda closed
+                                #   over.
+assert_eq(observed_state, true, "...")   # asserts against stale snapshot
+```
+
+The actual mechanism is subtle: when the lambda closes over a node-property access path (`mazraeh.is_gatherable`), each invocation re-reads the property — so the lambda DOES see the latest value at fire time. But when the lambda closes over a **local variable** that the test method reassigns, the lambda holds the capture-time value. The asymmetry between property-path closure (re-reads on each fire) and local-variable closure (snapshots on lambda-creation) is the trap.
+
+gp-sys-p3s3's fix: restructure to post-loop SceneTree readout (`mazraeh.is_gatherable` read directly after the signal fires, with no lambda intermediary). The read happens in test-method scope at the right time, no closure involved.
+
+**Canonical incident 2 (ui-developer-p3s3, session-3 wave-1C Track 2A regression test).** During development of `test_repeated_ensure_connect_does_not_duplicate_signal_wires` (in `test_construction_progress_overlay.gd`), ui-developer-p3s3 explicitly chose the **Signal-introspection pattern** over a lambda-based observer — knowing the carry-forward from gp-sys's prior incident:
+
+```gdscript
+# RIGHT — use Signal.get_connections().size() directly, no lambda
+func test_repeated_ensure_connect_does_not_duplicate_signal_wires() -> void:
+    var building: Building = _make_test_building()
+    # Establish wire once
+    _overlay._ensure_signal_connected(building)
+    assert_eq(building.construction_progress_updated.get_connections().size(), 1,
+        "First _ensure_signal_connected establishes one connection")
+    # Re-invoke N times — should be idempotent
+    for i in range(10):
+        _overlay._ensure_signal_connected(building)
+    assert_eq(building.construction_progress_updated.get_connections().size(), 1,
+        "Repeated _ensure_signal_connected MUST NOT add duplicate connections")
+```
+
+`Signal.get_connections()` reads the engine's connection table directly at the moment of the assertion — no closure, no snapshot, no reassignment trap.
+
+**Operational mitigations** (apply per case):
+
+1. **Default pattern — post-await SceneTree readout.** Read the state directly from the SceneTree in test-method scope after the operation completes. No closure intermediary.
+
+   ```gdscript
+   # Drive the state change
+   some_signal.emit(0)
+   await get_tree().process_frame
+   # Read directly
+   assert_eq(mazraeh.is_gatherable, true)
+   ```
+
+2. **Signal-watching pattern — `Signal.get_connections().size()` for signal-wiring tests.** When testing whether signals are correctly connected (or not duplicated), read the engine's connection table directly.
+
+3. **Sentinel-append pattern — lambda appends to outer-scope sentinel array; test reads array contents post-await.** When you genuinely need a lambda observer (e.g., capturing a signal's payload), have the lambda APPEND to an outer-scope `Array` and read the array contents post-await. Arrays are passed by reference in GDScript, so the lambda's append IS visible to the enclosing scope.
+
+   ```gdscript
+   var observed_payloads: Array = []
+   var watcher = func(payload: int) -> void:
+       observed_payloads.append(payload)
+   some_signal.connect(watcher)
+   some_signal.emit(42)
+   await get_tree().process_frame
+   assert_eq(observed_payloads, [42])
+   ```
+
+**Regression coverage.** `tests/unit/test_unit_state_constructing.gd:784-786` documents the by-value-capture limitation with the sentinel-append workaround inline as a teaching example. `tests/unit/test_construction_progress_overlay.gd::test_repeated_ensure_connect_does_not_duplicate_signal_wires` (lines ~395-413) is the canonical Signal-introspection pattern.
+
+**Cross-reference.** This pitfall pairs with the §9 cluster's **"Signal-introspection over lambda-capture for signal-wiring tests"** rule (2026-05-17, consumer-side-integration cluster). The §9 rule prescribes WHEN to apply the introspection pattern; this pitfall explains WHY the lambda alternative is unreliable.
+
 ### Candidate / deferred entries (not yet load-bearing)
 
 | Candidate | Status | Reason |
 |---|---|---|
 | #6 — Cause-string suffix conventions are domain language | DEFERRED | Currently one consumer (`_idle_worker` → FarrSystem). Promote when a 2nd suffix ships — `_fleeing` / `_engaged` / `_ranged` will provide the pattern-validation needed. |
 | #7 — Multi-agent shared-tree commit-staging race | KEPT IN PROCESS DOC, not Godot list | This is a process pattern, not engine. Lives in `STUDIO_PROCESS.md` §9 + `Deviation 02`. |
-| #9 — GDScript lambda primitive-int capture-by-value | REJECTED for now | godot-code-reviewer's audit found no evidence in Phase 2 session 1 diff. Re-evaluate if a future wave reproduces. |
+| #9 — GDScript lambda primitive-int capture-by-value | SUPERSEDED BY #14 (2026-05-17) | godot-code-reviewer's audit found no evidence in Phase 2 session 1 diff at original assessment; Phase 3 session 3 produced the broader form. The reassigned-locals capture-by-value mechanism is now formalized as Pitfall #14 (covers primitive-int + all other reassigned-local types). |
 | #10 candidate — MockPathScheduler tick-1 latency vs per-tick reissue starves resolution | DEFERRED | Surfaced during BUG-06 fix. Tests using `MockPathScheduler` with per-tick `request_repath` re-issue (e.g., `UnitState_Attacking._sim_tick` out-of-range branch) will starve path resolution — each new request cancels the prior PENDING. Workaround: in-file `_InstantPathScheduler` synchronous-resolve stub (see `tests/integration/test_phase_2_session_1_combat.gd`). Promote when a 2nd test author hits this independently. |
 
 ## Format for new entries
