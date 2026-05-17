@@ -38,6 +38,29 @@ Keep entries terse. Long questions fragment the design chat's attention.
 ## Open questions
 
 
+## 2026-05-17 — Builder worker position during construction: inside vs outside footprint
+
+**Context:** Phase 3 session 4 wave 2A live-test surfaced that the builder worker stands AT the target_position (building's center) and dwells there during construction. The building gets placed at that position, so visually the worker is INSIDE the building's footprint until construction completes. This has been the behavior for all four shipped Tier-1 buildings (Khaneh, Mazra'eh, Ma'dan, Sarbaz-khaneh) — only visually obvious with Sarbaz-khaneh's larger 3.0×2.0 footprint vs the 2.0×2.0 of others. Wave-1D's navmesh-carve correctly excludes the building's footprint from the navmesh, but the worker already-standing-inside isn't auto-evicted (the carve affects future path queries, not existing positions).
+
+**Question:** Should the builder worker stand **inside** the building during construction (SC2 shape) or **outside the footprint at construction-edge** (AoE2 shape)?
+
+**Strategic implications (Siavoush's framing, 2026-05-17 live-test):** This isn't an implementation detail — the choice has real gameplay consequence:
+
+- **AoE2 shape (outside footprint):** worker visibly stands beside the building, exposed to enemy harassment. **Builder harassment becomes a viable tactic** — opposing armies can target unprotected builders mid-construction, forcing the player to garrison builders or defend with units. The economy-vs-military tension extends into construction itself.
+- **SC2 shape (inside footprint):** worker is visually "inside" the construction site, NOT exposed to direct attack. Builder harassment in the AoE2 sense isn't possible; instead, you target the building itself (which the worker is constructing). The harassment vector moves from worker→building.
+
+The two shapes produce **different early-game pacing** and **different defensive-vs-offensive economy doctrines**. AoE2 → keep eyes on every builder, scout-harass aggression rewarded. SC2 → economy is more "fire-and-forget" once builders dispatched, focus shifts to tech-rush vs army-tempo.
+
+**Options considered:**
+- **(a) AoE2 shape — outside footprint, exposed builder.** Worker stops at `target_position` offset by `building.footprint_half_extent + 0.5m`. Implementation: small edit to UnitState_Constructing's arrival logic. Combat: harassment-worker-targeting becomes part of the meta.
+- **(b) SC2 shape — inside footprint, protected builder.** Current behavior. Worker is "in the construction zone," not targetable as a separate entity during construction. Combat: building-targeting is the only harassment vector.
+- **(c) Hybrid — different per building category.** E.g., resource-producing buildings use AoE2 (workers stay at the site), institutional buildings use SC2 (multiple workers go inside). More complex, but could map to the anchor-category taxonomy.
+
+**Blocking:** Not for Phase 3. Defer to Phase 4-5 when combat + harassment-meta design solidifies. The current behavior (option b, SC2 shape) is the no-decision default; revisiting requires explicit design choice. The Shahnameh frame (pahlavan/sepah two-layer split — hero exceptionalism + institutional ordinary) may inform: if hero-vs-sepah dynamics are the centerpiece, builder harassment might dilute the focus; if economy-pressure is central to the loop, builder harassment adds depth.
+
+**Suggested decision shape:** ratify when combat + Phase 4 harassment doctrines are designed. The implementation cost is trivial in either direction; the design call is about what kind of RTS this wants to be.
+
+
 ## 2026-05-17 — Dedicated navmesh-carve investigation wave: scope + timing
 
 **Context:** Phase 3 session 3 wave 1C shipped construction-timer + UI progress bar + Ma'dan-over-mine placement validity cleanly. The wave's navmesh sub-track (originally a 2-track time-budget per WAVE_1C_NAVMESH_SPIKE.md) hit 4 rounds of diagnostic + implementation without producing a working carve. Lead decided 2026-05-17 to PUNT the navmesh problem to its own dedicated wave with proper time budget — wave 1C closes cleanly without it, with workers-walk-through-buildings documented as L25-still-open in ARCHITECTURE.md §7.
