@@ -261,6 +261,32 @@ func test_repeated_ensure_connect_does_not_duplicate_signal_wires() -> void:
 
 **Cross-reference.** This pitfall pairs with the §9 cluster's **"Signal-introspection over lambda-capture for signal-wiring tests"** rule (2026-05-17, consumer-side-integration cluster). The §9 rule prescribes WHEN to apply the introspection pattern; this pitfall explains WHY the lambda alternative is unreliable.
 
+### #15 — Godot inherited-scene nested-child override syntax
+
+**Mechanism.** When a `.tscn` uses `instance=ExtResource(...)` to inherit from a base scene, overriding a node nested under another inherited node requires the path in the `parent=` attribute, NOT a slash-separated literal in the `name=` attribute. The Godot parser treats `/` in a `name=` value as a literal character — there is no auto-split into path components. The malformed declaration looks plausible to a human reader but the engine cannot resolve it: at scene load, Godot emits a `Node vanished` / `node not found` warning and silently leaves the base's value of the targeted node intact. The override never takes effect; the subclass appears to ship with subclass-specific properties but renders with base-class values.
+
+Specifically: a subclass scene that inherits `building.tscn` (which contains `StaticBody3D > CollisionShape3D`) and wants to override the inner `CollisionShape3D.shape` cannot write `[node name="StaticBody3D/CollisionShape3D" parent="." index="0"]`. The slash is a literal; the engine looks for a child of `.` literally named `"StaticBody3D/CollisionShape3D"`, fails to find one, drops the override on the floor, and the base's `BoxShape3D` survives — silently.
+
+**Rule.** When overriding a node nested under another inherited node in an inherited-scene `.tscn`, put the path in the `parent=` attribute (relative to the inherited root), and the bare node name in `name=`. The `index=` attribute is unnecessary on overrides (it's for new additions). Correct form:
+
+```
+[node name="CollisionShape3D" parent="StaticBody3D"]
+shape = SubResource("BoxShape3D_subclass_override")
+```
+
+NOT:
+
+```
+[node name="StaticBody3D/CollisionShape3D" parent="." index="0"]
+shape = SubResource("BoxShape3D_subclass_override")
+```
+
+**Canonical incident.** Phase 3 session 4 wave 2A — `sarbaz_khaneh.tscn` shipped with the wrong form in commit `1ff3039`. The Sarbaz-khaneh's intended 3.0×1.2×2.0 collision shape silently fell back to the base `building.tscn`'s 2.0×1.2×2.0. Visible signature at runtime: the building rendered at 3.0×2.0 XZ footprint (mesh override worked) but the navmesh source-geometry parse picked up the inherited 2.0×2.0 collision body — workers walked through the long-axis strips of Sarbaz-khaneh's actual visual silhouette. First subclass to override `CollisionShape3D` because the first subclass with a non-base footprint inheriting `building.tscn` — Khaneh kept 2.0×2.0; Mazra'eh and Ma'dan are standalone scenes (not inherited). Detected via live-test (workers visibly walking through the building) + log warning (`Node './StaticBody3D/CollisionShape3D' was modified from inside an instance, but it has vanished.`). Fix at commit `2f31b34`.
+
+**Regression coverage.** `tests/unit/test_sarbaz_khaneh_scene.gd::test_collision_shape_matches_mesh_footprint` instantiates the scene and asserts `box.size.x == 3.0` — if the override silently fails the inherited 2.0 value is what gets read and the test fails. Use as the canonical pattern for future inherited-scene-with-nested-overrides tests: instantiate the scene, walk to the override target, assert the property has the subclass value, not the base.
+
+**Project-wide audit (godot-code-reviewer fresh-spawn at PR #19, 2026-05-17):** No other instances of this syntax bug exist in `game/scenes/`. Building subclass inheritance audited cleanly — Khaneh inherits building.tscn but doesn't override CollisionShape3D (keeps base 2.0×2.0); Mazra'eh + Ma'dan are standalone Node3D scenes (not inherited); UI scenes don't use inherited-scene composition with nested-child overrides. Sarbaz-khaneh's larger footprint was the first occasion for the syntax surface to be exercised, exposing the pitfall at first incidence.
+
 ### Candidate / deferred entries (not yet load-bearing)
 
 | Candidate | Status | Reason |

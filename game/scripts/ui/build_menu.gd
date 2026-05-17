@@ -64,8 +64,9 @@ extends CanvasLayer
 ## Sim Contract / lint compliance:
 ##   - i18n: every visible string flows through tr(). Strings:
 ##     UI_BUILD_MENU_HEADER, UI_BUILDING_KHANEH_COST,
-##     UI_BUILDING_MAZRAEH_COST. The Persian column stays empty per
-##     Tier 2 schedule.
+##     UI_BUILDING_MAZRAEH_COST, UI_BUILDING_MADAN_COST,
+##     UI_BUILDING_SARBAZ_KHANEH_COST, UI_BUILDING_SARBAZ_KHANEH_TOOLTIP.
+##     The Persian column stays empty per Tier 2 schedule.
 ##   - No sim-state writes. UI reads only. The build_placement_started
 ##     emission is read-shaped (no consumer mutates sim state in the
 ##     handler — BuildPlacementHandler's handler is also UI-shaped;
@@ -98,6 +99,11 @@ const _COLOR_BUTTON_MAZRAEH: Color = Color(0.45, 0.55, 0.30)
 # dark HUD).
 const _COLOR_BUTTON_MADAN: Color = Color(0.55, 0.55, 0.60)
 
+# Button color — martial-red / oxidized-iron for the Sarbaz-khaneh
+# (barracks). Reads as "military / armed force" without overpowering
+# the dark HUD palette.
+const _COLOR_BUTTON_SARBAZ_KHANEH: Color = Color(0.65, 0.30, 0.25)
+
 
 # === Node refs =============================================================
 # Resolved @onready against the build_menu.tscn structure.
@@ -108,6 +114,7 @@ const _COLOR_BUTTON_MADAN: Color = Color(0.55, 0.55, 0.60)
 @onready var _khaneh_button: Button = $Root/Margin/VBox/KhanehButton
 @onready var _mazraeh_button: Button = $Root/Margin/VBox/MazraehButton
 @onready var _madan_button: Button = $Root/Margin/VBox/MadanButton
+@onready var _sarbaz_khaneh_button: Button = $Root/Margin/VBox/SarbazKhanehButton
 
 
 # === Lifecycle =============================================================
@@ -126,6 +133,8 @@ func _ready() -> void:
 		_mazraeh_button.pressed.connect(_on_mazraeh_button_pressed)
 	if not _madan_button.pressed.is_connected(_on_madan_button_pressed):
 		_madan_button.pressed.connect(_on_madan_button_pressed)
+	if not _sarbaz_khaneh_button.pressed.is_connected(_on_sarbaz_khaneh_button_pressed):
+		_sarbaz_khaneh_button.pressed.connect(_on_sarbaz_khaneh_button_pressed)
 
 	# Subscribe to selection changes. Read-shaped signal; we only update
 	# UI-local visibility / button text in the handler.
@@ -149,6 +158,9 @@ func _exit_tree() -> void:
 	if _madan_button != null \
 			and _madan_button.pressed.is_connected(_on_madan_button_pressed):
 		_madan_button.pressed.disconnect(_on_madan_button_pressed)
+	if _sarbaz_khaneh_button != null \
+			and _sarbaz_khaneh_button.pressed.is_connected(_on_sarbaz_khaneh_button_pressed):
+		_sarbaz_khaneh_button.pressed.disconnect(_on_sarbaz_khaneh_button_pressed)
 	if EventBus.selection_changed.is_connected(_on_selection_changed):
 		EventBus.selection_changed.disconnect(_on_selection_changed)
 
@@ -198,6 +210,9 @@ func _refresh_button_labels() -> void:
 	_mazraeh_button.text = tr("UI_BUILDING_MAZRAEH_COST") % [mazraeh_cost]
 	var madan_cost: int = _MadanScript.call(&"cost_coin")
 	_madan_button.text = tr("UI_BUILDING_MADAN_COST") % [madan_cost]
+	var sarbaz_cost: int = _SarbazKhanehScript.call(&"cost_coin")
+	_sarbaz_khaneh_button.text = tr("UI_BUILDING_SARBAZ_KHANEH_COST") % [sarbaz_cost]
+	_sarbaz_khaneh_button.tooltip_text = tr("UI_BUILDING_SARBAZ_KHANEH_TOOLTIP")
 
 
 # === Button handler ========================================================
@@ -223,6 +238,13 @@ func _on_madan_button_pressed() -> void:
 	EventBus.build_placement_started.emit(_MadanScript.KIND_MADAN, cost_x100)
 
 
+func _on_sarbaz_khaneh_button_pressed() -> void:
+	# x100 fixed-point per Sim Contract §1.6 (whole-coin → coin_x100).
+	var cost_x100: int = _SarbazKhanehScript.call(&"cost_coin") * 100
+	EventBus.build_placement_started.emit(
+			_SarbazKhanehScript.KIND_SARBAZ_KHANEH, cost_x100)
+
+
 # === Duck-type helpers ====================================================
 
 # Worker check: a Unit whose `unit_type` reads as &"kargar". Phase 3 only
@@ -245,3 +267,4 @@ func _is_kargar_shaped(n: Object) -> bool:
 const _KhanehScript: Script = preload("res://scripts/world/buildings/khaneh.gd")
 const _MazraehScript: Script = preload("res://scripts/world/buildings/mazraeh.gd")
 const _MadanScript: Script = preload("res://scripts/world/buildings/madan.gd")
+const _SarbazKhanehScript: Script = preload("res://scripts/world/buildings/sarbaz_khaneh.gd")

@@ -244,6 +244,12 @@ func _on_placement_complete(placer_unit_id: int) -> void:
 # &"resource_nodes" group is curated to that contract (see
 # resource_node.gd::_ready).
 func _on_construction_complete(_placer_unit_id: int) -> void:
+	# super-call discipline (session-3 retro §9, retrofitted in Wave 2A
+	# fix-up): base _on_construction_complete is currently `pass`, but
+	# the discipline applies regardless — when the base gains non-trivial
+	# Stage-2 behavior in a future wave, every subclass already routes
+	# through it. Mirrors Sarbaz-khaneh's super-call shape.
+	super._on_construction_complete(_placer_unit_id)
 	var radius_m: float = _resolve_modifier_radius_m()
 	var nearest_mine: Node = _find_nearest_mine_within_radius(radius_m)
 	if nearest_mine != null:

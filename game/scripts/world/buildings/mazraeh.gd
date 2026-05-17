@@ -188,6 +188,12 @@ func _on_placement_complete(placer_unit_id: int) -> void:
 # placer_unit_id is the worker that built this Mazra'eh; forwarded for
 # symmetry with _on_placement_complete and potential future telemetry.
 func _on_construction_complete(_placer_unit_id: int) -> void:
+	# super-call discipline (session-3 retro §9, retrofitted in Wave 2A
+	# fix-up): base _on_construction_complete is currently `pass`, but
+	# the discipline applies regardless — when the base gains non-trivial
+	# Stage-2 behavior in a future wave, every subclass already routes
+	# through it. Mirrors Sarbaz-khaneh's super-call shape.
+	super._on_construction_complete(_placer_unit_id)
 	is_gatherable = true
 
 

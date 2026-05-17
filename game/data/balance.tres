@@ -16,7 +16,7 @@
 ; constants_version: manual stamp for this session. qa-engineer will wire
 ; file-hash auto-derivation in wave 2 (MatchHarness). See TESTING_CONTRACT.md §2.3.
 
-[gd_resource type="Resource" script_class="BalanceData" load_steps=28 format=3 uid="uid://balance_data_main"]
+[gd_resource type="Resource" script_class="BalanceData" load_steps=29 format=3 uid="uid://balance_data_main"]
 
 [ext_resource type="Script" path="res://data/balance_data.gd" id="1_balancedata"]
 [ext_resource type="Script" path="res://data/sub_resources/unit_stats.gd" id="2_unitstats"]
@@ -312,6 +312,48 @@ modifier_value_x100 = 150
 modifier_radius_m = 4.0
 modifier_stacks = false
 
+; Sarbaz-khaneh (barracks) — 01_CORE_MECHANICS.md §5
+; Produces Tier 1 military: Piyade, Kamandar. "100 coin" per spec.
+; Medium-high HP — not as durable as Atashkadeh (sacred flame) but must
+; survive a raid long enough for garrisoned units to react.
+; farr_per_tick = 0 — barracks do not generate Farr.
+;
+; construction_ticks = 780 = 26s @ 30Hz.
+; Timing-ladder anchoring (agent-def discipline, session-3 retro §C):
+;   Khaneh(90=3s) < Mazra'eh(540=18s) < Ma'dan(660=22s)
+;   < Sarbaz-khaneh(780=26s) < Atashkadeh(900=30s) < Qal'eh(2700=90s per §8)
+;
+; Why 780, not the briefed 720-900 band endpoints:
+;   - Above Ma'dan (660): military commitment is strategically heavier than a
+;     coin multiplier. You cannot produce combat units without this building;
+;     the build time must register as a deliberate choice, not a quick dispatch.
+;   - Below Atashkadeh (900): the Farr/Tier-2 gateway remains the costliest
+;     Tier-1 build. Sarbaz-khaneh is urgent but not a tier gate — 4s separation
+;     below Atashkadeh preserves that distinction.
+;   - 780 sits exactly 120 ticks (4s) above Ma'dan and 120 ticks (4s) below
+;     Atashkadeh — symmetric gaps, both perceptible at 15-25 min match pacing
+;     (01_CORE_MECHANICS.md §2.2).
+;
+; Cost-ladder monotonicity: NOT strictly monotonic by cost (Ma'dan 40 coin
+; costs less than Khaneh 50 but takes longer to build — justified by
+; multiplicative yield impact). Sarbaz-khaneh (100 coin) sits correctly above
+; Ma'dan in ticks because its strategic necessity warrants the commitment,
+; not because cost alone dictates it.
+;
+; Cultural note: Sarbaz-khaneh formalizes WHO is a soldier (oath, training,
+; role-definition). The 26s build frames it as an institutional commitment —
+; not the snap decision of equipping a militiaman, but the founding of an
+; organized military corps. §5 spec: "Sarbaz-khaneh (barracks) — Produces
+; Tier 1 military: Piyade, Kamandar. 100 coin."
+; balance-engineer: Phase 3 session 4 wave 2A open consultation.
+[sub_resource type="Resource" id="bldg_sarbaz_khaneh"]
+script = ExtResource("3_bldgstats")
+max_hp = 400.0
+coin_cost = 100
+grain_cost = 0
+construction_ticks = 780
+farr_per_tick = 0.0
+
 ; Atashkadeh (fire temple) — 01_CORE_MECHANICS.md §5
 ; +1 Farr/min passive = 1/1800 Farr/tick ≈ 0.000556 Farr/tick
 ; Cost: "150 coin, 50 grain". Prerequisite for Tier 2 advance.
@@ -483,7 +525,7 @@ hard_attack_army_threshold = 16
 
 [resource]
 script = ExtResource("1_balancedata")
-constants_version = "2026-05-17-phase-3-session-3-wave-1c-construction-ticks"
+constants_version = "2026-05-17-phase-3-session-4-wave-2a-sarbaz-khaneh"
 units = {
 &"kargar": SubResource("unit_kargar"),
 &"piyade": SubResource("unit_piyade"),
@@ -500,6 +542,7 @@ buildings = {
 &"khaneh": SubResource("bldg_khaneh"),
 &"mazraeh": SubResource("bldg_mazraeh"),
 &"madan": SubResource("bldg_madan"),
+&"sarbaz_khaneh": SubResource("bldg_sarbaz_khaneh"),
 &"atashkadeh": SubResource("bldg_atashkadeh")
 }
 farr = SubResource("farr_cfg")
