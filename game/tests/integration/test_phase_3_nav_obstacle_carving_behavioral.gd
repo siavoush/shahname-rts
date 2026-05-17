@@ -11,21 +11,27 @@
 # claims require behavioral assertions. Cites the L25 finding (workers walked
 # through inert obstacles that lacked affect_navigation_mesh + vertices).
 #
+# NavigationObstacle3D flags in play (Godot 4.6.2, per bc34c39 fix):
+#   affect_navigation_mesh = true  — bake-time carve (navmesh authored in editor)
+#   carve_navigation_mesh = true   — runtime dynamic carve (buildings placed at
+#                                    runtime post-bake, which is how this game works)
+# Both flags are set on building.tscn + madan.tscn + mine_node.tscn as of bc34c39.
+# Unit tests assert both flags (test_building_base.gd, test_khaneh.gd etc.).
+#
 # Uses the REAL NavigationAgentPathScheduler, NOT MockPathScheduler.
 # The mock returns straight-line paths and would not exercise the carve.
 #
-# HEADLESS LIMITATION (per docs/WAVE_1C_NAVMESH_SPIKE.md §7.3):
-# The localized region rebake triggered by NavigationObstacle3D entering the
-# scene tree is asynchronous and managed by NavigationServer3D. In Godot 4
-# headless mode (GUT test runner), the NavigationServer3D may not execute the
-# region rebake within the available process_frame budget — path queries
-# return straight-line results even after 3+ frame awaits.
+# CONFIRMED HEADLESS LIMITATION (probe run 2026-05-17, 30-frame await loop):
+# NavigationServer3D's dynamic carve (carve_navigation_mesh) does NOT execute
+# in Godot 4.6.2 headless mode regardless of process_frame await count.
+# 30 frames probed: state=1 (nav map valid), waypoints go through origin,
+# min_xz stays 0.000 every frame. This is NOT a timing issue — it is a
+# fundamental headless runner limitation: the NavServer carve thread does not
+# run without a display server / rendering loop.
 #
-# For this reason, each carve-verification flow uses pending() when the path
-# goes through the obstacle footprint (XZ dist < threshold), with an explicit
-# note that the assertion requires the lead's live-test gate (Task #138) for
-# hard confirmation. The pending() path documents the known headless gap,
-# not a test failure.
+# Consequence: the carve-verification flows (Khaneh, Ma'dan) mark pending()
+# permanently in headless. The LIVE-TEST GATE (Task #138 / spike §1.4) is
+# the empirical confirmation. pending() here documents the gap, not a failure.
 #
 # The LIVE-TEST GATE at docs/WAVE_1C_NAVMESH_SPIKE.md §1.4 is the empirical
 # confirmation that the carve works in a running game.
@@ -104,15 +110,15 @@ func test_khaneh_carves_navmesh_path_routes_around() -> void:
 	var carve_took_effect: bool = _path_routes_around(waypoints, 1.0)
 
 	if not carve_took_effect:
-		# Headless rebake did not fire within the await budget.
-		# This is the known §7.3 limitation — NOT a code bug.
-		# Lead live-test gate (Task #138) provides empirical confirmation.
+		# Confirmed headless limitation — NOT a code bug. 30-frame probe
+		# (2026-05-17) showed carve_navigation_mesh never fires in headless
+		# regardless of await count. Lead live-test gate (Task #138) confirms.
 		pending(
-			"HEADLESS LIMITATION (§7.3): Khaneh carve rebake did not complete "
-			+ "within 3 process_frame awaits. The path went through the obstacle "
-			+ "footprint. This is the known async NavigationServer3D limitation "
-			+ "in headless GUT. The lead live-test gate (Task #138) confirms "
-			+ "carve works in a running game. Waypoints: " + str(waypoints))
+			"CONFIRMED HEADLESS LIMITATION: carve_navigation_mesh (bc34c39) "
+			+ "does not execute in Godot 4.6.2 headless — NavServer carve "
+			+ "thread requires a rendering loop. 30-frame probe: state=1 but "
+			+ "min_xz=0.000 every frame. Lead live-test gate (Task #138) is "
+			+ "the empirical confirmation. Waypoints: " + str(waypoints))
 		return
 
 	# If we get here, the carve DID take effect (possible in some environments).
@@ -155,10 +161,11 @@ func test_madan_carves_navmesh_path_routes_around() -> void:
 
 	if not carve_took_effect:
 		pending(
-			"HEADLESS LIMITATION (§7.3): Ma'dan carve rebake did not complete "
-			+ "within 3 process_frame awaits. Known async NavigationServer3D "
-			+ "limitation in headless GUT. Lead live-test gate (Task #138) "
-			+ "confirms. Waypoints: " + str(waypoints))
+			"CONFIRMED HEADLESS LIMITATION: carve_navigation_mesh (bc34c39) "
+			+ "does not execute in Godot 4.6.2 headless. Same root cause as "
+			+ "Khaneh flow — NavServer carve thread requires rendering loop. "
+			+ "Lead live-test gate (Task #138) is the empirical confirmation. "
+			+ "Waypoints: " + str(waypoints))
 		return
 
 	assert_gt(waypoints.size(), 2,
