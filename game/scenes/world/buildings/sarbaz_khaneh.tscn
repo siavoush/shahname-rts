@@ -1,0 +1,100 @@
+[gd_scene load_steps=6 format=3 uid="uid://shahnameh_sarbaz_khaneh_building"]
+
+; sarbaz_khaneh.tscn — Sarbaz-khaneh (Iran barracks) building scene.
+;
+; Source: 01_CORE_MECHANICS.md §5 — "Sarbaz-khaneh (barracks) — Unlocks
+; Sarbaz (foot-soldier) production. Enables military unit queue."
+;
+; TODO: cultural-note pending loremaster brief-time review. When the
+; loremaster's output lands, replace this block with the 4-part structure
+; (cultural-referent / mechanic-surfaces-truth / cross-faction-caveat /
+; forward-compat-note) per the agent-def Building subclass template.
+;
+; Phase 3 session 4 wave 2A — first military building. Institutional
+; footprint (wider-than-deep or longer-than-wide) to read as "barracks"
+; vs residential (Khaneh) or agrarian (Mazra'eh) or industrial (Ma'dan).
+;
+; Inheriting building.tscn per the khaneh.tscn pattern:
+;   - Overrides mesh size + material (3.0 × 1.2 × 2.0 — wider-than-square,
+;     reads as elongated military structure at default zoom).
+;   - Overrides CollisionShape3D to match the new footprint (click-target
+;     accuracy — BUG-07 lesson).
+;   - Overrides NavigationObstacle3D vertices to cover the 3.0 × 2.0 XZ
+;     footprint (±1.6 × ±1.1 + 0.1m margin per RNC §3.2 v1.4.0 sizing rule).
+;
+; Visual placeholder per CLAUDE.md "colored rectangles for buildings":
+;   - BoxMesh 3.0 × 1.2 × 2.0 — wider than Khaneh's 2.0×2.0 square,
+;     same height. Reads as "institutional / military structure" vs the
+;     domestic Khaneh or agrarian Mazra'eh.
+;   - Desaturated iron-red Color(0.55, 0.25, 0.20) — muted military tone.
+;     Distinct from:
+;       * Khaneh tan (0.78, 0.65, 0.45) — warm domestic
+;       * Mazra'eh green (0.55, 0.75, 0.35) — agrarian
+;       * Ma'dan stone-grey (0.5, 0.5, 0.55) — industrial
+;       * MineNode gold (0.85, 0.7, 0.2) — resource
+;       * Kargar sandy-brown (0.65, 0.5, 0.3) — unit
+;     The desaturated red carries "iron/soldiery" without reading as danger
+;     or damage (which a bright red would). Blood-and-iron, not warning.
+;
+; NavigationObstacle3D — ACTIVE (not inert). The carve fires at placement
+; via the inherited _on_placement_complete → bake_navigation_mesh(false)
+; pipeline (building.gd Task #144 / 910bd9a). SOURCE_GEOMETRY_ROOT_NODE_CHILDREN
+; (terrain.gd Task #147 / be8c355) means the bake sees this obstacle even
+; though Sarbaz-khaneh spawns under &World as a sibling of Terrain.
+; Both affect_navigation_mesh + carve_navigation_mesh are set (see building.tscn
+; base for the full two-flag rationale).
+;
+; Footprint polygon math (per RNC §3.2 v1.4.0 + building.tscn base precedent):
+;   Mesh XZ: 3.0 × 2.0.  Half-extents: 1.5 × 1.0.
+;   Polygon margin: +0.1m per axis (compensates NAV_AGENT_RADIUS=0.5 erosion).
+;   Result: ±1.6 × ±1.1.
+
+[ext_resource type="PackedScene" uid="uid://shahnameh_building_base" path="res://scenes/world/buildings/building.tscn" id="1_building_template"]
+[ext_resource type="Script" path="res://scripts/world/buildings/sarbaz_khaneh.gd" id="2_sarbaz_khaneh"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_sarbaz_khaneh"]
+; Wider-than-square institutional footprint — 3.0 wide × 1.2 tall × 2.0 deep.
+; Wider than Khaneh (2.0×2.0) to read as "barracks row" at default zoom.
+size = Vector3(3.0, 1.2, 2.0)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_sarbaz_khaneh"]
+; Desaturated iron-red — military tone without reading as a warning or
+; damage indicator. Distinct from all existing buildings (see header).
+albedo_color = Color(0.55, 0.25, 0.20, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — matches unit / mine / building pipeline.
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_sarbaz_khaneh"]
+; Collision shape matches the visual mesh for click-target accuracy.
+; BUG-07 lesson: the inherited StaticBody3D provides the CollisionObject3D
+; ancestor; this shape must cover the full rendered silhouette.
+size = Vector3(3.0, 1.2, 2.0)
+
+
+; Inherit the Building scene template; override mesh, material, collision, obstacle.
+[node name="SarbazKhaneh" instance=ExtResource("1_building_template")]
+script = ExtResource("2_sarbaz_khaneh")
+
+[node name="MeshInstance3D" parent="." index="0"]
+; Override mesh + material. Y-offset = half-height (0.6) so the bottom
+; face sits flush on terrain at Y=0 — same convention as building.tscn.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
+mesh = SubResource("BoxMesh_sarbaz_khaneh")
+material_override = SubResource("StandardMaterial3D_sarbaz_khaneh")
+
+[node name="StaticBody3D/CollisionShape3D" parent="." index="0"]
+; Override collision shape to match the 3.0×1.2×2.0 mesh footprint.
+; Y-offset 0.6 co-locates with the mesh centre.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
+shape = SubResource("BoxShape3D_sarbaz_khaneh")
+
+[node name="NavigationObstacle3D" parent="." index="0"]
+; Override vertices for the 3.0×2.0 XZ footprint (base has 2.0×2.0).
+; Per RNC §3.2 v1.4.0: polygon at ±(half-extent + 0.1m margin):
+;   X: ±(1.5 + 0.1) = ±1.6.  Z: ±(1.0 + 0.1) = ±1.1.
+; Vertex order matches building.tscn: (-X,-Z), (+X,-Z), (+X,+Z), (-X,+Z).
+; affect_navigation_mesh + carve_navigation_mesh inherited from base — NOT
+; overridden here (would clear them). See building.tscn for dual-flag rationale.
+; radius updated to ~2.0 (≈ sqrt(1.6²+1.1²)) for editor visualization parity.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
+vertices = PackedVector3Array(-1.6, 0, -1.1, 1.6, 0, -1.1, 1.6, 0, 1.1, -1.6, 0, 1.1)
+radius = 2.0
