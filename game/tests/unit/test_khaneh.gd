@@ -58,9 +58,18 @@ func test_khaneh_inherits_building_composition() -> void:
 		"MeshInstance3D from building.tscn must be present on Khaneh")
 	assert_not_null(_khaneh.get_node_or_null(^"StaticBody3D"),
 		"StaticBody3D (BUG-07 lesson) must be present on Khaneh")
-	assert_not_null(_khaneh.get_node_or_null(^"NavigationObstacle3D"),
-		"NavigationObstacle3D (RESOURCE_NODE_CONTRACT §3.2 carve) "
-		+ "must be present on Khaneh")
+	var nav: Node = _khaneh.get_node_or_null(^"NavigationObstacle3D")
+	assert_not_null(nav,
+		"NavigationObstacle3D (RNC §3.2 v1.4.0) must be present on Khaneh "
+		+ "— inherited from building.tscn base scene")
+	# Behavioral discipline per STUDIO_PROCESS.md §9 (2026-05-15 rule):
+	# presence alone is insufficient — verify Path A config is in effect.
+	assert_true(nav.affect_navigation_mesh,
+		"NavigationObstacle3D.affect_navigation_mesh must be true on Khaneh "
+		+ "(inherited from building.tscn Path A edit)")
+	assert_gt(nav.vertices.size(), 2,
+		"NavigationObstacle3D.vertices must be non-empty polygon on Khaneh "
+		+ "(inherited from building.tscn Path A edit)")
 
 
 func test_khaneh_is_a_building() -> void:

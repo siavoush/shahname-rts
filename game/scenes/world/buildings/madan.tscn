@@ -104,17 +104,18 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
 shape = SubResource("BoxShape3D_madan")
 
 [node name="NavigationObstacle3D" type="NavigationObstacle3D" parent="."]
-; RESOURCE_NODE_CONTRACT §3.2 sanctioned pattern — runtime navmesh carve
-; via NavigationObstacle3D (NOT runtime navmesh REBAKE, which is forbidden).
-; Ma'dan is structural; workers route AROUND it. Mazra'eh is the
-; counter-example (no obstacle — workers walk ONTO the farm). Ma'dan
-; sits at the mining-operation surface; physical access to the seam
-; itself is via the MineNode (which has its own obstacle).
+; Path A override — Ma'dan's footprint is 2.5×2.5 (vs Building base 2.0×2.0).
+; Per docs/WAVE_1C_NAVMESH_SPIKE.md §2.3 + RNC §3.2 v1.4.0.
+; `affect_navigation_mesh = true` activates static-carve mode: engine issues
+; a localized navmesh region rebake when this obstacle enters the tree.
+; No gameplay code calls bake_navigation_mesh().
 ;
-; Y-offset matches the mesh (0.5) so the obstacle's centre is where the
-; visible Ma'dan's centre is. Radius 1.5 — matches building.tscn base;
-; tighter than the 2.5m footprint diagonal but consistent with the
-; precedent. Path-finding regressions surface in live-test if the
-; radius is wrong.
+; vertices: polygon at ±1.35m (2.5/2 + 0.1m margin per the base-scene
+; rationale — compensates for NAV_AGENT_RADIUS = 0.5 erosion at corners).
+;
+; transform Y-offset 0.5 matches Ma'dan's mesh half-height. Navmesh
+; carving is XZ-only; Y is kept for editor visualization parity.
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+affect_navigation_mesh = true
+vertices = PackedVector3Array(-1.35, 0, -1.35, 1.35, 0, -1.35, 1.35, 0, 1.35, -1.35, 0, 1.35)
 radius = 1.5

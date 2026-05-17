@@ -103,22 +103,26 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
 shape = SubResource("BoxShape3D_building")
 
 [node name="NavigationObstacle3D" type="NavigationObstacle3D" parent="."]
-; RESOURCE_NODE_CONTRACT §3.2: runtime navmesh carving via
-; NavigationObstacle3D is the sanctioned pattern; runtime navmesh REBAKE
-; is forbidden. A finished building registers itself as an obstacle so
-; the navmesh agent's path queries route around it without a rebake.
+; Path A — engine-managed localized region rebake (per docs/WAVE_1C_NAVMESH_SPIKE.md
+; §2.1 + RNC §3.2 v1.4.0). `affect_navigation_mesh = true` + `vertices` polygon
+; makes the parent NavigationRegion3D (terrain.gd) carve this footprint out of
+; the baked navmesh. NavigationServer3D issues an automatic region rebake when
+; the obstacle enters the scene tree — no gameplay code calls bake_navigation_mesh().
 ;
-; `radius` is the carve footprint; sized to encompass the base BoxMesh
-; (2.0 × 2.0 XZ → diagonal ~1.4 → radius 1.5 with margin). Concrete
-; subclasses with different mesh footprints should rescale this OR
-; resize via their .tscn override.
+; vertices: 2D top-down polygon in obstacle-local space (Y ignored). Matches
+; the BoxMesh footprint (2.0 × 2.0 XZ) with a 0.1m margin so the navmesh
+; agent-radius (NAV_AGENT_RADIUS = 0.5) erosion doesn't trap workers in a
+; too-tight corridor near the building edge. Margin = 0.1m → polygon at
+; ±1.1m from center.
 ;
-; Y-offset matches the mesh so the obstacle's centre is where the visible
-; building's centre is.
+; radius retained but inert under affect_navigation_mesh = true — kept for
+; editor visualization parity with the mesh. Not read by the engine in
+; static-carve mode. Subclasses override `vertices` (and may resize radius
+; for parity) when their footprint differs from the 2.0×2.0 base.
 ;
-; The vertices array is intentionally empty — radius mode is what we want
-; for the Phase 3 session 1 placeholder. Polygon-shaped obstacles (for
-; non-circular footprints like a long Sarbaz-khaneh barracks) land when
-; that building's specific footprint requires them.
+; transform Y-offset (0.6) matches the mesh; navmesh carving is XZ-only so
+; the Y is irrelevant to the carve, but kept for editor visualization parity.
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
+affect_navigation_mesh = true
+vertices = PackedVector3Array(-1.1, 0, -1.1, 1.1, 0, -1.1, 1.1, 0, 1.1, -1.1, 0, 1.1)
 radius = 1.5

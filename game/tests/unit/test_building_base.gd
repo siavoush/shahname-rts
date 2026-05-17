@@ -78,17 +78,26 @@ func test_building_has_static_body_collision() -> void:
 
 
 func test_building_has_navigation_obstacle() -> void:
-	# Per RESOURCE_NODE_CONTRACT §3.2 — runtime navmesh carve via
-	# NavigationObstacle3D is the sanctioned alternative to a forbidden
-	# runtime navmesh REBAKE. Every placed building carries one so workers
-	# route around it post-placement.
+	# Per RESOURCE_NODE_CONTRACT §3.2 v1.4.0 + docs/WAVE_1C_NAVMESH_SPIKE.md §2.1:
+	# NavigationObstacle3D with affect_navigation_mesh = true + vertices polygon
+	# activates static-carve mode so map_get_path() routes workers around the
+	# building. Presence alone is insufficient (per STUDIO_PROCESS.md §9
+	# 2026-05-15 rule — structural claims require behavioral assertions).
 	_building = _spawn_building()
 	var nav: Node = _building.get_node_or_null(^"NavigationObstacle3D")
 	assert_not_null(nav,
 		"Building must contain a NavigationObstacle3D for dynamic "
-		+ "navmesh carving (Resource Node Contract §3.2)")
+		+ "navmesh carving (Resource Node Contract §3.2 v1.4.0)")
 	assert_true(nav is NavigationObstacle3D,
 		"NavigationObstacle3D node is the right type")
+	# Behavioral discipline — config verification (effect verified by
+	# integration test test_phase_3_nav_obstacle_carving_behavioral.gd).
+	assert_true(nav.affect_navigation_mesh,
+		"NavigationObstacle3D must have affect_navigation_mesh = true "
+		+ "(per RNC §3.2 v1.4.0 — without this the obstacle is inert)")
+	assert_gt(nav.vertices.size(), 2,
+		"NavigationObstacle3D must declare a vertices polygon (≥3 vertices) "
+		+ "— without vertices, affect_navigation_mesh has no shape to carve")
 
 
 # ---------------------------------------------------------------------------

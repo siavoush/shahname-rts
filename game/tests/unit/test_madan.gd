@@ -300,14 +300,21 @@ func test_madan_placement_emits_building_placed_signal() -> void:
 # ---------------------------------------------------------------------------
 
 func test_madan_has_navigation_obstacle() -> void:
-	# Per madan.tscn header rationale: Ma'dan is a structural building;
-	# workers route AROUND it (the navmesh carves via NavigationObstacle3D).
-	# Contrast with Mazra'eh which deliberately has NO obstacle (workers
-	# walk ONTO the farm).
+	# Per madan.tscn header rationale + RNC §3.2 v1.4.0 + WAVE_1C_NAVMESH_SPIKE §2.3:
+	# Ma'dan is structural; workers route AROUND it. Contrast with Mazra'eh
+	# which deliberately has NO obstacle (workers walk ONTO the farm).
 	_madan = _spawn_madan()
 	var nav: Node = _madan.get_node_or_null(^"NavigationObstacle3D")
 	assert_not_null(nav,
 		"Ma'dan must have a NavigationObstacle3D (workers route around it).")
+	# Behavioral discipline per STUDIO_PROCESS.md §9 (2026-05-15 rule):
+	# verify Path A config — not just presence.
+	assert_true(nav.affect_navigation_mesh,
+		"NavigationObstacle3D.affect_navigation_mesh must be true on Ma'dan "
+		+ "(Path A static-carve mode per RNC §3.2 v1.4.0)")
+	assert_gt(nav.vertices.size(), 2,
+		"NavigationObstacle3D.vertices must be non-empty polygon on Ma'dan "
+		+ "(2.5×2.5 footprint, ±1.35m polygon per WAVE_1C_NAVMESH_SPIKE §2.3)")
 
 
 func test_madan_scene_has_static_body_collision() -> void:
