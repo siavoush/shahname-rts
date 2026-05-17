@@ -314,3 +314,103 @@ func test_building_get_footprint_aabb_fallback_when_no_mesh() -> void:
 	assert_almost_eq(center_z, 0.0, 0.0001,
 		"fallback AABB centered on global_position.z")
 	bare_building.free()
+
+
+# ---------------------------------------------------------------------------
+# construction_progress_updated signal — Track 2B wave 1C deliverable
+# ---------------------------------------------------------------------------
+#
+# These tests verify the signal contract declared in building.gd:
+#   - The signal exists on the Building type.
+#   - A connected handler receives the exact percent_x100 value emitted.
+#   - No double-emit at completion: the no-double-emit contract is a
+#     discipline on UnitState_Constructing (Track 1 / gp-sys scope) — that
+#     state does NOT emit at the placement tick. We document that boundary
+#     here but cannot enforce it without a full UnitState_Constructing
+#     integration harness; that test is Track 1's responsibility.
+#
+# Integration shape: the emitter (UnitState_Constructing._sim_tick) is Track
+# 1's call site. Here we drive the signal directly on a Building instance to
+# verify the declaration, the handler wiring, and the value passthrough —
+# the same shape as test_on_placement_complete_subclass_hook_fires.
+
+var _signal_received_values: Array = []
+
+
+func _on_progress_signal(percent_x100: int) -> void:
+	_signal_received_values.append(percent_x100)
+
+
+func test_construction_progress_updated_signal_exists() -> void:
+	# Verify the signal is declared on the Building type. Consumers (ui-dev
+	# Track 2A, telemetry) connect by name; if the signal doesn't exist,
+	# connect() raises an error silently and the UI never updates.
+	_building = _spawn_building()
+	assert_true(_building.has_signal(&"construction_progress_updated"),
+		"Building must declare construction_progress_updated signal "
+		+ "(Track 2B wave 1C — ui-dev Track 2A connects by this name)")
+
+
+func test_construction_progress_updated_emits_correct_value() -> void:
+	# Simulate one progress tick: emit a known percent_x100 value and
+	# verify the connected handler receives it exactly. This is the
+	# unit-level proof that the signal plumbing works before Track 1
+	# wires the call site in UnitState_Constructing._sim_tick.
+	_building = _spawn_building()
+	_signal_received_values.clear()
+	_building.construction_progress_updated.connect(_on_progress_signal)
+
+	# Emit at 50% (5000 basis points) — a mid-dwell tick.
+	_building.emit_signal(&"construction_progress_updated", 5000)
+
+	assert_eq(_signal_received_values.size(), 1,
+		"Handler must be called exactly once per emit")
+	assert_eq(_signal_received_values[0], 5000,
+		"Handler must receive the exact percent_x100 value (5000 = 50%)")
+
+	_building.construction_progress_updated.disconnect(_on_progress_signal)
+
+
+func test_construction_progress_updated_multiple_values_in_sequence() -> void:
+	# Verify sequential emits accumulate correctly — simulates a multi-tick
+	# dwell where the emitter fires once per tick with increasing progress.
+	_building = _spawn_building()
+	_signal_received_values.clear()
+	_building.construction_progress_updated.connect(_on_progress_signal)
+
+	# Simulate ticks at 25%, 50%, 75% progress.
+	_building.emit_signal(&"construction_progress_updated", 2500)
+	_building.emit_signal(&"construction_progress_updated", 5000)
+	_building.emit_signal(&"construction_progress_updated", 7500)
+
+	assert_eq(_signal_received_values.size(), 3,
+		"Three emits must produce three handler calls (not batched)")
+	assert_eq(_signal_received_values[0], 2500, "First emit: 25%")
+	assert_eq(_signal_received_values[1], 5000, "Second emit: 50%")
+	assert_eq(_signal_received_values[2], 7500, "Third emit: 75%")
+
+	_building.construction_progress_updated.disconnect(_on_progress_signal)
+
+
+func test_construction_progress_updated_no_double_emit_is_track1_responsibility() -> void:
+	# The no-double-emit contract (progress signal does NOT fire at the
+	# placement tick) is enforced by UnitState_Constructing, not by Building.
+	# Building.emit_signal() is unconditional by design — the guard lives in
+	# the emitter (Track 1 / gp-sys scope), not the receiver or the signal
+	# declaration.
+	#
+	# This test documents the boundary explicitly: Building itself has no
+	# guard that prevents emit_signal from being called at any value, including
+	# 10000. Track 1's integration test must verify that UnitState_Constructing
+	# does NOT call emit_signal at the placement tick.
+	_building = _spawn_building()
+	_signal_received_values.clear()
+	_building.construction_progress_updated.connect(_on_progress_signal)
+
+	# Building itself allows emit at 10000 — no guard on the base class.
+	_building.emit_signal(&"construction_progress_updated", 10000)
+	assert_eq(_signal_received_values.size(), 1,
+		"Building.emit_signal is unconditional — no guard on the base class. "
+		+ "Track 1 (UnitState_Constructing) enforces the no-double-emit rule.")
+
+	_building.construction_progress_updated.disconnect(_on_progress_signal)

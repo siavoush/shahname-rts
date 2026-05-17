@@ -75,6 +75,41 @@ extends Node3D
 ##   dignity comes from Piran / Manijeh / the otaq tradition). Flagged
 ##   for whoever owns Turan-side building work in the upcoming sessions.
 
+# === Signals =================================================================
+
+## Emitted by UnitState_Constructing._sim_tick on every dwell tick during
+## construction to drive the progress-bar UI (Track 2A) and any future
+## telemetry consumer.
+##
+## percent_x100 ∈ [0, 10000] — basis-point encoding per project convention
+## (multiplied by 100 so integer math carries two decimal places of
+## precision without floating-point). Value formula:
+##   percent_x100 = total_ticks_elapsed × 10000 / total_construction_ticks
+##
+## Emitter contract (load-bearing, per Track 2A / Track 1 coordination):
+##   - Emitted DURING the dwell phase only: from the first post-arrival
+##     tick through the last tick before placement fires.
+##   - Does NOT emit at completion. The placement event is signalled by
+##     _on_placement_complete firing (and EventBus.building_placed
+##     propagating), which is semantically distinct from progress.
+##     Emitting at percent_x100 = 10000 before the completion hook fires
+##     would create a race with consumers that expect the building to be
+##     is_complete when they read progress = 100%. The no-double-emit rule
+##     is the contract: progress and completion are separate signals.
+##   - Emitted from inside SimClock's tick (UnitState_Constructing is a
+##     _sim_tick caller) — consumers must treat this as an on-tick signal
+##     and defer any physics/spatial mutations accordingly.
+##   - The emitter (UnitState_Constructing, Track 1 scope) holds a
+##     reference to the Building node via _perform_placement's building
+##     local. Consumer (ui-developer's Track 2A progress bar) connects in
+##     the UI layer; no connection is established in Building itself.
+##
+## Wave 1C note: Track 1 (gp-sys) wires the emit call site; this signal
+## declaration is Track 2B's deliverable. The signal name and int signature
+## are load-bearing — any rename requires coordinating with gp-sys + ui-dev.
+signal construction_progress_updated(percent_x100: int)
+
+
 # === Schema fields ===========================================================
 
 ## Building kind. Subclass sets in _init AND _ready (dual-init pattern per
