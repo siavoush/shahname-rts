@@ -114,11 +114,13 @@ const _WAVE_1A_EXTRACT_TICKS: int = 90  # 3s dwell (cultural long-dwell, Room A)
 # click_handler.gd:447-460 checks: has_method(&"request_extract") AND
 # &"is_gatherable" in n — both must pass or right-clicks fall through silently.
 #
-# Default false: Mazra'eh is not gatherable until placement completes.
-# _on_placement_complete() flips this to true (wave 1A: immediate, no timer).
-# Wave 1C construction-timer: the flip moves to _on_construction_complete().
-# Default-false ensures any future Building subclass using this template as a
-# reference does not accidentally allow gathering during construction.
+# Default false: Mazra'eh is not gatherable until construction completes.
+# Wave 1C (session 3): _on_construction_complete() flips this to true after
+# construction_ticks ticks elapse in UnitState_Constructing. Previously
+# (wave 1A) the flip lived in _on_placement_complete (instant placement);
+# moving it to Stage 2 is the operational-gating change.
+# Default-false ensures any future Building subclass using this template as
+# a reference does not accidentally allow gathering during construction.
 var is_gatherable: bool = false
 var resource_kind: StringName = Constants.KIND_GRAIN
 var reserves_x100: int = -1   # -1 sentinel = infinite (never depletes)
@@ -149,13 +151,13 @@ func _autoload_or_null(autoload_name: StringName) -> Node:
 
 # === Placement side-effect ===================================================
 
-# Called from Building.place_at after position / team / is_complete are set.
-# Registers this Mazra'eh as a grain gather target so ResourceSystem and
-# UnitState_Gathering can discover it. Emits building_placed for telemetry.
+# Stage 1 — structural placement (place_at). Per the Building base class
+# two-stage lifecycle (header): this runs on the placement-finalization
+# tick, BEFORE the construction timer has elapsed. Side-effects here
+# are STRUCTURAL (the building exists in the world) but NOT FUNCTIONAL
+# (the building cannot yet be used). is_gatherable stays false until
+# _on_construction_complete fires.
 func _on_placement_complete(placer_unit_id: int) -> void:
-	# Mark gatherable now that placement is complete. Wave 1C moves this flip
-	# to _on_construction_complete() when the construction timer ships.
-	is_gatherable = true
 	# ResourceSystem.register_node ships in wave 1A (gp-sys slice). Guard with
 	# has_method for forward-compat with tests that load Mazra'eh without
 	# the autoload available. Pass resource_kind (&"grain") — Mazra'eh.kind is
@@ -169,6 +171,20 @@ func _on_placement_complete(placer_unit_id: int) -> void:
 	if _fog_node != null and _fog_node.has_method(&"register_vision_source"):
 		_fog_node.call(&"register_vision_source", self, team, 0, true)
 	EventBus.building_placed.emit(placer_unit_id, kind, team, global_position)
+
+
+# Stage 2 — operational activation (called by UnitState_Constructing
+# after construction_ticks ticks elapse). The is_gatherable flip is the
+# load-bearing operational gate: ClickHandler reads
+# `&"is_gatherable" in n` AND `is_gatherable == true`
+# (click_handler.gd:447-460), so right-clicks on a mid-construction
+# Mazra'eh fall through silently — the player cannot accidentally
+# route a worker to gather from a half-built farm.
+#
+# placer_unit_id is the worker that built this Mazra'eh; forwarded for
+# symmetry with _on_placement_complete and potential future telemetry.
+func _on_construction_complete(_placer_unit_id: int) -> void:
+	is_gatherable = true
 
 
 # === Duck-typed ResourceNode gather surface ==================================

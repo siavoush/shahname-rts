@@ -102,9 +102,27 @@ func _spawn_madan_at(pos: Vector3) -> Variant:
 	var b: Variant = MadanScene.instantiate()
 	add_child_autofree(b)
 	b.team = Constants.TEAM_IRAN
-	# place_at finalizes the placement (sets is_complete + fires
-	# _on_placement_complete, which triggers register_extraction_modifier
-	# on the nearest mine).
+	# Per wave 1C two-stage lifecycle: place_at fires Stage 1
+	# (_on_placement_complete — structural). The modifier-registration
+	# side-effect is gated on Stage 2 (_on_construction_complete) which
+	# UnitState_Constructing fires after construction_ticks elapse. For
+	# integration tests that only need the final operational state, we
+	# fire both stages back-to-back here. Tests that need to assert
+	# pre-Stage-2 behavior (mid-construction Ma'dan does NOT buff) drive
+	# the construction state directly; see
+	# test_madan_does_not_buff_mine_during_construction below.
+	b.place_at(pos, Constants.TEAM_IRAN, 1)
+	b._on_construction_complete(1)
+	return b
+
+
+# Spawn a Ma'dan with Stage 1 only — mid-construction. The
+# modifier-registration side-effect must NOT have fired. Used by the
+# behavioral test for the new wave-1C operational-gating contract.
+func _spawn_madan_mid_construction_at(pos: Vector3) -> Variant:
+	var b: Variant = MadanScene.instantiate()
+	add_child_autofree(b)
+	b.team = Constants.TEAM_IRAN
 	b.place_at(pos, Constants.TEAM_IRAN, 1)
 	return b
 
@@ -130,6 +148,73 @@ func test_madan_placement_out_of_radius_does_not_register() -> void:
 	_madan = _spawn_madan_at(Vector3(10.0, 0.0, 0.0))
 	assert_eq(_mine.registered_modifier_count(), 0,
 		"Mine out of Ma'dan radius must have 0 registered modifiers")
+
+
+# ---------------------------------------------------------------------------
+# Wave 1C two-stage lifecycle — mid-construction Ma'dan does NOT buff
+# ---------------------------------------------------------------------------
+#
+# The session-3 wave-1C operational-gating contract: a Ma'dan that has
+# been placed structurally (Stage 1, _on_placement_complete) but has
+# NOT yet completed construction (Stage 2, _on_construction_complete)
+# must NOT register as an extraction modifier on the adjacent mine.
+# The buff is gated on Stage 2.
+#
+# BEHAVIORAL coverage: verify that the mine's effective yield while
+# the Ma'dan is mid-construction matches the UNBUFFED value (1000 x100,
+# the base yield_per_trip_x100), NOT the buffed value (1500 x100 with
+# the 1.5x modifier). This is the load-bearing behavioral assertion —
+# a structural check (modifier_count == 0) is also asserted, but the
+# yield equality is what matters to gameplay.
+
+func test_madan_does_not_buff_mine_during_construction() -> void:
+	# Mine at origin; Ma'dan at (3, 0, 0) is within the 4m default radius
+	# of the mine. Place the Ma'dan with Stage 1 ONLY (not Stage 2) —
+	# this is the mid-construction state. The mine must NOT have a
+	# registered modifier and must yield the BASE amount on extract.
+	_mine = _spawn_mine_at(Vector3.ZERO)
+	_madan = _spawn_madan_mid_construction_at(Vector3(3.0, 0.0, 0.0))
+	# Structural: no modifier registered yet — Stage 2 hasn't fired.
+	assert_eq(_mine.registered_modifier_count(), 0,
+		"Mid-construction Ma'dan (Stage 1 only) must NOT register as a "
+		+ "modifier on the adjacent mine. The registration is gated on "
+		+ "_on_construction_complete (Stage 2, wave 1C operational gate).")
+	# Behavioral: complete_extract on the mine must yield the BASE
+	# amount, not the buffed amount. This is the gameplay-observable
+	# assertion that locks the contract.
+	_mine.request_extract(99)
+	SimClock._is_ticking = true
+	var payload: Dictionary = _mine.complete_extract(99)
+	SimClock._is_ticking = false
+	assert_eq(payload[&"amount_x100"], 1000,
+		"Mid-construction Ma'dan: mine must yield base 1000 x100 (10 Coin), "
+		+ "NOT the 1500 buffed yield. Workers gathering from the adjacent "
+		+ "mine while the Ma'dan is half-built see the un-amplified yield.")
+
+
+func test_madan_buff_applies_once_construction_completes() -> void:
+	# Counterpart to the previous test: fire Stage 2 on the same Ma'dan
+	# (place it mid-construction, then fire _on_construction_complete
+	# directly to simulate the dwell elapsing). The buff must apply.
+	_mine = _spawn_mine_at(Vector3.ZERO)
+	_madan = _spawn_madan_mid_construction_at(Vector3(3.0, 0.0, 0.0))
+	# Pre-condition: no modifier yet.
+	assert_eq(_mine.registered_modifier_count(), 0,
+		"Pre-condition: mid-construction Ma'dan has not yet buffed")
+	# Fire Stage 2 — simulates UnitState_Constructing's dwell-complete
+	# branch calling _on_construction_complete on the building.
+	_madan._on_construction_complete(1)
+	assert_eq(_mine.registered_modifier_count(), 1,
+		"After _on_construction_complete (Stage 2), Ma'dan registers as "
+		+ "an extraction modifier on the adjacent mine. The buff applies "
+		+ "from this tick onward.")
+	# Behavioral: complete_extract now yields the buffed amount (1500).
+	_mine.request_extract(99)
+	SimClock._is_ticking = true
+	var payload: Dictionary = _mine.complete_extract(99)
+	SimClock._is_ticking = false
+	assert_eq(payload[&"amount_x100"], 1500,
+		"Post-Stage-2: mine yields buffed 1500 x100 (15 Coin = base 1000 x 1.5x).")
 
 
 # ---------------------------------------------------------------------------

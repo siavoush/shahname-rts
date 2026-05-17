@@ -79,11 +79,19 @@ func _spawn_kargar(pos: Vector3 = Vector3.ZERO) -> Variant:
 
 
 func _spawn_placed_mazraeh(pos: Vector3 = Vector3(10.0, 0.0, 0.0)) -> Variant:
+	# Per wave 1C two-stage lifecycle: a "placed" Mazra'eh for the
+	# integration test means structurally placed AND operationally
+	# active. Fire both Stage 1 (place_at → _on_placement_complete)
+	# and Stage 2 (_on_construction_complete) so is_gatherable = true
+	# and the click-router-to-gathering chain works as in production
+	# post-construction. Tests that need the mid-construction state
+	# call place_at directly and skip Stage 2.
 	var m: Variant = MazraehScene.instantiate()
 	m.team = Constants.TEAM_IRAN
 	add_child_autofree(m)
 	SimClock._is_ticking = true
 	m.place_at(pos, Constants.TEAM_IRAN, 1)
+	m._on_construction_complete(1)
 	SimClock._is_ticking = false
 	return m
 
