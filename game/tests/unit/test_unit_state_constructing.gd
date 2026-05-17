@@ -215,6 +215,35 @@ func test_enter_accepts_madan_building_kind() -> void:
 		"enter must issue a path request to the build site for Ma'dan")
 
 
+# Wave-2A (2026-05-17): Sarbaz-khaneh ships as the fourth Building subclass
+# (third anchor-category — identity-bearing institutional, after Khaneh /
+# Mazra'eh / Ma'dan). Like the prior subclasses, the kind StringName must
+# be in _BUILDING_SCENE_PATHS so the construction state accepts the kind
+# without aborting. Same late-add discipline lesson applied at Commit 1:
+# kind StringName lives in this dict from the same commit as the subclass
+# class + tests. The scene file (sarbaz_khaneh.tscn) is parallel-shipped
+# by world-builder Track 2 — this enter-phase test passes regardless of
+# whether the scene is on disk (the scene load happens at arrival, not enter).
+func test_enter_accepts_sarbaz_khaneh_building_kind() -> void:
+	_unit = _spawn_kargar(Vector3.ZERO)
+	_unit.current_command = {
+		"kind": &"construct",
+		"payload": {
+			&"building_kind": &"sarbaz_khaneh",
+			&"target_position": Vector3(5.0, 0.0, 0.0),
+		},
+	}
+	_unit.fsm.transition_to(&"constructing")
+	_tick_fsm()
+	# State must NOT abort to idle — the kind is recognized in
+	# _BUILDING_SCENE_PATHS.
+	assert_ne(_unit.fsm.current.id, &"idle",
+		"Constructing must accept &\"sarbaz_khaneh\" building_kind — "
+		+ "present in _BUILDING_SCENE_PATHS at wave-2A Commit 1")
+	assert_gt(_mock.call_log.size(), 0,
+		"enter must issue a path request to the build site for Sarbaz-khaneh")
+
+
 func test_enter_bails_to_idle_on_missing_target_position() -> void:
 	_unit = _spawn_kargar()
 	_unit.current_command = {
