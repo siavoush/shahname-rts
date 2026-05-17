@@ -104,6 +104,31 @@ func test_building_has_navigation_obstacle() -> void:
 		+ "— without vertices, affect_navigation_mesh has no shape to carve")
 
 
+func test_placement_triggers_navmesh_rebake_path() -> void:
+	# Task #144 — Building._on_placement_complete drives a synchronous navmesh
+	# rebake when the building has a NavigationObstacle3D child. This test
+	# verifies the structural pre-conditions that make the rebake path reachable:
+	#   1. The Building scene has a NavigationObstacle3D child (already gated by
+	#      test_building_has_navigation_obstacle above).
+	#   2. The building is added to a scene tree context (_spawn_building uses
+	#      add_child_autofree, so get_tree() is non-null in this test).
+	#   3. The _resolve_terrain_region helper is callable on the instance.
+	#   4. When no NavigationRegion3D is present (unit-test context, no terrain),
+	#      the method returns null safely — no error thrown.
+	# The empirical carve effect is verified by qa-engineer's behavioral
+	# integration test (test_phase_3_nav_obstacle_carving_behavioral.gd).
+	_building = _spawn_building()
+	# Verify the rebake helper exists and returns null gracefully in headless
+	# test context (no terrain / NavigationRegion3D in the test scene tree).
+	assert_true(_building.has_method(&"_resolve_terrain_region"),
+		"Building must expose _resolve_terrain_region helper (Task #144 navmesh "
+		+ "rebake path — callable from _on_placement_complete)")
+	var region: Variant = _building.call(&"_resolve_terrain_region")
+	assert_null(region,
+		"_resolve_terrain_region must return null in unit-test context "
+		+ "(no NavigationRegion3D in the test scene tree — graceful no-op)")
+
+
 # ---------------------------------------------------------------------------
 # Schema — required fields exposed for consumers
 # ---------------------------------------------------------------------------
