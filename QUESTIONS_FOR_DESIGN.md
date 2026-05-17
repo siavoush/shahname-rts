@@ -38,6 +38,38 @@ Keep entries terse. Long questions fragment the design chat's attention.
 ## Open questions
 
 
+## 2026-05-17 — Turan economy shape: tribute + raid + caravan, NOT mirror-buildings
+
+**Context:** Phase 3 session 2 waves 1A + 1B shipped Mazra'eh + Ma'dan with cross-faction caveats that lock leading-hypotheses for Turan's equivalents: *karavan* (کاروان, mobile caravan unit — wave 1A Mazra'eh's cross-faction caveat per loremaster-p3s2 brief-time review) and *baj* (باج, tribute-collection — wave 1B Ma'dan's cross-faction caveat per loremaster-p3s2 brief-time review + lead's 2026-05-15 ratification). Both shipped cultural-note blocks state explicitly: "Do not clone [Mazra'eh/Ma'dan] as a Turan building." Two waves of independent loremaster framing converge on the same architectural-frame: **Turan's economy ships through tribute + raid-acquisition + caravan-trade, NOT through mirror-buildings-of-Iran.**
+
+**Question:** Ratify the Turan-economy-as-non-mirror architectural framing before Phase 4 Turan-buildings dispatch? Specifically:
+
+(a) **Coin** — collected via *baj* (tribute) from subject / contested territory + raided from defeated Iranian armies. **NO Turan-side mine-building.** A Turan-side "Ma'dan-clone" would have no MineNode to multiply (Turan plausibly doesn't build mines either in the leading-hypothesis economy) — design-broken-by-template-inertia.
+
+(b) **Grain** — acquired via *karavan* (mobile caravan units that travel between hubs carrying Grain payloads, vulnerable to interception). **NO Turan-side farm-building.** Caravans CAN carry tribute payments too — the two mechanisms (caravan-trade + baj-tribute) share mechanical surface.
+
+(c) **Population housing** — *otaq* / *khargah* (tent-household). Different lifecycle from Iran's Khaneh — possibly mobile / relocatable / capacity-tied-to-herds. This is QUESTIONS_FOR_DESIGN.md's existing 2026-05-14 entry on Turan housing analogue, which now interacts with this broader Turan-economy question.
+
+(d) **Military** — produced in mobile war-camps or via Khan's-loyalty / sworn-warrior mechanic, NOT a Sarbaz-khaneh-equivalent. Reserve detailed framing pending Sarbaz-khaneh's wave-2A close-review (the *first* identity-bearing institutional variant ships Iran-side; Turan's distinct shape becomes clearer after that anchor).
+
+**Blocking scope:**
+- NOT blocking for session 3 (Sarbaz-khaneh wave 2A ships Iran-side per spec; doesn't touch Turan).
+- PARTIALLY blocking for Phase 4+ Turan economy waves: needs ratified framing before Turan-coin / Turan-grain / Turan-population dispatches.
+
+**Loremaster's evidence base (per loremaster-p3s2 brief-time + close-review across wave 1A + 1B):**
+- `00_SHAHNAMEH_RESEARCH.md §natural-core` — Turan as nomadic-steppe culture (livestock + tribute economy historically; metal economy via raid + tribute, never extraction).
+- `00_SHAHNAMEH_RESEARCH.md §worthy-rivals` — design Turan as worthy rivals, not cartoon villains. Each faction's economy reflects its social organization; copy/paste produces hollow design.
+- Two waves of cross-faction caveat language in shipped scripts (`game/scripts/world/buildings/mazraeh.gd` header + `game/scripts/world/buildings/madan.gd` header).
+- Historical record: Xiongnu, Scythian, Hephthalite tribute systems all routed coin-equivalent revenue through tribute + raid + caravan, never through owned extraction sites.
+
+**Why this is more than a single design question:** two waves of cultural review have already presupposed the framing in shipped code. The strings.csv + cultural-note blocks for Mazra'eh and Ma'dan both contain "Do not clone as Turan building" language. The architectural frame is *already operative* in the cross-faction caveats — design-chat ratification just makes it explicit + canonical, and prevents a future Phase-4 implementer from cloning Iran-side templates against the established convention. Cites Manifesto Principle 1 (Truth-Seeking — make the operative framing explicit) and Principle 7 (SSOT — the architectural frame lives in one canonical place).
+
+**Suggested decision shape (loremaster's brief-time framing, not design directive):**
+- Ratify the non-mirror architectural frame as a working hypothesis for Phase 4 dispatch.
+- Defer specific mechanical shape (mobile caravan unit type? tribute as continuous-trickle or event-based? raid as primary or secondary?) to Phase 4 sync — the right time to design Turan's mechanics is in concert with Phase 4's Tier 2 + Kaveh Event + Farr-emitter waves, not as standalone decisions.
+- Update strings.csv + future contract docs with the ratified frame as a referenced precedent.
+
+
 ## 2026-05-14 — UI primary-name convention: Persian word vs English gloss
 
 **Context:** Phase 3 session 1 wave-close shahnameh-loremaster review. The spec (`01_CORE_MECHANICS.md` §5) names buildings as "Khaneh (house)", "Mazra'eh (farm)", "Sarbaz-khaneh (barracks)" — Persian word as primary, English as gloss. The existing strings.csv has both patterns: `UNIT_KARGAR,Kargar,` (Persian-primary, correct) and originally `BLDG_KHANEH,House,` (English-primary, anachronistic — fixed in commit `f0e79ce` to `BLDG_KHANEH,Khaneh,` per the loremaster's strong recommendation).

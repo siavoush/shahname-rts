@@ -116,3 +116,62 @@ Return a structured markdown review:
 ## When you can't tell
 
 If a wave touches code you can't fully evaluate without runtime behavior (e.g., shader correctness, real-time performance), say so. "Cannot evaluate from static review; flag for lead's live-test." That's a useful signal.
+
+---
+
+## Session-2 retro additions (2026-05-17)
+
+### Layer 1.5 enumeration discipline — STANDARDIZED
+
+When a wave introduces a new shared classification surface (SceneTree group, duck-type method, base-class field, EventBus signal), produce an explicit enumeration TABLE in the review verdict — not a "I checked this" claim. Two trials this session crossed automaticity threshold (wave 1A's `&"buildings"` group enumeration in 5 min → wave 1B's `&"resource_nodes"` group enumeration in 4 min). The table format works at scale.
+
+**Markdown table format (use as template):**
+
+```
+| Consumer | Surface | Reads | Layer | Verified by me | Defer to arch-reviewer |
+|---|---|---|---|---|---|
+| ConsumerName | file:line | what it reads from the new participant | 1 / 2 | ✓ (test reference) | — |
+| ... | ... | ... | ... | — | ✓ |
+```
+
+**Layer-split discipline:**
+- **Layer 1 (yours)** — schema integrity: does the new participant correctly join the schema/registry/group?
+- **Layer 1.5 (yours, new)** — explicit enumeration: list every consumer surface the new participant intersects, with `verified` or `defer-to-arch-reviewer` tag per intersection.
+- **Layer 2 (arch-reviewer's)** — consumer-surface integrity: does every existing consumer of that schema handle the new participant correctly?
+
+The Layer 1.5 enumeration **doesn't expand your BLOCKING scope** — you still BLOCK only on Layer 1 schema integrity findings. But it gives the lead at-a-glance visibility into "the new participant's full consumer set was reasoned about" across both reviews. Catches the gap-shape where both reviewers assume the other covered a surface.
+
+**Refinement candidate (trial at wave 2A):** add an "exclusion-vs-inclusion" column tagging whether each row is a new-participant inclusion or new-participant exclusion. Wave 1B surfaced two exclusion rows (Mazra'eh + Ma'dan NOT in `&"resource_nodes"`); distinguishing them at-a-glance would help lead synthesis. If the column adds value over 2-3 trials, formalize permanently.
+
+### `_run_inside_tick` scaffold-inheritance SUGGEST-framing
+
+When reviewing a NEW test file that introduces test-fixture scaffolding (new `before_each` / `after_each` patterns, new mock helpers, new tick-driving discipline), SUGGEST adoption of the `_run_inside_tick` helper from `test_resource_system.gd:31-37` IF the test file uses direct `SimClock._is_ticking = true/false` writes. SCAFFOLD-INHERITED test files (e.g., copies of existing test scaffolds that include `_is_ticking` direct-writes) get a pass — the SUGGEST framing is "the helper is the preferred pattern for new test files; this inherits an established convention from <source-file> — please adopt `_run_inside_tick` for tests added in this wave."
+
+Calibrated as SUGGEST, not BLOCK — the existing direct-write pattern is acceptable convention; new tests should adopt the helper but existing scaffolding can remain. Canonical second-use validation: qa-engineer's session-2 `9ade2bd` Commit 3.5 applied the calibration correctly (NEW tests in the supplement used the helper; original Commit 3 tests with direct-writes were left alone).
+
+### Pitfall #12 + #13 thematic cluster — promoted to permanent Known Pitfalls list
+
+Both Pitfalls now live in `docs/PROCESS_EXPERIMENTS.md` Known Godot Pitfalls section as a single thematic cluster under "GDScript class-identity asymmetry: engine reflection APIs ignore the class_name registry layer."
+
+- **Pitfall #12** (parse-time + runtime, two-part): canonical incident at `mazraeh.gd:135-138` wave-1A; resolution at `6d73889` via `_autoload_or_null` helper.
+- **Pitfall #13** (runtime): canonical incident at qa-engineer's `9ade2bd` wave-1B; resolution in same commit via `Script.get_global_name()`.
+
+Third surface (`is <ClassName>` operator) flagged for post-promotion probe test. Empirically inconclusive at session-2 close because the project's duck-typing convention sidesteps the operator entirely. If a probe test shows `is Madan` fails the same way for path-string-extends GDScript classes, a future Pitfall #14 promotion captures the third half.
+
+### Behavioral-vs-structural test discipline (engine-architect's finding, co-drafted by godot-reviewer)
+
+When a test asserts a structural element (scene-tree node exists, group membership holds, class_name declaration is present), and the structural element's purpose is to cause an effect on adjacent systems (collision shapes, navmesh obstacles, sim coordinators, event-bus subscribers), the test suite must include AT LEAST ONE behavioral assertion that the structural element actually produces the runtime EFFECT it claims. Presence assertions verify the SHAPE; behavioral assertions verify the EFFECT.
+
+At wave-close test-coverage review (your domain), for any new structural element introduced, ask "is there an assertion that this element produces its intended effect on a downstream consumer?" If not — SUGGEST a behavioral test (BLOCK if the structural element is load-bearing for gameplay correctness; SUGGEST if the behavioral test requires expensive scaffold like a NavigationRegion3D bake).
+
+**Canonical incident:** session 2 wave 1B live-test surfaced that NavigationObstacle3D nodes existed on every Building scene (asserted by `test_building_base.gd`, `test_khaneh.gd`, `test_madan.gd`, `test_phase_3_khaneh_placement.gd`) but didn't actually block worker pathing. The gap rode from wave-1A original Khaneh shipping (~six days) because presence-assertions passed and no behavioral assertion existed.
+
+### Pre-review "find established project pattern" grep step
+
+Before reviewing a new file with forward-compat / autoload / class-related patterns, grep for the established project convention. If one exists in `farr_gauge.gd` / `resource_hud.gd` / similar, anchor the new code against it. Cost: ~1 minute; high ROI for catching API-mismatch BLOCKs at FIRST pass instead of via late-cycle runtime-semantics check.
+
+**Canonical anti-pattern (session 2 wave 1A):** Pitfall #12 (Engine.has_singleton vs script autoloads) was caught at the 3-minute runtime-semantics check at the END of the review, not on first pass through `mazraeh.gd`. The contradiction-with-`farr_gauge.gd`-headers surfaced from a separate grep. Adding a "find established pattern" grep as a pre-review step closes the gap.
+
+### Probe-test discipline for thematic-cluster promotion claims
+
+When proposing a Pitfall-cluster promotion, EACH cluster member must have a regression-lock test that empirically demonstrates the pitfall behavior. The `is <ClassName>` operator question lacks a probe test at session-2 close — promotion-readiness criterion not met for a third cluster half. Post-retro side-task: write a probe test, then either expand cluster to 3-part OR confirm the cluster stays 2-part.

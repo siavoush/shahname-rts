@@ -192,3 +192,23 @@ If a wave reveals a contract gap (the spec doesn't cover something the code had 
 ## Working with the godot-code-reviewer
 
 Your reviews are independent. Don't coordinate with godot-code-reviewer; the lead reads both and reconciles any conflicts (rare — your domains barely overlap). If your review and theirs both BLOCK on related issues, the lead routes both back to the original agent in one message.
+
+---
+
+## Session-2 retro additions (2026-05-17)
+
+**Proposal A — Priority-0.5 SSOT prose extension: re-verify on every re-review pass.** SSOT prose contradictions are BLOCKING at wave-close AND at every re-review pass thereafter. When a wave goes through a fix-up cycle, the contract prose that was correct at the prior review pass may have gone stale if shipped state shifted mid-wave. Re-verify against CURRENT shipped state at every pass. Canonical incident: session 2 wave 1B BLOCK-C — RNC v1.2.2 §4.5's `is_gatherable = true` was correct at v1.2.2 authoring against `6d73889`; `3183c7c` flipped shipped state to `false` ~30 min later; v1.2.2 prose went stale retroactively. gp-sys-p3s2's §9.X meta-insight at `f89ed3d`.
+
+**Proposal B — Frontmatter diff discipline in read-order recipe.** When reviewing a contract patch, diff the frontmatter against the prior version. Body changes without `ssot_for:` updates are SUGGEST-MEDIUM minimum. Insert as a new step between Manifesto read + ARCHITECTURE.md read. Canonical incident: wave-1B RNC v1.3.0 §4.7 introduced extraction-modifier-emitter pattern but frontmatter `ssot_for:` didn't claim authority. Near-miss caught on second-pass.
+
+**Proposal C — Cosmetic-SUGGEST guardrail.** When flagging cosmetic / taxonomy / prose-style SUGGESTs, re-read the surrounding 2-3 sentences AND the section the prose lives in BEFORE flagging. Cosmetic SUGGESTs should be high-confidence; defer to original author's framing when in doubt. Canonical anti-pattern: wave-1B §4.7 "Three-call API" rename SUGGEST-LOW was a misread (the phrase is correct project terminology). Cost: ~5 min lead attention; erodes reviewer authority on substantive SUGGESTs.
+
+**Proposal D — Proactive carry-forward citation in wave-close reviews.** When a wave's design was shaped by your prior-message carry-forward (§12.5 decision-arc continuity in action), explicitly note "carry-forward held end-to-end" with specific cited examples in the verdict. Canonical examples (session 2 wave 1B): Option B locked; kind-vs-resource_kind separation; `_autoload_or_null` precedent; default-false `is_gatherable`. Procedural; helps lead aggregate retro signal on §12.5 architecture working as designed.
+
+**Layer 1.5 enumeration discipline — standardized.** §0 priority-0 cross-cutting schema check explicitly requires the Layer 1.5 enumeration output in the verdict, not just the grep operation. Use markdown table format with columns: Consumer | Surface | Reads | Layer | Verified by me | Defer to godot-code-reviewer. Refinement candidate (trial at wave 2A): add an "exclusion-vs-inclusion" column.
+
+**§9 anti-loop discipline cluster — RATIFY ALL.** Wave 1B's Pitfall #7 count = 0 (vs wave 1A's 3) is the empirical evidence base for ratifying P1 (stash-on-block), P2 (unconditional pathspec), P3 (blocked-on-WIP timeout discipline), P4 (broadcast `[blocked]` to lead), P5 (SSOT re-verify, merged with Proposal A), P6 (mid-wave rebalance discipline), P7 (strings.csv regen), P8 (behavioral-vs-structural test mandate).
+
+**Distribution-discipline (ownership beats warmth) — ADOPT as §6 lead-discipline rule.** Persistent agents amplify the trap because "warmest" becomes "the one whose context is most loaded with relevant memory." Mid-wave rebalance discipline (P6) handles the case where lead's initial dispatch violated ownership.
+
+**Spec-wins-over-lead's-casual-reading — RATIFY with citation-density.** Two consecutive agent-corrects-lead catches this session (balance-engineer's coin_cost=40; loremaster's Pishdadian-triad). Citation-density (file + section + line + quote-one-load-bearing-sentence) is load-bearing for the correction to overcome lead-incumbency.

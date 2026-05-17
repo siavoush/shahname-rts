@@ -115,6 +115,67 @@ Document the choice in the test file header so future readers don't re-derive it
 
 **Regression coverage.** `tests/integration/test_phase_2_session_2_rps_combat.gd` file header docs the pattern explicitly. Future combat-outcome tests should reference this as the canonical example.
 
+### Cluster preamble — GDScript class-identity asymmetry (#12 + #13)
+
+Pitfalls #12 and #13 are two halves of the same architectural seam: GDScript's `class_name` registry lives at a layer Godot's runtime reflection APIs (`Engine.has_singleton`, `Engine.get_singleton`, `Node.get_class()`) do not see. The reflection APIs operate at the C++/GDExtension layer and treat GDScript class_names as transparent to them. **Two known surfaces below; a third surface (the `is <ClassName>` operator) is empirically unverified at promotion time** — godot-code-reviewer flagged a probe test as post-promotion work; if the `is` operator fails the same way against path-string-extends GDScript classes, a future Pitfall #14 promotion captures the third half. Until then, the project convention sidesteps the `is` operator with class_name types entirely (duck-typing is preferred). Both Pitfalls #12 and #13 are promoted as a single thematic cluster so future readers see "if you need GDScript class identity at runtime, here are the wrong APIs and the right ones."
+
+### #12 — Engine.has_singleton / get_singleton + bare-identifier parse failure for forward-declared autoloads
+
+**Mechanism (two-part).**
+
+**(a) Parse-time.** Code that uses `FogSystem.register_vision_source(...)` syntactically references the bare identifier `FogSystem`. If `FogSystem` is a GDScript autoload that hasn't shipped yet (or is a forward-declared script-class), GDScript fails to parse the file at engine load. The bare identifier is unresolvable at parse-time even when the surrounding code is dead behind a guard.
+
+**(b) Runtime.** `Engine.has_singleton(&"FogSystem")` returns FALSE for GDScript autoloads — i.e., autoloads registered via `project.godot`'s `[autoload]` section with `*res://...` syntax. The `Engine.singleton` API is for C++/GDExtension singletons only and does NOT see GDScript autoloads. A guard pattern using `Engine.has_singleton` to detect a GDScript autoload's presence always returns false; the guarded code never runs.
+
+**Rule (two-part).**
+
+**(a) Parse-time:** sidestep the bare identifier with `Engine.get_singleton(&"FogSystem")` (takes a StringName at parse-time; no bare identifier reference) followed by `.call(&"method_name", ...)` instead of direct method-call syntax. The parse-time bare-identifier reference is replaced by a runtime string lookup.
+
+**(b) Runtime:** detect a GDScript autoload's presence via `SceneTree.root.get_node_or_null(NodePath(autoload_name))` — GDScript autoloads register as direct SceneTree children under their registered name. Reuse the `_autoload_or_null` helper pattern (canonical implementation: `farr_gauge.gd:261-268` and `resource_hud.gd:183-186`):
+
+```gdscript
+func _autoload_or_null(autoload_name: StringName) -> Node:
+    var tree: SceneTree = Engine.get_main_loop() as SceneTree
+    if tree == null:
+        return null
+    var root: Window = tree.root
+    if root == null:
+        return null
+    return root.get_node_or_null(NodePath(autoload_name))
+```
+
+Then call via `.call(&"method_name", ...)` per part (a).
+
+**Canonical incident.** Phase 3 session 2 wave 1A — `mazraeh.gd:135-138` (FogSystem guard) and `:207-212` (TerrainSystem guard) used `Engine.has_singleton(&"FogSystem")` + `Engine.get_singleton`. The `Engine.has_singleton` call always returned false, so the fog-source registration was silently disabled. Would have surfaced as "Mazra'eh never appears in fog reveal" after FogSystem ships in wave 3A — a latent bug hidden by the forward-compat guard for >1 wave. The project's own `farr_gauge.gd:257-260` and `resource_hud.gd:183-186` had already documented the runtime gotcha with explicit prose. The wave-1A implementer didn't find the established correct pattern; godot-code-reviewer-p3s2 caught it at re-review as a CONVERGENT finding with arch-reviewer-p3s2. Fix at commit `6d73889` introduced the `_autoload_or_null` helper at `mazraeh.gd:143-147` (mirroring `farr_gauge.gd:261-268`).
+
+**Regression coverage.** `tests/unit/test_mazraeh.gd::test_mazraeh_does_not_crash_when_fogsystem_is_absent` exercises the FogSystem-absent path. The present-autoload path requires a temporary-autoload scaffold not yet in the test infrastructure; flag for wave 3A's qa-engineer scope.
+
+### #13 — Node.get_class() returns C++ base type for path-string-extends GDScript classes
+
+**Mechanism.** A GDScript class declared `class_name Madan` that uses path-string `extends "res://path/to/base.gd"` (instead of `extends BaseClass`) does NOT register correctly with Godot's runtime `get_class()` reflection. `node.get_class()` always returns the C++ ancestor type (e.g., `"Node3D"`, `"CharacterBody3D"`), regardless of the declared `class_name`. The `class_name` registry is a GDScript-layer concept; `get_class()` walks the C++/GDExtension class hierarchy and is blind to GDScript class_name declarations on path-string-extends classes.
+
+This affects two failure modes:
+- **Class-identity check:** `if node.get_class() == "Madan":` always evaluates false for path-string-extends Madan instances, even though the class is declared correctly.
+- **Class-name-by-string lookup:** code that filters or routes nodes by their declared class name via `get_class()` will silently skip path-string-extends classes.
+
+**Rule.** To retrieve a GDScript class's declared name at runtime, use `node.get_script().get_global_name()` — this reads the class_name from the script-resource layer (GDScript-side) rather than the engine reflection layer (C++-side). Returns the declared `class_name` StringName, or `&""` if the class has no class_name. Example:
+
+```gdscript
+var node_script: Script = node.get_script()
+if node_script != null:
+    var declared_name: StringName = node_script.get_global_name()
+    if declared_name == &"Madan":
+        # node is a Madan instance via class_name registry
+```
+
+The same gotcha bites `Object.is_class(name)` for the same reason — it walks C++ hierarchy. Use `Script.get_global_name()` for class_name identity; use duck-typing (`has_method`, `&"field_name" in node`) for capability identity when class_name identity is not required.
+
+**Why path-string-extends is the established project convention.** The project uses `extends "res://..."` instead of `extends BaseClass` to sidestep the GDScript class_name registry race documented in `ARCHITECTURE.md §6 v0.4.0`. This is a deliberate trade-off — path-string-extends preserves load-time stability at the cost of losing `get_class()`-based class-identity checks. The Pitfall #13 rule formalizes the trade-off: use `Script.get_global_name()` instead.
+
+**Canonical incident.** Phase 3 session 2 wave 1B Commit 3.5 — qa-engineer-p3s2's initial draft of `test_madan_class_name_is_madan_no_apostrophe` (in `test_madan_buffs_mine_extraction.gd`) used `_madan.get_class()`. The test failed with `expected "Madan", got "Node3D"`. The fix in the same commit `9ade2bd` switched to `_madan.get_script().get_global_name()`. qa-engineer documented the failure mode + fix in the commit body. Surfaced and resolved within ~5 minutes; promotion-worthy because the failure-mode is invisible from `class_name Madan` source inspection alone (the source looks like it should work; only the runtime reflection layer exposes the asymmetry).
+
+**Regression coverage.** `tests/integration/test_madan_buffs_mine_extraction.gd::test_madan_class_name_is_madan_no_apostrophe` (lines ~353-372) uses `Script.get_global_name()` and asserts `&"Madan"`. Use as the canonical pattern for future class-name regression-lock tests across the project (Mazra'eh, Khaneh, future Sarbaz-khaneh, etc.).
+
 ### Candidate / deferred entries (not yet load-bearing)
 
 | Candidate | Status | Reason |
