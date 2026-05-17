@@ -230,7 +230,11 @@ func test_mine_node_has_navigation_obstacle() -> void:
 		"NavigationObstacle3D node is the right type")
 	assert_true(nav.affect_navigation_mesh,
 		"NavigationObstacle3D.affect_navigation_mesh must be true on MineNode "
-		+ "(Path A static-carve mode — without this the obstacle is inert)")
+		+ "(Path A static-carve mode — without this the obstacle is inert at bake time)")
+	assert_true(nav.carve_navigation_mesh,
+		"NavigationObstacle3D.carve_navigation_mesh must be true on MineNode "
+		+ "(Task #141 fix-up — defensive for future runtime-spawned mines; "
+		+ "safe to set alongside affect_navigation_mesh)")
 	assert_gt(nav.vertices.size(), 2,
 		"NavigationObstacle3D.vertices must be non-empty polygon on MineNode "
 		+ "(8-vertex octagon at r=0.85 per WAVE_1C_NAVMESH_SPIKE §2.5)")

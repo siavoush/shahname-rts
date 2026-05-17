@@ -67,6 +67,10 @@ func test_khaneh_inherits_building_composition() -> void:
 	assert_true(nav.affect_navigation_mesh,
 		"NavigationObstacle3D.affect_navigation_mesh must be true on Khaneh "
 		+ "(inherited from building.tscn Path A edit)")
+	assert_true(nav.carve_navigation_mesh,
+		"NavigationObstacle3D.carve_navigation_mesh must be true on Khaneh "
+		+ "(Task #141 fix-up — runtime carve for add_child post-bake, "
+		+ "inherited from building.tscn)")
 	assert_gt(nav.vertices.size(), 2,
 		"NavigationObstacle3D.vertices must be non-empty polygon on Khaneh "
 		+ "(inherited from building.tscn Path A edit)")

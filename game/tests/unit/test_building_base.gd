@@ -94,7 +94,11 @@ func test_building_has_navigation_obstacle() -> void:
 	# integration test test_phase_3_nav_obstacle_carving_behavioral.gd).
 	assert_true(nav.affect_navigation_mesh,
 		"NavigationObstacle3D must have affect_navigation_mesh = true "
-		+ "(per RNC §3.2 v1.4.0 — without this the obstacle is inert)")
+		+ "(per RNC §3.2 v1.4.0 — without this the obstacle is inert at bake time)")
+	assert_true(nav.carve_navigation_mesh,
+		"NavigationObstacle3D must have carve_navigation_mesh = true "
+		+ "(Task #141 fix-up — buildings spawn at runtime via add_child post-bake; "
+		+ "only carve_navigation_mesh actually blocks workers at placement time)")
 	assert_gt(nav.vertices.size(), 2,
 		"NavigationObstacle3D must declare a vertices polygon (≥3 vertices) "
 		+ "— without vertices, affect_navigation_mesh has no shape to carve")

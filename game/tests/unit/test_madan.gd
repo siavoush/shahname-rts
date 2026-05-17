@@ -312,6 +312,9 @@ func test_madan_has_navigation_obstacle() -> void:
 	assert_true(nav.affect_navigation_mesh,
 		"NavigationObstacle3D.affect_navigation_mesh must be true on Ma'dan "
 		+ "(Path A static-carve mode per RNC §3.2 v1.4.0)")
+	assert_true(nav.carve_navigation_mesh,
+		"NavigationObstacle3D.carve_navigation_mesh must be true on Ma'dan "
+		+ "(Task #141 fix-up — runtime carve for add_child post-bake)")
 	assert_gt(nav.vertices.size(), 2,
 		"NavigationObstacle3D.vertices must be non-empty polygon on Ma'dan "
 		+ "(2.5×2.5 footprint, ±1.35m polygon per WAVE_1C_NAVMESH_SPIKE §2.3)")
