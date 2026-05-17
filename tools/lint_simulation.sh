@@ -241,18 +241,28 @@ fi
 # ---------------------------------------------------------------------------
 # L6 — Async navmesh rebake outside terrain bootstrap
 #
-# Rationale: the sync form bake_navigation_mesh(false) is permitted anywhere
-# gameplay code needs to trigger a localized rebake at placement-time (e.g.,
-# Building._on_placement_complete). It is deterministic — same inputs, same
-# navmesh, no racing sim ticks.
+# Rationale: gameplay code is permitted to trigger a synchronous navmesh
+# rebake at placement-time (e.g., Building._on_placement_complete using the
+# explicit `parse_source_geometry_data` + `bake_from_source_geometry_data`
+# pipeline shipped wave 1D, Task #149). The sync forms are deterministic —
+# same inputs, same navmesh, no racing sim ticks.
 #
-# The ASYNC form bake_navigation_mesh(true) is forbidden outside terrain.gd:
-# it spawns a background thread that can complete mid-sim-tick and produce a
+# The ASYNC variants are forbidden outside terrain.gd: they spawn a
+# background thread that can complete mid-sim-tick and produce a
 # non-deterministic navmesh state for AI-vs-AI sims (Sim Contract §1.6).
 #
-# Permitted everywhere:    bake_navigation_mesh(false)  — sync, deterministic
-# Forbidden outside allowlist: bake_navigation_mesh(true)   — async, non-det
-# Permitted inside allowlist: both forms (terrain initial bake at scene load)
+# Two async forms are caught by L6:
+#   - `bake_navigation_mesh(true)` — the convenience-wrapper's async form.
+#   - `bake_from_source_geometry_data_async(...)` — the explicit pipeline's
+#     async form (NavigationServer3D level).
+#
+# Permitted everywhere:
+#   - `bake_navigation_mesh(false)` — sync convenience wrapper.
+#   - `bake_from_source_geometry_data(...)` — sync explicit pipeline (canonical).
+# Forbidden outside allowlist:
+#   - `bake_navigation_mesh(true)` — async convenience wrapper.
+#   - `bake_from_source_geometry_data_async(...)` — async explicit pipeline.
+# Permitted inside allowlist: all four forms (terrain bootstrap may choose).
 #
 # Allowlist (files exempt from L6):
 #   game/scripts/world/terrain.gd — the canonical bootstrap site
@@ -260,7 +270,7 @@ fi
 # Scope: game/scripts/**/*.gd minus the allowlist
 # ---------------------------------------------------------------------------
 
-L6_PATTERN='\bbake_navigation_mesh\s*\(\s*true\s*\)'
+L6_PATTERN='\bbake_navigation_mesh\s*\(\s*true\s*\)|\bbake_from_source_geometry_data_async\s*\('
 L6_ALLOWLIST_TERRAIN="${SCRIPTS_DIR}/world/terrain.gd"
 
 L6_HITS="$(rg --with-filename --line-number "${L6_PATTERN}" \
@@ -278,11 +288,13 @@ if [[ -n "${L6_HITS}" ]]; then
 fi
 
 if [[ -n "${L6_HITS}" ]]; then
-  _fail_header "L6" "Async bake_navigation_mesh(true) call outside terrain bootstrap"
+  _fail_header "L6" "Async navmesh bake outside terrain bootstrap (Sim Contract §1.6)"
   echo "│    Allowed only in: ${L6_ALLOWLIST_TERRAIN}"
-  echo "│    bake_navigation_mesh(false) is permitted anywhere — sync and"
-  echo "│    deterministic. bake_navigation_mesh(true) is forbidden outside"
-  echo "│    terrain.gd — async thread races sim ticks (Sim Contract §1.6)."
+  echo "│    Sync forms permitted anywhere: bake_navigation_mesh(false) +"
+  echo "│    bake_from_source_geometry_data(navmesh, source) — deterministic."
+  echo "│    Async forms forbidden outside terrain.gd — background thread"
+  echo "│    races sim ticks: bake_navigation_mesh(true) +"
+  echo "│    bake_from_source_geometry_data_async(navmesh, source, callback)."
   echo "${L6_HITS}" | sed 's/^/│    /'
   _fail_footer
 fi

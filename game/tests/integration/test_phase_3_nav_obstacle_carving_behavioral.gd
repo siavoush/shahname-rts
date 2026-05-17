@@ -12,34 +12,43 @@
 # through inert obstacles that lacked affect_navigation_mesh + vertices).
 #
 # NavigationObstacle3D flags in play (Godot 4.6.2, per bc34c39 fix):
-#   affect_navigation_mesh = true  — bake-time carve (navmesh authored in editor)
-#   carve_navigation_mesh = true   — runtime dynamic carve (buildings placed at
-#                                    runtime post-bake, which is how this game works)
-# Both flags are set on building.tscn + madan.tscn + mine_node.tscn as of bc34c39.
+#   affect_navigation_mesh = true  — bake-time carve participation hint
+#   carve_navigation_mesh = true   — runtime dynamic carve participation hint
+# Both flags set on building.tscn + madan.tscn + mine_node.tscn as of bc34c39.
 # Unit tests assert both flags (test_building_base.gd, test_khaneh.gd etc.).
 #
 # Uses the REAL NavigationAgentPathScheduler, NOT MockPathScheduler.
 # The mock returns straight-line paths and would not exercise the carve.
 #
-# HEADLESS LIMITATION — CONFIRMED PERMANENT (multiple probe methods):
+# NAVMESH CARVE MECHANISM (Wave 1D, df25033 — four-round diagnostic history):
 #
+# Root cause of L25: region.bake_navigation_mesh() convenience wrapper
+# hardcodes `this` (the region) as p_root_node. SOURCE_GEOMETRY_ROOT_NODE_CHILDREN
+# walks from p_root_node — so with the default, buildings placed as siblings of
+# Terrain were invisible to the bake (wrong subtree).
+#
+# Fix (Wave 1D explicit pipeline in Building._on_placement_complete):
+#   var source := NavigationMeshSourceGeometryData3D.new()
+#   NavigationServer3D.parse_source_geometry_data(nav_mesh, source, get_tree().root)
+#   NavigationServer3D.bake_from_source_geometry_data(nav_mesh, source)
+#
+# This passes get_tree().root directly, so the parse walks the entire scene
+# tree and discovers buildings' StaticBody3D + CollisionShape3D. Sync;
+# deterministic; headless-verifiable. No rendering-loop dependency.
+#
+# Earlier failed hypotheses (documented for archaeology):
 # 1. carve_navigation_mesh async (bc34c39): 30-frame probe showed NavServer
-#    carve thread never fires without a rendering loop. Abandoned.
-#
-# 2. bake_navigation_mesh(false) sync (Task #144): calls _on_placement_complete
-#    which triggers a sync full-map rebake. The rebake fires (state=1 confirmed)
-#    but NavigationObstacle3D vertices added at runtime still do not carve the
-#    mesh — bake_navigation_mesh reads obstacle geometry, but in Godot 4.6.2
-#    headless the NavigationObstacle3D does not contribute its vertices polygon
-#    to the bake when instantiated at test time (navmesh bakes produce flat
-#    terrain only; obstacle carve geometry requires rendering pipeline context).
-#
-# Conclusion: navmesh obstacle carving is NOT headless-verifiable in Godot
-# 4.6.2 regardless of the sync/async approach. This is an engine limitation,
-# not a code bug. The LIVE-TEST GATE (Task #138 / spike §1.4) is the only
-# empirical verification path.
-#
-# These flows use pending() to document the gap explicitly, not to hide it.
+#    carve thread never fires in headless — rendering-loop dependency real,
+#    but this was a secondary symptom, not the root cause.
+# 2. bake_navigation_mesh(false) sync (Task #144): bake fired (state=1) but
+#    path unchanged — bake didn't see buildings (wrong subtree root).
+# 3. SOURCE_GEOMETRY_ROOT_NODE_CHILDREN mode (Task #147 / Fix 6a): mode set
+#    correctly, but the convenience wrapper still passed `this` as root,
+#    defeating the mode change entirely.
+# 4. Explicit pipeline (Wave 1D / df25033): all 3 flows GREEN in headless.
+#    Carve is headless-verifiable. "Rendering pipeline required" framing was
+#    wrong — the actual blocker was the subtree-root bug in the convenience
+#    wrapper, not the rendering loop.
 extends GutTest
 
 const TerrainScene: PackedScene = preload("res://scenes/world/terrain.tscn")
@@ -86,16 +95,14 @@ func _path_routes_around(waypoints: PackedVector3Array, min_xz_dist: float) -> b
 
 # ---------------------------------------------------------------------------
 # Flow 1 — Khaneh placed at origin. Calls _on_placement_complete to trigger
-# the sync rebake (Task #144). Verifies carve via map_get_path() waypoints.
-# Marks pending() if the carve didn't take effect — confirmed headless limit.
+# the explicit-pipeline sync rebake (Wave 1D). Verifies carve via
+# map_get_path() waypoints. Headless-verifiable as of df25033.
 # ---------------------------------------------------------------------------
 
 func test_khaneh_carves_navmesh_path_routes_around() -> void:
 	var khaneh: Node3D = KhanehScene.instantiate()
 	add_child_autofree(khaneh)
 	khaneh.global_position = Vector3.ZERO
-	# Trigger sync rebake via placement hook (Task #144 fix). One process_frame
-	# for NavigationServer3D to propagate the new mesh to map_get_path().
 	khaneh.call(&"_on_placement_complete", 0)
 	await get_tree().process_frame
 
@@ -108,17 +115,6 @@ func test_khaneh_carves_navmesh_path_routes_around() -> void:
 		return
 
 	var waypoints: PackedVector3Array = result.waypoints
-	var carve_took_effect: bool = _path_routes_around(waypoints, 1.0)
-
-	if not carve_took_effect:
-		pending(
-			"HEADLESS LIMIT: bake_navigation_mesh(false) fires (state=1) but "
-			+ "NavigationObstacle3D vertices do not carve in Godot 4.6.2 headless. "
-			+ "Engine limitation confirmed via two probe methods (see docstring). "
-			+ "Lead live-test gate (Task #138) is the empirical confirmation. "
-			+ "Waypoints: " + str(waypoints))
-		return
-
 	assert_gt(waypoints.size(), 2,
 		"Carved path around Khaneh must produce >2 waypoints. Got: "
 		+ str(waypoints.size()))
@@ -132,7 +128,7 @@ func test_khaneh_carves_navmesh_path_routes_around() -> void:
 
 
 # ---------------------------------------------------------------------------
-# Flow 2 — Ma'dan placed at origin. Same sync-rebake + pending() pattern.
+# Flow 2 — Ma'dan placed at origin. Same explicit-pipeline rebake pattern.
 # 2.5×2.5 footprint; XZ dist ≥ 1.25 for every waypoint.
 # ---------------------------------------------------------------------------
 
@@ -152,16 +148,6 @@ func test_madan_carves_navmesh_path_routes_around() -> void:
 		return
 
 	var waypoints: PackedVector3Array = result.waypoints
-	var carve_took_effect: bool = _path_routes_around(waypoints, 1.25)
-
-	if not carve_took_effect:
-		pending(
-			"HEADLESS LIMIT: same engine limitation as Khaneh flow — "
-			+ "NavigationObstacle3D vertices do not carve in Godot 4.6.2 headless "
-			+ "even with sync bake. Lead live-test gate (Task #138) confirms. "
-			+ "Waypoints: " + str(waypoints))
-		return
-
 	assert_gt(waypoints.size(), 2,
 		"Carved path around Ma'dan must produce >2 waypoints. Got: "
 		+ str(waypoints.size()))

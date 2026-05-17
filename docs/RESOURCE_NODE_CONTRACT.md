@@ -2,9 +2,9 @@
 title: Resource Node Schema Contract
 type: contract
 status: ratified
-version: 1.3.2
+version: 1.4.0
 owner: world-builder
-summary: Resource gathering — ResourceNode hierarchy (MineNode + Mazra'eh-as-Building-subclass via duck-typing), three-call extract API (request_extract / complete_extract / release_extract), IDropoffTarget protocol, fertile-zone placement, EventBus signals, BalanceData keys. v1.2.2 expands §4.5 to declare all 5 shipped Mazra'eh ResourceNode-shape fields + introduces §4.6 documenting the kind-vs-resource_kind separation for resource-producing Building subclasses. v1.2.3 surgical correction — §4.5 example + prose align with shipped is_gatherable = false default + flip-on-placement. v1.3.0 (wave 1B) — new §4.7 documents the extraction-modifier-emitter pattern (Ma'dan as canonical example, ResourceNode register_extraction_modifier / effective_yield_per_trip_x100 API, stacking-rule policy, navmesh-obstacle-reinforces-cultural-framing convention). v1.3.1 (wave 1B live-test) — §3.2 honesty correction surfaced NavigationObstacle3D inert-under-shipped-architecture (L25). v1.3.2 (wave 1C close, 2026-05-17) — §3.2 status refresh after four-round investigation; mechanism still unresolved; L25 deferred to dedicated wave; this section is now archaeology + carry-forward for the next-wave engineer (see `docs/WAVE_1C_NAVMESH_SPIKE.md` v0.2.0).
+summary: Resource gathering — ResourceNode hierarchy (MineNode + Mazra'eh-as-Building-subclass via duck-typing), three-call extract API (request_extract / complete_extract / release_extract), IDropoffTarget protocol, fertile-zone placement, EventBus signals, BalanceData keys. v1.2.2 expands §4.5 to declare all 5 shipped Mazra'eh ResourceNode-shape fields + introduces §4.6 documenting the kind-vs-resource_kind separation for resource-producing Building subclasses. v1.2.3 surgical correction — §4.5 example + prose align with shipped is_gatherable = false default + flip-on-placement. v1.3.0 (wave 1B) — new §4.7 documents the extraction-modifier-emitter pattern (Ma'dan as canonical example, ResourceNode register_extraction_modifier / effective_yield_per_trip_x100 API, stacking-rule policy, navmesh-obstacle-reinforces-cultural-framing convention). v1.3.1 (wave 1B live-test) — §3.2 honesty correction surfaced NavigationObstacle3D inert-under-shipped-architecture (L25). v1.3.2 (wave 1C close, 2026-05-17) — §3.2 status refresh after four-round investigation. v1.4.0 (wave 1D, 2026-05-17) — §3.2 positive prose: canonical Godot 4.6 source-geometry-pipeline rebake from `Building._on_placement_complete` using explicit `parse_source_geometry_data(get_tree().root)` + `bake_from_source_geometry_data` calls. L25 + L26 RESOLVED.
 audience: all
 read_when: working-on-resources-mines-farms-gather-or-worker-ai
 prerequisites: [MANIFESTO.md, SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md]
@@ -14,7 +14,7 @@ ssot_for:
   - state-side dwell counter pattern (extract_ticks field on node, countdown on UnitState_Gathering)
   - IDropoffTarget duck-typed protocol
   - fertile-zone placement (Array[Vector2i] map metadata, WorldGrid.is_fertile)
-  - NavigationObstacle3D ownership (mine scenes carry it; farms don't) — see §3.2 v1.3.2 for current status (4-round wave-1C investigation closed unresolved; deferred to dedicated wave)
+  - NavigationObstacle3D ownership (mine scenes + structural Building scenes carry it; farms don't) + canonical Godot 4.6 source-geometry-pipeline rebake from `Building._on_placement_complete` — see §3.2 v1.4.0
   - depletion lifecycle (queue_free.call_deferred for mines; building-destruction for farms)
   - four resource-node EventBus signals
   - resource_node_depleted dual-mode payload (API ref + telemetry destructure)
@@ -26,7 +26,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [resources, mines, farms, gather, navigation, fertile-tiles, signals]
 created: 2026-04-30
 last_updated: 2026-05-17
-provenance: Outcome of Sync 4 — joint Constraint Negotiation between world-builder and gameplay-systems. Path 2 (workers gather grain) ratified by design chat 2026-04-30. Convergence Review revisions 2026-05-01. v1.2.0 wave-1A patch (2026-05-14) — §4 SSOT-fix to align consumer-facing API prose with shipped code (the wave-1A implementation walked away from the v1 begin_extract / tick_extract / ExtractResult-enum shape; this contract version documents the actual three-call API in flight) + Mazra'eh-as-duck-typed-Building-subclass shape from Room A Open Space. v1.2.1 surgical patch (2026-05-14) — ResourceSystem.register_node signature change to take kind as explicit parameter (`register_node(node, kind: StringName)`); v1.2.0 implementation read node.kind which collided with Mazra'eh's Building-kind field (&"mazraeh") vs the resource kind (&"grain"). v1.2.1 caught pre-consumption (no wave-1A consumer queries the registry yet) via world-builder's §4.5 prose review. v1.2.2 (2026-05-14, gp-sys) — §4.5 expanded to declare all 5 SHIPPED Mazra'eh fields (resource_kind, reserves_x100, max_slots, is_gatherable, yield_per_trip_x100, plus extract_ticks) after world-builder's `6d73889` shipped the schema per arch-reviewer BLOCK-A. New §4.6 documents the kind-vs-resource_kind separation pattern for resource-producing Building subclasses (Building-identity kind + Resource-identity resource_kind on the same instance — the dual-field convention applies to Building subclasses only; ResourceNode subclasses keep `kind` as resource identity). v1.2.3 (2026-05-14, gp-sys, re-review BLOCK-C) — §4.5 example + prose `is_gatherable` default corrected from `true` to `false` to align with shipped code post-`3183c7c` (Mazra'eh now defaults `false`, `_on_placement_complete` flips to `true`; default-false enforces forward-compat lock against gather-during-construction for future Building subclasses). Regression-test locked at `test_mazraeh.gd:388`. v1.3.0 (2026-05-15, gp-sys, wave 1B Commit 4) — new §4.7 documents the extraction-modifier-emitter pattern shipped in wave 1B (Ma'dan canonical example): ResourceNode base `register_extraction_modifier` / `unregister_extraction_modifier` / `effective_yield_per_trip_x100` API (shipped at 3d7b722), modifier-emitter duck-typed surface (`yield_multiplier_x100()` method), stacking-rule policy (default first-registered-wins per design Q3), modifier-emitter Building convention (no resource_kind, no gather schema, finds target via `&"resource_nodes"` group), navmesh-obstacle-reinforces-cultural-framing convention (lead's 2026-05-15 ratification — modifier-frame buildings have obstacle; resource-producing-frame buildings like Mazra'eh do not). v1.3.2 (2026-05-17, engine-architect-p3s2, wave 1C Phase 2C honest-archaeology patch) — §3.2 status refresh post-four-round investigation (Task #126 spike + Tasks #140, #142, #146 diagnostic rounds): documents the four configuration layers currently shipped (`affect_navigation_mesh = true` + `carve_navigation_mesh = true` + `vertices` polygon at `90d39bd`/`bc34c39`; manual `region.bake_navigation_mesh(false)` from `Building._on_placement_complete` at `910bd9a`; `SOURCE_GEOMETRY_ROOT_NODE_CHILDREN` parse scope at `be8c355`; L6 lint revised at `c480303`) plus the unresolved hypothesis surface (R4-α through R4-ε) for the dedicated investigation wave. Lead's option-B decision 2026-05-17 defers the dedicated investigation — wave 1C closes with L25 still open. Cross-references `docs/WAVE_1C_NAVMESH_SPIKE.md` v0.2.0 (full archaeology) + ARCHITECTURE.md §7 L25 (diagnostic data carry-forward).
+provenance: Outcome of Sync 4 — joint Constraint Negotiation between world-builder and gameplay-systems. Path 2 (workers gather grain) ratified by design chat 2026-04-30. Convergence Review revisions 2026-05-01. v1.2.0 wave-1A patch (2026-05-14) — §4 SSOT-fix to align consumer-facing API prose with shipped code (the wave-1A implementation walked away from the v1 begin_extract / tick_extract / ExtractResult-enum shape; this contract version documents the actual three-call API in flight) + Mazra'eh-as-duck-typed-Building-subclass shape from Room A Open Space. v1.2.1 surgical patch (2026-05-14) — ResourceSystem.register_node signature change to take kind as explicit parameter (`register_node(node, kind: StringName)`); v1.2.0 implementation read node.kind which collided with Mazra'eh's Building-kind field (&"mazraeh") vs the resource kind (&"grain"). v1.2.1 caught pre-consumption (no wave-1A consumer queries the registry yet) via world-builder's §4.5 prose review. v1.2.2 (2026-05-14, gp-sys) — §4.5 expanded to declare all 5 SHIPPED Mazra'eh fields (resource_kind, reserves_x100, max_slots, is_gatherable, yield_per_trip_x100, plus extract_ticks) after world-builder's `6d73889` shipped the schema per arch-reviewer BLOCK-A. New §4.6 documents the kind-vs-resource_kind separation pattern for resource-producing Building subclasses (Building-identity kind + Resource-identity resource_kind on the same instance — the dual-field convention applies to Building subclasses only; ResourceNode subclasses keep `kind` as resource identity). v1.2.3 (2026-05-14, gp-sys, re-review BLOCK-C) — §4.5 example + prose `is_gatherable` default corrected from `true` to `false` to align with shipped code post-`3183c7c` (Mazra'eh now defaults `false`, `_on_placement_complete` flips to `true`; default-false enforces forward-compat lock against gather-during-construction for future Building subclasses). Regression-test locked at `test_mazraeh.gd:388`. v1.3.0 (2026-05-15, gp-sys, wave 1B Commit 4) — new §4.7 documents the extraction-modifier-emitter pattern shipped in wave 1B (Ma'dan canonical example): ResourceNode base `register_extraction_modifier` / `unregister_extraction_modifier` / `effective_yield_per_trip_x100` API (shipped at 3d7b722), modifier-emitter duck-typed surface (`yield_multiplier_x100()` method), stacking-rule policy (default first-registered-wins per design Q3), modifier-emitter Building convention (no resource_kind, no gather schema, finds target via `&"resource_nodes"` group), navmesh-obstacle-reinforces-cultural-framing convention (lead's 2026-05-15 ratification — modifier-frame buildings have obstacle; resource-producing-frame buildings like Mazra'eh do not). v1.3.2 (2026-05-17, engine-architect-p3s2, wave 1C Phase 2C honest-archaeology patch) — §3.2 status refresh post-four-round investigation (Task #126 spike + Tasks #140, #142, #146 diagnostic rounds): documents the four configuration layers currently shipped (`affect_navigation_mesh = true` + `carve_navigation_mesh = true` + `vertices` polygon at `90d39bd`/`bc34c39`; manual `region.bake_navigation_mesh(false)` from `Building._on_placement_complete` at `910bd9a`; `SOURCE_GEOMETRY_ROOT_NODE_CHILDREN` parse scope at `be8c355`; L6 lint revised at `c480303`) plus the unresolved hypothesis surface (R4-α through R4-ε) for the dedicated investigation wave. v1.4.0 (2026-05-17, engine-architect-p3s2, wave 1D resolution — Task #149) — §3.2 positive prose: lead's research-validated Godot 4.6 source inspection identified the parse-root hardcoding in `NavigationRegion3D::bake_navigation_mesh()` convenience wrapper. Resolved via explicit pipeline `parse_source_geometry_data(region.navmesh, source, get_tree().root)` + `bake_from_source_geometry_data(region.navmesh, source)` in `Building._on_placement_complete`. L6 lint extended to forbid `bake_from_source_geometry_data_async` outside terrain.gd alongside the existing `bake_navigation_mesh(true)` ban. L25 + L26 RESOLVED. Cross-references `docs/WAVE_1C_NAVMESH_SPIKE.md` v1.0.0 (full archaeology + Round 4 resolution) + ARCHITECTURE.md §6 v0.23.0 wave-close + §7 L25/L26 closed entries.
 ---
 
 # Resource Node Schema Contract
@@ -206,52 +206,68 @@ The Mazra'eh self-registers with `ResourceSystem` when its construction-complete
 3. Any worker whose `tick_extract` returns `NODE_DEPLETED` this or next tick transitions to `Idle` via `transition_to_next()` (State Machine Contract §3.4) and seeks the nearest non-depleted node via `ResourceSystem`.
 4. The `MineNode` scene remains in the tree. It does not `queue_free`. Visual state is updated by world-builder responding to `resource_node_depleted` signal (greyed-out mesh, particle cutoff).
 
-### 3.2 `NavigationObstacle3D` ownership
+### 3.2 `NavigationObstacle3D` ownership (v1.4.0)
 
-> **⚠️ v1.3.2 status refresh (2026-05-17, post-wave-1C four-round investigation):** Wave 1C spike (`docs/WAVE_1C_NAVMESH_SPIKE.md`) ran four rounds of empirically-tested mechanism corrections (Task #126 + Tasks #140, #142, #146). **None produced working obstacle carving in live-test.** Lead's option-B decision (2026-05-17) defers the dedicated investigation to a future wave with its own time budget; wave 1C closes with workers-walk-through-buildings as L25-still-open.
->
-> **What's currently shipped on the building/mine scenes (after the four rounds):**
->
-> - **Dual flags + vertices polygon on `building.tscn`, `madan.tscn`, `mine_node.tscn`:**
->   - `affect_navigation_mesh = true` (bake-time participation hint).
->   - `carve_navigation_mesh = true` (runtime bake participation hint).
->   - `vertices` polygon matching footprint with 0.1m margin: ±1.1 (Khaneh base), ±1.35 (Ma'dan), 8-vertex octagon @ 0.85m (mine_node).
->   - Reference: `90d39bd` (Phase 2A, Task #135) + `bc34c39` (Phase 2A.1, Task #141).
-> - **Manual synchronous re-bake from `Building._on_placement_complete`:** `_resolve_terrain_region()` walks `get_tree().root` for the first `NavigationRegion3D`, then calls `region.bake_navigation_mesh(false)` (sync, deterministic, sim-tick safe). Khaneh / Mazra'eh / Ma'dan subclass overrides all call `super._on_placement_complete(placer_unit_id)` first. Reference: `910bd9a` (Phase 2A.2, Task #144).
-> - **Wider source-geometry-parse scope on terrain's NavigationMesh:** `geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_ROOT_NODE_CHILDREN` (set in `terrain.gd:_configure_navmesh`). Without this, default `SOURCE_GEOMETRY_NAVMESH_CHILDREN` mode parses only Terrain's own subtree — buildings under `&World` (sibling of Terrain) are invisible to the bake. Reference: `be8c355` (Phase 2A.3, Task #147).
-> - **L6 lint rule** (`tools/lint_simulation.sh`): forbids only async `bake_navigation_mesh(true)` outside `terrain.gd`; sync `bake_navigation_mesh(false)` is permitted project-wide. Reference: `c480303` (Phase 2B.1, Task #145).
->
-> **What still doesn't work:** Despite all four configuration layers in place, the path query (`NavigationServer3D.map_get_path` via `NavigationAgentPathScheduler`) still returns straight-line waypoints through building origins. Workers walk through Khaneh, Ma'dan, and mine_node footprints in live-test. qa-engineer's behavioral probe (`test_phase_3_nav_obstacle_carving_behavioral.gd`) shows nav map state=1 (valid), but `min_xz = 0.000` across 30 awaited frames — the carve is not appearing in the queried navmesh.
->
-> **Open hypothesis surface for the dedicated wave to explore** (full enumeration at `docs/WAVE_1C_NAVMESH_SPIKE.md` §0.1 round 3):
->
-> - **R4-α:** Building's `StaticBody3D` parsed as walkable geometry under `PARSED_GEOMETRY_STATIC_COLLIDERS` may override the obstacle's polygon contribution.
-> - **R4-β:** `NavigationObstacle3D::navmesh_parse_source_geometry` callback may not be invoked along the `region.bake_navigation_mesh(false)` path. Reading Godot 4.6.2 source would confirm.
-> - **R4-γ:** `agent_height` / `agent_max_climb` defaults on the `NavigationMesh` may erode the obstacle's 3D footprint during voxelization.
-> - **R4-δ:** Explicit 4-call pipeline (`parse_source_geometry_data` + `add_projected_obstruction` + `bake_from_source_geometry_data`) may be the only working pattern. Auto-participation might be a docs-vs-reality gap.
-> - **R4-ε:** Path B fallback (NavigationAgent3D + RVO migration). 1-2 days + determinism wild card. Captured at `docs/WAVE_1C_NAVMESH_SPIKE.md` §3.
->
-> **The "no full-map rebake at runtime" rule survives in modified form:** `bake_navigation_mesh(false)` from `Building._on_placement_complete` is now SANCTIONED (sync, sim-tick safe, bounded to placement events seconds apart). L6 lint forbids only the async variant. The dedicated wave's resolution may extend or revise this discipline; the rule's current state is "sync runtime rebake on placement is allowed; per-tick rebake is forbidden."
->
-> **Mazra'eh remains correctly walkable** (intentionally no `NavigationObstacle3D` per `02g_PHASE_3_SESSION_2_KICKOFF.md` §2.4 Room A) — this case works because there's nothing to carve. Workers walk ONTO Mazra'eh tiles by design.
->
-> **Cross-references:**
-> - `docs/WAVE_1C_NAVMESH_SPIKE.md` v0.2.0 — full four-round archaeology with empirical-probe artifacts (Godot binary symbol enumeration, scene-tree shape, qa probe results).
-> - `docs/ARCHITECTURE.md` §7 L25 — diagnostic-data carry-forward for the next-wave engineer.
-> - STUDIO_PROCESS §9 retro signal — Godot 4.x engine-feature claim drift pattern (four incidents now formalized).
->
-> **v1.3.0 → v1.3.1 (2026-05-15) → v1.3.2 (2026-05-17):** all three patches preserve the SemVer PATCH boundary — diagnostic refresh, no shipped-behavior contract change. v1.4.0 (positive prose with verified mechanism) is deferred to the dedicated wave's close.
+Each `MineNode` and structural `Building` scene (Khaneh, Ma'dan, future Sarbaz-khaneh) includes a `NavigationObstacle3D` child configured at authoring time with `affect_navigation_mesh = true` + `carve_navigation_mesh = true` + a `vertices: PackedVector3Array` polygon matching the building footprint plus a small margin. When the building is placed at runtime via `add_child`, `Building._on_placement_complete()` drives an explicit synchronous navmesh rebake using the Godot 4.6 source-geometry pipeline — this is what actually makes the path query (`NavigationServer3D.map_get_path()`) route workers AROUND placed buildings.
 
-**Pre-v1.3.1 prose retained below for archaeology — DO NOT TRUST as current behavior:**
+**The canonical rebake pipeline** (shipped at `building.gd._on_placement_complete`, wave 1D Task #149):
+
+```gdscript
+var source := NavigationMeshSourceGeometryData3D.new()
+NavigationServer3D.parse_source_geometry_data(
+    region.navigation_mesh, source, get_tree().root)
+NavigationServer3D.bake_from_source_geometry_data(
+    region.navigation_mesh, source)
+```
+
+**Why the explicit pipeline (not the convenience wrapper).** `NavigationRegion3D::bake_navigation_mesh()` is a convenience wrapper that hardcodes `this` (the region itself) as the parse-root passed to `parse_source_geometry_data()`. Since buildings live as siblings of Terrain under `&World` (per `unit_state_constructing.gd:_resolve_placement_parent` returning the worker's parent), the convenience wrapper's parse-root never sees them. Validated against Godot 4.6 source at `scene/3d/navigation/navigation_region_3d.cpp` + `modules/navigation_3d/nav_mesh_generator_3d.cpp:236-255`. The explicit pipeline passes `get_tree().root` directly, walking the entire scene tree.
+
+**Why sync (not async).** `bake_from_source_geometry_data` is the synchronous form; `bake_from_source_geometry_data_async` is the async form. The async form races sim ticks and produces non-deterministic navmesh state across AI-vs-AI sims (Sim Contract §1.6 violation). CI lint rule **L6** (`tools/lint_simulation.sh`) forbids the async form outside `terrain.gd`; the sync form is permitted project-wide. Per-placement cost on the 256×256 flat MVP plane is <15ms — placement events are seconds apart, so cumulative re-bake cost is negligible across a match.
+
+**Obstacle config per scene.** All three obstacle-bearing scenes set both flags identically:
+
+| Scene | Footprint (X × Z) | Polygon (vertices, ±) | Source |
+|---|---|---|---|
+| `building.tscn` (Khaneh inherits) | 2.0 × 2.0 | ±1.1 | `90d39bd` (Phase 2A, Task #135) |
+| `madan.tscn` | 2.5 × 2.5 | ±1.35 | `90d39bd` (Phase 2A, Task #135) |
+| `mine_node.tscn` | r = 0.75 cylinder | 8-vertex octagon @ 0.85m | `bc34c39` (Phase 2A.1, Task #141) |
+| `mazraeh.tscn` | 4.0 × 4.0 | **NONE — walkable** | (no obstacle by design) |
+
+The 0.1m margin compensates for the navmesh `agent_radius = NAV_AGENT_RADIUS = 0.5` erosion. Without it, the eroded boundary flushes with the visual silhouette and workers may snag at corners.
+
+**`affect_navigation_mesh` + `carve_navigation_mesh` both required.** These are independent participation flags (verified via Godot binary symbol enumeration — see `docs/WAVE_1C_NAVMESH_SPIKE.md` v1.0.0 §0.1 Round 1):
+- `affect_navigation_mesh = true` — bake-time participation. Contributes to bakes triggered during scene-load (e.g., obstacle present in `terrain.tscn` subtree at `_ready` bake).
+- `carve_navigation_mesh = true` — runtime participation. Contributes to bakes triggered after scene-load (the building-placement path this contract covers).
+
+Belt-and-suspenders pattern: both flags set together covers both lifecycle paths.
+
+**Subclass override discipline.** Subclasses that override `_on_placement_complete` (Khaneh, Mazra'eh, Ma'dan) MUST call `super._on_placement_complete(placer_unit_id)` as the first line of their override — otherwise the rebake doesn't fire. This is enforced by the behavioral integration test (`test_phase_3_nav_obstacle_carving_behavioral.gd`) that asserts post-placement waypoints route around the building footprint. Mazra'eh has no `NavigationObstacle3D`, so `find_child` returns null and the rebake short-circuits — Mazra'eh remains correctly walkable.
+
+**Depleted mine policy.** When a `MineNode` depletes (`is_gatherable = false`), the `NavigationObstacle3D` stays active — the carved navmesh region remains carved, and workers continue routing around the derelict deposit. This matches the Shahnameh intent (mining sites leave navigationally impassable ruins) and the explicit pipeline naturally supports it: the obstacle is a `_ready`-time child of the mine, not depletion-state-dependent. No code path removes the obstacle. If post-MVP design adds a "clear ruins" mechanic (escalated to `QUESTIONS_FOR_DESIGN.md`), the cleanup path would `queue_free` the obstacle node and trigger a fresh rebake.
+
+**Behavioral test discipline.** Tests of structural elements whose purpose is to cause an effect on adjacent systems (NavigationObstacle3D, CollisionShape3D, signal subscriptions, etc.) MUST assert the EFFECT, not just the presence — see STUDIO_PROCESS §9 "Cross-cutting structural claims require behavioral assertions" rule (2026-05-15, added in direct response to the L25 finding). The `test_phase_3_nav_obstacle_carving_behavioral.gd` integration test exercises this discipline: it places a building, queries `NavigationServer3D.map_get_path()` from a worker's spawn point to a target on the opposite side, and asserts the returned waypoints route AROUND the building's footprint (no waypoint inside the carved region).
+
+**Forward-investment.** This pipeline scales linearly with scene-tree size. For Phase 6+ AI with ~200 units + buildings, the parse step's tree-walk remains negligible (it filters by node-type contribution; non-Mesh / non-Collider / non-Obstacle nodes are skipped). If parse cost ever surfaces as a profile hotspot, the optimization path is `SOURCE_GEOMETRY_GROUPS_WITH_CHILDREN` mode + a dedicated `&"navmesh_contributors"` group — captured as forward-investment, not pursued today.
+
+**Cross-references:**
+- `docs/WAVE_1C_NAVMESH_SPIKE.md` v1.0.0 — full four-round-plus-resolution archaeology with empirical-probe artifacts (Godot binary symbol enumeration, scene-tree shape, qa probe results, Godot 4.6 source validation).
+- `docs/ARCHITECTURE.md` §7 L25 + L26 — closed with closing-SHA reference.
+- STUDIO_PROCESS §9 retro signal — Godot 4.x engine-feature claim "enumerate API defaults at every step in the call chain" rule (four-incident pattern, now formalized).
+
+---
+
+**Pre-v1.4.0 prose retained below for archaeology — DO NOT TRUST as current behavior:**
+
+> **⚠️ v1.3.2 status refresh (2026-05-17, post-wave-1C four-round investigation):** Wave 1C spike ran four rounds of empirically-tested mechanism corrections (Task #126 + Tasks #140, #142, #146). The four-round trail surfaced the bake-vs-trigger semantics, the source-geometry-parse scope, and ultimately the parse-root hardcoding in the convenience wrapper. Lead's option-B decision (2026-05-17) initially deferred the dedicated investigation, but user pushback against the deferral framing triggered Wave 1D (Task #149) which resolved the mechanism via the explicit pipeline now documented at the top of this section.
+
+> **⚠️ v1.3.1 honesty correction (2026-05-15, engine-architect-p3s2 wave-1B live-test investigation):** The previous version of this section claimed `NavigationObstacle3D` children carve the navmesh dynamically at runtime without a rebake. That claim was structurally false under the shipped architecture as of 2026-05-15. Resolved at wave 1D — see top of section for the canonical pipeline.
 
 Each `MineNode` scene includes a `NavigationObstacle3D` child configured at authoring time. **No runtime code adds, removes, or resizes this obstacle.** When the mine depletes:
 
-- The obstacle stays active — depleted mines remain physically impassable. ← FALSE per v1.3.1 honesty correction above; mechanism still unresolved as of v1.3.2.
-- This is intentional: derelict mine ruins are navigational obstacles, consistent with the Shahnameh setting. ← intent is correct; mechanical implementation is currently inert pending the dedicated wave's resolution.
+- The obstacle stays active — depleted mines remain physically impassable. ← TRUE as of v1.4.0 (the carve persists; only `queue_free` would remove it).
+- This is intentional: derelict mine ruins are navigational obstacles, consistent with the Shahnameh setting. ← intent realized as of v1.4.0.
 
-**Note (engine-architect-p3s2 wave-1B finding, updated v1.3.2):** `mine_node.tscn` now has a `NavigationObstacle3D` child as of `bc34c39` (Phase 2A.1) — the L26 gap is structurally closed (the scene-level node exists with the correct config flags + vertices polygon). The carve doesn't yet take effect for the same reasons as L25 (see hypothesis surface above). When L25's mechanism is resolved in the dedicated wave, L26's MineNode obstacle is expected to work without further scene-edit changes.
-
-**Design escalation (ruins clearing):** Whether workers can later "clear" depleted mine ruins (removing the obstacle, reclaiming the cell) is a gameplay question outside this contract's scope. Escalated to `QUESTIONS_FOR_DESIGN.md`. If ruins clearing ships, it will update this contract in a future sync. **Implementation depends on the dedicated navmesh wave's resolution** of L25.
+**Design escalation (ruins clearing):** Whether workers can later "clear" depleted mine ruins (removing the obstacle, reclaiming the cell) is a gameplay question outside this contract's scope. Escalated to `QUESTIONS_FOR_DESIGN.md`. If ruins clearing ships, it will update this contract in a future sync. Implementation under the v1.4.0 pipeline: `queue_free` the obstacle node, then trigger a fresh `parse_source_geometry_data` + `bake_from_source_geometry_data` cycle to remove the carved region.
 
 ### 3.3 Depletion signal emission timing
 
