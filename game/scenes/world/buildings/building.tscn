@@ -103,22 +103,36 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
 shape = SubResource("BoxShape3D_building")
 
 [node name="NavigationObstacle3D" type="NavigationObstacle3D" parent="."]
-; RESOURCE_NODE_CONTRACT §3.2: runtime navmesh carving via
-; NavigationObstacle3D is the sanctioned pattern; runtime navmesh REBAKE
-; is forbidden. A finished building registers itself as an obstacle so
-; the navmesh agent's path queries route around it without a rebake.
+; Path A — TWO flags required for runtime-spawned buildings (per Task #141 fix-up,
+; engine-architect-p3s2 hypothesis 5, Godot 4.6.2 NavigationObstacle3D API):
 ;
-; `radius` is the carve footprint; sized to encompass the base BoxMesh
-; (2.0 × 2.0 XZ → diagonal ~1.4 → radius 1.5 with margin). Concrete
-; subclasses with different mesh footprints should rescale this OR
-; resize via their .tscn override.
+;   affect_navigation_mesh = true  — bake-TIME contribution: registers the obstacle
+;     with the parent NavigationRegion3D so the NEXT bake carves this footprint.
+;     Fires when obstacle enters the scene tree IF the region has not yet baked.
 ;
-; Y-offset matches the mesh so the obstacle's centre is where the visible
-; building's centre is.
+;   carve_navigation_mesh = true  — RUNTIME dynamic carving: carves the live navmesh
+;     even AFTER the initial bake. Buildings spawn at runtime via add_child (post-
+;     terrain bake), so ONLY this flag actually blocks pathfinding at placement time.
+;     Without it, affect_navigation_mesh alone is inert for runtime-spawned obstacles.
 ;
-; The vertices array is intentionally empty — radius mode is what we want
-; for the Phase 3 session 1 placeholder. Polygon-shaped obstacles (for
-; non-circular footprints like a long Sarbaz-khaneh barracks) land when
-; that building's specific footprint requires them.
+; Both flags are needed: affect covers the editor/pre-bake path; carve covers the
+; runtime add_child path. docs/WAVE_1C_NAVMESH_SPIKE.md §2 + RNC §3.2 v1.4.0.
+;
+; vertices: 2D top-down polygon in obstacle-local space (Y ignored). Matches
+; the BoxMesh footprint (2.0 × 2.0 XZ) with a 0.1m margin so the navmesh
+; agent-radius (NAV_AGENT_RADIUS = 0.5) erosion doesn't trap workers in a
+; too-tight corridor near the building edge. Margin = 0.1m → polygon at
+; ±1.1m from center.
+;
+; radius retained but inert under affect_navigation_mesh = true — kept for
+; editor visualization parity with the mesh. Not read by the engine in
+; static-carve mode. Subclasses override `vertices` (and may resize radius
+; for parity) when their footprint differs from the 2.0×2.0 base.
+;
+; transform Y-offset (0.6) matches the mesh; navmesh carving is XZ-only so
+; the Y is irrelevant to the carve, but kept for editor visualization parity.
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
+affect_navigation_mesh = true
+carve_navigation_mesh = true
+vertices = PackedVector3Array(-1.1, 0, -1.1, 1.1, 0, -1.1, 1.1, 0, 1.1, -1.1, 0, 1.1)
 radius = 1.5

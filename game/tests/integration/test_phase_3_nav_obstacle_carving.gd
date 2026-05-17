@@ -141,6 +141,17 @@ func test_placed_khaneh_has_navigation_obstacle_3d() -> void:
 	assert_not_null(obstacle,
 		"Placed Khaneh must have a NavigationObstacle3D child "
 		+ "(RESOURCE_NODE_CONTRACT §3.2: runtime carving pattern)")
+	# Config verification — per STUDIO_PROCESS.md §9 (2026-05-15 rule):
+	# presence alone is insufficient. The obstacle must be in Path A static-
+	# carve mode (affect_navigation_mesh = true + vertices polygon).
+	# Effect verified by test_phase_3_nav_obstacle_carving_behavioral.gd.
+	if obstacle != null:
+		assert_true(obstacle.affect_navigation_mesh,
+			"Placed Khaneh's obstacle must have affect_navigation_mesh = true "
+			+ "(Path A — per RNC §3.2 v1.4.0 + WAVE_1C_NAVMESH_SPIKE §2.1)")
+		assert_gt(obstacle.vertices.size(), 2,
+			"Placed Khaneh's obstacle must have a vertices polygon "
+			+ "(≥3 vertices — per RNC §3.2 v1.4.0)")
 
 
 func test_nav_obstacle_radius_is_at_least_min_carve_radius() -> void:

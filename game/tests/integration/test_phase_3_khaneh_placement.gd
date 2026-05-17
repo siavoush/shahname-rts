@@ -81,11 +81,21 @@ func _drive_loop_ticks(n: int) -> void:
 # Drive the placement loop until either a Khaneh appears in the
 # &"buildings" group OR the budget runs out.
 func _drive_until_khaneh_placed(max_ticks: int) -> bool:
+	# Per wave 1C two-stage lifecycle: the Khaneh is instantiated on
+	# the worker's arrival tick (Stage 1), but the worker stays in
+	# the constructing state through the construction_ticks dwell.
+	# This helper waits for BOTH the structural placement AND the
+	# worker's return to Idle (Stage 2 + transition).
+	var seen_building: bool = false
 	for _i in range(max_ticks):
 		_drive_loop_ticks(1)
-		for b: Node in get_tree().get_nodes_in_group(&"buildings"):
-			if is_instance_valid(b):
-				return true
+		if not seen_building:
+			for b: Node in get_tree().get_nodes_in_group(&"buildings"):
+				if is_instance_valid(b):
+					seen_building = true
+					break
+		if seen_building and _kargar.fsm.current.id == &"idle":
+			return true
 	return false
 
 

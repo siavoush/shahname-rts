@@ -78,17 +78,55 @@ func test_building_has_static_body_collision() -> void:
 
 
 func test_building_has_navigation_obstacle() -> void:
-	# Per RESOURCE_NODE_CONTRACT §3.2 — runtime navmesh carve via
-	# NavigationObstacle3D is the sanctioned alternative to a forbidden
-	# runtime navmesh REBAKE. Every placed building carries one so workers
-	# route around it post-placement.
+	# Per RESOURCE_NODE_CONTRACT §3.2 v1.4.0 + docs/WAVE_1C_NAVMESH_SPIKE.md §2.1:
+	# NavigationObstacle3D with affect_navigation_mesh = true + vertices polygon
+	# activates static-carve mode so map_get_path() routes workers around the
+	# building. Presence alone is insufficient (per STUDIO_PROCESS.md §9
+	# 2026-05-15 rule — structural claims require behavioral assertions).
 	_building = _spawn_building()
 	var nav: Node = _building.get_node_or_null(^"NavigationObstacle3D")
 	assert_not_null(nav,
 		"Building must contain a NavigationObstacle3D for dynamic "
-		+ "navmesh carving (Resource Node Contract §3.2)")
+		+ "navmesh carving (Resource Node Contract §3.2 v1.4.0)")
 	assert_true(nav is NavigationObstacle3D,
 		"NavigationObstacle3D node is the right type")
+	# Behavioral discipline — config verification (effect verified by
+	# integration test test_phase_3_nav_obstacle_carving_behavioral.gd).
+	assert_true(nav.affect_navigation_mesh,
+		"NavigationObstacle3D must have affect_navigation_mesh = true "
+		+ "(per RNC §3.2 v1.4.0 — without this the obstacle is inert at bake time)")
+	assert_true(nav.carve_navigation_mesh,
+		"NavigationObstacle3D must have carve_navigation_mesh = true "
+		+ "(Task #141 fix-up — buildings spawn at runtime via add_child post-bake; "
+		+ "only carve_navigation_mesh actually blocks workers at placement time)")
+	assert_gt(nav.vertices.size(), 2,
+		"NavigationObstacle3D must declare a vertices polygon (≥3 vertices) "
+		+ "— without vertices, affect_navigation_mesh has no shape to carve")
+
+
+func test_placement_triggers_navmesh_rebake_path() -> void:
+	# Task #144 — Building._on_placement_complete drives a synchronous navmesh
+	# rebake when the building has a NavigationObstacle3D child. This test
+	# verifies the structural pre-conditions that make the rebake path reachable:
+	#   1. The Building scene has a NavigationObstacle3D child (already gated by
+	#      test_building_has_navigation_obstacle above).
+	#   2. The building is added to a scene tree context (_spawn_building uses
+	#      add_child_autofree, so get_tree() is non-null in this test).
+	#   3. The _resolve_terrain_region helper is callable on the instance.
+	#   4. When no NavigationRegion3D is present (unit-test context, no terrain),
+	#      the method returns null safely — no error thrown.
+	# The empirical carve effect is verified by qa-engineer's behavioral
+	# integration test (test_phase_3_nav_obstacle_carving_behavioral.gd).
+	_building = _spawn_building()
+	# Verify the rebake helper exists and returns null gracefully in headless
+	# test context (no terrain / NavigationRegion3D in the test scene tree).
+	assert_true(_building.has_method(&"_resolve_terrain_region"),
+		"Building must expose _resolve_terrain_region helper (Task #144 navmesh "
+		+ "rebake path — callable from _on_placement_complete)")
+	var region: Variant = _building.call(&"_resolve_terrain_region")
+	assert_null(region,
+		"_resolve_terrain_region must return null in unit-test context "
+		+ "(no NavigationRegion3D in the test scene tree — graceful no-op)")
 
 
 # ---------------------------------------------------------------------------
@@ -314,3 +352,165 @@ func test_building_get_footprint_aabb_fallback_when_no_mesh() -> void:
 	assert_almost_eq(center_z, 0.0, 0.0001,
 		"fallback AABB centered on global_position.z")
 	bare_building.free()
+
+
+# ---------------------------------------------------------------------------
+# construction_progress_updated signal — Track 2B wave 1C deliverable
+# ---------------------------------------------------------------------------
+#
+# These tests verify the signal contract declared in building.gd:
+#   - The signal exists on the Building type.
+#   - A connected handler receives the exact percent_x100 value emitted.
+#   - No double-emit at completion: the no-double-emit contract is a
+#     discipline on UnitState_Constructing (Track 1 / gp-sys scope) — that
+#     state does NOT emit at the placement tick. We document that boundary
+#     here but cannot enforce it without a full UnitState_Constructing
+#     integration harness; that test is Track 1's responsibility.
+#
+# Integration shape: the emitter (UnitState_Constructing._sim_tick) is Track
+# 1's call site. Here we drive the signal directly on a Building instance to
+# verify the declaration, the handler wiring, and the value passthrough —
+# the same shape as test_on_placement_complete_subclass_hook_fires.
+
+var _signal_received_values: Array = []
+
+
+func _on_progress_signal(percent_x100: int) -> void:
+	_signal_received_values.append(percent_x100)
+
+
+func test_construction_progress_updated_signal_exists() -> void:
+	# Verify the signal is declared on the Building type. Consumers (ui-dev
+	# Track 2A, telemetry) connect by name; if the signal doesn't exist,
+	# connect() raises an error silently and the UI never updates.
+	_building = _spawn_building()
+	assert_true(_building.has_signal(&"construction_progress_updated"),
+		"Building must declare construction_progress_updated signal "
+		+ "(Track 2B wave 1C — ui-dev Track 2A connects by this name)")
+
+
+func test_construction_progress_updated_emits_correct_value() -> void:
+	# Simulate one progress tick: emit a known percent_x100 value and
+	# verify the connected handler receives it exactly. This is the
+	# unit-level proof that the signal plumbing works before Track 1
+	# wires the call site in UnitState_Constructing._sim_tick.
+	_building = _spawn_building()
+	_signal_received_values.clear()
+	_building.construction_progress_updated.connect(_on_progress_signal)
+
+	# Emit at 50% (5000 basis points) — a mid-dwell tick.
+	_building.emit_signal(&"construction_progress_updated", 5000)
+
+	assert_eq(_signal_received_values.size(), 1,
+		"Handler must be called exactly once per emit")
+	assert_eq(_signal_received_values[0], 5000,
+		"Handler must receive the exact percent_x100 value (5000 = 50%)")
+
+	_building.construction_progress_updated.disconnect(_on_progress_signal)
+
+
+func test_construction_progress_updated_multiple_values_in_sequence() -> void:
+	# Verify sequential emits accumulate correctly — simulates a multi-tick
+	# dwell where the emitter fires once per tick with increasing progress.
+	_building = _spawn_building()
+	_signal_received_values.clear()
+	_building.construction_progress_updated.connect(_on_progress_signal)
+
+	# Simulate ticks at 25%, 50%, 75% progress.
+	_building.emit_signal(&"construction_progress_updated", 2500)
+	_building.emit_signal(&"construction_progress_updated", 5000)
+	_building.emit_signal(&"construction_progress_updated", 7500)
+
+	assert_eq(_signal_received_values.size(), 3,
+		"Three emits must produce three handler calls (not batched)")
+	assert_eq(_signal_received_values[0], 2500, "First emit: 25%")
+	assert_eq(_signal_received_values[1], 5000, "Second emit: 50%")
+	assert_eq(_signal_received_values[2], 7500, "Third emit: 75%")
+
+	_building.construction_progress_updated.disconnect(_on_progress_signal)
+
+
+func test_construction_progress_updated_no_double_emit_is_track1_responsibility() -> void:
+	# The no-double-emit contract (progress signal does NOT fire at the
+	# placement tick) is enforced by UnitState_Constructing, not by Building.
+	# Building.emit_signal() is unconditional by design — the guard lives in
+	# the emitter (Track 1 / gp-sys scope), not the receiver or the signal
+	# declaration.
+	#
+	# This test documents the boundary explicitly: Building itself has no
+	# guard that prevents emit_signal from being called at any value, including
+	# 10000. Track 1's integration test must verify that UnitState_Constructing
+	# does NOT call emit_signal at the placement tick.
+	_building = _spawn_building()
+	_signal_received_values.clear()
+	_building.construction_progress_updated.connect(_on_progress_signal)
+
+	# Building itself allows emit at 10000 — no guard on the base class.
+	_building.emit_signal(&"construction_progress_updated", 10000)
+	assert_eq(_signal_received_values.size(), 1,
+		"Building.emit_signal is unconditional — no guard on the base class. "
+		+ "Track 1 (UnitState_Constructing) enforces the no-double-emit rule.")
+
+	_building.construction_progress_updated.disconnect(_on_progress_signal)
+
+
+# ---------------------------------------------------------------------------
+# construction_finalized signal — Task #139 Track 1 follow-on
+# ---------------------------------------------------------------------------
+#
+# Per ui-developer-p3s3's integration brief: the progress-bar UI Control
+# needs an externally-observable Stage-2 completion signal. Mirrors the
+# construction_progress_updated test shape. Integration-level coverage
+# (drive a full Khaneh construction, assert exactly-once emit at Stage 2)
+# lives in test_unit_state_constructing.gd.
+
+var _finalized_received: Array = []
+
+
+func _on_finalized_signal(placer_unit_id: int) -> void:
+	_finalized_received.append(placer_unit_id)
+
+
+func test_construction_finalized_signal_exists() -> void:
+	# Declaration check — consumers (ui-dev Track 2A overlay, telemetry)
+	# connect by name; if the signal doesn't exist, connect() raises an
+	# error silently and the UI never resolves a hide-trigger.
+	_building = _spawn_building()
+	assert_true(_building.has_signal(&"construction_finalized"),
+		"Building must declare construction_finalized signal "
+		+ "(Task #139 — externally-observable Stage-2 completion)")
+
+
+func test_construction_finalized_emits_correct_placer_unit_id() -> void:
+	# Per signal signature `construction_finalized(placer_unit_id: int)`:
+	# the handler receives the exact placer_unit_id value emitted. Locks
+	# the int payload contract.
+	_building = _spawn_building()
+	_finalized_received.clear()
+	_building.construction_finalized.connect(_on_finalized_signal)
+
+	_building.emit_signal(&"construction_finalized", 42)
+
+	assert_eq(_finalized_received.size(), 1,
+		"Handler must be called exactly once per emit")
+	assert_eq(_finalized_received[0], 42,
+		"Handler must receive the exact placer_unit_id value (42)")
+
+	_building.construction_finalized.disconnect(_on_finalized_signal)
+
+
+func test_construction_finalized_handles_negative_one_sentinel() -> void:
+	# placer_unit_id can be -1 (forward-compat sentinel when the placing
+	# worker is unknown / died — per signal header). emit_signal must
+	# accept it without coercion / error.
+	_building = _spawn_building()
+	_finalized_received.clear()
+	_building.construction_finalized.connect(_on_finalized_signal)
+
+	_building.emit_signal(&"construction_finalized", -1)
+
+	assert_eq(_finalized_received.size(), 1)
+	assert_eq(_finalized_received[0], -1,
+		"-1 sentinel passes through to handler unchanged")
+
+	_building.construction_finalized.disconnect(_on_finalized_signal)

@@ -208,3 +208,33 @@ func test_mine_node_joins_resource_nodes_group() -> void:
 	assert_true(_node.is_in_group(&"resource_nodes"),
 		"MineNode must join &\"resource_nodes\" group via ResourceNode._ready "
 		+ "(wave 1B seam for Ma'dan adjacency discovery)")
+
+
+# ---------------------------------------------------------------------------
+# NavigationObstacle3D — L26 resolution (wave 1C Track 3 Phase 2A)
+# ---------------------------------------------------------------------------
+
+func test_mine_node_has_navigation_obstacle() -> void:
+	# L26 resolution per docs/WAVE_1C_NAVMESH_SPIKE.md §2.5 + RNC §3.2 v1.4.0.
+	# MineNode scenes carry a NavigationObstacle3D so workers route around the
+	# deposit. Per STUDIO_PROCESS.md §9 (2026-05-15 rule): presence alone is
+	# insufficient — verify Path A config is in effect (affect_navigation_mesh
+	# + vertices polygon). Effect verified by integration test
+	# test_phase_3_nav_obstacle_carving_behavioral.gd (qa-engineer's Track 2B).
+	_node = _spawn_mine()
+	var nav: Node = _node.get_node_or_null(^"NavigationObstacle3D")
+	assert_not_null(nav,
+		"MineNode must contain a NavigationObstacle3D (L26 resolution — "
+		+ "workers route around the deposit per RNC §3.2 v1.4.0)")
+	assert_true(nav is NavigationObstacle3D,
+		"NavigationObstacle3D node is the right type")
+	assert_true(nav.affect_navigation_mesh,
+		"NavigationObstacle3D.affect_navigation_mesh must be true on MineNode "
+		+ "(Path A static-carve mode — without this the obstacle is inert at bake time)")
+	assert_true(nav.carve_navigation_mesh,
+		"NavigationObstacle3D.carve_navigation_mesh must be true on MineNode "
+		+ "(Task #141 fix-up — defensive for future runtime-spawned mines; "
+		+ "safe to set alongside affect_navigation_mesh)")
+	assert_gt(nav.vertices.size(), 2,
+		"NavigationObstacle3D.vertices must be non-empty polygon on MineNode "
+		+ "(8-vertex octagon at r=0.85 per WAVE_1C_NAVMESH_SPIKE §2.5)")

@@ -13,12 +13,17 @@ extends NavigationRegion3D
 ## Per Manifesto Principle 4 (Lean Iteration): smallest thing that produces
 ## real data.
 ##
-## NavigationRegion3D strategy (locked per RESOURCE_NODE_CONTRACT.md §3.2):
-##   - Bake the navmesh ONCE at scene-load (_ready).
-##   - Buildings add NavigationObstacle3D children at placement time.
-##   - NavigationObstacle3D shapes carve the navmesh dynamically — no rebake.
-##   - No runtime call to bake_navigation_mesh() after _ready.
-##   - This is the only sanctioned bake point (lint rule from session 2 retro).
+## NavigationRegion3D strategy (revised wave 1C Task #144 + #147):
+##   - Bake the navmesh at scene-load (_ready) AND after each building placement
+##     (Building._on_placement_complete drives a synchronous rebake).
+##   - source_geometry_group_mode = SOURCE_GEOMETRY_ROOT_NODE_CHILDREN so the
+##     bake parses from scene root, not just this NavigationRegion3D subtree.
+##     Buildings spawn under &World as siblings of Terrain — without this flag
+##     they are never seen by the bake (hypothesis 6a, round-3 diagnostic).
+##   - NavigationObstacle3D carve flags (affect_navigation_mesh +
+##     carve_navigation_mesh) are participation hints; the explicit rebake from
+##     Building._on_placement_complete is the actual carve trigger.
+##   - Sync bake (false) only — async (true) is forbidden by L6 lint (revised).
 ##
 ## Map size: Constants.MAP_SIZE_WORLD = 256.0 world units (XZ plane, Y=0).
 ## Per 02_IMPLEMENTATION_PLAN.md Phase 0 convergence checkpoint. The constant
@@ -57,6 +62,18 @@ func _configure_navmesh() -> void:
 		NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 	)
 
+	# Source geometry mode — Task #147 (hypothesis 6a fix):
+	# Default SOURCE_GEOMETRY_NAVMESH_CHILDREN only parses this
+	# NavigationRegion3D's own subtree. Buildings spawn under &World as
+	# siblings of Terrain — they are invisible to the bake with the default.
+	# SOURCE_GEOMETRY_ROOT_NODE_CHILDREN parses from the scene tree root so
+	# every NavigationObstacle3D in the scene (buildings, mine nodes) is
+	# discovered. Combined with Building._on_placement_complete's rebake
+	# trigger (Task #144), this makes placed buildings carve the live navmesh.
+	navigation_mesh.geometry_source_geometry_mode = (
+		NavigationMesh.SOURCE_GEOMETRY_ROOT_NODE_CHILDREN
+	)
+
 	# The navmesh bake covers the full map extent.
 	# We specify a filter AABB so the baker doesn't try to walk off the edge.
 	var half: float = Constants.MAP_SIZE_WORLD * 0.5
@@ -68,10 +85,10 @@ func _configure_navmesh() -> void:
 
 
 ## Bake the navmesh synchronously at scene-load.
-## This is the ONLY place bake_navigation_mesh() is called in this project.
-## Runtime rebake is forbidden per the session-2 lint rule and
-## RESOURCE_NODE_CONTRACT.md §3.2. Buildings use NavigationObstacle3D
-## dynamic carving instead.
+## Building._on_placement_complete (Task #144) also calls
+## region.bake_navigation_mesh(false) on each building placement — that is
+## the second sanctioned bake site. Async bake (true) remains forbidden
+## per L6 lint (revised wave 1C).
 func _bake_navmesh() -> void:
 	if navigation_mesh == null:
 		push_error("Terrain: cannot bake — no NavigationMesh resource.")

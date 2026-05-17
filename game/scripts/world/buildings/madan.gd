@@ -86,11 +86,14 @@ extends "res://scripts/world/buildings/building.gd"
 ##     reserves_x100, max_slots, yield_per_trip_x100). Ma'dan is NOT a
 ##     gather target; click_handler.gd:447's `&"is_gatherable" in n`
 ##     check correctly EXCLUDES Ma'dan from gather routing.
-##   - _on_placement_complete: find nearest MineNode within radius,
-##     register as extraction modifier. Forward-compat guarded — the
-##     `register_extraction_modifier` API ships in Commit 2; this commit
-##     ships the call site with a has_method guard so Commit 1 is
-##     independently green.
+##   - _on_placement_complete (Stage 1): fog vision registration + emit
+##     building_placed for telemetry. Structural side-effects only.
+##   - _on_construction_complete (Stage 2, session 3 wave 1C): find
+##     nearest MineNode within radius, register as extraction modifier.
+##     The mine-modifier buff applies from this tick onward — a half-
+##     built Ma'dan does NOT buff its adjacent mine. The
+##     register_extraction_modifier API is ratified in RNC v1.3.0 §4.7;
+##     the wave-1B forward-compat has_method guard is gone.
 ##   - Static cost_coin() helper for the build menu.
 ## Base Building owns: kind/team/unit_id schema, place_at seam,
 ## &"buildings" group join, get_footprint_aabb(), unit_id counter.
@@ -180,49 +183,75 @@ func _autoload_or_null(autoload_name: StringName) -> Node:
 	return tree.root.get_node_or_null(NodePath(autoload_name))
 
 
-# === Placement side-effect ===================================================
+# === Lifecycle hooks =========================================================
 #
-# Called from Building.place_at after position / team / is_complete are set.
-# Finds the nearest MineNode within _FALLBACK_MODIFIER_RADIUS_M and registers
-# as that mine's extraction modifier. Emits building_placed for telemetry.
+# Two-stage lifecycle per Building base (wave 1C session 3):
+#   Stage 1 (_on_placement_complete) — STRUCTURAL: the building exists in
+#     the world (visible, click-targetable, footprint registered with fog
+#     when wave 3A ships).
+#   Stage 2 (_on_construction_complete) — OPERATIONAL: the mine modifier
+#     is registered, so the adjacent mine's effective yield is buffed
+#     from this tick onward.
 #
-# Free placement (per design Q4): if no MineNode is within radius, the
-# Ma'dan still places successfully but does nothing. No-op fallthrough.
-# Selection-context-filtering (greying the button when no adjacent mine
-# would benefit) is wave 2B+ scope.
-#
-# Forward-compat: register_extraction_modifier ships in Commit 2 of wave 1B.
-# This commit ships the call site behind a has_method guard so Commit 1 is
-# independently green. Once Commit 2 lands, the guard becomes a real call.
-func _on_placement_complete(placer_unit_id: int) -> void:
-	# Find the nearest MineNode within radius. Iterate &"resource_nodes"
-	# group (MineNodes self-add to this group via the base class wave-1B
-	# addition) — small at MVP scale (~5 mines on Khorasan).
-	#
-	# Per the &"buildings" group convention (see Building base), MineNodes
-	# are NOT in &"buildings" — they're in &"resource_nodes". Mazra'eh
-	# (Building subclass duck-typing the gather API) is in &"buildings",
-	# not &"resource_nodes" — the kind filter in _find_nearest_mine_within_radius
-	# is belt-and-braces.
-	var radius_m: float = _resolve_modifier_radius_m()
-	var nearest_mine: Node = _find_nearest_mine_within_radius(radius_m)
-	if nearest_mine != null \
-			and nearest_mine.has_method(&"register_extraction_modifier"):
-		nearest_mine.call(&"register_extraction_modifier", self)
-	# If no mine within radius, or the registration API doesn't exist yet
-	# (Commit 1 ships before Commit 2 strictly): no-op fallthrough. The
-	# Ma'dan still exists as a placed building; it just doesn't do anything
-	# at runtime until either (a) a mine is later built nearby (post-MVP
-	# scope — buildings don't usually move), or (b) the API ships.
+# Ma'dan's BUFF — the entire point of the building — is gated on Stage 2.
+# A half-built Ma'dan reveals fog and emits the placement signal, but
+# does NOT buff its adjacent mine until the construction timer elapses.
 
+# Stage 1 — structural side-effects only.
+#
+# Free placement (per design Q4): a Ma'dan placed without an adjacent
+# mine still places successfully. The mine-discovery now happens at
+# Stage 2 so the discovery + registration both happen at operational
+# activation; placement-time has no mine-discovery side-effect anymore.
+func _on_placement_complete(placer_unit_id: int) -> void:
+	# Base class triggers the navmesh rebake (Task #144 fix). Ma'dan has a
+	# NavigationObstacle3D (workers route AROUND the mine infrastructure),
+	# so the rebake fires here and carves Ma'dan's footprint into the live
+	# navmesh immediately on placement.
+	super._on_placement_complete(placer_unit_id)
 	# FogSystem ships in wave 3A. Forward-compat guard: use SceneTree autoload
 	# pattern (Engine.has_singleton does NOT find GDScript autoloads — Pitfall
 	# #12). Sight=0, is_static=true. Ma'dan reveals its own footprint (the
 	# building IS visible to its owner team without a separate vision source).
+	#
+	# Vision is a *structural* property (the building physically exists and
+	# casts its footprint of vision), distinct from the operational buff —
+	# we register fog vision at Stage 1, register the modifier at Stage 2.
 	var _fog_node: Node = _autoload_or_null(&"FogSystem")
 	if _fog_node != null and _fog_node.has_method(&"register_vision_source"):
 		_fog_node.call(&"register_vision_source", self, team, 0, true)
 	EventBus.building_placed.emit(placer_unit_id, kind, team, global_position)
+
+
+# Stage 2 — operational activation. The Ma'dan's buff applies from this
+# tick onward.
+#
+# Mine discovery + registration runs HERE (not Stage 1) so workers
+# gathering during construction see the unbuffed mine yield. The
+# behavioral guarantee: a Ma'dan placed mid-construction adjacent to
+# a mine does NOT buff that mine until construction completes.
+#
+# Per the &"buildings" group convention (see Building base), MineNodes
+# are NOT in &"buildings" — they're in &"resource_nodes". Mazra'eh
+# (Building subclass duck-typing the gather API) is in &"buildings",
+# not &"resource_nodes" — the kind filter in _find_nearest_mine_within_radius
+# is belt-and-braces.
+#
+# register_extraction_modifier is no longer guarded by has_method — the
+# API is ratified in RNC v1.3.0 §4.7 (wave-1B Commit 4) and is part of
+# every ResourceNode subclass that ships with wave-1B onward. Pitfall:
+# this assumes the search only returns ResourceNode subclasses; the
+# &"resource_nodes" group is curated to that contract (see
+# resource_node.gd::_ready).
+func _on_construction_complete(_placer_unit_id: int) -> void:
+	var radius_m: float = _resolve_modifier_radius_m()
+	var nearest_mine: Node = _find_nearest_mine_within_radius(radius_m)
+	if nearest_mine != null:
+		nearest_mine.register_extraction_modifier(self)
+	# If no mine within radius (Q4 free placement): no-op fallthrough.
+	# The Ma'dan still exists as a placed building; it just doesn't do
+	# anything at runtime. A future mine built nearby would not retroactively
+	# bond — modifier registration is a one-shot event at Stage 2.
 
 
 ## Find the nearest MineNode within the given radius (world units), or

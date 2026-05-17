@@ -19,15 +19,15 @@
 ;   - MeshInstance3D: the yellow cylinder.
 ;
 ; What's deliberately NOT in the scene:
-;   - NavigationObstacle3D — per RESOURCE_NODE_CONTRACT.md §3.2: mines
-;     SHOULD carry NavigationObstacle3D so the navmesh routes around them.
-;     Wave 1A skips this — the wave-1A reserves spawn at known sandy spots
-;     that are clear of any unit-blocking geometry, and the navmesh isn't
-;     baked at wave-1A scope (LATER L2 MovementSystem coordinator). Wave 1B
-;     adds the obstacle alongside the NavigationRegion3D bake setup.
 ;   - SpatialAgentComponent — mines aren't units; they don't need spatial
 ;     indexing for combat queries. If wave-1B selection / range queries
 ;     need it, the component plugs in here.
+;
+; NavigationObstacle3D IS in the scene (L26 resolution, wave 1C Track 3):
+;   Added per docs/WAVE_1C_NAVMESH_SPIKE.md §2.5 + RNC §3.2 v1.4.0. The
+;   wave-1A comment above ("Wave 1B adds the obstacle") was deferred further
+;   than planned; wave 1C closes the gap with Path A (affect_navigation_mesh
+;   = true + vertices octagon). See the node definition below.
 
 [ext_resource type="Script" path="res://scripts/world/resource_nodes/mine_node.gd" id="1_mine"]
 
@@ -98,3 +98,37 @@ material_override = SubResource("StandardMaterial3D_mine")
 ; the collision shape with no off-by-half-height surprises.
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25, 0)
 shape = SubResource("CylinderShape3D_mine")
+
+[node name="NavigationObstacle3D" type="NavigationObstacle3D" parent="."]
+; L26 resolution — Phase 3 session 3 wave 1C Track 3 (Path A).
+; Per docs/WAVE_1C_NAVMESH_SPIKE.md §2.5 + RNC §3.2 v1.4.0 + Task #141 fix-up.
+; MineNode scenes carry a NavigationObstacle3D so workers route around the
+; deposit. Depleted mines remain navigationally impassable as derelict ruins
+; (ruins-policy per RNC §3.2 — obstacle stays active on depletion; no code
+; path removes it). If "clear ruins" mechanic ships, set
+; affect_navigation_mesh = false or queue_free this node at that time.
+;
+; TWO flags required (same rationale as building.tscn — see that node for
+; the full explanation of affect_navigation_mesh vs carve_navigation_mesh):
+;   affect_navigation_mesh = true  — bake-time carve registration.
+;   carve_navigation_mesh = true  — RUNTIME carve for add_child post-bake.
+; MineNode is placed in the map scene at editor-time (not via add_child at
+; runtime), so affect_navigation_mesh alone WOULD fire at initial bake.
+; carve_navigation_mesh is added defensively — runtime-spawned mines (future
+; procedural map generation) would need it, and it is safe to set both.
+;
+; Footprint: cylinder of radius 0.75. Approximated with an 8-vertex polygon
+; at radius 0.85 (0.75 + 0.1m margin per the base building-scene rationale —
+; compensates for NAV_AGENT_RADIUS = 0.5 erosion). 8 sides is adequate
+; fidelity for a 1.5m-wide obstacle on a 0.25m navmesh cell_size.
+;
+; 8-vertex octagon: r*cos(k*pi/4), r*sin(k*pi/4) for k=0..7 at r=0.85.
+; Note: GDScript Vector3 packs as X, Y, Z; Y=0 (XZ plane, Y ignored by engine
+; for navmesh carving). Vertex order is CCW when viewed from above (+Y).
+;
+; transform Y-offset 0.25 matches the cylinder mesh half-height.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25, 0)
+affect_navigation_mesh = true
+carve_navigation_mesh = true
+vertices = PackedVector3Array(0.85, 0, 0.0, 0.601, 0, 0.601, 0.0, 0, 0.85, -0.601, 0, 0.601, -0.85, 0, 0.0, -0.601, 0, -0.601, 0.0, 0, -0.85, 0.601, 0, -0.601)
+radius = 0.85

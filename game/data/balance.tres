@@ -240,12 +240,23 @@ population_capacity = 10
 ; Generates grain (via worker-gathered ResourceNode, per RESOURCE_NODE_CONTRACT.md).
 ; "60 coin" per spec. Medium HP — farms should be raidable but not trivially destroyed.
 ; farr_per_tick = 0 — farms don't generate Farr.
+;
+; construction_ticks = 540 = 18s @ 30Hz. Grain is the gating resource for all
+; Farr-generating buildings (Atashkadeh: 50 grain, Dadgah: 75 grain) and unit
+; upkeep. Slightly shorter build than Ma'dan (22s) to reward players who
+; prioritize grain infrastructure first — grain unlocks are upstream of coin
+; multipliers in the tech path. Timing ladder: Khaneh (3s placeholder) <
+; Mazra'eh (18s) < Ma'dan (22s) < Atashkadeh (30s) < Qal'eh (90s per §8).
+; Cultural note: dehqan stewardship — patient agriculture is a civilizational
+; value, not a quick transaction; 18s reflects meaningful labor without being
+; punishing.
+; balance-engineer: Phase 3 session 3 wave 1C open consultation.
 [sub_resource type="Resource" id="bldg_mazraeh"]
 script = ExtResource("3_bldgstats")
 max_hp = 300.0
 coin_cost = 60
 grain_cost = 0
-construction_ticks = 600
+construction_ticks = 540
 farr_per_tick = 0.0
 
 ; Ma'dan (مَعدَن, mine / source) — 01_CORE_MECHANICS.md §5
@@ -271,10 +282,17 @@ farr_per_tick = 0.0
 ; HP 300.0 = Mazra'eh parity: mine enhancers and farms are both soft economy
 ; targets, should fall to the same sustained raiding pressure.
 ;
-; construction_ticks = 600 = Mazra'eh parity: consistent build-time feel for
-; Tier-1 economy buildings. The construction-timer wave (1C) uses a 90-tick
-; placeholder via UnitState_Constructing; 600 is the BalanceData canonical
-; value that wave 1C will wire when the real timer ships.
+; construction_ticks = 660 = 22s @ 30Hz. Ma'dan is a multiplicative economic
+; power spike (+50% coin yield via modifier_value_x100 = 150 on the bonded
+; MineNode). Its impact is immediate and strong — a slightly longer build time
+; than Mazra'eh (540 = 18s) creates a meaningful build-order decision: rush
+; Ma'dan for coin power, or build Mazra'eh first to unlock grain-gated
+; buildings (Atashkadeh, Dadgah). 4-second gap is perceptible; 22s is not
+; punishing. Timing ladder: Khaneh (3s placeholder) < Mazra'eh (18s) <
+; Ma'dan (22s) < Atashkadeh (30s) < Qal'eh (90s per §8).
+; Cultural note: Pishdadian civilizational labor (Hushang → Tahmuras →
+; Jamshid arc) — discovering mineral wealth is deliberate, not instant.
+; balance-engineer: Phase 3 session 3 wave 1C open consultation.
 ;
 ; NEW FIELDS (modifier_value_x100, modifier_radius_m, modifier_stacks):
 ; BuildingStats script does not yet declare these @export fields — gp-sys adds
@@ -288,7 +306,7 @@ script = ExtResource("3_bldgstats")
 max_hp = 300.0
 coin_cost = 40
 grain_cost = 0
-construction_ticks = 600
+construction_ticks = 660
 farr_per_tick = 0.0
 modifier_value_x100 = 150
 modifier_radius_m = 4.0
@@ -465,7 +483,7 @@ hard_attack_army_threshold = 16
 
 [resource]
 script = ExtResource("1_balancedata")
-constants_version = "2026-05-15-phase-3-session-2-wave-1b-madan"
+constants_version = "2026-05-17-phase-3-session-3-wave-1c-construction-ticks"
 units = {
 &"kargar": SubResource("unit_kargar"),
 &"piyade": SubResource("unit_piyade"),

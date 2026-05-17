@@ -1,0 +1,20 @@
+[gd_scene load_steps=2 format=3 uid="uid://shahconstructprogoverlay"]
+
+; construction_progress_overlay.tscn — Phase 3 session 3 wave 1C Track 2A
+; (ui-developer).
+;
+; Pairs with the Building.construction_progress_updated(percent_x100) signal
+; (Track 2B, commit 82bf198). A fullscreen Control overlay that draws a
+; floating "BUILDING N%" bar above every in-progress building.
+;
+; CRITICAL: mouse_filter MUST be MOUSE_FILTER_IGNORE (= 2). Pitfall #1 — the
+; canonical session-1 regression. _ready double-checks at runtime; the
+; box-select drag-through test guards behaviorally.
+
+[ext_resource type="Script" path="res://scripts/ui/construction_progress_overlay.gd" id="1_overlay"]
+
+[node name="ConstructionProgressOverlay" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("1_overlay")

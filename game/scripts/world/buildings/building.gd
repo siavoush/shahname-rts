@@ -13,10 +13,28 @@ extends Node3D
 ## What this base class DOES:
 ##   - Pins the field schema (kind, team, unit_id, is_complete) every
 ##     subclass exposes.
-##   - Owns the placement seam: place_at(world_pos, team, placer_unit_id)
-##     sets position + team, marks is_complete = true, and (in concrete
-##     subclasses' _on_placement_complete hook) bumps population_cap /
-##     emits building_placed / etc.
+##   - Owns the two-stage lifecycle seam (session 3 wave 1C):
+##       Stage 1 — place_at(world_pos, team, placer_unit_id) runs on
+##         the placement-finalization tick (sub-frame, the same tick the
+##         worker reaches the build site). It sets position + team,
+##         flips is_complete = true, fires _on_placement_complete.
+##         This is the *structural* arrival of the building (visible,
+##         click-targetable, navmesh-carved).
+##       Stage 2 — _on_construction_complete(placer_unit_id) runs after
+##         construction_ticks ticks elapse inside
+##         UnitState_Constructing._sim_tick. This is the *operational*
+##         arrival: the building begins functioning (Mazra'eh flips
+##         is_gatherable, Ma'dan registers as an extraction modifier
+##         on the adjacent mine, Atashkadeh would start emitting Farr).
+##         The construction_finalized(placer_unit_id) signal emits
+##         immediately after the virtual hook returns — that is the
+##         externally-observable completion signal for UI / telemetry.
+##     The two stages exist because a Khaneh now takes ~3s of dwell and
+##     Mazra'eh / Ma'dan take ~20s. The structural placement happens
+##     immediately on arrival so the player sees feedback (the building
+##     footprint appears, the progress bar starts), but the building
+##     does NOT yet function — workers cannot gather from a half-built
+##     Mazra'eh, a half-built Ma'dan does not buff the adjacent mine.
 ##   - Adds itself to the &"buildings" SceneTree group so consumers
 ##     (UI, AI, future production system) can iterate buildings without
 ##     walking the world subtree.
@@ -30,10 +48,12 @@ extends Node3D
 ##   - Resource deduction — UnitState_Constructing's on-arrival step
 ##     deducts via ResourceSystem.change_resource. The Building itself
 ##     doesn't reach into the economy.
-##   - Construction-in-progress visuals — Phase 3 session 1 wave 1C ships
-##     INSTANT placement (Khaneh appears the tick the worker arrives).
-##     Session 2 adds the progress-bar / in-progress mesh / partial-HP
-##     state alongside the proper construction timer.
+##   - Construction-in-progress visuals — session 3 wave 1C ships the
+##     construction timer + progress signal (consumed by the UI progress
+##     bar Control). The in-progress mesh / partial-HP state remains out
+##     of scope; the building's MeshInstance3D appears immediately at
+##     placement, and the dwell progress is communicated via the
+##     progress bar UI alone.
 ##
 ## Why extend Node3D directly (not SimNode):
 ##   Same rationale as ResourceNode: the Building lives in the world and
@@ -74,6 +94,90 @@ extends Node3D
 ##   (NOT Afrasiyab himself — he's the antagonist; the Turan-people
 ##   dignity comes from Piran / Manijeh / the otaq tradition). Flagged
 ##   for whoever owns Turan-side building work in the upcoming sessions.
+
+# === Signals =================================================================
+
+## Emitted by UnitState_Constructing._sim_tick on every dwell tick during
+## construction to drive the progress-bar UI (Track 2A) and any future
+## telemetry consumer.
+##
+## percent_x100 ∈ [0, 10000] — basis-point encoding per project convention
+## (multiplied by 100 so integer math carries two decimal places of
+## precision without floating-point). Value formula:
+##   percent_x100 = total_ticks_elapsed × 10000 / total_construction_ticks
+##
+## Emitter contract (load-bearing, per Track 2A / Track 1 coordination):
+##   - Emitted DURING the dwell phase only: from the first post-arrival
+##     tick through the last tick before placement fires.
+##   - Does NOT emit at completion. The placement event is signalled by
+##     _on_placement_complete firing (and EventBus.building_placed
+##     propagating), which is semantically distinct from progress.
+##     Emitting at percent_x100 = 10000 before the completion hook fires
+##     would create a race with consumers that expect the building to be
+##     is_complete when they read progress = 100%. The no-double-emit rule
+##     is the contract: progress and completion are separate signals.
+##   - Emitted from inside SimClock's tick (UnitState_Constructing is a
+##     _sim_tick caller) — consumers must treat this as an on-tick signal
+##     and defer any physics/spatial mutations accordingly.
+##   - The emitter (UnitState_Constructing, Track 1 scope) holds a
+##     reference to the Building node via _perform_placement's building
+##     local. Consumer (ui-developer's Track 2A progress bar) connects in
+##     the UI layer; no connection is established in Building itself.
+##
+## Wave 1C note: Track 1 (gp-sys) wires the emit call site; this signal
+## declaration is Track 2B's deliverable. The signal name and int signature
+## are load-bearing — any rename requires coordinating with gp-sys + ui-dev.
+signal construction_progress_updated(percent_x100: int)
+
+
+## Emitted by UnitState_Constructing._sim_tick immediately AFTER the
+## _on_construction_complete virtual fires on this building — the
+## externally-observable completion signal for the two-stage lifecycle.
+##
+## placer_unit_id is the Kargar.unit_id of the worker that built this
+## building; matches the value passed to _on_construction_complete.
+## May be -1 if the worker died mid-construction (forward-compat — the
+## current Track 1 implementation tears down the construction state on
+## death, so this signal does not fire in that path).
+##
+## Why this signal exists alongside the virtual hook (per ui-developer-p3s3
+## integration brief, Task #139): the progress-bar UI Control needs an
+## externally-observable hide-trigger. The available signals at Stage 2
+## without this addition were:
+##   - is_complete flips at Stage 1 (too early — the bar should still
+##     show during construction).
+##   - construction_progress_updated is clamped strictly below 10000
+##     (the no-double-emit rule means progress never reaches 100%).
+##   - _on_construction_complete is a virtual method, not a signal —
+##     not observable from outside the building.
+## So the UI overlay couldn't resolve a clean hide-trigger. This signal
+## closes the gap: connect once at building_placed, disconnect on
+## construction_finalized.
+##
+## Emitter contract (load-bearing, mirrors construction_progress_updated):
+##   - Emitted exactly ONCE per built building, at Stage 2 (after the
+##     virtual hook runs and operational side-effects have applied —
+##     Mazra'eh.is_gatherable = true is visible to receivers).
+##   - Emitted from inside UnitState_Constructing._sim_tick (on-tick by
+##     construction). Consumers may mutate spatial/resource state without
+##     an _is_ticking guard.
+##   - Emit ORDERING: the virtual `_on_construction_complete` fires
+##     FIRST, then this signal. Receivers see post-Stage-2 state on
+##     readout (is_gatherable, registered modifiers, etc).
+##   - No emit if construction is interrupted mid-dwell (worker killed,
+##     player cancels). Same contract as construction_progress_updated:
+##     interruption produces no completion signal.
+##
+## Why emit from UnitState_Constructing (not from base _on_construction_complete):
+##   Mirroring construction_progress_updated's pattern keeps a single
+##   driver (the construction state) for all externally-observable
+##   lifecycle events. Subclass overrides (Mazra'eh, Ma'dan) currently do
+##   not call super._on_construction_complete; forcing them to remember
+##   `super.` to preserve a base-class emit is the kind of constraint
+##   that catches nobody until a UI hide bug ships. The state-driven
+##   emit fires unconditionally.
+signal construction_finalized(placer_unit_id: int)
+
 
 # === Schema fields ===========================================================
 
@@ -178,19 +282,102 @@ func place_at(world_pos: Vector3, owner_team: int, placer_unit_id: int) -> void:
 
 # === Subclass hooks ==========================================================
 
-## Called from inside place_at after the building's position / team /
-## is_complete have been set. Subclasses override to add concrete
-## side-effects:
+## Called from inside place_at — Stage 1 of the two-stage lifecycle.
+## Fires on the placement-finalization tick (sub-frame, the same tick
+## the worker reaches the build site), after the building's position /
+## team / is_complete have been written. Subclasses override for
+## *structural* side-effects — things that should happen as soon as
+## the building exists in the world even though it is not yet
+## operational:
 ##   - Khaneh: bump ResourceSystem.population_cap + emit building_placed.
-##   - Mazra'eh (session 2+): register as a Grain gather target.
-##   - Atashkadeh (session 2+): start emitting Farr per tick.
+##     (Khaneh keeps its activation here because population-cap is a
+##     resource-system invariant, not a gameplay-functional one.)
+##   - Mazra'eh: register with ResourceSystem.register_node, fog vision.
+##     The gatherable flip (is_gatherable = true) moves to Stage 2.
+##   - Ma'dan: emit building_placed, register fog vision. The mine
+##     modifier registration moves to Stage 2.
 ##
-## Base class is a no-op so a subclass with NO post-placement side-effect
-## (a future decorative building, perhaps?) needs no override.
+## Base class implementation: trigger a synchronous navmesh rebake on the
+## terrain NavigationRegion3D if this building has a NavigationObstacle3D
+## child. This is the Phase 2A.2 fix for L25 (Task #144) — Godot 4.6.2
+## does NOT auto-rebake when an obstacle enters the tree; the
+## affect_navigation_mesh / carve_navigation_mesh flags are participation
+## hints for bakes triggered by someone else. The building itself must
+## drive the rebake after add_child so workers route around it immediately.
+##
+## Subclasses that override MUST call super._on_placement_complete(placer_unit_id)
+## to preserve the rebake. Khaneh, Mazra'eh, Ma'dan all call super as the
+## first line of their override.
 ##
 ## placer_unit_id is the Kargar's id, forwarded for telemetry symmetry
 ## with apply_farr_change / change_resource's source_unit pattern.
 func _on_placement_complete(_placer_unit_id: int) -> void:
+	var nav: NavigationObstacle3D = find_child(
+		"NavigationObstacle3D", false, false) as NavigationObstacle3D
+	if nav == null:
+		return  # Mazra'eh and other walkable buildings have no obstacle — skip.
+	var region: NavigationRegion3D = _resolve_terrain_region()
+	if region == null:
+		push_warning("Building._on_placement_complete: no NavigationRegion3D "
+			+ "found in scene tree; navmesh rebake skipped for %s" % name)
+		return
+	region.bake_navigation_mesh(false)  # sync; deterministic; sim-tick safe.
+
+
+## Walk get_tree().root looking for the first NavigationRegion3D.
+## The MVP scene has exactly one (terrain.tscn root). Returns null if
+## none found — callers push_warning and skip the rebake gracefully.
+## MVP assumes a single NavigationRegion3D in the scene. Multi-region maps
+## would require region-by-position lookup. Forward-investment for the
+## dedicated navmesh wave (Task #148 / WAVE_1C_NAVMESH_SPIKE.md v0.2.0).
+func _resolve_terrain_region() -> NavigationRegion3D:
+	return _find_nav_region(get_tree().root)
+
+
+func _find_nav_region(node: Node) -> NavigationRegion3D:
+	if node is NavigationRegion3D:
+		return node as NavigationRegion3D
+	for child in node.get_children():
+		var found: NavigationRegion3D = _find_nav_region(child)
+		if found != null:
+			return found
+	return null
+
+
+## Called from UnitState_Constructing._sim_tick after construction_ticks
+## ticks have elapsed since the worker's arrival at the build site —
+## Stage 2 of the two-stage lifecycle.
+##
+## Lifecycle sequence:
+##   place_at (Stage 1)                    ← structural arrival
+##       → _on_placement_complete (sub-frame, same tick)
+##   ...construction_ticks ticks elapse...
+##   _on_construction_complete (Stage 2)   ← operational arrival
+##       → construction_finalized signal emits (externally-observable)
+##
+## Subclasses override for *operational* side-effects — things gated on
+## the construction timer completing so the building cannot function
+## while it is half-built:
+##   - Mazra'eh: flip is_gatherable = true (workers may now gather).
+##   - Ma'dan: register as the adjacent MineNode's extraction modifier
+##     (the buff applies from this tick onward).
+##   - Atashkadeh (future): start emitting passive Farr per tick.
+##   - Sarbaz-khaneh (future): become eligible as a production target.
+##
+## Base class is a no-op. Khaneh does not override (its only side-effect
+## — the pop-cap bump — runs at Stage 1; a half-built Khaneh has no
+## operational dimension to gate).
+##
+## placer_unit_id is the Kargar's id of the worker that built this. May
+## be -1 if the worker died mid-construction (forward-compat — the
+## current Track 1 implementation tears down the construction state on
+## death, so this hook does not fire in that path, but the field is
+## permitted for symmetry with _on_placement_complete).
+##
+## Called from inside UnitState_Constructing._sim_tick (the worker's
+## _sim_tick). On-tick by construction; consumers can mutate spatial /
+## resource state without an _is_ticking guard.
+func _on_construction_complete(_placer_unit_id: int) -> void:
 	pass
 
 

@@ -67,13 +67,34 @@ class_name UnitState_Constructing extends "res://scripts/core/state_machine/unit
 ##   Wave 1B's UnitState_Returning has the analogous timing for the
 ##   deposit: it credits at arrival, not at start-of-walk.
 ##
-## Construction-in-progress: NOT in session 1.
-##   The Khaneh appears INSTANTLY on the dwell-complete tick. Session 2
-##   adds the in-progress mesh + progress-bar UI + partial-HP state.
-##   The placement dwell here (CONSTRUCTING_DWELL_TICKS) is the
-##   placeholder for that future timer — short enough (~3s at 30Hz) to
-##   not feel like dead air, long enough for the worker to "look like
-##   it's doing something" before the building pops in.
+## Construction-in-progress (session 3 wave 1C):
+##   The Building scene is INSTANTIATED on the tick the worker arrives
+##   at the build site — it appears in the world immediately (so the
+##   player sees structural feedback and the progress bar starts).
+##   Building.place_at runs at that same tick, firing Stage 1
+##   (_on_placement_complete) for structural side-effects.
+##
+##   Then the worker DWELLS for construction_ticks ticks (per-kind, read
+##   from BalanceData.buildings[building_kind].construction_ticks). Each
+##   dwell tick:
+##     1. Decrement _dwell_remaining_ticks.
+##     2. Emit Building.construction_progress_updated(percent_x100)
+##        where percent_x100 = elapsed * 10000 / total. The UI progress
+##        bar consumes this signal.
+##   When the dwell completes (Stage 2):
+##     1. Building._on_construction_complete fires — operational
+##        activation (Mazra'eh.is_gatherable flips, Ma'dan registers
+##        with the adjacent mine, etc.).
+##     2. Building.construction_finalized(placer_unit_id) signal emits
+##        — the externally-observable completion signal. UI / telemetry
+##        consumers connect here; resolves the progress-overlay
+##        hide-trigger gap (Task #139).
+##     3. The worker transitions back to Idle.
+##
+##   The progress signal does NOT fire at the completion tick — Stage 2
+##   activation is the distinct "we're done" signal. Per the Building
+##   signal header: double-emitting at 100% would race with consumers
+##   that expect operational state when they see progress = 100%.
 
 const _IPathScheduler: Script = preload("res://scripts/core/path_scheduler.gd")
 const _BuildingScript: Script = preload(
@@ -104,21 +125,21 @@ const _BUILDING_SCENE_PATHS: Dictionary = {
 
 # === Dwell config ===========================================================
 #
-# Sim-tick countdown for the on-arrival dwell. Session 1 wave 1C uses a
-# short placeholder so the lead's first live-test doesn't feel like dead
-# air. Session 2's construction-timer wave replaces this with a per-
-# kind BalanceData.buildings[kind].construction_ticks read.
+# Sim-tick countdown for the post-arrival dwell. Session 3 wave 1C
+# (Track 1) reads the per-kind value from
+#   BalanceData.buildings[building_kind].construction_ticks
+# via _resolve_construction_ticks(). Khaneh = 90 (~3s at 30Hz),
+# Mazra'eh / Ma'dan = 600 (~20s) per balance-engineer's wave-1C ship.
 #
-# Why a constant here (not BalanceData yet):
-#   construction_ticks IS in BalanceData (Khaneh: 90 ticks = ~3s at
-#   30Hz). But session 1's "instant placement on arrival" semantics
-#   mean we don't NEED the per-kind value yet — every building takes
-#   the same short dwell here just for animation feel. Session 2
-#   reads the per-kind value when the progress-bar UI ships and the
-#   dwell becomes the actual construction time, not just a "looks
-#   busy" pad. The constant documents the placeholder choice; the
-#   data-driven read replaces it in session 2.
-const _CONSTRUCTING_DWELL_TICKS: int = 90  # ~3 sec at 30Hz
+# _CONSTRUCTING_DWELL_FALLBACK is used when:
+#   (a) BalanceData is unreachable / missing the entry / wrong type, OR
+#   (b) the entry has construction_ticks <= 0.
+# Falling back to a non-zero value keeps the construction loop functional
+# in tests that exercise the state with a misconfigured (or absent)
+# BalanceData. We choose 90 to match Khaneh's shipped value — that is
+# the only kind validated to feel right in the live test, so it is the
+# safest fallback for any future kind whose value has not yet been tuned.
+const _CONSTRUCTING_DWELL_FALLBACK: int = 90  # ~3 sec at 30Hz
 
 
 # === Cached state ===========================================================
@@ -133,15 +154,34 @@ var _target_position: Vector3 = Vector3.ZERO
 # Latch for arrival detection. Mirrors Moving / Gathering / Returning.
 var _arrival_pending: bool = false
 
-# Dwell countdown — initialized when arrival detected, counts down in
-# _sim_tick until placement fires.
+# Dwell countdown — initialized to the per-kind construction_ticks value
+# (from BalanceData) at the same tick the building is structurally
+# placed, counts down in _sim_tick until _on_construction_complete fires.
 var _dwell_remaining_ticks: int = 0
 
-# True once placement has fired. Defensive against re-entering the
-# placement block on subsequent ticks before the transition_to(&"idle")
-# lands (transitions are queued; the StateMachine may take one more
-# tick to actually swap states).
-var _placed: bool = false
+# Total dwell ticks for the current build — captured at dwell init so
+# the percent_x100 progress calculation has a stable denominator even
+# if BalanceData were hot-reloaded mid-construction (a future affordance;
+# see balance_data.gd header "Hot-reload" section).
+var _total_construction_ticks: int = 0
+
+# Reference to the Building scene placed at arrival. We need this across
+# subsequent ticks to (a) emit construction_progress_updated on it each
+# dwell tick and (b) fire _on_construction_complete at completion.
+# Defensive Variant typing — the scene is loaded dynamically per kind so
+# a concrete typed reference would require importing every subclass.
+var _building_ref: Variant = null
+
+# True once the Building has been structurally placed (Stage 1 —
+# place_at fired). From here on, the dwell countdown drives progress
+# emits and the Stage 2 trigger.
+var _structurally_placed: bool = false
+
+# True once Stage 2 (_on_construction_complete) has fired. Defensive
+# against re-entering the completion block on subsequent ticks before
+# the transition_to(&"idle") lands (transitions are queued; the
+# StateMachine may take one more tick to actually swap states).
+var _operationally_complete: bool = false
 
 
 func _init() -> void:
@@ -158,7 +198,10 @@ func enter(_prev: Object, ctx: Object) -> void:
 	_target_position = Vector3.ZERO
 	_arrival_pending = false
 	_dwell_remaining_ticks = 0
-	_placed = false
+	_total_construction_ticks = 0
+	_building_ref = null
+	_structurally_placed = false
+	_operationally_complete = false
 
 	if ctx == null:
 		push_warning("UnitState_Constructing.enter: null ctx — bailing to idle")
@@ -218,69 +261,143 @@ func enter(_prev: Object, ctx: Object) -> void:
 	_movement.request_repath(_target_position)
 
 
-# Per-tick: drive movement, detect arrival, count dwell, fire placement,
-# transition to Idle. Same arrival-latch pattern as Gathering / Returning.
+# Per-tick: drive movement, detect arrival, do structural placement on
+# the arrival tick, then count down construction ticks while emitting
+# progress, then fire operational completion. Same arrival-latch pattern
+# as Gathering / Returning; restructured for the two-stage lifecycle.
 func _sim_tick(dt: float, ctx: Object) -> void:
 	if _movement == null:
 		return
-	if _placed:
-		return  # Already placed this entry; wait for the FSM to swap us.
+	if _operationally_complete:
+		return  # Stage 2 already fired this entry; wait for FSM swap.
 
-	# Drive the MovementComponent. Same pattern as Moving / Gathering.
-	_movement._sim_tick(dt)
+	# Drive the MovementComponent — only relevant pre-arrival. Once
+	# the worker has arrived and the building is structurally placed,
+	# the worker stays put; driving movement is a no-op but harmless.
+	if not _structurally_placed:
+		_movement._sim_tick(dt)
 
-	# Path failure → bail to Idle. The worker couldn't reach the build
-	# site; no auto-retry. Cost is NOT deducted in this branch (we
-	# never reached placement).
-	var path_state: int = _movement.path_state
-	if path_state == _IPathScheduler.PathState.FAILED \
-			or path_state == _IPathScheduler.PathState.CANCELLED:
-		push_warning(
-			"UnitState_Constructing: path resolution failed "
-			+ "(state=%d, target=%s, kind=%s); transitioning to idle"
-			% [path_state, str(_target_position), _building_kind]
-		)
-		_request_idle(ctx)
-		return
+		# Path failure → bail to Idle. The worker couldn't reach the build
+		# site; no auto-retry. Cost is NOT deducted in this branch (we
+		# never reached placement).
+		var path_state: int = _movement.path_state
+		if path_state == _IPathScheduler.PathState.FAILED \
+				or path_state == _IPathScheduler.PathState.CANCELLED:
+			push_warning(
+				"UnitState_Constructing: path resolution failed "
+				+ "(state=%d, target=%s, kind=%s); transitioning to idle"
+				% [path_state, str(_target_position), _building_kind]
+			)
+			_request_idle(ctx)
+			return
 
-	# Latch arrival on READY. Mirrors Moving / AttackMove / Gathering.
-	if path_state == _IPathScheduler.PathState.READY:
-		_arrival_pending = true
-	if not (_arrival_pending and not _movement.is_moving):
-		return  # still walking
+		# Latch arrival on READY. Mirrors Moving / AttackMove / Gathering.
+		if path_state == _IPathScheduler.PathState.READY:
+			_arrival_pending = true
+		if not (_arrival_pending and not _movement.is_moving):
+			return  # still walking
 
-	# Arrived — start / continue the dwell countdown.
-	if _dwell_remaining_ticks == 0 and not _placed:
-		# Initialize the dwell ON THE FIRST POST-ARRIVAL TICK. We init
-		# to _CONSTRUCTING_DWELL_TICKS - 1 so the dwell+placement
-		# sequence completes after exactly N ticks of dwell (the
-		# placement happens on the Nth tick, not the N+1th).
-		_dwell_remaining_ticks = _CONSTRUCTING_DWELL_TICKS
+		# Arrived this tick — perform Stage 1 structural placement now.
+		# Steps:
+		#   1. Check affordability + deduct cost via ResourceSystem.
+		#      change_resource. If cost-check fails (worker had funds at
+		#      dispatch but spent them between then and arrival), bail
+		#      to Idle without placing.
+		#   2. Instantiate the Building scene + add as a child of the
+		#      world.
+		#   3. Call building.place_at(target, team, unit_id) — the base
+		#      Building hook fires the subclass _on_placement_complete
+		#      (Khaneh bumps population_cap + emits building_placed;
+		#      Mazra'eh / Ma'dan run their *structural* side-effects only
+		#      — Stage 2 functional activation is gated below).
+		#   4. Initialize the dwell countdown from BalanceData and fall
+		#      through to the progress / completion logic.
+		if not _perform_placement(ctx):
+			# Either cost check failed or scene load failed; bail.
+			_request_idle(ctx)
+			return
+		_structurally_placed = true
+		_total_construction_ticks = _resolve_construction_ticks(_building_kind)
+		_dwell_remaining_ticks = _total_construction_ticks
+		# Fall through to the dwell tick — this tick counts toward
+		# construction so a kind with construction_ticks = 1 completes
+		# on the arrival tick itself (degenerate-edge correctness).
 
+	# Dwell-phase tick: decrement, then either emit progress or fire
+	# operational completion. Reaching this line implies
+	# _structurally_placed == true and a valid _building_ref.
 	_dwell_remaining_ticks -= 1
 	if _dwell_remaining_ticks > 0:
-		return  # still dwelling
+		# Still dwelling — emit progress and return. Progress is
+		# basis-point fraction of completed ticks vs total.
+		_emit_construction_progress()
+		return
 
-	# Dwell complete — fire placement. Three steps:
-	#   1. Check affordability + deduct cost via ResourceSystem.
-	#      change_resource. If cost-check fails (worker had funds at
-	#      dispatch but spent them between then and arrival), bail to
-	#      Idle without placing.
-	#   2. Instantiate the Building scene + add as a child of the
-	#      world.
-	#   3. Call building.place_at(target, team, unit_id) — the base
-	#      Building hook fires the subclass _on_placement_complete
-	#      (Khaneh bumps population_cap + emits building_placed).
-	_perform_placement(ctx)
-	_placed = true
+	# Dwell complete — fire Stage 2 operational activation. Per the
+	# Building.construction_progress_updated signal header: we do NOT
+	# emit progress at 10000 here; the _on_construction_complete hook
+	# and the construction_finalized signal together signal completion.
+	#
+	# Emit ORDERING is load-bearing per the construction_finalized signal
+	# header on Building base: the virtual hook fires FIRST (operational
+	# side-effects apply — is_gatherable flips, modifier registers), THEN
+	# the signal fires. UI / telemetry consumers connecting to
+	# construction_finalized see post-Stage-2 state on readout.
+	if _building_ref != null and is_instance_valid(_building_ref):
+		var placer_unit_id: int = -1
+		if ctx != null and &"unit_id" in ctx:
+			placer_unit_id = int(ctx.unit_id)
+		_building_ref.call(&"_on_construction_complete", placer_unit_id)
+		# Emit construction_finalized AFTER the virtual runs — the
+		# externally-observable Stage-2 completion signal. Resolves the
+		# ui-developer-p3s3 progress-overlay hide-trigger gap (Task #139).
+		# is_instance_valid re-check is belt-and-braces against a
+		# subclass _on_construction_complete that queue_frees self
+		# (no concrete subclass does this today, but the guard is cheap).
+		if is_instance_valid(_building_ref):
+			_building_ref.emit_signal(
+				&"construction_finalized", placer_unit_id)
+	_operationally_complete = true
 	_request_idle(ctx)
 
 
-# Cost + placement + transition. Pulled into a helper so _sim_tick's
-# main loop stays the readable arrival-latch pattern.
-func _perform_placement(ctx: Object) -> void:
-	if ctx == null:
+# Emit Building.construction_progress_updated with the current basis-
+# point progress. percent_x100 = elapsed * 10000 / total, where
+#   elapsed = total - remaining
+# Computed from the cached _total_construction_ticks so a hot-reload of
+# BalanceData mid-construction cannot produce a discontinuous progress
+# value (the denominator is frozen at dwell init).
+#
+# Edge case: total <= 0 implies we already completed at structural-
+# placement time; don't emit. The caller guarantees this branch only
+# runs when _dwell_remaining_ticks > 0, which implies total > 0.
+func _emit_construction_progress() -> void:
+	if _building_ref == null or not is_instance_valid(_building_ref):
 		return
+	if _total_construction_ticks <= 0:
+		return
+	var elapsed: int = _total_construction_ticks - _dwell_remaining_ticks
+	# Clamp into [0, 9999] — completion (10000) is signalled by Stage 2
+	# firing, NOT by this emit. The signal contract on Building forbids
+	# a 10000 emit before _on_construction_complete fires.
+	if elapsed < 0:
+		elapsed = 0
+	var percent_x100: int = elapsed * 10000 / _total_construction_ticks
+	if percent_x100 >= 10000:
+		percent_x100 = 9999
+	_building_ref.emit_signal(&"construction_progress_updated", percent_x100)
+
+
+# Stage 1 — cost check, scene instantiation, place_at. Pulled into a
+# helper so _sim_tick's main loop stays the readable arrival-latch
+# pattern. Returns true on success (caller proceeds to dwell phase),
+# false on failure (caller transitions to Idle without placing).
+#
+# On success, _building_ref is populated with the placed Building so
+# subsequent dwell ticks can emit progress and fire Stage 2 on it.
+func _perform_placement(ctx: Object) -> bool:
+	if ctx == null:
+		return false
 	# Resolve team from the unit. Defensive default TEAM_NEUTRAL is a
 	# bug condition (every unit has a team), but tolerated.
 	var team: int = Constants.TEAM_NEUTRAL
@@ -303,8 +420,7 @@ func _perform_placement(ctx: Object) -> void:
 				% [team, have_x100, cost_coin * 100, _building_kind]
 				+ "transitioning to idle without placing"
 			)
-			return  # No deduct, no place — _request_idle is called by
-			        # the caller's next branch.
+			return false
 		# Deduct via the chokepoint. Negative amount = spend per
 		# ResourceSystem's convention.
 		ResourceSystem.change_resource(
@@ -323,7 +439,7 @@ func _perform_placement(ctx: Object) -> void:
 			"UnitState_Constructing._perform_placement: failed to load "
 			+ "scene at '%s' for kind=%s" % [path, _building_kind]
 		)
-		return
+		return false
 	var building: Node3D = scene.instantiate() as Node3D
 	var parent: Node = _resolve_placement_parent(ctx)
 	if parent == null:
@@ -332,12 +448,17 @@ func _perform_placement(ctx: Object) -> void:
 			+ "for the new building — discarding instance"
 		)
 		building.free()
-		return
+		return false
 	parent.add_child(building)
 	# place_at sets global_position + team + is_complete; fires the
-	# subclass hook (_on_placement_complete) which is where Khaneh
-	# bumps population_cap and emits the building_placed signal.
+	# subclass hook (_on_placement_complete) which is where structural
+	# side-effects run (Khaneh bumps population_cap, Mazra'eh /
+	# Ma'dan register fog vision). Operational side-effects (Mazra'eh.
+	# is_gatherable flip, Ma'dan modifier registration) are deferred to
+	# _on_construction_complete in the dwell-complete branch.
 	building.place_at(_target_position, team, unit_id)
+	_building_ref = building
+	return true
 
 
 # Resolve the parent node for the placed building. The worker's parent
@@ -347,6 +468,67 @@ func _resolve_placement_parent(ctx: Object) -> Node:
 	if ctx == null or not (ctx is Node):
 		return null
 	return (ctx as Node).get_parent()
+
+
+# Read per-kind construction_ticks from BalanceData.buildings[kind].
+# construction_ticks. Defensive fall-through pattern consistent with
+# _resolve_cost_coin / Unit._apply_balance_data_defaults: missing file /
+# missing entry / wrong type / non-positive value → push_warning and
+# return _CONSTRUCTING_DWELL_FALLBACK (90 ticks). The warning surfaces
+# so balance-engineer notices when a new kind ships without its
+# construction_ticks tuned.
+func _resolve_construction_ticks(kind: StringName) -> int:
+	var path: String = Constants.PATH_BALANCE_DATA
+	if not FileAccess.file_exists(path):
+		push_warning(
+			"UnitState_Constructing._resolve_construction_ticks: "
+			+ "BalanceData file '%s' missing for kind=%s; " % [path, kind]
+			+ "falling back to %d ticks" % _CONSTRUCTING_DWELL_FALLBACK
+		)
+		return _CONSTRUCTING_DWELL_FALLBACK
+	var bd: Resource = load(path)
+	if bd == null:
+		push_warning(
+			"UnitState_Constructing._resolve_construction_ticks: "
+			+ "BalanceData failed to load for kind=%s; " % kind
+			+ "falling back to %d ticks" % _CONSTRUCTING_DWELL_FALLBACK
+		)
+		return _CONSTRUCTING_DWELL_FALLBACK
+	var bldgs: Variant = bd.get(&"buildings")
+	if typeof(bldgs) != TYPE_DICTIONARY:
+		push_warning(
+			"UnitState_Constructing._resolve_construction_ticks: "
+			+ "BalanceData.buildings is not a Dictionary for kind=%s; " % kind
+			+ "falling back to %d ticks" % _CONSTRUCTING_DWELL_FALLBACK
+		)
+		return _CONSTRUCTING_DWELL_FALLBACK
+	var stats: Variant = (bldgs as Dictionary).get(kind, null)
+	if stats == null:
+		push_warning(
+			"UnitState_Constructing._resolve_construction_ticks: "
+			+ "BalanceData.buildings[%s] missing; " % kind
+			+ "falling back to %d ticks" % _CONSTRUCTING_DWELL_FALLBACK
+		)
+		return _CONSTRUCTING_DWELL_FALLBACK
+	var ticks_v: Variant = stats.get(&"construction_ticks")
+	if typeof(ticks_v) != TYPE_INT and typeof(ticks_v) != TYPE_FLOAT:
+		push_warning(
+			"UnitState_Constructing._resolve_construction_ticks: "
+			+ "BalanceData.buildings[%s].construction_ticks is not " % kind
+			+ "numeric (got type %d); falling back to %d ticks"
+			% [typeof(ticks_v), _CONSTRUCTING_DWELL_FALLBACK]
+		)
+		return _CONSTRUCTING_DWELL_FALLBACK
+	var ticks: int = int(ticks_v)
+	if ticks <= 0:
+		push_warning(
+			"UnitState_Constructing._resolve_construction_ticks: "
+			+ "BalanceData.buildings[%s].construction_ticks = %d " % [kind, ticks]
+			+ "is non-positive; falling back to %d ticks"
+			% _CONSTRUCTING_DWELL_FALLBACK
+		)
+		return _CONSTRUCTING_DWELL_FALLBACK
+	return ticks
 
 
 # Read the Coin cost from BalanceData.buildings[kind].coin_cost.
@@ -374,6 +556,15 @@ func _resolve_cost_coin(kind: StringName) -> int:
 
 # Exit: cancel in-flight repath. Same pattern as Moving / Gathering.
 # Note: no refund on interrupt — see header rationale.
+#
+# Mid-construction interruption (interrupt_level = COMBAT): the building
+# has already been structurally placed (Stage 1 ran on the arrival tick)
+# and the Coin has been deducted. The half-built building stays in the
+# world but never receives _on_construction_complete — Mazra'eh stays
+# ungatherable, Ma'dan does not buff its mine. Cleanup of the orphaned
+# building (free it? leave it as a derelict?) is out of scope for Track
+# 1; for now the building lingers as a half-complete shell. A future
+# task adds HP / destruction so the derelict can be destroyed manually.
 func exit() -> void:
 	if _movement != null:
 		var rid: int = int(_movement._request_id)
@@ -385,7 +576,10 @@ func exit() -> void:
 	_target_position = Vector3.ZERO
 	_arrival_pending = false
 	_dwell_remaining_ticks = 0
-	_placed = false
+	_total_construction_ticks = 0
+	_building_ref = null
+	_structurally_placed = false
+	_operationally_complete = false
 
 
 func _request_idle(ctx: Object) -> void:

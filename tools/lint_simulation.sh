@@ -239,11 +239,60 @@ if [[ -n "${L5_HITS}" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# L6 — Async navmesh rebake outside terrain bootstrap
+#
+# Rationale: the sync form bake_navigation_mesh(false) is permitted anywhere
+# gameplay code needs to trigger a localized rebake at placement-time (e.g.,
+# Building._on_placement_complete). It is deterministic — same inputs, same
+# navmesh, no racing sim ticks.
+#
+# The ASYNC form bake_navigation_mesh(true) is forbidden outside terrain.gd:
+# it spawns a background thread that can complete mid-sim-tick and produce a
+# non-deterministic navmesh state for AI-vs-AI sims (Sim Contract §1.6).
+#
+# Permitted everywhere:    bake_navigation_mesh(false)  — sync, deterministic
+# Forbidden outside allowlist: bake_navigation_mesh(true)   — async, non-det
+# Permitted inside allowlist: both forms (terrain initial bake at scene load)
+#
+# Allowlist (files exempt from L6):
+#   game/scripts/world/terrain.gd — the canonical bootstrap site
+#
+# Scope: game/scripts/**/*.gd minus the allowlist
+# ---------------------------------------------------------------------------
+
+L6_PATTERN='\bbake_navigation_mesh\s*\(\s*true\s*\)'
+L6_ALLOWLIST_TERRAIN="${SCRIPTS_DIR}/world/terrain.gd"
+
+L6_HITS="$(rg --with-filename --line-number "${L6_PATTERN}" \
+  --glob '*.gd' \
+  "${SCRIPTS_DIR}" 2>/dev/null || true)"
+
+# Remove allowlisted file from results.
+if [[ -n "${L6_HITS}" ]]; then
+  L6_HITS="$(echo "${L6_HITS}" | grep -v "^${L6_ALLOWLIST_TERRAIN}:" || true)"
+fi
+
+# Filter out comment lines (defensive — same rationale as L3).
+if [[ -n "${L6_HITS}" ]]; then
+  L6_HITS="$(echo "${L6_HITS}" | rg -v ':[0-9]+:\s*#' || true)"
+fi
+
+if [[ -n "${L6_HITS}" ]]; then
+  _fail_header "L6" "Async bake_navigation_mesh(true) call outside terrain bootstrap"
+  echo "│    Allowed only in: ${L6_ALLOWLIST_TERRAIN}"
+  echo "│    bake_navigation_mesh(false) is permitted anywhere — sync and"
+  echo "│    deterministic. bake_navigation_mesh(true) is forbidden outside"
+  echo "│    terrain.gd — async thread races sim ticks (Sim Contract §1.6)."
+  echo "${L6_HITS}" | sed 's/^/│    /'
+  _fail_footer
+fi
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""
 if [[ "${VIOLATIONS}" -eq 0 ]]; then
-  echo "lint_simulation.sh — OK (0 violations across L1-L5)"
+  echo "lint_simulation.sh — OK (0 violations across L1-L6)"
   exit 0
 else
   echo "lint_simulation.sh — FAILED (${VIOLATIONS} rule(s) violated)"

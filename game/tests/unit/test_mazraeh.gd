@@ -385,18 +385,43 @@ func test_mazraeh_has_is_gatherable_field() -> void:
 		"Mazra'eh.is_gatherable must be false before placement completes")
 
 
-func test_mazraeh_is_gatherable_flips_on_placement() -> void:
-	# _on_placement_complete() must flip is_gatherable false → true.
-	# Wave 1A: immediate flip (no construction timer). Wave 1C: this flip moves
-	# to _on_construction_complete(); the default-false stays.
+func test_mazraeh_is_gatherable_stays_false_after_place_at_only() -> void:
+	# Wave 1C two-stage lifecycle: place_at fires Stage 1 only
+	# (_on_placement_complete — structural side-effects). is_gatherable
+	# is a Stage 2 (operational) flip that requires
+	# _on_construction_complete to run. Driving place_at alone (as the
+	# old test did) must leave is_gatherable = false. Stage 2 is fired
+	# by UnitState_Constructing after construction_ticks elapse; see
+	# test_unit_state_constructing.gd::
+	#   test_mazraeh_is_not_gatherable_during_construction
+	# for the behavioral coverage of the dwell-driven flip.
 	_mazraeh = _spawn_mazraeh()
 	assert_false(_mazraeh.is_gatherable,
 		"is_gatherable must be false before place_at")
 	SimClock._is_ticking = true
 	_mazraeh.place_at(Vector3.ZERO, Constants.TEAM_IRAN, 1)
 	SimClock._is_ticking = false
+	assert_false(_mazraeh.is_gatherable,
+		"is_gatherable must REMAIN false after place_at alone — Stage 1 "
+		+ "(_on_placement_complete) is structural; the flip is gated on "
+		+ "Stage 2 (_on_construction_complete) per wave 1C lifecycle.")
+
+
+func test_mazraeh_is_gatherable_flips_on_construction_complete() -> void:
+	# Stage 2 hook fires the flip. Drive the hook directly here to lock
+	# the per-hook contract; the integration-level driving-via-ticks
+	# coverage lives in test_unit_state_constructing.gd.
+	_mazraeh = _spawn_mazraeh()
+	SimClock._is_ticking = true
+	_mazraeh.place_at(Vector3.ZERO, Constants.TEAM_IRAN, 1)
+	SimClock._is_ticking = false
+	assert_false(_mazraeh.is_gatherable,
+		"sanity: still false post-Stage-1")
+	# Fire Stage 2 directly. Production caller is
+	# UnitState_Constructing._sim_tick at dwell-complete.
+	_mazraeh._on_construction_complete(1)
 	assert_true(_mazraeh.is_gatherable,
-		"is_gatherable must be true after place_at (_on_placement_complete flip)")
+		"is_gatherable must be true after _on_construction_complete (Stage 2 flip)")
 
 
 func test_mazraeh_resource_kind_is_grain() -> void:
