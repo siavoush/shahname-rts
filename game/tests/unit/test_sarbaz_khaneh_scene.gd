@@ -5,7 +5,7 @@ extends GutTest
 ## via parent="StaticBody3D" — verifies the shape is actually overridden and not
 ## silently falling back to the base 2.0×1.2×2.0 BoxShape3D.
 ##
-## Intended for absorption into gp-sys's test_sarbaz_khaneh.gd when that file ships.
+## Structural-scene complement to test_sarbaz_khaneh.gd's class-behavior coverage.
 
 const SCENE_PATH := "res://scenes/world/buildings/sarbaz_khaneh.tscn"
 

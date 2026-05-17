@@ -5,12 +5,10 @@
 ; Source: 01_CORE_MECHANICS.md §5 — "Sarbaz-khaneh (barracks) — Unlocks
 ; Sarbaz (foot-soldier) production. Enables military unit queue."
 ;
-; TODO: cultural-note pending loremaster brief-time review. When the
-; loremaster's output lands, replace this block with the 4-part structure
-; (cultural-referent / mechanic-surfaces-truth / cross-faction-caveat /
-; forward-compat-note) per the agent-def Building subclass template.
+; Cultural framing: see sarbaz_khaneh.gd header (Cultural note block) for the
+; 4-element identity-bearing-institutional anchor framing.
 ;
-; Phase 3 session 4 wave 2A — first military building. Institutional
+; First military building. Institutional
 ; footprint (wider-than-deep or longer-than-wide) to read as "barracks"
 ; vs residential (Khaneh) or agrarian (Mazra'eh) or industrial (Ma'dan).
 ;
