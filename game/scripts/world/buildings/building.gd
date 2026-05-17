@@ -327,6 +327,9 @@ func _on_placement_complete(_placer_unit_id: int) -> void:
 ## Walk get_tree().root looking for the first NavigationRegion3D.
 ## The MVP scene has exactly one (terrain.tscn root). Returns null if
 ## none found — callers push_warning and skip the rebake gracefully.
+## MVP assumes a single NavigationRegion3D in the scene. Multi-region maps
+## would require region-by-position lookup. Forward-investment for the
+## dedicated navmesh wave (Task #148 / WAVE_1C_NAVMESH_SPIKE.md v0.2.0).
 func _resolve_terrain_region() -> NavigationRegion3D:
 	return _find_nav_region(get_tree().root)
 

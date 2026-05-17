@@ -4,9 +4,8 @@
 ;
 ; Source: 01_CORE_MECHANICS.md §5 — "Ma'dan (mine) — Worker-staffed coin
 ; extraction at mine nodes — 40 coin."
-; (Note: spec lists 40 Coin; wave-1B uses 75 Coin per design Q5 — balance-
-; engineer's tunable. The shipping cost lives in BalanceData / the
-; _WAVE_1B_COIN_COST placeholder until that ships.)
+; (coin_cost = 40 per spec — shipped in game/data/balance.tres. Design Q5
+; resolved 2026-05-14; rationale in madan.gd:147.)
 ;
 ; Phase 3 session 2 wave 1B — 02g_PHASE_3_SESSION_2_KICKOFF.md §3 wave-1B.
 ; Open Space Room A ratified Option B (2026-05-14): Ma'dan is a buff-emitter
