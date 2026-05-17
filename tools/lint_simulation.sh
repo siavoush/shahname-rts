@@ -239,11 +239,54 @@ if [[ -n "${L5_HITS}" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# L6 — Manual full-map navmesh rebake outside terrain bootstrap
+#
+# Rationale: the navmesh is baked ONCE at terrain.gd:_ready() (Sim Contract /
+# RESOURCE_NODE_CONTRACT.md §3.2). Localized region rebakes triggered by
+# NavigationObstacle3D children with affect_navigation_mesh = true are
+# permitted (engine-managed, automatic). What is forbidden is gameplay code
+# calling bake_navigation_mesh() directly — that's a full-map rebuild and
+# breaks both the cost discipline and the determinism contract for
+# AI-vs-AI sims.
+#
+# Allowlist (files exempt from L6):
+#   game/scripts/world/terrain.gd — the canonical bootstrap site
+#
+# Scope: game/scripts/**/*.gd minus the allowlist
+# ---------------------------------------------------------------------------
+
+L6_PATTERN='\bbake_navigation_mesh\s*\('
+L6_ALLOWLIST_TERRAIN="${SCRIPTS_DIR}/world/terrain.gd"
+
+L6_HITS="$(rg --with-filename --line-number "${L6_PATTERN}" \
+  --glob '*.gd' \
+  "${SCRIPTS_DIR}" 2>/dev/null || true)"
+
+# Remove allowlisted file from results.
+if [[ -n "${L6_HITS}" ]]; then
+  L6_HITS="$(echo "${L6_HITS}" | grep -v "^${L6_ALLOWLIST_TERRAIN}:" || true)"
+fi
+
+# Filter out comment lines (defensive — same rationale as L3).
+if [[ -n "${L6_HITS}" ]]; then
+  L6_HITS="$(echo "${L6_HITS}" | rg -v ':[0-9]+:\s*#' || true)"
+fi
+
+if [[ -n "${L6_HITS}" ]]; then
+  _fail_header "L6" "Manual full-map bake_navigation_mesh() call outside terrain bootstrap"
+  echo "│    Allowed only in: ${L6_ALLOWLIST_TERRAIN}"
+  echo "│    Localized region rebakes via NavigationObstacle3D"
+  echo "│    affect_navigation_mesh = true are engine-managed and permitted."
+  echo "${L6_HITS}" | sed 's/^/│    /'
+  _fail_footer
+fi
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""
 if [[ "${VIOLATIONS}" -eq 0 ]]; then
-  echo "lint_simulation.sh — OK (0 violations across L1-L5)"
+  echo "lint_simulation.sh — OK (0 violations across L1-L6)"
   exit 0
 else
   echo "lint_simulation.sh — FAILED (${VIOLATIONS} rule(s) violated)"
