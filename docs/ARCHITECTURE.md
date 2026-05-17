@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.22.0
+version: 0.24.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -19,7 +19,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
 last_updated: 2026-05-17
-# bumped to v0.23.0 — Phase 3 session 3 Wave 1D: navmesh carving RESOLVED via explicit `parse_source_geometry_data(get_tree().root)` + `bake_from_source_geometry_data` pipeline in `Building._on_placement_complete`. L25 + L26 closed. Root cause: NavigationRegion3D convenience wrapper hardcodes `this` as parse-root, so SOURCE_GEOMETRY_ROOT_NODE_CHILDREN config couldn't escalate scope — only explicit pipeline bypasses the wrapper. Validated against Godot 4.6 source.
+# bumped to v0.24.0 — Phase 3 session 4 Wave 2A close: Sarbaz-khaneh (5th Tier-1 Iran building, identity-bearing-institutional anchor variant). 5 commits across 5 parallel tracks. Cultural-note locks the pahlavan/sepah two-layer Iran-military framing for future Phase 5 Rostam scenarios. Tirandazi naming-shape flag captured for future Tier-2 wave brief.
 ---
 
 # Architecture — Target Shape and Build State
@@ -1373,6 +1373,62 @@ Wave 3 ships integration tests covering the Phase 3 economic loop end-to-end. Fi
 **LATER items surfaced this wave:** none new. L16 (per-tick repath throttle in Attacking) remains the live concern at 50+ units — `_InstantScheduler` in cross-feature smoke test confirmed re-issue every tick during MockPathScheduler starvation; added explicit comment in test noting the L16 surface.
 
 **Coverage gaps (intentional):** nav-obstacle actual routing test deferred (headless limitation, no display server → NavigationServer bake fails); production-queue pop-ceiling test deferred (no unit production in Phase 3 session 1 yet).
+
+---
+
+### v0.24.0 — Phase 3 session 4 Wave 2A close: Sarbaz-khaneh (5th Tier-1 Iran building, identity-bearing-institutional anchor variant) (2026-05-17)
+
+Phase 3 session 4 wave 2A closes with the 5th Tier-1 Iran building shipped. Sarbaz-khaneh (سرباز‌خانه, "soldier-house" / barracks) is the FIRST production instance of the **identity-bearing-institutional** anchor category — the fourth variant in the loremaster's anchor-category taxonomy (alongside civic-anchor Khaneh, resource-producing Mazra'eh, labor-organization Ma'dan, and sacral-emitter Atashkadeh-pending). 5 commits across 5 parallel tracks; Pitfall #7 incidents: 0; persistent-instance discipline operationally validated.
+
+**What shipped:**
+
+- **`sarbaz_khaneh.gd` class** (gp-sys-p3s3, `8314a8a` + `a351869` cultural-note integration). Extends Building base. `kind = &"sarbaz_khaneh"`. Two-stage lifecycle with `super()` discipline in BOTH stages (defensive even though base `_on_construction_complete` is currently no-op). Stage 1 (`_on_placement_complete`): super → Wave-1D navmesh rebake → FogSystem vision-source register → EventBus.building_placed. Stage 2 (`_on_construction_complete`): super → flips `is_ready_to_produce = true`. Mirrors Mazra'eh's `is_gatherable` operational-gating pattern; future Phase-4 production-queue consumer reads `is_ready_to_produce` as the canonical hook.
+
+- **`sarbaz_khaneh.tscn` scene** (world-builder-p3s2, `1ff3039`). Inherits building.tscn. 3.0 × 1.2 × 2.0 BoxMesh + BoxShape3D (longer-than-square reads as "institutional / barracks"). NavigationObstacle3D vertices overridden with 3.0 × 2.0 polygon (±1.6 × ±1.1m per RNC §3.2 v1.4.0 polygon-sizing rule). Iron-red Color(0.55, 0.25, 0.20) for martial visual register. `affect_navigation_mesh` + `carve_navigation_mesh` INHERITED from base (subtlety captured: overriding would clear them per Godot packed-scene inheritance).
+
+- **BalanceData entry `bldg_sarbaz_khaneh`** (balance-engineer-p3s3, `fbe6cb7`). `coin_cost = 100` (per 01_CORE_MECHANICS.md §5), `construction_ticks = 780` (26s @ SIM_HZ=30), `max_hp = 400.0`. **Timing-ladder anchored** at symmetric ±120-tick gaps: Khaneh(90=3s) < Mazra'eh(540=18s) < Ma'dan(660=22s) < Sarbaz-khaneh(780=26s) < Atashkadeh(900=30s, Tier-1→Tier-2 gateway) < Qal'eh(2700=90s, Tier-2 upgrade itself per §8). Citation-density-when-revising-lead discipline applied at the Open Consultation: lead's pre-seeded "Atashkadeh 90s" reference was a mis-citation (§8 line referred to Qal'eh, not Atashkadeh — Tier-1 buildings have no spec-stated construction time, only costs). balance-engineer caught + corrected; lead withdrew. **Third spec-wins-over-lead's-casual-reading instance** across three sessions (session-2 coin_cost=40, session-3 construction_ticks=540/660, session-4 Atashkadeh-vs-Qal'eh citation).
+
+- **Build menu Sarbaz-khaneh button + translation seam** (ui-developer-p3s3, `2658405`). SarbazKhanehButton in VBox, martial-red tint Color(0.65, 0.30, 0.25). `UI_BUILDING_SARBAZ_KHANEH` + `_COST` + `_TOOLTIP` rows in strings.csv. `strings.en.translation` binary regenerated (§9 d61eb79 discipline). End-to-end label-render verification: `test_sarbaz_khaneh_button_label_shows_cost` asserts literal "Sarbaz-khaneh (100 Coin)" — translation lookup + BalanceData read + format string all validated through the test. **Consumer-track integration verification rule** (session-3 retro author: ui-developer themselves) applied at commit time: BalanceData entry at `fbe6cb7` + sarbaz_khaneh.gd contract at `8314a8a` both verified BEFORE button commit.
+
+- **Cultural-note loremaster framing** (loremaster-p3s4, `a351869` integration). The **pahlavan/sepah two-layer Iran-military framing** locked at this wave — Sarbaz-khaneh produces the institutional ordinary (piyade, kamandar) while pahlavan-class (Rostam, future Phase 5) lives elsewhere. The visible-sepah-on-the-field contrast is what will MAKE Rostam's eventual single-combat scenes resonant; without this framing locked BEFORE Rostam ships, future Phase 5 scenarios lose the mard-o-mard contrast. Forward-investment of cultural-framing-as-architecture. Plus: cross-faction structural-mismatch caveat sharper than Ma'dan/baj — Iran's military identity LIVES in the institutional building; Turan's lives in the loyalty bond + moving camp. **Do not clone Sarbaz-khaneh as a Turan building** explicit guardrail.
+
+**Full SHA chain (5 commits, chronological):**
+
+```
+fbe6cb7  balance(wave-2a): add bldg_sarbaz_khaneh — construction_ticks = 780 (26s) (balance-engineer-p3s3)
+1ff3039  feat(world): Wave 2A — sarbaz_khaneh.tscn (Iran barracks scene) (world-builder-p3s2)
+8314a8a  feat(buildings): Sarbaz-khaneh (Iran barracks) — Wave 2A Commit 1 (gp-sys-p3s3)
+2658405  feat(ui): Wave 2A build menu Sarbaz-khaneh button — Phase 3 session 4 (ui-developer-p3s3)
+a351869  docs(buildings): Wave 2A Commit 1.5 — Sarbaz-khaneh cultural-note integration (gp-sys-p3s3)
+```
+
+**Test count delta:** 1247 → 1267 (+20 net). 1264 passing, 3 pre-existing pending, 0 failures. Lint L1-L6 clean.
+
+**Persistent-instance architecture observations:**
+
+- **loremaster-p3s2 silence → loremaster-p3s4 fresh-spawn.** The session-2 loremaster-p3s2 instance was dispatched for this wave's brief-time review but went silent for ~60 minutes past their 15-20 min time-box. Per §12.5.1 reboot clause, lead spawned loremaster-p3s4 as fresh-spawn successor. Per user observation mid-session: "we probably need to create some way for you to detect agents are stopping" — surfaced as load-bearing process gap. Investigation revealed the ACTUAL failure mode: agents produce content in **assistant-text** (visible only to the spawner), not via **SendMessage** (visible to lead). Two separate gaps:
+  - **Liveness detection gap:** `idle_notification` doesn't distinguish working-vs-dead-vs-done.
+  - **Channel-mismatch gap:** agent-def states "SendMessage = deliverable" but agents emit as assistant-text → looks identical to silence from lead's POV.
+- **Heartbeat protocol introduced** in loremaster-p3s4's dispatch as canonical first instance: "if you need more than 20 minutes, send a status ping with an ETA. Silence past the time-box defaults to presume-unresponsive." loremaster-p3s4 acknowledged the protocol explicitly. Captured for session-4 close retro as a major new §9 candidate.
+
+**Forward-compat carry-forwards (for wave 2B / Phase 4 Tier-2):**
+
+- **Tirandazi naming-shape divergence** (loremaster's catch). Future Tier-2 archery building is *Tirandazi* (تیراندازی, "arrow-shooting [practice]") — NOT *Tirandazi-khaneh*. The Parthian-shot tradition is canonically about transmitted SKILL, not the institutional building. The anchor-category framing (identity-bearing-institutional) clones to both Sowari-khaneh + Tirandazi, but the *-khaneh* suffix only applies to Sowari-khaneh. Worth pre-flighting in the wave 2B kickoff brief so a future agent doesn't auto-suffix *-khaneh* on muscle memory. (Task #159 captures this.)
+- **Anchor-category taxonomy** formalization (Task #160). Wave 2A produces the first identity-bearing-institutional instance; the formal taxonomy doc (sacral-emitter still pending Atashkadeh ship) should land before Phase 4's Tier-2 architectural waves.
+- **`is_ready_to_produce` Phase-4 consumer hook.** When the production queue ships in Phase 4, the consumer reads this boolean as the "building is operational" gate. Mirrors Mazra'eh's `is_gatherable` as the canonical "Stage 2 = operational" pattern.
+- **Build-menu test-coverage parity gap:** Ma'dan button doesn't have `test_build_menu.gd` coverage (only `test_madan.gd`); Sarbaz tests now exceed Ma'dan's button-level coverage. Captured as future cleanup; non-blocking.
+- **Tooltip cultural-loremaster review at Phase 4** for "Trains foot soldiers and archers" placeholder — pending production-detail expansion.
+
+**Process discipline outcomes:**
+
+- **Pitfall #7 = 0** for the wave (all 5 commits used unconditional pathspec form). Continues the streak from session 3 + wave 1D.
+- **Distribution-discipline sustained**: every dispatch landed on actual owner (class → gp-sys, scene → world-builder, BalanceData → balance-engineer, UI seam → ui-developer, cultural-note → loremaster). Zero warmth-routing.
+- **Session-3 retro disciplines operationally validated**: super()-call discipline in BOTH lifecycle stages, consumer-track integration verification at commit time, scene-config-as-forward-investment, broadcast-before-stash, intent-vs-implementation cultural-claim split.
+- **Wave 1D's navmesh inheritance proved out**: Sarbaz-khaneh ships with WORKING pathing day one — no retrofit. The architectural value of closing L25 before shipping more Building subclasses is now operationally proven.
+
+**Subsystem build state delta:** Tier-1 Iran building roster now complete (Throne + Khaneh + Mazra'eh + Ma'dan + Sarbaz-khaneh). Atashkadeh remains the Tier-1→Tier-2 gateway, scheduled for Phase 4.
+
+**LATER status (no changes):** L23 stays open (Pitfall #7 worktree-isolation runtime gap; sequential dispatch + §9 disciplines remain working mitigation — empirically 0 incidents across waves 1D + 2A). L24 stays open (AttackMoveHandler sibling-order suspect-broken; not touched).
 
 ---
 
