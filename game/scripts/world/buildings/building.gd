@@ -297,13 +297,26 @@ func place_at(world_pos: Vector3, owner_team: int, placer_unit_id: int) -> void:
 ##   - Ma'dan: emit building_placed, register fog vision. The mine
 ##     modifier registration moves to Stage 2.
 ##
-## Base class implementation: trigger a synchronous navmesh rebake on the
-## terrain NavigationRegion3D if this building has a NavigationObstacle3D
-## child. This is the Phase 2A.2 fix for L25 (Task #144) — Godot 4.6.2
-## does NOT auto-rebake when an obstacle enters the tree; the
-## affect_navigation_mesh / carve_navigation_mesh flags are participation
-## hints for bakes triggered by someone else. The building itself must
-## drive the rebake after add_child so workers route around it immediately.
+## Base class implementation: trigger an explicit synchronous navmesh
+## rebake using the Godot 4.6 source-geometry pipeline if this building
+## has a NavigationObstacle3D child.
+##
+## Wave 1D fix for L25 (Task #149) — supersedes the v0.1.0-rc.1 spike's
+## convenience-wrapper approach (Task #144 `region.bake_navigation_mesh(false)`
+## shipped at 910bd9a). Root cause validated against Godot 4.6 source:
+## `NavigationRegion3D::bake_navigation_mesh()` (the convenience wrapper)
+## HARDCODES `this` as the parse-root passed to
+## `NavigationServer3D::parse_source_geometry_data()`. Combined with
+## `nav_mesh_generator_3d.cpp:236-255` showing `SOURCE_GEOMETRY_ROOT_NODE_CHILDREN`
+## uses the passed-in p_root_node as-is (not escalated to `get_tree().root`),
+## the convenience wrapper can never see sibling-of-Terrain buildings — they
+## live under `&World` in the scene tree (per `unit_state_constructing.gd:
+## _resolve_placement_parent`), not under Terrain. The explicit pipeline
+## below passes `get_tree().root` as the parse-root, walking the whole tree.
+##
+## See `docs/WAVE_1C_NAVMESH_SPIKE.md` v1.0.0 §0.1 for the four-round
+## archaeology that led to this fix, and `docs/RESOURCE_NODE_CONTRACT.md`
+## §3.2 v1.4.0 for the canonical pipeline contract.
 ##
 ## Subclasses that override MUST call super._on_placement_complete(placer_unit_id)
 ## to preserve the rebake. Khaneh, Mazra'eh, Ma'dan all call super as the
@@ -321,15 +334,21 @@ func _on_placement_complete(_placer_unit_id: int) -> void:
 		push_warning("Building._on_placement_complete: no NavigationRegion3D "
 			+ "found in scene tree; navmesh rebake skipped for %s" % name)
 		return
-	region.bake_navigation_mesh(false)  # sync; deterministic; sim-tick safe.
+	# Explicit 4-call pipeline. Sync via bake_from_source_geometry_data
+	# (not _async) — deterministic, sim-tick safe (Sim Contract §1.6).
+	var source: NavigationMeshSourceGeometryData3D = (
+		NavigationMeshSourceGeometryData3D.new())
+	NavigationServer3D.parse_source_geometry_data(
+		region.navigation_mesh, source, get_tree().root)
+	NavigationServer3D.bake_from_source_geometry_data(
+		region.navigation_mesh, source)
 
 
 ## Walk get_tree().root looking for the first NavigationRegion3D.
 ## The MVP scene has exactly one (terrain.tscn root). Returns null if
 ## none found — callers push_warning and skip the rebake gracefully.
 ## MVP assumes a single NavigationRegion3D in the scene. Multi-region maps
-## would require region-by-position lookup. Forward-investment for the
-## dedicated navmesh wave (Task #148 / WAVE_1C_NAVMESH_SPIKE.md v0.2.0).
+## would require region-by-position lookup; revisit when that need surfaces.
 func _resolve_terrain_region() -> NavigationRegion3D:
 	return _find_nav_region(get_tree().root)
 

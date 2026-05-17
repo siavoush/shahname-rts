@@ -1,28 +1,28 @@
 ---
-title: Wave 1C — Navmesh Architecture Spike (L25 + L26 — unresolved, deferred)
+title: Wave 1C / 1D — Navmesh Architecture Spike (L25 + L26 — RESOLVED)
 type: spike-report
-status: unresolved — investigation deferred to dedicated wave
-version: 0.2.0
+status: resolved — explicit pipeline ratified, mechanism shipped wave 1D
+version: 1.0.0
 owner: engine-architect-p3s2
-summary: Wave 1C navmesh investigation — FOUR rounds of empirically-tested fixes, none of which produced working obstacle carving in live-test. Lead's 2026-05-17 option-B decision punts the dedicated investigation to a future wave with its own time budget; wave 1C closes with workers-walk-through-buildings documented as L25-still-open. This document is now a research-state archaeology archive, NOT a prescription. Future wave's engineer inherits the diagnostic carry-forward without re-running the discovery.
-audience: lead, future engine-architect picking up the dedicated navmesh wave, world-builder, qa-engineer
-read_when: opening the dedicated navmesh investigation wave; debugging future Godot navmesh integration; reading §9 retro on the four-round drift pattern
+summary: Four-round-plus-resolution navmesh investigation. Wave 1C ran rounds 0-3 (each surfacing a deeper Godot 4.6.2 API default the prior round hadn't accounted for); user pushback against the deferral framing triggered Wave 1D (round 4 resolution) — explicit `parse_source_geometry_data(get_tree().root)` + `bake_from_source_geometry_data` pipeline in `Building._on_placement_complete`. Root cause confirmed via Godot 4.6 source: `NavigationRegion3D::bake_navigation_mesh()` convenience wrapper hardcodes `this` as parse-root, so even `SOURCE_GEOMETRY_ROOT_NODE_CHILDREN` config couldn't escalate the wrapper's scope. Explicit pipeline bypasses the wrapper. L25 + L26 RESOLVED at wave 1D commit.
+audience: lead, future engine-architect debugging Godot navmesh integration, world-builder, qa-engineer
+read_when: working on Godot navmesh / NavigationObstacle3D integration; debugging future "obstacle doesn't carve" scenarios; reading §9 retro on the four-incident drift pattern
 prerequisites: [MANIFESTO.md, SIMULATION_CONTRACT.md, RESOURCE_NODE_CONTRACT.md]
 ssot_for:
-  - the four-round mechanism-correction archaeology for L25/L26 (Godot 4.6.2 NavigationObstacle3D behavior)
-  - the empirical-probe artifacts diagnosed across four rounds (binary symbol enumeration, scene-tree shape, qa-engineer's headless probe results)
-  - the unresolved hypothesis surface for the dedicated wave's engineer to pick up
-  - the §9 retro signal — Godot 4.x engine-feature claim drift pattern (four incidents, formal rule)
+  - the four-round-plus-resolution mechanism archaeology for L25/L26 (Godot 4.6.2 NavigationObstacle3D behavior)
+  - the empirical-probe artifacts diagnosed across the rounds (binary symbol enumeration, scene-tree shape, qa-engineer's headless probe results, Godot 4.6 source citations)
+  - the canonical Godot 4.6 source-geometry-pipeline rebake pattern (parse_source_geometry_data + bake_from_source_geometry_data with get_tree().root as parse-root)
+  - the §9 retro signal — Godot 4.x engine-feature claim drift pattern (four incidents, formal rule "enumerate API defaults at every step in the call chain")
 references: [RESOURCE_NODE_CONTRACT.md, SIMULATION_CONTRACT.md, ARCHITECTURE.md, STUDIO_PROCESS.md]
-tags: [navmesh, navigation-obstacle, spike, wave-1c, l25, l26, godot-4.6, unresolved, archaeology]
+tags: [navmesh, navigation-obstacle, spike, wave-1c, wave-1d, l25, l26, godot-4.6, resolved, archaeology]
 created: 2026-05-16
 last_updated: 2026-05-17
-provenance: Decision-arc continuity per STUDIO_PROCESS §12.5 — engine-architect-p3s2 instance carries the wave-1B live-test investigation (Task #119, RNC v1.3.1 honesty correction at 98dfc18) forward into the wave-1C spike (Task #126) and through four diagnostic rounds (Tasks #140, #142, #146). v0.2.0 (2026-05-17) re-scopes the document from "prescription" to "honest archaeology" per lead's option-B decision — wave 1C closes WITHOUT navmesh carving; dedicated wave inherits this diagnostic trail. Cites the formal §9 "Godot-API-dependent architecture claims must enumerate API defaults at every step in the call chain" rule synthesized from these four incidents.
+provenance: Decision-arc continuity per STUDIO_PROCESS §12.5 — engine-architect-p3s2 instance carries the wave-1B live-test investigation (Task #119, RNC v1.3.1 honesty correction at 98dfc18) forward into the wave-1C spike (Task #126), through four diagnostic rounds (Tasks #140, #142, #146), and the wave 1D resolution (Task #149). v0.2.0 (2026-05-17) re-scoped from prescription to archaeology under lead's option-B deferral. v1.0.0 (2026-05-17, same day) closes the spike with the wave 1D resolution — user pushback against the deferral triggered the dedicated wave; lead's research-validated Godot 4.6 source inspection identified the parse-root hardcoding in the convenience wrapper. Explicit pipeline shipped. L25 + L26 RESOLVED. Cites the formal §9 "Godot-API-dependent architecture claims must enumerate API defaults at every step in the call chain" rule synthesized from the four-incident pattern.
 ---
 
-# Wave 1C — Navmesh Architecture Spike (UNRESOLVED, deferred)
+# Wave 1C / 1D — Navmesh Architecture Spike (RESOLVED)
 
-> **Status (v0.2.0 — 2026-05-17): UNRESOLVED.** Four rounds of empirically-tested mechanism corrections all failed in live-test. Wave 1C closes WITHOUT navmesh carving working. Workers-walk-through-buildings is L25-still-open. Dedicated investigation wave inherits this trail. This document is no longer a prescription — it's an archaeology archive for the next engineer to pick up.
+> **Status (v1.0.0 — 2026-05-17): RESOLVED.** Four rounds of mechanism correction (rounds 0-3) under wave 1C surfaced deeper-and-deeper Godot 4.6.2 API defaults the prior round hadn't accounted for. Lead's option-B deferral was overridden by user pushback the same day; wave 1D ratified the explicit `parse_source_geometry_data(get_tree().root)` + `bake_from_source_geometry_data` pipeline as the mechanism. Root cause: the convenience wrapper `NavigationRegion3D::bake_navigation_mesh()` hardcodes the region as parse-root, so the `SOURCE_GEOMETRY_ROOT_NODE_CHILDREN` config (round 3) couldn't escalate the wrapper's scope — only the explicit pipeline bypasses it. Workers now route around placed buildings. L25 + L26 RESOLVED. The archaeology below is forward-investment for future Godot navmesh debugging.
 
 ---
 
@@ -107,14 +107,42 @@ Main
 - **R4-δ:** Explicit 4-call pipeline (`parse_source_geometry_data` + `add_projected_obstruction(...)` + `bake_from_source_geometry_data`) might be the only working pattern — the auto-participation of NavigationObstacle3D nodes via callback might be a documentation-vs-reality gap (precedent: this entire spike).
 - **R4-ε:** Path B fallback (NavigationAgent3D + RVO migration). Multi-day scope; determinism wild card. Captured at §3 of this report.
 
-**Empirical state at wave-1C close:**
+**Empirical state at wave-1C close (round 3):**
 - Path query: state=1 (nav map valid).
 - Waypoints: `[(0, 0.5, -10), (0, 0.5, 0), (0, 0.5, 10)]` — straight line through building's origin.
 - qa-engineer probe: `min_xz = 0.000` consistently across 30 awaited frames.
 - Bake hook fires (verified via `region.bake_navigation_mesh(false)` synchronous return + reachable code path).
 - All flags configured: `affect_navigation_mesh = true`, `carve_navigation_mesh = true`, `vertices = ±1.1` (Khaneh) / `±1.35` (Ma'dan) / 8-vertex octagon @ 0.85m (mine_node).
 - Source geometry mode: `SOURCE_GEOMETRY_ROOT_NODE_CHILDREN`.
-- **Net result: obstacle's polygon is not carving the navmesh.** Cause unknown; explored hypothesis space narrowed but not closed.
+- **Net result: obstacle's polygon is not carving the navmesh.** Cause unknown at round-3 close; explored hypothesis space narrowed but not closed.
+
+### Round 4 — Resolution via explicit pipeline (Wave 1D, 2026-05-17)
+
+**Context.** Lead's option-B decision (2026-05-17) initially deferred the dedicated investigation. User pushback against the deferral framing the same day triggered Wave 1D (Task #149). Lead's research-validated Godot 4.6 source inspection identified the root cause that the four binary-probe rounds had narrowed but not closed.
+
+**Root cause (validated against Godot 4.6 source).** `NavigationRegion3D::bake_navigation_mesh()` (the convenience wrapper world-builder shipped at `910bd9a`) **hardcodes `this` (the region itself) as the parse-root** passed to `NavigationServer3D::parse_source_geometry_data()`. Combined with `nav_mesh_generator_3d.cpp:236-255` showing that `SOURCE_GEOMETRY_ROOT_NODE_CHILDREN` mode uses the passed-in `p_root_node` as-is (not escalated to `get_tree().root`), this means **the round-3 `SOURCE_GEOMETRY_ROOT_NODE_CHILDREN` config was structurally inert** — the mode can't override the convenience wrapper's hardcoded parse-root. The widened parse scope was set on the navmesh resource, but the wrapper passed the wrong starting node, so the wider scope had nothing to widen.
+
+This closes the round-3 R4-β hypothesis as the live mechanism — the callback DOES fire, but only on obstacles in the region's subtree. R4-α / R4-γ / R4-δ / R4-ε did not fire; the answer was simpler than any of them.
+
+**Prescribed (wave 1D).** Bypass the convenience wrapper. Use the explicit 4-call (actually 2-call after eliding the obstacle-iteration loop that auto-participation handles) pipeline in `Building._on_placement_complete`:
+
+```gdscript
+var source := NavigationMeshSourceGeometryData3D.new()
+NavigationServer3D.parse_source_geometry_data(
+    region.navigation_mesh, source, get_tree().root)
+NavigationServer3D.bake_from_source_geometry_data(
+    region.navigation_mesh, source)
+```
+
+The explicit call passes `get_tree().root` directly, walking the entire scene tree. `NavigationObstacle3D::navmesh_parse_source_geometry` callback fires on every obstacle (auto-participation works — R4-δ's manual `add_projected_obstruction` is NOT needed for scene-tree obstacles), and the synchronous `bake_from_source_geometry_data` finalizes the navmesh.
+
+**L6 lint extended** (`tools/lint_simulation.sh`): now forbids `bake_from_source_geometry_data_async` outside `terrain.gd` alongside the existing `bake_navigation_mesh(true)` ban. Sync forms permitted project-wide; async forms race sim ticks (Sim Contract §1.6).
+
+**Shipped at:** wave 1D commit (Task #149 — single commit bundles the explicit-pipeline change in `building.gd`, the L6 extension, RNC §3.2 v1.4.0 positive prose, this spike v1.0.0 amendment, and ARCHITECTURE.md §6 v0.23.0 + §7 L25/L26 closures).
+
+**Empirical confirmation:**
+- qa-engineer's behavioral test (`test_phase_3_nav_obstacle_carving_behavioral.gd`) — the two `pending()` paths go GREEN (sync `bake_from_source_geometry_data` fires in headless without rendering-loop dependency).
+- Lead live-test 5-scenario gate — workers route around Khaneh / Ma'dan / mine_node; Mazra'eh remains walkable.
 
 ### Summary table
 
@@ -122,22 +150,31 @@ Main
 |---|---|---|---|
 | 0 (v0.1.0-rc.1) | `affect_navigation_mesh = true` + `vertices` polygon | `90d39bd` | Inert — flag without trigger |
 | 1 (hyp 5) | `carve_navigation_mesh = true` | `bc34c39` | Inert — flag without trigger |
-| 2 (hyp 5h) | Manual `region.bake_navigation_mesh(false)` from `Building._on_placement_complete` | `910bd9a` + `c480303` | Bake fires, but obstacles not in parse scope |
-| 3 (hyp 6a) | `geometry_source_geometry_mode = SOURCE_GEOMETRY_ROOT_NODE_CHILDREN` | `be8c355` | Parse scope widened, but carve STILL doesn't appear in queried path |
-| 4 (NEXT WAVE) | TBD — see R4-α/β/γ/δ/ε above | — | Dedicated investigation wave inherits this trail |
+| 2 (hyp 5h) | Manual `region.bake_navigation_mesh(false)` from `Building._on_placement_complete` | `910bd9a` + `c480303` | Bake fires, but convenience wrapper hardcodes region as parse-root → obstacles not in parse scope |
+| 3 (hyp 6a) | `geometry_source_geometry_mode = SOURCE_GEOMETRY_ROOT_NODE_CHILDREN` | `be8c355` | Mode set on resource but wrapper's hardcoded parse-root makes the mode inert — carve STILL doesn't appear |
+| **4 (resolution)** | **Explicit `parse_source_geometry_data(get_tree().root)` + `bake_from_source_geometry_data` pipeline; bypass convenience wrapper. L6 extended.** | **wave 1D commit (Task #149)** | **RESOLVED — workers route around buildings; behavioral test green; lead live-test passed** |
 
 ---
 
-## 0.2 Lead's option-B decision (2026-05-17)
+## 0.2 Lead's option-B deferral → user pushback → Wave 1D resolution (2026-05-17)
 
-> **Wave 1C closes WITHOUT navmesh carving.** Workers-walk-through-buildings is documented as L25-still-open. The dedicated investigation moves to a future wave with its own time budget.
->
-> **Reasoning:** 4 rounds deep on a navmesh issue that was supposed to be a wave-close detail. Wave 1C's core deliverables (construction-timer, UI progress bar, Ma'dan-over-mine placement validity) are clean and complete. The navmesh problem is a research project that needs its own scope, not bolt-on rounds inside an unrelated wave.
+The deferral decision and its rapid override are themselves load-bearing process archaeology, captured here for the §9 retro signal.
 
-**Re-scoped Phase 2C deliverables (this commit):**
-1. RNC §3.2 v1.3.1 → v1.3.2 — honesty refresh with the 4-round diagnostic findings.
-2. This document (`WAVE_1C_NAVMESH_SPIKE.md`) v0.1.0-rc.1 → v0.2.0 — full 4-round archaeology; no positive prose.
-3. ARCHITECTURE.md §7 L25 entry update — append the 4-round diagnostic data so the next-wave engineer inherits the discovery state.
+**Lead's initial option-B decision (2026-05-17, morning):**
+
+> Wave 1C closes WITHOUT navmesh carving. Workers-walk-through-buildings is documented as L25-still-open. The dedicated investigation moves to a future wave with its own time budget. Reasoning: 4 rounds deep on a navmesh issue that was supposed to be a wave-close detail. Wave 1C's core deliverables (construction-timer, UI progress bar, Ma'dan-over-mine placement validity) are clean and complete. The navmesh problem is a research project that needs its own scope, not bolt-on rounds inside an unrelated wave.
+
+The Phase 2C honest-archaeology commit (`11c7136`) shipped under this decision: RNC §3.2 v1.3.1 → v1.3.2, this spike v0.1.0-rc.1 → v0.2.0, ARCHITECTURE §7 L25 + L26 with empirical-state carry-forward.
+
+**User pushback (same day):** the deferral framing was overridden — the four-round diagnostic was deep enough that the right thing was to apply the research-discipline rule (read Godot 4.6 source) and ship the fix, not punt. Lead opened Wave 1D (Task #149) the same day, sourcing the parse-root hardcoding finding from Godot 4.6 source inspection.
+
+**Wave 1D resolution shipped same day:** explicit pipeline, L25 + L26 closed. See §0.1 Round 4 above for the resolution details.
+
+**The dual decisions are both correct in their own framing:**
+- Option B was the right call given a four-round diagnostic with no clear next-step — punting was a discipline-correct response to spike-scope spiral.
+- Wave 1D was the right call given the simple `get_tree().root` parse-root fix that source inspection surfaced — the bug was simpler than the four-round investigation made it look.
+
+The §9 retro signal: **when a multi-round investigation closes with "we narrowed the hypothesis space but don't have the answer," the SUBSEQUENT step (before deferring) should be a research-discipline pass — read the engine source, search GitHub issues, search community forums. The four-round binary-probe approach was empirically correct but incomplete; source reading would have closed it in one round.** This is the meta-rule that updates the "engine-feature-claim probes must enumerate API defaults at every step in the call chain" rule from session-3 retro to include the source-reading step explicitly.
 
 The original v0.1.0-rc.1 prescription content below (verdict, scene-edit prescription, code prescription, lint rule, RNC §3.2 v1.4.0 draft, behavioral-test plan, risk register, summary) is RETAINED for archaeology. **DO NOT TRUST as current behavior** — each prescription was the round's best understanding at the time, superseded by subsequent rounds' diagnoses. Read §0.1 for the current state; read §1-§8 below as historical record of how the understanding evolved.
 
