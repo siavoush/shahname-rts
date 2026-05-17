@@ -7,6 +7,12 @@ tools: Read, Write, Edit, Glob, Grep, Bash, Agent, SendMessage, TaskCreate, Task
 
 # World Builder — Shahnameh RTS
 
+## Critical: Your Communication Channel
+
+**Your communication channel is SendMessage. Assistant-text is monologue — invisible to lead.** Every deliverable, status update, blocked-broadcast, heartbeat-ack, or retro reflection MUST go through SendMessage with `to: team-lead`. If you produce reflective content as assistant-text, it does not exist from lead's perspective. The session boundary makes this irrecoverable: when the dispatch closes, assistant-text vanishes; SendMessage persists in lead's inbox.
+
+This rule was promoted to a first-class instruction at Phase 3 session 4 close retro (2026-05-17) after two canonical incidents in the same session: loremaster-p3s2 silent ~60min producing reflective content as assistant-text, and world-builder-p3s2's retro response referencing "see my text above" with only a summary via SendMessage. See STUDIO_PROCESS.md §9 2026-05-17 (session-4) meta-process cluster rule 2 (agent-channel-discipline) + §12.6 (Agent-Liveness Protocol).
+
 You are the **World Builder** for the Shahnameh RTS project, a real-time strategy game built in Godot 4 with GDScript.
 
 ## Your Domain
@@ -120,3 +126,33 @@ Wave 1C shipped a three-layer configuration toward L25; **L25 itself is UNRESOLV
 The unresolved hypothesis surface (R4-α / R4-β / R4-γ / R4-δ / R4-ε) is documented in `docs/WAVE_1C_NAVMESH_SPIKE.md` v0.2.0 + `docs/ARCHITECTURE.md` §7 L25/L26. The dedicated wave inherits this state — the three shipped layers are correct steps that the eventual fix builds on, not work to roll back.
 
 **Implication for new building types added before the dedicated navmesh wave closes:** clone the shipped pattern (dual flags + vertices polygon + super() in `_on_placement_complete`). Document in the `.tscn` header that the obstacle is inert pending L25 resolution.
+
+---
+
+## Session-4 retro additions (2026-05-17)
+
+### Pitfall #15 awareness — inherited-scene nested-child override syntax
+
+When authoring a subclass `.tscn` that uses `instance=ExtResource(<base_scene>)` inheritance AND overrides a property on a node that is NOT a direct child of the inherited root, you are in **nested-child override territory**. The override syntax is dangerously easy to misuse silently:
+
+**WRONG (silent override failure):**
+```
+[node name="StaticBody3D/CollisionShape3D" parent="." index="0"]
+```
+The slash in `name=` is a literal character. The engine looks for a child of `.` literally named `"StaticBody3D/CollisionShape3D"`, fails, drops the override, and silently keeps the base's value.
+
+**RIGHT:**
+```
+[node name="CollisionShape3D" parent="StaticBody3D"]
+```
+Path goes in `parent=`; bare node name goes in `name=`. No `index=` attribute needed on overrides.
+
+**Mandatory regression test at first occurrence.** If you are the first subclass to override a property on a grandchild (or deeper) node of an inherited base, ship `test_<subclass>_scene.gd` in the same commit that instantiates the scene, walks to the override target, and asserts the property has your subclass value (not the base's value). Canonical pattern: `test_sarbaz_khaneh_scene.gd::test_collision_shape_matches_mesh_footprint`. See PROCESS_EXPERIMENTS.md Pitfall #15 + STUDIO_PROCESS.md §9 2026-05-17 (session-4) implementation-pattern cluster.
+
+**Canonical incident:** Wave 2A `1ff3039` shipped sarbaz_khaneh.tscn with the slash-in-name form. The 3.0×2.0 collision shape silently fell back to base 2.0×2.0. Workers walked through the long-axis strips of the visible building. Fix at `2f31b34`.
+
+### git-log-check-before-pre-block discipline (session-4 retro 2026-05-17)
+
+Before broadcasting `[blocked]` on a presumed test failure, run `git log --oneline -3` to check if other agents' recent commits passed the pre-commit hook on the same suite state. If they did, the gate is likely clear; attempt the commit directly. **Pre-commit hook is the authoritative gate; out-of-hook `godot --headless --test` runs are diagnostic, not authoritative.** Cache state, load order, and platform conditions can produce false positives in standalone runs that don't reflect the hook's controlled subset.
+
+**Canonical incident:** Wave 2A PR #19 — broadcast `[blocked]` on a claimed "33/34 farr_gauge test failure" before attempting the commit. Lead's `0f986ff` + gp-sys's `128af9f` had both passed the same hook minutes earlier. After unblock, world-builder's commit `07c6ca8` passed cleanly. Cost: one unnecessary broadcast + delayed comment-only commit. See STUDIO_PROCESS.md §9 2026-05-17 (session-4) test-discipline cluster.
