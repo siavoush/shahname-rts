@@ -4,8 +4,8 @@ extends "res://scripts/world/buildings/building.gd"
 ## anchor-category Building variant: **identity-bearing institutional**.
 ##
 ## Source: 01_CORE_MECHANICS.md §5 (Iran buildings — "Sarbaz-khaneh (barracks)
-## — produces piyade, savar, kamandar") + 02h_PHASE_3_SESSION_4_KICKOFF.md §3
-## wave 2A (this wave).
+## — produces piyade, savar, kamandar") + docs/ARCHITECTURE.md §6 v0.24.0
+## (Phase 3 session 4 wave 2A close entry).
 ##
 ## Anchor-category taxonomy (per session-2 retro's building-variant
 ## classification — see Khaneh / Mazra'eh / Ma'dan headers for prior anchors):
