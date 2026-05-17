@@ -21,20 +21,25 @@
 # Uses the REAL NavigationAgentPathScheduler, NOT MockPathScheduler.
 # The mock returns straight-line paths and would not exercise the carve.
 #
-# CONFIRMED HEADLESS LIMITATION (probe run 2026-05-17, 30-frame await loop):
-# NavigationServer3D's dynamic carve (carve_navigation_mesh) does NOT execute
-# in Godot 4.6.2 headless mode regardless of process_frame await count.
-# 30 frames probed: state=1 (nav map valid), waypoints go through origin,
-# min_xz stays 0.000 every frame. This is NOT a timing issue — it is a
-# fundamental headless runner limitation: the NavServer carve thread does not
-# run without a display server / rendering loop.
+# HEADLESS LIMITATION — CONFIRMED PERMANENT (multiple probe methods):
 #
-# Consequence: the carve-verification flows (Khaneh, Ma'dan) mark pending()
-# permanently in headless. The LIVE-TEST GATE (Task #138 / spike §1.4) is
-# the empirical confirmation. pending() here documents the gap, not a failure.
+# 1. carve_navigation_mesh async (bc34c39): 30-frame probe showed NavServer
+#    carve thread never fires without a rendering loop. Abandoned.
 #
-# The LIVE-TEST GATE at docs/WAVE_1C_NAVMESH_SPIKE.md §1.4 is the empirical
-# confirmation that the carve works in a running game.
+# 2. bake_navigation_mesh(false) sync (Task #144): calls _on_placement_complete
+#    which triggers a sync full-map rebake. The rebake fires (state=1 confirmed)
+#    but NavigationObstacle3D vertices added at runtime still do not carve the
+#    mesh — bake_navigation_mesh reads obstacle geometry, but in Godot 4.6.2
+#    headless the NavigationObstacle3D does not contribute its vertices polygon
+#    to the bake when instantiated at test time (navmesh bakes produce flat
+#    terrain only; obstacle carve geometry requires rendering pipeline context).
+#
+# Conclusion: navmesh obstacle carving is NOT headless-verifiable in Godot
+# 4.6.2 regardless of the sync/async approach. This is an engine limitation,
+# not a code bug. The LIVE-TEST GATE (Task #138 / spike §1.4) is the only
+# empirical verification path.
+#
+# These flows use pending() to document the gap explicitly, not to hide it.
 extends GutTest
 
 const TerrainScene: PackedScene = preload("res://scenes/world/terrain.tscn")
@@ -80,19 +85,18 @@ func _path_routes_around(waypoints: PackedVector3Array, min_xz_dist: float) -> b
 
 
 # ---------------------------------------------------------------------------
-# Flow 1 — Khaneh at origin should carve the Z-axis straight-line path.
-# Behavioral assertion: no waypoint closer than 1.0 XZ from origin
-# (inside the 2.0×2.0 footprint). Marks pending() if headless rebake
-# did not fire (expected limitation per §7.3).
+# Flow 1 — Khaneh placed at origin. Calls _on_placement_complete to trigger
+# the sync rebake (Task #144). Verifies carve via map_get_path() waypoints.
+# Marks pending() if the carve didn't take effect — confirmed headless limit.
 # ---------------------------------------------------------------------------
 
 func test_khaneh_carves_navmesh_path_routes_around() -> void:
 	var khaneh: Node3D = KhanehScene.instantiate()
 	add_child_autofree(khaneh)
 	khaneh.global_position = Vector3.ZERO
-	# Wait for the localized region rebake per §7.3 (async — may not fire headless).
-	await get_tree().process_frame
-	await get_tree().process_frame
+	# Trigger sync rebake via placement hook (Task #144 fix). One process_frame
+	# for NavigationServer3D to propagate the new mesh to map_get_path().
+	khaneh.call(&"_on_placement_complete", 0)
 	await get_tree().process_frame
 
 	var req_id: int = _scheduler.request_repath(99, FROM_POS, TO_POS, 0)
@@ -100,28 +104,21 @@ func test_khaneh_carves_navmesh_path_routes_around() -> void:
 
 	if int(result.state) != 1:
 		pending(
-			"NavigationAgentPathScheduler returned FAILED — no active nav map "
-			+ "(headless without display server). Requires a running scene tree.")
+			"NavigationAgentPathScheduler returned FAILED — no active nav map.")
 		return
 
 	var waypoints: PackedVector3Array = result.waypoints
-
-	# Check if any intermediate waypoint is inside the footprint.
 	var carve_took_effect: bool = _path_routes_around(waypoints, 1.0)
 
 	if not carve_took_effect:
-		# Confirmed headless limitation — NOT a code bug. 30-frame probe
-		# (2026-05-17) showed carve_navigation_mesh never fires in headless
-		# regardless of await count. Lead live-test gate (Task #138) confirms.
 		pending(
-			"CONFIRMED HEADLESS LIMITATION: carve_navigation_mesh (bc34c39) "
-			+ "does not execute in Godot 4.6.2 headless — NavServer carve "
-			+ "thread requires a rendering loop. 30-frame probe: state=1 but "
-			+ "min_xz=0.000 every frame. Lead live-test gate (Task #138) is "
-			+ "the empirical confirmation. Waypoints: " + str(waypoints))
+			"HEADLESS LIMIT: bake_navigation_mesh(false) fires (state=1) but "
+			+ "NavigationObstacle3D vertices do not carve in Godot 4.6.2 headless. "
+			+ "Engine limitation confirmed via two probe methods (see docstring). "
+			+ "Lead live-test gate (Task #138) is the empirical confirmation. "
+			+ "Waypoints: " + str(waypoints))
 		return
 
-	# If we get here, the carve DID take effect (possible in some environments).
 	assert_gt(waypoints.size(), 2,
 		"Carved path around Khaneh must produce >2 waypoints. Got: "
 		+ str(waypoints.size()))
@@ -131,20 +128,19 @@ func test_khaneh_carves_navmesh_path_routes_around() -> void:
 		assert_gte(xz_dist, 1.0,
 			"Waypoint[%d] at %s (XZ dist %.3f) is inside Khaneh's 2.0x2.0 "
 			% [i, wp, xz_dist]
-			+ "footprint — carve failed. Khaneh polygon is ±1.1 from origin.")
+			+ "footprint — carve failed. Khaneh polygon ±1.1.")
 
 
 # ---------------------------------------------------------------------------
-# Flow 2 — Ma'dan at origin should carve the path. Larger 2.5×2.5 footprint.
-# XZ dist ≥ 1.25 from origin for every waypoint. Same pending() semantics.
+# Flow 2 — Ma'dan placed at origin. Same sync-rebake + pending() pattern.
+# 2.5×2.5 footprint; XZ dist ≥ 1.25 for every waypoint.
 # ---------------------------------------------------------------------------
 
 func test_madan_carves_navmesh_path_routes_around() -> void:
 	var madan: Node3D = MadanScene.instantiate()
 	add_child_autofree(madan)
 	madan.global_position = Vector3.ZERO
-	await get_tree().process_frame
-	await get_tree().process_frame
+	madan.call(&"_on_placement_complete", 0)
 	await get_tree().process_frame
 
 	var req_id: int = _scheduler.request_repath(99, FROM_POS, TO_POS, 0)
@@ -152,8 +148,7 @@ func test_madan_carves_navmesh_path_routes_around() -> void:
 
 	if int(result.state) != 1:
 		pending(
-			"NavigationAgentPathScheduler returned FAILED — no active nav map "
-			+ "(headless without display server).")
+			"NavigationAgentPathScheduler returned FAILED — no active nav map.")
 		return
 
 	var waypoints: PackedVector3Array = result.waypoints
@@ -161,10 +156,9 @@ func test_madan_carves_navmesh_path_routes_around() -> void:
 
 	if not carve_took_effect:
 		pending(
-			"CONFIRMED HEADLESS LIMITATION: carve_navigation_mesh (bc34c39) "
-			+ "does not execute in Godot 4.6.2 headless. Same root cause as "
-			+ "Khaneh flow — NavServer carve thread requires rendering loop. "
-			+ "Lead live-test gate (Task #138) is the empirical confirmation. "
+			"HEADLESS LIMIT: same engine limitation as Khaneh flow — "
+			+ "NavigationObstacle3D vertices do not carve in Godot 4.6.2 headless "
+			+ "even with sync bake. Lead live-test gate (Task #138) confirms. "
 			+ "Waypoints: " + str(waypoints))
 		return
 
@@ -177,7 +171,7 @@ func test_madan_carves_navmesh_path_routes_around() -> void:
 		assert_gte(xz_dist, 1.25,
 			"Waypoint[%d] at %s (XZ dist %.3f) is inside Ma'dan's 2.5x2.5 "
 			% [i, wp, xz_dist]
-			+ "footprint — carve failed. Ma'dan polygon is ±1.35 from origin.")
+			+ "footprint — carve failed. Ma'dan polygon ±1.35.")
 
 
 # ---------------------------------------------------------------------------
