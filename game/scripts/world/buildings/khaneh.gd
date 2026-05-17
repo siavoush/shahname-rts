@@ -100,6 +100,10 @@ func _ready() -> void:
 #   source_unit)` precisely for this use case — the wave-1B doc strings
 #   call out Khaneh as the first consumer.
 func _on_placement_complete(placer_unit_id: int) -> void:
+	# Base class triggers the navmesh rebake (Task #144 fix — Godot 4.6.2
+	# does not auto-rebake on NavigationObstacle3D enter_tree; we drive it
+	# explicitly from the placement hook so workers route around us immediately).
+	super._on_placement_complete(placer_unit_id)
 	# Resolve population_capacity from BalanceData. Defensive: if
 	# BalanceData isn't on disk (tests with no balance.tres), fall back
 	# to 0 — the placement still succeeds (the building still exists)

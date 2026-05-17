@@ -297,13 +297,48 @@ func place_at(world_pos: Vector3, owner_team: int, placer_unit_id: int) -> void:
 ##   - Ma'dan: emit building_placed, register fog vision. The mine
 ##     modifier registration moves to Stage 2.
 ##
-## Base class is a no-op so a subclass with NO post-placement side-effect
-## (a future decorative building, perhaps?) needs no override.
+## Base class implementation: trigger a synchronous navmesh rebake on the
+## terrain NavigationRegion3D if this building has a NavigationObstacle3D
+## child. This is the Phase 2A.2 fix for L25 (Task #144) — Godot 4.6.2
+## does NOT auto-rebake when an obstacle enters the tree; the
+## affect_navigation_mesh / carve_navigation_mesh flags are participation
+## hints for bakes triggered by someone else. The building itself must
+## drive the rebake after add_child so workers route around it immediately.
+##
+## Subclasses that override MUST call super._on_placement_complete(placer_unit_id)
+## to preserve the rebake. Khaneh, Mazra'eh, Ma'dan all call super as the
+## first line of their override.
 ##
 ## placer_unit_id is the Kargar's id, forwarded for telemetry symmetry
 ## with apply_farr_change / change_resource's source_unit pattern.
 func _on_placement_complete(_placer_unit_id: int) -> void:
-	pass
+	var nav: NavigationObstacle3D = find_child(
+		"NavigationObstacle3D", false, false) as NavigationObstacle3D
+	if nav == null:
+		return  # Mazra'eh and other walkable buildings have no obstacle — skip.
+	var region: NavigationRegion3D = _resolve_terrain_region()
+	if region == null:
+		push_warning("Building._on_placement_complete: no NavigationRegion3D "
+			+ "found in scene tree; navmesh rebake skipped for %s" % name)
+		return
+	region.bake_navigation_mesh(false)  # sync; deterministic; sim-tick safe.
+
+
+## Walk get_tree().root looking for the first NavigationRegion3D.
+## The MVP scene has exactly one (terrain.tscn root). Returns null if
+## none found — callers push_warning and skip the rebake gracefully.
+func _resolve_terrain_region() -> NavigationRegion3D:
+	return _find_nav_region(get_tree().root)
+
+
+func _find_nav_region(node: Node) -> NavigationRegion3D:
+	if node is NavigationRegion3D:
+		return node as NavigationRegion3D
+	for child in node.get_children():
+		var found: NavigationRegion3D = _find_nav_region(child)
+		if found != null:
+			return found
+	return null
 
 
 ## Called from UnitState_Constructing._sim_tick after construction_ticks

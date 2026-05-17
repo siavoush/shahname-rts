@@ -204,6 +204,11 @@ func _autoload_or_null(autoload_name: StringName) -> Node:
 # Stage 2 so the discovery + registration both happen at operational
 # activation; placement-time has no mine-discovery side-effect anymore.
 func _on_placement_complete(placer_unit_id: int) -> void:
+	# Base class triggers the navmesh rebake (Task #144 fix). Ma'dan has a
+	# NavigationObstacle3D (workers route AROUND the mine infrastructure),
+	# so the rebake fires here and carves Ma'dan's footprint into the live
+	# navmesh immediately on placement.
+	super._on_placement_complete(placer_unit_id)
 	# FogSystem ships in wave 3A. Forward-compat guard: use SceneTree autoload
 	# pattern (Engine.has_singleton does NOT find GDScript autoloads — Pitfall
 	# #12). Sight=0, is_static=true. Ma'dan reveals its own footprint (the

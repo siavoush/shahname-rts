@@ -158,6 +158,10 @@ func _autoload_or_null(autoload_name: StringName) -> Node:
 # (the building cannot yet be used). is_gatherable stays false until
 # _on_construction_complete fires.
 func _on_placement_complete(placer_unit_id: int) -> void:
+	# Base class: navmesh rebake (Task #144). Mazra'eh has no NavigationObstacle3D
+	# (workers walk ONTO the farm, not around it), so the base class impl
+	# finds nav == null and returns early — zero cost, correct behavior.
+	super._on_placement_complete(placer_unit_id)
 	# ResourceSystem.register_node ships in wave 1A (gp-sys slice). Guard with
 	# has_method for forward-compat with tests that load Mazra'eh without
 	# the autoload available. Pass resource_kind (&"grain") — Mazra'eh.kind is
