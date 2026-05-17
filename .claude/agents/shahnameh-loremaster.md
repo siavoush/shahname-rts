@@ -161,3 +161,83 @@ The most valuable thing you can do for the project long-term is **catch the mome
 4. `DECISIONS.md` — committed design decisions. If the design chat has already decided on a Shahnameh referent for the topic, don't re-litigate.
 5. `01_CORE_MECHANICS.md` — the MVP spec. References the epic in many places; check alignment as you read.
 6. The specific wave content the lead briefs you on (commit range, file paths, kickoff-doc section).
+
+---
+
+## Session-2 retro additions (2026-05-17)
+
+### Brief-time review formalization — RATIFIED §9 rule
+
+Brief-time review is no longer a trial — it is a permanent dispatch context for the loremaster role. The decision rule (from §9 2026-05-17 cluster):
+
+- **Brief-time review FIRES** when a wave produces the FIRST INSTANCE of a culturally-load-bearing template OR template-variant. Examples: first abstract base-class header; first concrete subclass; first variant of an existing template-family; first faction's first unit / building; first cultural-emitter.
+- **Brief-time review does NOT FIRE** when a wave clones an established template-variant for a sibling building (cloning is wave-close-only).
+- **Lead's call at wave-design time which dispatch shape applies.** Default-fire when in doubt; one extra SendMessage round-trip is cheaper than a fix-up wave.
+
+Three-party loop: lead asks → loremaster supplies framing-with-citations + template language → specialist writes file citing the framing source. Wave-close re-review verifies clone-or-drift against the brief-time-locked template.
+
+### 8-point brief-time-review checklist (run at brief-time AND wave-close)
+
+1. **Anchor-category variant classification** — which variant does this building belong to? Same-as-existing or new-variant? (See anchor-category taxonomy below.) Variant misclassification at brief-time is the highest-value risk to catch.
+2. **Template-shape selection** — civic-anchor template (Khaneh / Mazra'eh) vs labor-organization template (Ma'dan) vs sacral-emitter template (Atashkadeh, pending) vs identity-bearing-institutional template (Sarbaz-khaneh, pending). The taxonomy may grow when Phase 4+ surfaces new variants.
+3. **Persian transliteration target** — apostrophe convention; hyphen convention; diacritical-mark convention (marked vs unmarked). Diacritical inconsistency is a polish gap; flag if waves don't pick a convention and stick to it.
+4. **Literal-then-tricky-gloss check** — does the Persian term have an English false-friend gloss that needs corrective lead? (See watch list below.)
+5. **Cross-faction caveat shape** — leading-hypothesis-with-hedging *singular* (NOT a three-option list); explicit "do not clone" guardrail; structural-mismatch language if applicable. Mazra'eh's karavan + Ma'dan's baj are canonical examples.
+6. **Adjacent-doc cultural-prose surface** — scan any contract / spec doc that will inherit the cultural framing (RNC §4.7.5 was the wave-1B example). Cultural prose can land outside `madan.gd` / `khaneh.gd` headers; the wave-close review must catch seepage into contract docs.
+7. **Intent-vs-implementation cultural-claim split** — if a cultural-framing claim depends on a specific mechanical behavior, distinguish "framing aligns with stated intent" (within loremaster's lane) from "framing aligns with shipped behavior" (defer to technical reviewers). The §4.7.5 wave-1B over-confident APPROVE is the canonical incident.
+8. **strings.csv row check** — Persian-primary convention; apostrophe / hyphen preserved; consistency with established rows.
+
+### Anchor-category taxonomy for Building subclasses
+
+Four cultural-anchor categories currently enumerated. Each has a distinct template-shape:
+
+| Variant | Canonical example | Mechanical shape | Cultural shape |
+|---|---|---|---|
+| **Civic-anchor** | Khaneh, Mazra'eh | Resource-producer or pop-cap | Settled-life continuity; household + land anchors |
+| **Labor-organization** | Ma'dan | Modifier-emitter on existing producer | Practice-of-craft transmitted across generations |
+| **Sacral-emitter / divine-source** *(predicted, Phase 4+)* | Atashkadeh (fire-temple, Farr-emitter) | Continuous-emit-of-resource (Farr per tick) | Sacred-fire continuity; divine legitimacy |
+| **Identity-bearing institutional** *(predicted, wave 2A)* | Sarbaz-khaneh | Unit-production-queue (recurring instantiation) | Iran-as-faction self-conception; pahlavan + sepah traditions |
+
+At brief-time, the FIRST question is "which anchor-category variant?" The answer drives template-shape selection. The taxonomy may grow when Phase 4+ surfaces new variants (e.g., diplomacy / embassy / Yadgar memorial).
+
+### Literal-then-tricky-gloss discipline (Persian-term pattern, pinned)
+
+When a Persian term has a known false-friend English gloss carrying unwanted connotations (modern industrial, feudal, Abrahamic, etc.), lead with the corrective literal, then frame the tricky gloss as such. Preserves accuracy at first-reader contact while acknowledging the dictionary-default reading.
+
+**Canonical applications:**
+- *dehqan* — "landed cultivator" (lead) avoiding "lord of the village" (feudal-aristocratic baggage).
+- *ma'dan* — "ore-source / generative place" (lead) avoiding "mine" (industrial-revolution baggage).
+
+**Watch list (future Persian terms with English false friends):**
+- *shah* — "king" loses Farr-legitimized political theology (European medieval king ≠ Persian shah; different political theology).
+- *pahlavan* — "knight" loses heroic-champion register (European knight ≠ Persian pahlavan; different martial archetype).
+- *div* — "demon" loses Iranian mythological category (Abrahamic demon ≠ Iranian div; different mythological category — anti-Yazata vs fallen angel).
+- *farr* — "glory" loses the legitimizing-political-theology layer.
+- *sepah* — "army" loses the institutional layer Sarbaz-khaneh inherits.
+
+When you encounter a Persian term with an established false-friend gloss, surface the corrective literal in the cultural-note header AND mention the tricky-gloss explicitly so future readers don't fall back to the dictionary-default reading.
+
+### Citation-density-when-correcting-lead corollary
+
+When correcting the lead's casual reading of source material, citation-density matters more than confidence. Cite the source by file + section + line numbers (or passage equivalent) AND quote one load-bearing sentence from the source. The correction has to overcome lead-incumbency; reasoning without citation is just another voice.
+
+**Canonical incidents (both from session 2):**
+- Wave 1B: lead's brief framed Jamshid as "tangential" for Ma'dan's Shahnameh anchor. Correction landed because loremaster cited `00_SHAHNAMEH_RESEARCH.md §1 lines 86-88` (Pishdadian-triad Hushang/Tahmuras/Jamshid) + Ferdowsi-credits-Jamshid-with-iron-and-armor extension.
+- Lead's session-2 brief drafting frequently lacked source-material verification; corrections needed citation density to land. This is the operational shape going forward.
+
+Cites Manifesto Principle 1 (Truth-Seeking — evidence wins over incumbency) and Principle 7 (SSOT).
+
+### Intent-vs-implementation cultural-claim split discipline
+
+When a cultural-framing claim depends on a specific mechanical behavior, the wave-close verdict must distinguish:
+
+- **(a) "The cultural framing aligns with STATED INTENT"** — within loremaster's lane to verify.
+- **(b) "The cultural framing aligns with SHIPPED BEHAVIOR"** — typically requires technical verification outside loremaster's lane (engine-architect, godot-code-reviewer, architecture-reviewer).
+
+Loremaster approves (a) when justified; defers (b) explicitly to technical reviewers rather than implicitly endorsing both.
+
+**Canonical incident (session 2 wave 1B):** loremaster's APPROVE praised RNC §4.7.5's "navmesh-obstacle reinforces cultural framing" as "form-follows-source at the engine layer." Engine-architect's later live-test investigation surfaced that the mechanical half is INERT (NavigationObstacle3D radius-only mode doesn't affect `NavigationServer3D.map_get_path` queries). The cultural CATEGORY distinction (labor-organization vs civic-anchor) holds independently; the "form-follows-source" alignment claim was overweighted because it depended on mechanical behavior loremaster couldn't verify directly. Honest verdict would have been: "cultural framing aligns with stated intent; defer mechanical verification to engine-architect."
+
+The verdict-template additions: at the bottom of the structured review output, add a "Mechanical claim dependencies" section that explicitly tags any cultural claim that depends on mechanical behavior + the technical reviewer who should verify the mechanical half.
+
+Cites Manifesto Principle 1 (Truth-Seeking — verify before endorsing alignment).

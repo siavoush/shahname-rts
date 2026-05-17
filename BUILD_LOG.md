@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-08 (Phase 3 session 1 wave 1C)
+last_updated: 2026-05-17 (Phase 3 session 2 close retro)
 ---
 
 # Build Log
@@ -33,6 +33,68 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 ```
 
 ## Entries
+
+## 2026-05-17 — Phase 3 session 2 close retro: process learnings ship as a coherent §9 cluster + cross-session persistence rule
+
+**Branch:** `retro/phase-3-session-2-close`
+**Driver:** lead synthesizing across 5 of 9 persistent-agent retro inputs (world-builder, godot-code-reviewer, architecture-reviewer, shahnameh-loremaster, engine-architect). Other 4 (gp-sys, balance-engineer, ai-engineer, qa-engineer) asleep at retro-aggregation time; state preserved per new §12.5.1 cross-session persistence rule.
+**Commits:** 1 (retro PR; mostly doc edits across STUDIO_PROCESS.md, ARCHITECTURE.md, PROCESS_EXPERIMENTS.md, QUESTIONS_FOR_DESIGN.md, 5 agent definitions).
+
+**What shipped:**
+
+- **STUDIO_PROCESS.md v1.6.0** — §9 2026-05-17 cluster (15 new rules + refinements):
+  - Anti-loop staging discipline finalized: unconditional `git commit -- <pathspec>` form; stash-on-pre-commit-block; broadcast `[blocked]` to lead via SendMessage; blocked-on-WIP timeout discipline (4 proposals from session 1+2 retros all ratified).
+  - SSOT prose re-verifies against CURRENT shipped state at every wave-close + re-review pass (refines 2026-05-14 SSOT-prose rule with retroactive-staleness case from wave-1B BLOCK-C).
+  - Spec-wins-over-lead's-casual-reading with citation-density corollary (two canonical incidents this session: balance-engineer's coin_cost catch + loremaster's Pishdadian-triad catch).
+  - Distribution-discipline ("ownership beats warmth") with mid-wave rebalance discipline (closes wave-1B warmest-agent friction).
+  - Intent-vs-implementation cultural-claim split (loremaster's discipline-correction from Observation 3).
+  - Contract-prose hedging for engine-feature claims (engine-architect's RNC §3.2 wishful-spec finding).
+  - Behavioral-vs-structural test discipline (engine-architect's finding: NavigationObstacle3D tests asserted presence, not blocking effect).
+  - Lead-takes-work-when-specialist-unresponsive carve-out (wave-1B RNC v1.3.1 lead-direct exception codified).
+  - strings.csv → .translation binary regen rule (wave-1B post-live-test bug `d61eb79` codified).
+  - Pre-commit self-review pattern (world-builder's pre-emptive 91f48ad catch generalized).
+  - Layer 1.5 enumeration discipline standardized across both reviewers.
+  - Brief-time loremaster review formalization (graduates from trial to permanent — two canonical cases).
+  - Anchor-category enumeration for Building subclasses (civic-anchor / labor-organization / sacral-emitter / identity-bearing-institutional taxonomy).
+  - Literal-then-tricky-gloss discipline (loremaster Persian-term pattern pinned with watch-list).
+  - Single-report-per-investigation discipline (engine-architect's self-correction).
+
+- **STUDIO_PROCESS.md §12.5.1** — cross-session persistence: the within-session decision-arc continuity rule (§12.5) extends to cross-session boundaries by default. Persistent in-team agents survive session boundaries; reboot is exception, not procedure. Empirically validated by this retro: cross-agent self-criticism, automaticity-threshold timing, held-end-to-end decision-arc tracking — all unreachable by fresh-spawn agents.
+
+- **STUDIO_PROCESS.md §10 Sync Log** — Phase 3 session 2 entry added documenting wave 1A + 1B + retro + outcomes + pattern validation. Anchor `#phase-3-session-2--mazraeh-madan-building-taxonomy` resolves the §9 cluster cross-references.
+
+- **STUDIO_PROCESS.md §6 dispatch judgment** — cross-references §12.5.1 + §9 2026-05-17 cluster for lead-discipline operational rules. Keeps the doc internally consistent across cross-referenced sections.
+
+- **PROCESS_EXPERIMENTS.md Known Pitfalls — #12 + #13 thematic cluster promoted.** "GDScript class-identity asymmetry: engine reflection APIs ignore the class_name registry layer." Pitfall #12 (parse-time + runtime, two-part): `Engine.has_singleton`/`get_singleton` mis-API for script autoloads + bare-identifier parse failure. Canonical incident: wave-1A `mazraeh.gd:135-138`; resolution at `6d73889` via `_autoload_or_null` helper. Pitfall #13 (runtime): `Node.get_class()` returns C++ base type for path-string-extends GDScript classes; use `Script.get_global_name()`. Canonical incident: wave-1B qa-engineer's `9ade2bd`. Third surface (`is <ClassName>` operator) flagged for post-promotion probe test.
+
+- **ARCHITECTURE.md v0.21.2** — §6 retro entry capturing all session-2 close process artifacts + meta-retro observations (asleep-agents shape, persistent-instance value validation, lead-synthesis workload calibration).
+
+- **5 agent definitions updated** with session-2 retro discipline additions:
+  - `architecture-reviewer.md`: Proposals A-D (re-verify-on-re-review-pass; frontmatter diff discipline; cosmetic-SUGGEST guardrail; proactive carry-forward citation) + cross-cutting topic verdicts.
+  - `godot-code-reviewer.md`: Layer 1.5 enumeration discipline as new subsection + `_run_inside_tick` scaffold-inheritance SUGGEST-framing + Pitfall #12 + #13 promoted + behavioral-vs-structural test mandate + pre-review "find established pattern" grep + probe-test discipline.
+  - `shahnameh-loremaster.md`: 8-point brief-time-review checklist + anchor-category taxonomy + literal-then-tricky-gloss + citation-density corollary + intent-vs-implementation cultural-claim split.
+  - `engine-architect.md`: single-report-per-investigation + adjacent-code-verification playbook + contract-prose hedging + ARCHITECTURE.md §6 v-bump co-authorship + L25/L26 wave 1C scope.
+  - `world-builder.md`: pre-commit self-review checklist + cultural-note template structure + unconditional pathspec discipline + NavigationObstacle3D L25 spike readiness + wave 1C readiness.
+
+- **QUESTIONS_FOR_DESIGN.md** — Turan-economy entry routed: two waves of cross-faction caveats (Mazra'eh's karavan + Ma'dan's baj) converge on tribute + raid + caravan framing for Turan. Routes to design chat for ratification before Phase 4 Turan-buildings dispatch.
+
+**Did not ship:**
+- gp-sys-p3s2, balance-engineer-p3s2, ai-engineer-p3s2, qa-engineer-p3s2 retro inputs (4 of 9 asleep at retro-aggregation time). Lead drafted from their brief-time prompts + canonical incidents; substantive losses captured (ai-engineer's persistent-instance-value-from-IDLE perspective, qa-engineer's NEW-member-onboarding perspective). Their state is preserved per §12.5.1; observations surface in session 3 if substantive.
+
+**State for next session (Session 3 / wave 1C):**
+
+- Same persistent agents survive (per §12.5.1). Session-3 dispatches use the SAME agent IDs (gp-sys-p3s2, world-builder-p3s2, etc.) — they're addressable, idle, with state preserved.
+- Wave 1C scope: three parallel tracks (construction-timer state machine — gp-sys; UI progress bar — world-builder or ui-developer; navmesh architecture spike — engine-architect, Task #120). Engine-architect's recommendation: Track 3 runs LAST per L23 worktree-isolation discipline; lead's call at wave-1C brief.
+- 17 carry-forward items collected from session-2 (Task #117 + #120 + scattered) — see ARCHITECTURE.md §6 v0.21.2 entry for the enumerated list.
+- Wave 2A pre-flight: Sarbaz-khaneh = third anchor-category variant (identity-bearing institutional); brief-time loremaster review required per §9 2026-05-17 formalized rule.
+- Wave 1B PR #14 merged to main at `6c72c6a` — branch deleted.
+
+**Process retro signals (meta — about the retro itself):**
+- 5 of 9 retro inputs landed; persistent-instance retro produces substantively different content than fresh-spawn would (cross-agent self-criticism, automaticity-threshold timing, held-end-to-end decision-arc tracking).
+- Lead synthesis workload is materially higher than fresh-spawn retros — captured as expected operational shape.
+- Asleep-agents-at-retro-time is the operational reality of persistent-instance architecture; the §12.5.1 rule preserves their state for session-3 surfacing.
+
+---
 
 ## 2026-05-14 — Phase 3 session 1 wave-close: BUG-11 — buildings leaked into box-select
 

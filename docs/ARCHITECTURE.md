@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.21.1
+version: 0.21.2
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -18,8 +18,8 @@ ssot_for:
 references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md, RESOURCE_NODE_CONTRACT.md, AI_DIFFICULTY.md, ../02_IMPLEMENTATION_PLAN.md, STUDIO_PROCESS.md]
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
-last_updated: 2026-05-15
-# bumped to v0.21.1 — Phase 3 session 2 wave 1B: Ma'dan (Coin extraction modifier — Building buff-emitter)
+last_updated: 2026-05-17
+# bumped to v0.21.2 — Phase 3 session 2 close retro: process learnings + §9 cluster + Pitfall #12 + #13 promotion + cross-session persistence
 ---
 
 # Architecture — Target Shape and Build State
@@ -1373,6 +1373,68 @@ Wave 3 ships integration tests covering the Phase 3 economic loop end-to-end. Fi
 **LATER items surfaced this wave:** none new. L16 (per-tick repath throttle in Attacking) remains the live concern at 50+ units — `_InstantScheduler` in cross-feature smoke test confirmed re-issue every tick during MockPathScheduler starvation; added explicit comment in test noting the L16 surface.
 
 **Coverage gaps (intentional):** nav-obstacle actual routing test deferred (headless limitation, no display server → NavigationServer bake fails); production-queue pop-ceiling test deferred (no unit production in Phase 3 session 1 yet).
+
+---
+
+### v0.21.2 — Phase 3 session 2 close retro: process learnings + §9 cluster + Pitfall #12 + #13 promotion + cross-session persistence (2026-05-17)
+
+Phase 3 session 2 formally closes after a 9-agent retro produced 5 substantive inputs (world-builder, godot-code-reviewer, architecture-reviewer, shahnameh-loremaster, engine-architect) and 4 asleep agents (gameplay-systems, balance-engineer, ai-engineer, qa-engineer) whose state is preserved per the new §12.5.1 cross-session persistence rule. The retro produced the following permanent process artifacts:
+
+**STUDIO_PROCESS.md §9 — 2026-05-17 cluster.** 15 new rules + refinements:
+- Three anti-loop staging-discipline rules promoted to permanent (unconditional `git commit -- <pathspec>`, stash-on-pre-commit-block, broadcast `[blocked]` to lead via SendMessage). All three operationally validated this session (wave-1B's clean discipline trials + the wave-1B Commit 4 stash-on-block recovery).
+- SSOT-prose re-verify-on-re-review-pass refinement (closes the retroactive-staleness gap surfaced by wave-1B BLOCK-C).
+- Spec-wins-over-lead's-casual-reading with citation-density corollary (two canonical incidents: balance-engineer's coin_cost catch + loremaster's Pishdadian-triad catch).
+- Distribution-discipline rule ("ownership beats warmth") with mid-wave rebalance discipline (closes the wave-1B warmest-agent friction).
+- Intent-vs-implementation cultural-claim split (closes loremaster's wave-1B §4.7.5 over-confident APPROVE gap — see loremaster's Observation 3).
+- Contract-prose hedging for engine-feature claims (closes engine-architect's RNC §3.2 wishful-spec finding).
+- Behavioral-vs-structural test discipline (engine-architect's finding: every NavigationObstacle3D test asserted presence, none asserted blocking effect).
+- Lead-takes-work-when-specialist-unresponsive carve-out (codifies the wave-1B RNC v1.3.1 lead-direct exception).
+- strings.csv → .translation binary regen rule (closes the wave-1B post-live-test bug at `d61eb79`).
+- Pre-commit self-review pattern (world-builder's pre-emptive 91f48ad catch generalized).
+- Layer 1.5 enumeration discipline standardized across both reviewers.
+- Brief-time loremaster review formalization (graduates from trial to permanent — two canonical cases).
+- Anchor-category enumeration for Building subclasses (civic-anchor / labor-organization / sacral-emitter / identity-bearing-institutional taxonomy).
+- Literal-then-tricky-gloss discipline (loremaster Persian-term pattern pinned with watch-list).
+- Single-report-per-investigation discipline (engine-architect's self-correction; applies to all read-only investigation roles).
+
+**STUDIO_PROCESS.md §12.5.1 — cross-session persistence.** The within-session decision-arc continuity rule (§12.5) extends to cross-session boundaries by default. Persistent in-team agents (architecture-reviewer, godot-code-reviewer, shahnameh-loremaster, gameplay-systems, world-builder, ai-engineer, balance-engineer, qa-engineer, engine-architect) survive session boundaries. Reboot is the exception (system-prompt change the running instance cannot accommodate via conversation), not the procedure. Mode B fresh-spawn reviewers stay ephemeral by design. Empirically validated by this session's retro: cross-agent self-criticism, automaticity-threshold timing, and held-end-to-end decision-arc tracking are all observations unreachable by fresh-spawn agents.
+
+**PROCESS_EXPERIMENTS.md Known Pitfalls — #12 + #13 thematic cluster promoted.** "GDScript class-identity asymmetry: engine reflection APIs ignore the class_name registry layer."
+- **Pitfall #12** (parse-time + runtime, two-part): `Engine.has_singleton`/`get_singleton` for GDScript autoload detection + bare-identifier parse failure for forward-declared autoloads. Canonical incident: wave-1A `mazraeh.gd:135-138` FogSystem mis-API; resolution at `6d73889` via `_autoload_or_null` helper.
+- **Pitfall #13** (runtime): `Node.get_class()` returns C++ base type for path-string-extends GDScript classes; use `Script.get_global_name()` instead. Canonical incident: wave-1B qa-engineer's `9ade2bd` initial `get_class()` attempt → corrected in same commit.
+- Third surface (`is <ClassName>` operator) flagged for post-promotion probe test; the project's duck-typing convention currently sidesteps this surface.
+
+**Agent definition updates** (5 files):
+- `.claude/agents/architecture-reviewer.md` — Proposals A-D from arch-reviewer's retro (re-verify-on-re-review-pass refinement; frontmatter ssot_for diff discipline; cosmetic-SUGGEST guardrail; proactive carry-forward citation in verdicts).
+- `.claude/agents/godot-code-reviewer.md` — Layer 1.5 enumeration discipline as §3.3 subsection; `_run_inside_tick` scaffold-inheritance SUGGEST-framing; behavioral-vs-structural test mandate; pre-review "find established project pattern" grep step; probe-test discipline for thematic-cluster promotion claims.
+- `.claude/agents/shahnameh-loremaster.md` — 8-point brief-time-review checklist; anchor-category taxonomy (civic-anchor / labor-organization / sacral-emitter / identity-bearing-institutional); literal-then-tricky-gloss pattern with watch-list; citation-density-when-correcting-lead corollary; intent-vs-implementation cultural-claim split discipline.
+- `.claude/agents/engine-architect.md` — single-report-per-investigation discipline; "for any Godot-feature-claim debug, verify same behavior in adjacent code before scoping the bug"; ARCHITECTURE.md §6 v-bump co-authorship for non-trivial architectural deltas.
+- `.claude/agents/world-builder.md` — pre-commit self-review checklist (5 steps); cultural-note template structure for Building subclasses (4-element pattern); unconditional `git commit -- <pathspec>` discipline as personal commitment.
+
+**QUESTIONS_FOR_DESIGN.md — Turan-economy entry routed.** Two waves of cross-faction caveats (Mazra'eh's karavan + Ma'dan's baj) point toward a coherent Turan-economy framing: tribute + raid-acquisition + caravan-trade, NOT mirror-buildings-of-Iran. Routed to design chat for ratification before Phase 4 Turan-buildings dispatch. Includes the empirically-developed architectural-frame summary + loremaster's evidence base (00_SHAHNAMEH_RESEARCH.md §natural-core, §worthy-rivals, two waves of cross-faction caveat language in shipped scripts).
+
+**Lint rule L6 candidate (engine-architect's proposal, deferred to wave 1C spike):** `\bbake_navigation_mesh\s*\(` is forbidden in `game/**/*.gd` outside `game/scripts/world/terrain.gd`. Lifts to permanent lint when wave 1C navmesh spike (Task #120) ratifies Path A (engine-managed localized region rebake) as the chosen path.
+
+**Retro process learnings (meta — about the retro itself):**
+- **5 of 9 retro inputs received; 4 asleep** (gp-sys, balance-engineer, ai-engineer, qa-engineer). Synthesis proceeded with the 5 received + lead's drafting from their brief-time prompts. Substantive losses acknowledged: ai-engineer's persistent-instance-value-from-IDLE perspective (uniquely theirs), qa-engineer's NEW-member-onboarding-discipline perspective (uniquely theirs). Per §12.5.1, their state is preserved — observations surface in session 3 if substantive.
+- **Lead synthesis workload is materially higher in persistent-instance retros than fresh-spawn retros.** Each agent's input is richer (cross-agent memory, automaticity-threshold timing, retroactive self-criticism); the synthesis is harder than collating fresh-eyes verdicts. This is the cost of persistence-yielding-depth; captured as expected operational shape.
+- **Persistent-instance retros surface insights unreachable by fresh-spawn:**
+  - **Loremaster's Observation 3** ("I praised §4.7.5 as form-follows-source; engine-architect's later finding showed the mechanical half is inert") — cross-agent memory linking own prior verdict to another agent's later finding.
+  - **Godot-reviewer's Layer 1.5 5-min→4-min automaticity-threshold** — requires remembered prior trial timing.
+  - **Arch-reviewer's decision-arc-held-end-to-end citations** — requires multi-wave carry-forward tracking.
+  - **Engine-architect's contract-confidence-override introspection** — requires lived experience of the trip-up.
+  - **World-builder's 1e8a213 mechanical self-debug** — requires lived friction memory of the failure mode.
+
+  None of these would surface from fresh-spawn retro agents. The §12.5.1 cross-session-persistence rule is the operational decision that preserves this quality going forward.
+
+**Wave 1C readiness (preview, full kickoff is separate):**
+- Three parallel tracks emerging from session-2 carry-forward: (1) construction-timer state machine + `_on_construction_complete` hook (gp-sys); (2) UI progress bar Control + `construction_progress_updated` signal (world-builder or ui-developer split per separation-of-concerns); (3) NavigationObstacle3D L25 architecture spike Path A or Path B (engine-architect; Task #120).
+- Engine-architect's recommendation: Track 3 runs LAST in wave 1C (after Tracks 1+2 close) per L23 worktree-isolation discipline. Lead's call at wave-1C-brief time.
+- 17 carry-forward items collected from session-2 retro (Task #117 + #120 + scattered): obsolete `has_method` guard removal at madan.gd:210; Mazra'eh+Ma'dan adjacency integration test; Mazra'eh's `is_gatherable` flip migration from `_on_placement_complete` to `_on_construction_complete`; Ma'dan's `register_extraction_modifier` ALSO gates on `is_complete`; `is_gatherable stays false during construction` test; madan.tscn:7-9 stale comment cleanup; `_madan_stats_or_null` 4th-site refactor; UNIT_ASB_SAVAR_KAMANDAR strings.csv gap; Mazra'eh + Ma'dan destruction lifecycle tests; free-placement delete/refund flow; cross-resource-kind modifier registration rejection; mine_node.tscn NavigationObstacle3D addition (L26); Pitfall #13 third surface (`is <ClassName>`) probe test; behavioral-vs-structural test backfill across existing NavigationObstacle3D tests; brief-time loremaster review for wave 2A Sarbaz-khaneh (third anchor-category variant — identity-bearing institutional); v1.4.0 RNC §3.2 post-spike prose; lint rule L6 deployment if Path A ratifies.
+
+**Session 2 effective shape:** 31 commits over the wave-1A + wave-1B PR (#14, merged at `6c72c6a`) plus the retro PR landing this entry. Two-dimensional Building taxonomy emerged (resource-producing § 4.5/§4.6 vs modifier-emitting §4.7) ready to host wave 2A's third dimension (production-emitting Sarbaz-khaneh). Strongest single retro signal: persistent-instance architecture is empirically load-bearing for the studio process's compounding-quality property — fresh-spawn retros would have produced shallower process learnings.
+
+**LATER status (no changes this entry):** L23 stays open (Pitfall #7 worktree-isolation runtime gap); L24 stays open (AttackMoveHandler sibling-order suspect-broken); L25 stays open (NavigationObstacle3D inert — wave 1C spike resolves); L26 stays open (mine_node.tscn missing NavigationObstacle3D — same spike).
 
 ---
 
