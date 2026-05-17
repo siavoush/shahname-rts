@@ -239,15 +239,20 @@ if [[ -n "${L5_HITS}" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# L6 — Manual full-map navmesh rebake outside terrain bootstrap
+# L6 — Async navmesh rebake outside terrain bootstrap
 #
-# Rationale: the navmesh is baked ONCE at terrain.gd:_ready() (Sim Contract /
-# RESOURCE_NODE_CONTRACT.md §3.2). Localized region rebakes triggered by
-# NavigationObstacle3D children with affect_navigation_mesh = true are
-# permitted (engine-managed, automatic). What is forbidden is gameplay code
-# calling bake_navigation_mesh() directly — that's a full-map rebuild and
-# breaks both the cost discipline and the determinism contract for
-# AI-vs-AI sims.
+# Rationale: the sync form bake_navigation_mesh(false) is permitted anywhere
+# gameplay code needs to trigger a localized rebake at placement-time (e.g.,
+# Building._on_placement_complete). It is deterministic — same inputs, same
+# navmesh, no racing sim ticks.
+#
+# The ASYNC form bake_navigation_mesh(true) is forbidden outside terrain.gd:
+# it spawns a background thread that can complete mid-sim-tick and produce a
+# non-deterministic navmesh state for AI-vs-AI sims (Sim Contract §1.6).
+#
+# Permitted everywhere:    bake_navigation_mesh(false)  — sync, deterministic
+# Forbidden outside allowlist: bake_navigation_mesh(true)   — async, non-det
+# Permitted inside allowlist: both forms (terrain initial bake at scene load)
 #
 # Allowlist (files exempt from L6):
 #   game/scripts/world/terrain.gd — the canonical bootstrap site
@@ -255,7 +260,7 @@ fi
 # Scope: game/scripts/**/*.gd minus the allowlist
 # ---------------------------------------------------------------------------
 
-L6_PATTERN='\bbake_navigation_mesh\s*\('
+L6_PATTERN='\bbake_navigation_mesh\s*\(\s*true\s*\)'
 L6_ALLOWLIST_TERRAIN="${SCRIPTS_DIR}/world/terrain.gd"
 
 L6_HITS="$(rg --with-filename --line-number "${L6_PATTERN}" \
@@ -273,10 +278,11 @@ if [[ -n "${L6_HITS}" ]]; then
 fi
 
 if [[ -n "${L6_HITS}" ]]; then
-  _fail_header "L6" "Manual full-map bake_navigation_mesh() call outside terrain bootstrap"
+  _fail_header "L6" "Async bake_navigation_mesh(true) call outside terrain bootstrap"
   echo "│    Allowed only in: ${L6_ALLOWLIST_TERRAIN}"
-  echo "│    Localized region rebakes via NavigationObstacle3D"
-  echo "│    affect_navigation_mesh = true are engine-managed and permitted."
+  echo "│    bake_navigation_mesh(false) is permitted anywhere — sync and"
+  echo "│    deterministic. bake_navigation_mesh(true) is forbidden outside"
+  echo "│    terrain.gd — async thread races sim ticks (Sim Contract §1.6)."
   echo "${L6_HITS}" | sed 's/^/│    /'
   _fail_footer
 fi
