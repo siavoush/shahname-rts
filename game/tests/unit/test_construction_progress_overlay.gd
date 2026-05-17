@@ -179,6 +179,54 @@ func test_construction_finalized_signal_erases_cache_entry() -> void:
 			"post-finalize, building renders no bar")
 
 
+func test_repeated_ensure_connect_does_not_duplicate_signal_wires() -> void:
+	# Live-test regression (fix-up after a023242): the overlay's _process loop
+	# calls _ensure_signal_connected every frame for every building in the
+	# &"buildings" group. The internal _connected dedupe must hold, and the
+	# is_connected() guard around the connect call must back it up — otherwise
+	# Godot logs an ERROR per frame for the already-connected signal.
+	#
+	# This test simulates many _process passes: call _ensure_signal_connected
+	# N times against the same building, then assert there's exactly one
+	# connection per signal. Godot 4: `Signal.get_connections()` returns an
+	# Array of Dictionaries, one per connection.
+	var b: FakeBuilding = _make_building(Vector2(400, 300))
+	for _i in range(10):
+		overlay.call(&"_ensure_signal_connected", b)
+	assert_eq(b.construction_progress_updated.get_connections().size(), 1,
+			"_ensure_signal_connected must not duplicate the progress wire across frames")
+	assert_eq(b.construction_finalized.get_connections().size(), 1,
+			"_ensure_signal_connected must not duplicate the finalize wire across frames")
+
+
+func test_finalized_handler_keeps_connection_alive() -> void:
+	# Live-test regression (fix-up after a023242): the OLD finalize handler
+	# erased `_connected[bid]` after Stage 2 fired. With the entry gone, the
+	# per-frame _ensure_signal_connected re-attempted the connect every
+	# subsequent frame — Godot logs ERROR each time. The fix: the handler
+	# erases ONLY the percent cache row, NOT the _connected dedupe entry.
+	# The connections themselves remain valid until the building queue_frees
+	# (where _prune_stale_cache drops them correctly).
+	var b: FakeBuilding = _make_building(Vector2(400, 300))
+	# Establish the connect pair through the production path.
+	overlay.call(&"_ensure_signal_connected", b)
+	assert_eq(b.construction_progress_updated.get_connections().size(), 1,
+			"precondition — progress signal connected once")
+	# Fire Stage 2; the handler should clear the cache row but keep the
+	# connection set intact.
+	b.construction_finalized.emit(0)  # placer_unit_id, arbitrary
+	# Subsequent frame: _ensure_signal_connected runs again. If the
+	# _connected entry survived (correct), this is a no-op. If it was
+	# erroneously erased (the live-test bug), the function would attempt
+	# to reconnect and Godot would log an ERROR — but the connection count
+	# would also climb to 2.
+	overlay.call(&"_ensure_signal_connected", b)
+	assert_eq(b.construction_progress_updated.get_connections().size(), 1,
+			"post-finalize, progress wire must remain a single connection")
+	assert_eq(b.construction_finalized.get_connections().size(), 1,
+			"post-finalize, finalize wire must remain a single connection")
+
+
 func test_full_percent_hides_bar_belt_and_braces() -> void:
 	# Defence-in-depth: percent_x100 == 10000 hides even if the cache somehow
 	# holds it. Per the construction_progress_updated emitter contract, the

@@ -316,16 +316,16 @@ func _on_construction_progress_updated(percent_x100: int, building: Object) -> v
 # erasure; the placer_unit_id arg is forwarded by the bound emitter and
 # accepted for signature compatibility.
 #
-# We also drop the connected-set entry so the per-frame
-# `_ensure_signal_connected` walk doesn't try to reconnect (Godot 4 reuses
-# instance_ids only after free, but the building is still alive at Stage 2
-# — without this drop, the dedupe entry leaks until the building queue_frees).
+# We do NOT drop `_connected[bid]` here — the building is still alive after
+# Stage 2 and the signal connections still exist. Dropping the dedupe entry
+# would cause `_ensure_signal_connected` to retry the connect on every
+# subsequent frame, which Godot logs as an ERROR each time
+# (live-test fix-up: was spamming the log post-completion). `_connected[bid]`
+# is correctly dropped by `_prune_stale_cache` when the building queue_frees.
 func _on_construction_finalized(_placer_unit_id: int, building: Object) -> void:
 	if building == null or not is_instance_valid(building):
 		return
-	var bid: int = building.get_instance_id()
-	_percent_cache.erase(bid)
-	_connected.erase(bid)
+	_percent_cache.erase(building.get_instance_id())
 
 
 # ============================================================================
@@ -425,15 +425,24 @@ func _ensure_signal_connected(building: Object) -> void:
 			self, &"_on_construction_progress_updated").bind(building)
 	var finalize_sink: Callable = Callable(
 			self, &"_on_construction_finalized").bind(building)
-	# Godot 4 signal API: `connect` returns OK on success, ERR_INVALID_PARAMETER
-	# on already-connected. The `_connected` dedupe should prevent the latter,
-	# but defensive Error checks cost nothing.
-	var err_progress: int = building.connect(
-			&"construction_progress_updated", progress_sink)
-	var err_finalize: int = building.connect(
-			&"construction_finalized", finalize_sink)
-	# Mark connected only if BOTH succeeded — partial connections would
-	# leave the bar visible forever (progress connected, finalize missing).
+	# Belt-and-braces — Godot 4 logs an ERROR if you `connect` an
+	# already-connected callable, even though the semantics are no-op.
+	# The `_connected[bid]` dict above is the primary dedupe; this
+	# `is_connected` guard is defensive against any path that bypasses
+	# the dict (e.g., a future caller invoking _ensure_signal_connected
+	# after a manual _connected.erase).
+	var err_progress: int = OK
+	if not building.is_connected(&"construction_progress_updated", progress_sink):
+		err_progress = building.connect(
+				&"construction_progress_updated", progress_sink)
+	var err_finalize: int = OK
+	if not building.is_connected(&"construction_finalized", finalize_sink):
+		err_finalize = building.connect(
+				&"construction_finalized", finalize_sink)
+	# Mark connected only if BOTH succeeded (or were already connected
+	# via the is_connected short-circuit, which yields err = OK). Partial
+	# connections would leave the bar visible forever (progress connected,
+	# finalize missing).
 	if err_progress == OK and err_finalize == OK:
 		_connected[bid] = true
 
