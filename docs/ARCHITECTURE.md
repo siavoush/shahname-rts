@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.21.2
+version: 0.22.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -15,11 +15,11 @@ ssot_for:
   - plan-vs-reality delta record
   - high-level system map (UI / simulation / event bus / foundation layers)
   - pinned Godot engine version
-references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md, RESOURCE_NODE_CONTRACT.md, AI_DIFFICULTY.md, ../02_IMPLEMENTATION_PLAN.md, STUDIO_PROCESS.md]
+references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md, RESOURCE_NODE_CONTRACT.md, AI_DIFFICULTY.md, ../02_IMPLEMENTATION_PLAN.md, STUDIO_PROCESS.md, WAVE_1C_NAVMESH_SPIKE.md]
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
 last_updated: 2026-05-17
-# bumped to v0.21.2 — Phase 3 session 2 close retro: process learnings + §9 cluster + Pitfall #12 + #13 promotion + cross-session persistence
+# bumped to v0.22.0 — Phase 3 session 3 wave 1C close: construction-timer + UI progress bar + Ma'dan-over-mine placement validity shipped; navmesh carving punted to dedicated wave (L25 unresolved with 4-round diagnostic carry-forward)
 ---
 
 # Architecture — Target Shape and Build State
@@ -1373,6 +1373,125 @@ Wave 3 ships integration tests covering the Phase 3 economic loop end-to-end. Fi
 **LATER items surfaced this wave:** none new. L16 (per-tick repath throttle in Attacking) remains the live concern at 50+ units — `_InstantScheduler` in cross-feature smoke test confirmed re-issue every tick during MockPathScheduler starvation; added explicit comment in test noting the L16 surface.
 
 **Coverage gaps (intentional):** nav-obstacle actual routing test deferred (headless limitation, no display server → NavigationServer bake fails); production-queue pop-ceiling test deferred (no unit production in Phase 3 session 1 yet).
+
+---
+
+### v0.22.0 — Phase 3 session 3 wave 1C close: construction-timer + UI progress bar + Ma'dan-over-mine placement validity; navmesh punted to dedicated wave (2026-05-17)
+
+Phase 3 session 3 wave 1C closes with three shipped tracks + a deliberately deferred navmesh sub-track. 19 commits clean on `feat/phase-3-session-3-wave-1c`. Test count 1180 → 1247 (+67 across the wave). 0 failures, 5 pending (3 pre-existing + 2 documented navmesh-headless limits).
+
+**What shipped:**
+
+- **Construction-timer state machine (Track 1, gp-sys-p3s3).** Building base gains the two-stage lifecycle (`_on_placement_complete` = structural / Stage 1; `_on_construction_complete` = operational / Stage 2). UnitState_Constructing reads per-kind `construction_ticks` from BalanceData (Khaneh 90 / Mazra'eh 540 / Ma'dan 660 — balance-engineer-p3s3's citation-density-anchored Open Consultation at cc449e5). Worker dwells `construction_ticks` ticks at the build site, emitting `Building.construction_progress_updated(percent_x100)` per tick. At dwell completion, calls `_on_construction_complete()` (subclass virtual fires first — Mazra'eh's `is_gatherable = true`, Ma'dan's `register_extraction_modifier` — THEN `construction_finalized` signal emits). Mazra'eh and Ma'dan subclass overrides correctly migrated from Stage 1 to Stage 2 with behavioral-vs-structural tests asserting mid-construction-flag-stays-false. SHA chain: `2cedf81` + `a507512` + `e58d55c` + `3fbce2b` (construction_finalized signal follow-on after ui-developer caught the integration gap).
+
+- **UI construction progress bar (Track 2A, ui-developer-p3s3).** `ConstructionProgressOverlay` Control wires above each Building under construction. Consumes `construction_progress_updated` for value, `construction_finalized` for hide-trigger. mouse_filter = IGNORE (no box-select interference). Translation key `UI_BUILDING_CONSTRUCTION_PROGRESS` ("BUILDING %d%%") + regenerated `strings.en.translation` binary. 16 behavioral tests including the regression-locking poll-loop test (`test_repeated_ensure_connect_does_not_duplicate_signal_wires` — exposed via live-test that a premature `_connected.erase(bid)` in the finalize handler was causing per-frame duplicate-connect attempts). SHA: `a023242` + `280d27a` (fix-up).
+
+- **Track 2B Building signal seam (world-builder-p3s2).** `signal construction_progress_updated(percent_x100: int)` declared on Building base with full contract documentation (emitted by UnitState_Constructing, no double-emit at completion, clamped <10000 by design). Track 2A's consumer + Track 1's emitter both bind cleanly to this signal. SHA: `82bf198`.
+
+- **Ma'dan-over-mine placement validity (Phase 2D, gp-sys-p3s3).** Live-test surfaced that Ma'dan could be placed directly on a Coin mine deposit, violating the cultural-mechanical intent (Ma'dan = supervisory structure adjacent to mine, not stacked on top). Fix generalized to ANY building over ANY resource node — extends `BuildPlacementHandler._is_placement_valid_at` with a second loop iterating the `&"resource_nodes"` group with 2.5m overlap threshold. 5 new behavioral tests including the full confirm-click-no-dispatch flow. SHA: `d078fd3`. Live-test confirmed by lead.
+
+**What didn't ship (deliberately deferred):**
+
+- **Navmesh carving (L25 + L26).** Wave 1C's spike track (`docs/WAVE_1C_NAVMESH_SPIKE.md` originally v0.1.0-rc.1) ratified Path A as the architectural approach, but four rounds of implementation-plus-live-test failed to produce a working carve. Each round revealed a deeper Godot 4.6.2 API default that the prior round hadn't accounted for:
+
+  | Round | Mechanism added | Empirical result |
+  |---|---|---|
+  | 0 | `affect_navigation_mesh = true` + `vertices` polygon (spike prescription) | Inert — bake-time participation, no rebake trigger |
+  | 1 (hyp 5) | + `carve_navigation_mesh = true` | Inert — participation hint, still no rebake trigger |
+  | 2 (hyp 5h) | + manual `region.bake_navigation_mesh(false)` from `_on_placement_complete` | Bake fires (`state=1` confirmed) but obstacles invisible — source-geometry parse scope is region's subtree only |
+  | 3 (hyp 6a) | + `geometry_source_geometry_mode = SOURCE_GEOMETRY_ROOT_NODE_CHILDREN` | Parser scope widened, building's StaticBody3D + CollisionShape3D + NavigationObstacle3D now in parse scope. **Still no carve.** Empirical waypoint signature `[(0,0.5,-10), (0,0.5,0), (0,0.5,10)]` — straight through origin |
+
+  Lead's option-B decision (2026-05-17): close wave 1C cleanly with three deliverables shipped + navmesh as documented known-issue; punt the dedicated navmesh investigation to its own wave with proper time budget. The currently-shipped configuration (dual flags + vertices polygons + manual rebake + ROOT_NODE_CHILDREN parse scope) is forward-investment for the dedicated wave — not a rollback obligation. The next-wave engineer inherits a four-round diagnostic trail (in `docs/WAVE_1C_NAVMESH_SPIKE.md` v0.2.0 + §7 L25 entry) rather than starting from zero. RNC §3.2 v1.3.1 → v1.3.2 honesty patch lands at `11c7136` with the full architecture-honesty disclosure.
+
+  Routed to design chat via `QUESTIONS_FOR_DESIGN.md` (2026-05-17 entry): when should the dedicated navmesh wave land in `02_IMPLEMENTATION_PLAN.md`? Three positions surfaced (block 2A / parallel with 2A / defer to Phase 4 with Path B). Design ratification pending.
+
+**Full SHA chain (19 commits, chronological):**
+
+```
+82bf198  feat(world): Building.construction_progress_updated signal — Track 2B (world-builder-p3s2)
+cc449e5  balance(wave-1c): differentiate Mazra'eh/Ma'dan construction_ticks (balance-engineer-p3s3)
+90d39bd  feat(world): Wave 1C Phase 2A — Path A NavigationObstacle3D static-carve activation (world-builder-p3s2)
+2cedf81  feat(building): two-stage lifecycle + per-kind construction_ticks read (gp-sys-p3s3)
+a507512  feat(buildings): Mazra'eh + Ma'dan operational gating via _on_construction_complete (gp-sys-p3s3)
+e58d55c  test(construct): behavioral coverage for two-stage lifecycle (gp-sys-p3s3)
+3fbce2b  feat(building): construction_finalized signal — Track 1 follow-on (gp-sys-p3s3)
+a023242  feat(ui): Track 2A construction progress bar overlay (ui-developer-p3s3)
+8ebc2dc  test(qa): Phase 2B — L6 lint rule + behavioral nav-obstacle carving test (qa-engineer-p3s3)
+280d27a  fix(ui): is_connected guard for overlay signal wires — Track 2A live-test fix-up (ui-developer-p3s3)
+bc34c39  fix(world): Task #141 — add carve_navigation_mesh = true to all NavigationObstacle3D nodes (world-builder-p3s2)
+0184b52  test(qa): document confirmed headless carve limitation post-probe (qa-engineer-p3s3)
+d078fd3  fix(placement): reject building placement over resource nodes — Task #143 (gp-sys-p3s3)
+c480303  fix(lint): L6 revised — forbid only async bake_navigation_mesh(true) (qa-engineer-p3s3)
+910bd9a  fix(world): Task #144 — manual navmesh rebake from Building._on_placement_complete (world-builder-p3s2)
+7dc2fd5  test(qa): Task #145 — behavioral test updated for sync-bake probe result (qa-engineer-p3s3)
+82c46d5  test(world): Task #144 follow-up — behavioral test for navmesh rebake path (world-builder-p3s2)
+be8c355  fix(world): Task #147 — SOURCE_GEOMETRY_ROOT_NODE_CHILDREN in terrain.gd — hypothesis 6a (world-builder-p3s2)
+11c7136  docs(navmesh): Phase 2C honest archaeology — wave 1C closes L25 unresolved (engine-architect-p3s2)
+```
+
+**Process discipline outcomes:**
+
+- **Pitfall #7 count = 0** for the wave. Vs session-2 wave-1A's 3 incidents. Empirical validation that the unconditional pathspec form + sequenced dispatch + broadcast-on-block + stash-on-block cluster works. The one workspace incident (world-builder's stash that captured ui-developer's WIP) was NOT a Pitfall #7 — it was a missing-coordination-protocol incident that fed retro candidate #4 (broadcast-before-stash rule).
+
+- **Persistent-instance architecture validated under stress.** 4 rounds of navmesh diagnostic + workspace incident + ui-developer fix-up rounds + scope-revision pivot — agents stayed coherent, picked up where they left off, brought lived memory of prior rounds to bear. §12.5.1 cross-session persistence empirically load-bearing for the studio process to function under multi-round friction.
+
+- **Distribution-discipline (ownership beats warmth) sustained.** Every wave-1C dispatch landed on the actual owner (Track 1 → gp-sys, Track 2A → ui-developer, Track 2B + Phase 2A scenes → world-builder, Phase 2B qa work → qa-engineer, Phase 2C contract → engine-architect, balance values → balance-engineer, placement validity → gp-sys, overlay fix-up → ui-developer, signal follow-on → gp-sys). Zero "give it to the warmest agent" routing this wave. Session-2 retro correction stuck.
+
+- **Live-test gate fired correctly.** Lead-driven `tools/run_game.sh` empirical confirmation surfaced 3 production bugs that headless tests structurally couldn't catch: Ma'dan-over-mine placement (Phase 2D); ui-developer's overlay double-connect ERROR spam; the entire navmesh carve gap. All caught upstream of any merge. Manifesto Principle 1 (Truth-Seeking) operating at the workflow level.
+
+- **External research as a first-class verification tool (operational learning).** The Godot 4.6 NavigationObstacle3D pattern was in the public tutorial the whole time — 4 rounds of binary probing was ~90 minutes of cumulative diagnostic when ~5 minutes of docs reading would have surfaced the canonical pattern. This is a new §9 retro candidate (research-discipline rule) for session-3 close retro.
+
+**§9 retro candidates from session 3 (10+ items, full ratification at session-3 close — Task #148):**
+
+1. **Engine-feature runtime verification (formalized).** Four drift incidents in this domain across rounds 0-3 of the wave-1C navmesh sub-track. Rule: "For any Godot-API-dependent architecture claim, the spike's verification phase MUST enumerate API defaults at every step in the call chain — not just the API surface. Probe artifacts (binary symbol grep, headless test result, minimal-repro) must be cited inline. 'Verified by docs' without artifact reference is the trap." Authored: engine-architect-p3s2 (rounds 1-3).
+
+2. **Research-discipline rule (NEW).** External research is first-class. For engine/library/OS behavior claims: docs lookup → GitHub issues/proposals → only THEN binary probing. Surfaced via user's question 2026-05-17. The 90-minutes-vs-5-minutes empirical contrast on the navmesh investigation is the canonical case.
+
+3. **Spike-scope discipline (NEW).** When a spike's implementation has spiraled past N=2 rounds, pause and re-evaluate scope. Punt the hard problem to its own wave with dedicated time budget. Honest archaeology + diagnostic carry-forward > aspirational implementation that doesn't close. Authored: lead (option-B decision 2026-05-17).
+
+4. **Broadcast-before-stash rule (NEW).** Before `git stash push -u` that touches files in another agent's known WIP scope, broadcast to lead via SendMessage so affected agents know their state is parked, not lost. Authored: lead + world-builder-p3s2 after the wave-1C workspace incident.
+
+5. **Local-safety-vs-pipeline-integrity tension (NEW).** When an agent's commit is at risk from race contamination, the temptation to "land before another race buries it" is a local optimization that L23 sequencing explicitly forbids. Right move: broadcast [blocked] to lead, request explicit unblock. Authored: world-builder-p3s2 self-criticism.
+
+6. **Inter-agent stash visibility (NEW).** Multi-agent git operations create reflog + stash state that's opaque even to the participating agents. Stash titles + commit-message cross-references become load-bearing documentation. Surfaced empirically when lead misread the workspace incident's reflog timeline initially.
+
+7. **Poll-loop test-coverage discipline (NEW).** Unit tests that fire signals once cannot catch the "re-poll loop" bug class. Poll-loop consumers need at least one test running N iterations after a lifecycle event, asserting no resource-allocation creep. Surfaced via ui-developer-p3s3's `_connected.erase(bid)` bug; locked by `test_repeated_ensure_connect_does_not_duplicate_signal_wires`.
+
+8. **GDScript lambda capture quirk (Pitfall #14 candidate).** Lambda captures of locals that get reassigned in the enclosing scope are unreliable. Use SceneTree-readouts or signal-watcher utilities. Surfaced in gp-sys's construction_finalized emit-ordering test; carry-forward note added to ui-developer's test framework choice.
+
+9. **Lead-brief sequencing errors caught by specialist domain reading is a legitimate review surface.** Engine-architect-p3s2 caught Task #137's premature sequencing (Phase 2C blocked-by Phase 2A, not Phase 3) and surfaced it with the SSOT-prose-ahead-of-runtime-verification frame — directly applying their L25 discipline to lead's dispatch. Validates that specialists reviewing lead briefs is a productive review surface.
+
+10. **§9 cluster (2026-05-17 session-2) operationally validated.** All four anti-loop staging-discipline proposals (unconditional pathspec, stash-on-block, blocked-WIP-stash, broadcast-[blocked]) operationally fired this wave. Pitfall #7 count = 0 confirms the cluster works in practice, not just in theory.
+
+**Wave-level architectural decisions for downstream:**
+
+- **Two-stage Building lifecycle locked.** Stage 1 (structural / `_on_placement_complete`) = building exists in world; Stage 2 (operational / `_on_construction_complete`) = subclass operational state activates. Future Sarbaz-khaneh + Atashkadeh + Qal'eh implementations inherit this pattern. The `construction_finalized(placer_unit_id: int)` signal is the canonical post-Stage-2 observable for future consumers (audio cues, particles, tutorial hooks, AI signals).
+
+- **Cultural-mechanical-correspondence placement-validity rule.** Buildings cannot overlap resource nodes. Generalized to ALL buildings over ALL resource nodes (not Ma'dan-specific). Future grain deposits, future Phase 4+ resource types inherit the same rule via the `&"resource_nodes"` group + 2.5m overlap threshold. Configurable per-kind via `BalanceData.placement_overlap_radius_m` if the threshold needs tuning later.
+
+- **Navmesh scene-config is forward-investment.** building.tscn / madan.tscn / mine_node.tscn carry dual flags + vertices polygons; terrain.gd uses ROOT_NODE_CHILDREN parser scope; building.gd's _on_placement_complete manually rebakes. Currently inert in production. The dedicated navmesh wave inherits these as starting state and resolves the actual carve mechanism.
+
+- **The L6 lint rule revised** to forbid only async `bake_navigation_mesh(true)` outside terrain.gd. Sync form permitted everywhere (sim-tick safe + deterministic). Surface preserved against per-tick rebake races; allows the manual rebake pattern.
+
+**LATER status:**
+
+- **L25 stays open** — NavigationObstacle3D inert under shipped architecture (4-round diagnostic trail in §7 + spike v0.2.0). Dedicated wave inherits.
+- **L26 stays structurally closed but mechanism-still-pending L25** — mine_node.tscn now has the NavigationObstacle3D node with correct flags + vertices, but carve doesn't fire (same root-cause as L25).
+- **L23 stays open** — Pitfall #7 worktree-isolation runtime gap. Sequential dispatch + §9 anti-loop discipline cluster remain working mitigation; wave 1C empirically validated cluster with Pitfall #7 count = 0.
+- **L24 stays open** — AttackMoveHandler sibling-order suspect-broken. Not touched this wave.
+
+**Carry-forward to session 4 / wave 2A (Sarbaz-khaneh):**
+
+- Sarbaz-khaneh is the third Building variant (anchor-category: identity-bearing institutional). Loremaster brief-time review applies (third canonical clone of the cultural-note template — automaticity threshold crossed at session 2; wave 2A is the first true production application).
+- Two-stage lifecycle inherited — Sarbaz-khaneh's military-production subclass override goes in `_on_construction_complete`, not `_on_placement_complete`.
+- Placement-validity rule inherited — Sarbaz-khaneh can't be placed over resource nodes.
+- Navmesh state inherited — if the dedicated navmesh wave hasn't closed by session 4, Sarbaz-khaneh's NavigationObstacle3D config follows building.tscn's pattern (dual flags + vertices polygon, currently inert but forward-investment).
+- Construction-ticks BalanceData value — balance-engineer-p3s3 owns; likely ~30s scale (production-building tier per 01_CORE_MECHANICS.md §5).
+- The persistent-instance team (gp-sys-p3s3, ui-developer-p3s3, world-builder-p3s2, balance-engineer-p3s3, qa-engineer-p3s3, engine-architect-p3s2, plus the in-team reviewer trio + loremaster) is intact and persistent across the session boundary per §12.5.1.
+
+**Session 3 effective shape:** 19 commits + 1 wave-close commit (this entry's commit) + likely 1-2 retro commits = ~21-22 commits. Three working tracks shipped + one deferred. Lead's option-B punt decision is the structural correction that prevented the wave from running indefinitely on a single hard problem.
+
+**Strongest single retro signal:** the **research-discipline rule** (#2 above) is the meta-learning of the session. The Godot navmesh canonical pattern was in the public docs the whole time; we just didn't reach for them by default. This rule applied alongside engine-architect's "enumerate API defaults" rule (#1) would have compressed wave 1C from 19 commits to a much tighter shape. Going forward, agent definitions need to make external research a first-class verification tool, not an escalation path.
 
 ---
 
