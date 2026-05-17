@@ -81,9 +81,12 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
 mesh = SubResource("BoxMesh_sarbaz_khaneh")
 material_override = SubResource("StandardMaterial3D_sarbaz_khaneh")
 
-[node name="StaticBody3D/CollisionShape3D" parent="." index="0"]
+[node name="CollisionShape3D" parent="StaticBody3D"]
 ; Override collision shape to match the 3.0×1.2×2.0 mesh footprint.
 ; Y-offset 0.6 co-locates with the mesh centre.
+; Pitfall #15: Godot inherited-scene nested-child override syntax requires
+; parent="StaticBody3D" (path in parent attr), NOT name="StaticBody3D/CollisionShape3D"
+; (slash in name is a literal char, not a path separator — causes "node vanished" warning).
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
 shape = SubResource("BoxShape3D_sarbaz_khaneh")
 
