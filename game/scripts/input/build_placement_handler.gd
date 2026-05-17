@@ -363,8 +363,15 @@ func _update_ghost_from_screen(screen_pos: Vector2) -> void:
 
 # Validity check — currently:
 #   1. Hit position is on the terrain plane (Y close to 0).
-#   2. Position does not overlap an existing building (group lookup +
-#      simple distance threshold).
+#   2. Position does not overlap an existing building (&"buildings" group).
+#   3. Position does not overlap an existing resource node (&"resource_nodes"
+#      group — mines, future grain deposits). Task #143 fix: prior versions
+#      missed this, allowing a Ma'dan to be placed directly ON a mine
+#      cylinder (visually stacked, mechanically broken — the design intent
+#      is Ma'dan ADJACENT to a mine within modifier_radius_m to buff it).
+#      The check generalizes: any building placed over any resource node is
+#      now rejected (not just Ma'dan), since stacking a Khaneh / Mazra'eh
+#      on a mine is equally nonsensical visually and mechanically.
 # Future (Phase 4+): on-navmesh check, tech-radius constraint, resource
 # requirements.
 func _is_placement_valid_at(pos: Vector3) -> bool:
@@ -372,11 +379,17 @@ func _is_placement_valid_at(pos: Vector3) -> bool:
 	# tolerance for raycast slop.
 	if pos.y > 1.0 or pos.y < -1.0:
 		return false
+	# Overlap threshold for both groups. 2.5m derives from the Khaneh
+	# footprint 2x2 (half-diagonal ~1.4) plus margin. For MineNode the
+	# cylinder radius is 0.75 and a Ma'dan footprint is 2.5x2.5 (half-
+	# diagonal ~1.77), so 1.77 + 0.75 = ~2.52 — the same threshold gives
+	# a sensible no-overlap gap. Per-kind footprint reads via
+	# Building.get_footprint_aabb() are a future refinement
+	# (Phase 4+); 2.5m blanket is fine at MVP scope.
+	const _OVERLAP_THRESHOLD: float = 2.5
+	const _OVERLAP_THRESHOLD_SQ: float = _OVERLAP_THRESHOLD * _OVERLAP_THRESHOLD
 	# Overlap check against placed buildings. Use the &"buildings"
 	# group (every Building joins it on _ready per deliverable 1).
-	# Threshold = 2.5 (Khaneh footprint 2x2 with half-diagonal ~1.4,
-	# plus margin). Future kinds may need per-kind footprint reads.
-	const _OVERLAP_THRESHOLD: float = 2.5
 	for b: Node in get_tree().get_nodes_in_group(&"buildings"):
 		if not is_instance_valid(b):
 			continue
@@ -385,7 +398,22 @@ func _is_placement_valid_at(pos: Vector3) -> bool:
 		var bp: Vector3 = (b as Node3D).global_position
 		var dx: float = bp.x - pos.x
 		var dz: float = bp.z - pos.z
-		if dx * dx + dz * dz < _OVERLAP_THRESHOLD * _OVERLAP_THRESHOLD:
+		if dx * dx + dz * dz < _OVERLAP_THRESHOLD_SQ:
+			return false
+	# Overlap check against placed resource nodes (mines today; future
+	# grain deposits / quarries). ResourceNode._ready joins
+	# &"resource_nodes" (resource_node.gd:133). Task #143 — live-test
+	# surfaced a Ma'dan placed directly on a mine deposit. The same
+	# check guards any building from being placed on any resource node.
+	for r: Node in get_tree().get_nodes_in_group(&"resource_nodes"):
+		if not is_instance_valid(r):
+			continue
+		if not (r is Node3D):
+			continue
+		var rp: Vector3 = (r as Node3D).global_position
+		var rdx: float = rp.x - pos.x
+		var rdz: float = rp.z - pos.z
+		if rdx * rdx + rdz * rdz < _OVERLAP_THRESHOLD_SQ:
 			return false
 	return true
 

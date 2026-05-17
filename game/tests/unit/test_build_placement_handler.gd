@@ -261,6 +261,104 @@ func test_validity_accepts_position_away_from_existing_building() -> void:
 
 
 # ---------------------------------------------------------------------------
+# Task #143 — placement validity rejects overlap with resource nodes
+# ---------------------------------------------------------------------------
+#
+# Live-test surfaced (screenshot evidence): a Ma'dan could be placed
+# directly ON a mine deposit. Design intent is Ma'dan ADJACENT to a mine
+# (within modifier_radius_m = 4.0m) to buff it — never stacked on top.
+# The fix extends _is_placement_valid_at to query the &"resource_nodes"
+# group alongside &"buildings". Generalizes: ANY building stacked on ANY
+# resource node is now rejected.
+
+func test_validity_rejects_overlap_with_mine() -> void:
+	# Spawn a MineNode at a known position. Ma'dan placement at the same
+	# position must be rejected.
+	_handler = _spawn_handler()
+	var mine: Variant = preload(
+		"res://scenes/world/resource_nodes/mine_node.tscn").instantiate()
+	add_child_autofree(mine)
+	mine.global_position = Vector3(10.0, 0.0, 5.0)
+	# Exact-position overlap.
+	var valid: bool = _handler._is_placement_valid_at(Vector3(10.0, 0.0, 5.0))
+	assert_false(valid,
+		"Task #143: placement at the exact position of a mine is INVALID. "
+		+ "Prior to the fix, this returned true (Ma'dan stacked on mine).")
+
+
+func test_validity_rejects_placement_within_overlap_threshold_of_mine() -> void:
+	# Just inside the 2.5m overlap threshold — still INVALID.
+	_handler = _spawn_handler()
+	var mine: Variant = preload(
+		"res://scenes/world/resource_nodes/mine_node.tscn").instantiate()
+	add_child_autofree(mine)
+	mine.global_position = Vector3(10.0, 0.0, 5.0)
+	# 2.0m away (well within 2.5m threshold) — should be rejected.
+	var valid: bool = _handler._is_placement_valid_at(Vector3(12.0, 0.0, 5.0))
+	assert_false(valid,
+		"Task #143: placement 2.0m from a mine (inside 2.5m overlap "
+		+ "threshold) must be rejected as visually-stacked.")
+
+
+func test_validity_accepts_placement_adjacent_to_mine_for_buff() -> void:
+	# 3.5m away — BEYOND the overlap threshold (2.5m) but WITHIN the
+	# Ma'dan modifier_radius_m (4.0m). This is the design-intent
+	# placement: adjacent, not stacked, eligible to buff the mine.
+	_handler = _spawn_handler()
+	var mine: Variant = preload(
+		"res://scenes/world/resource_nodes/mine_node.tscn").instantiate()
+	add_child_autofree(mine)
+	mine.global_position = Vector3(10.0, 0.0, 5.0)
+	# 3.5m away — outside 2.5m overlap, inside 4.0m modifier radius.
+	var valid: bool = _handler._is_placement_valid_at(Vector3(13.5, 0.0, 5.0))
+	assert_true(valid,
+		"Task #143: placement 3.5m from a mine (outside 2.5m overlap, "
+		+ "inside 4.0m modifier radius) is VALID — design-intent "
+		+ "Ma'dan-buffs-mine layout.")
+
+
+func test_validity_accepts_placement_far_from_mine() -> void:
+	# Sanity: a placement well away from any mine is valid (no
+	# regression of the empty-terrain case).
+	_handler = _spawn_handler()
+	var mine: Variant = preload(
+		"res://scenes/world/resource_nodes/mine_node.tscn").instantiate()
+	add_child_autofree(mine)
+	mine.global_position = Vector3(10.0, 0.0, 5.0)
+	# 50m away.
+	var valid: bool = _handler._is_placement_valid_at(Vector3(50.0, 0.0, 5.0))
+	assert_true(valid,
+		"Placement 50m from a mine is unaffected by the validity check")
+
+
+# BEHAVIORAL — confirm-click branch, not just the inspector.
+func test_confirm_click_on_mine_position_does_not_dispatch() -> void:
+	# Full flow: kargar selected, build_placement_started for Ma'dan,
+	# confirm click on a position that overlaps a mine. The dispatch
+	# must be rejected — kargar stays in idle, ghost stays in placement
+	# mode (player can retry).
+	_handler = _spawn_handler()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var mine: Variant = preload(
+		"res://scenes/world/resource_nodes/mine_node.tscn").instantiate()
+	add_child_autofree(mine)
+	mine.global_position = Vector3(10.0, 0.0, 5.0)
+	EventBus.build_placement_started.emit(&"madan", 4000)
+	# Confirm at the overlapping position.
+	_handler.process_confirm_click_hit(_terrain_hit(Vector3(10.0, 0.0, 5.0)))
+	# Placement mode stays active — player can move the cursor and retry.
+	assert_true(_handler.is_placement_active(),
+		"Task #143 BEHAVIORAL: confirm on mine position keeps placement "
+		+ "mode active (player retries) — no dispatch occurred")
+	# Kargar didn't get a dispatch.
+	assert_ne(_kargar.fsm.current.id, &"constructing",
+		"Task #143 BEHAVIORAL: Kargar did NOT transition to Constructing "
+		+ "when click target overlapped a mine. The Ma'dan over mine "
+		+ "stacking bug is fixed.")
+
+
+# ---------------------------------------------------------------------------
 # Confirm click on invalid position — rejects, ghost stays
 # ---------------------------------------------------------------------------
 
