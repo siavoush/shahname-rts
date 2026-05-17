@@ -91,3 +91,50 @@ NavigationObstacle3D inert reality + mine_node.tscn missing NavigationObstacle3D
 - **Path B:** NavigationAgent3D + RVO migration. 1-2 days + determinism work as wild card. Out of scope unless Path A fails.
 
 Path A spike's deliverables: 4 scene edits (building.tscn + khaneh.tscn + madan.tscn + mine_node.tscn — closing L26) + lint rule L6 (`\bbake_navigation_mesh\s*\(` outside terrain.gd is forbidden) + RNC §3.2 v1.4.0 prose + behavioral regression test + ARCHITECTURE.md §6 v0.22.0 entry. Sequential (LAST in wave 1C) per L23 worktree-isolation discipline; verifies against shipped construction-timer (does the carve fire on `is_complete = true` transition or at `_ready`?).
+
+---
+
+## Session-3 retro additions (2026-05-17)
+
+### Engine-feature runtime verification — enumerate API defaults at every step in the call chain
+
+The session-2 retro added "contract-prose hedging for engine-feature claims" (above). Session-3's wave-1C 4-round navmesh diagnostic produced the sharper rule that you authored across rounds 1-3: **For any Godot-API-dependent architecture claim, the spike's verification phase MUST enumerate API defaults at every step in the call chain — not just the API surface.**
+
+Each round of the wave-1C navmesh diagnostic revealed an unspoken Godot default the prior round hadn't accounted for:
+- Round 0 (initial spike): missed that `affect_navigation_mesh` is bake-time-only (default: no auto-trigger).
+- Round 1 (hyp 5): missed that `carve_navigation_mesh` is a participation hint, not a trigger (default: no auto-rebake exists).
+- Round 2 (hyp 5h): missed that `region.bake_navigation_mesh()` parses source-geometry from the region's subtree only (default: `SOURCE_GEOMETRY_NAVMESH_CHILDREN`).
+- Round 3 (hyp 6a): revealed the parser-scope default — still didn't close the carve (deferred to dedicated wave).
+
+**Operational form for your spike reports:** §1.3 "adjacent-code verification" splits into:
+- **§1.3a — call-site verification.** What calls the API; what does the call shape look like.
+- **§1.3b — API-default enumeration.** What is the default value of every flag/property at every layer of the call chain. Each default cited with verbatim docs quote OR Godot source-line reference OR binary-symbol-probe artifact. No inferred defaults.
+
+The discipline binds via mandatory probe artifacts. "Verified by docs" without artifact reference is the trap.
+
+### Research-discipline rule — external research is a first-class verification tool
+
+The Godot 4.6 canonical pattern for runtime NavigationObstacle3D + bake_navigation_mesh + SOURCE_GEOMETRY_ROOT_NODE_CHILDREN was in the public Godot tutorial the whole time. Four rounds of binary-symbol probing was ~90 minutes when ~5 minutes of docs reading at round 0 would have surfaced the canonical pattern. Going forward, the verification sequence for any engine/library/OS-behavior claim is:
+
+1. **Official docs lookup** (canonical class/API reference + use-case tutorial page).
+2. **GitHub source/issues/proposals search** (engine source itself, plus proposals + issues for known gaps and design discussions).
+3. **Community knowledge** (official forum threads, established tutorials, sample-project repos).
+4. **ONLY THEN binary-symbol probing, minimal-repro probe scripts, or other empirical-bench techniques.**
+
+The probing technique is correct discipline; the SEQUENCING is what's new — research before probing, every time. Binary probes are expensive; docs lookup is cheap and usually answers the same question in seconds. Cites Manifesto Principle 4 (Lean Iteration).
+
+**Operational form:** for spike-report §1.3b API-default enumeration, the FIRST entry per default is either a docs citation (URL + verbatim quote) or a docs-doesn't-cover-this note (in which case go to step 2/3/4). Binary-probe artifacts come AFTER the docs lookup in the report's ordering.
+
+### Spike-scope discipline — N=2 round threshold
+
+When your spike's implementation has spiraled past N=2 rounds of "ship → live-test → fail → re-diagnose," escalate to lead with a scope-reevaluation request. Lead may choose to punt the spike to a dedicated wave (the wave-1C navmesh option-B pattern) rather than holding the original wave's other deliverables hostage. **Honest archaeology + diagnostic carry-forward is more valuable than aspirational implementation that doesn't close.**
+
+The dedicated wave inherits the rounds-of-diagnostic state as starting-from-N rather than starting-from-zero. Your v0.2.0 spike-amendment shape (4-round archaeology with empirical-state + hypothesis-surface + mechanism candidates + attribution per round) is the canonical inheritance artifact.
+
+### Multi-round investigation reporting — consolidate at investigation close
+
+Session-2 cluster added "single-report-per-investigation discipline" (consolidate findings into one report, no parallel mini-reports). Session-3 wave-1C tested this across 4 navmesh rounds: each round was technically a new investigation (new hypothesis space, new prescription), so the discipline held — one report per investigation cycle. **Refinement (your own observation at retro):** when a multi-round investigation produces N rounds of "ship → fail → re-diagnose," the FINAL consolidated report (the v0.2.0 spike amendment) is the canonical artifact; per-round reports serve as interim status pings. The consolidated artifact is the truth-source for the next inheritor.
+
+### Cross-reference to PROCESS_EXPERIMENTS.md Pitfall #14
+
+GDScript lambda capture of reassigned locals is unreliable — promoted at session-3 close to permanent. When you author probe-test scripts during a diagnostic round, prefer post-await SceneTree readouts or `Signal.get_connections()` introspection over lambda observers. Full mitigation patterns in `docs/PROCESS_EXPERIMENTS.md` Pitfall #14.
