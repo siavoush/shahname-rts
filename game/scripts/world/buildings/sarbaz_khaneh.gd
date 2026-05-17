@@ -22,40 +22,86 @@ extends "res://scripts/world/buildings/building.gd"
 ##     is replaced at Commit 1.5 with loremaster's content per the
 ##     coordination plan in 02h §3.
 ##
-## ## Cultural note — PLACEHOLDER for Commit 1.5 (loremaster framing)
+## Cultural note — sarbaz-khaneh (سرباز‌خانه), the institution that names the soldier:
 ##
-## *Sarbaz-khaneh* (سربازخانه, lit. "soldier-house") — the formal
-## institution where soldiers (sarbazan) are housed, trained, and made
-## ready for the army. The mechanic surfaces this transformation: at
-## Stage 1 (placement) the building physically exists, but it is not
-## yet operational. At Stage 2 (construction complete) the building
-## becomes *ready to produce* — soldiers can now be trained here.
+##   *Sarbaz* (lit. "head-staked", one who has wagered his head — i.e. has
+##   sworn loyalty on pain of death; the modern Persian gloss "soldier" loses
+##   the oath register) + *khaneh* (house/hall). The compound is "soldier-
+##   house" in dictionary form, but the institutional shape carries the
+##   weight: the building where the oath is taken, the formation drilled, the
+##   role formalized. Iran's military identity, in Shahnameh frame, is not
+##   improvised levy — it is the *sepah* (سپاه, "army-as-institution"; the
+##   gloss "army" loses the institutional/standing layer Iran's military
+##   tradition rests on). Sarbaz-khaneh is where sepah is made.
 ##
-## The four-part cultural-note template (per world-builder's session-2
-## retro pattern) will be filled by loremaster:
-##   1. Cultural referent — which Shahnameh episodes / characters anchor
-##      the "training the army" institutional frame? (Kavus's failed
-##      Mazandaran campaign? Rostam's tutelage of Sohrab? The standing
-##      armies of Fereydun / Manuchehr?)
-##   2. Mechanic-surfaces-truth — how does the construction-timer +
-##      ready-to-produce gating render the cultural truth in gameplay?
-##   3. Cross-faction caveat — Turan's analogue is NOT a barracks; the
-##      Turanian steppe-army model is closer to clan-mobilization than
-##      formal institution. The structural mismatch is sharp; do NOT
-##      bake "barracks" semantics into the Building base class.
-##   4. Forward-compat — future production-queue (Phase 4) inherits the
-##      institutional frame: training-time, unit-cost, rally-points
-##      all surface different facets of "the army takes time to forge."
+##   The Shahnameh's load-bearing distinction (00_SHAHNAMEH_RESEARCH.md §3
+##   lines 161-165 + §4 lines 187-191): Iran fields "champion-driven warfare
+##   led by heroic pahlavans" backed by "heavy armored infantry, legendary
+##   archers" — a TWO-LAYER military. The pahlavan (Rostam, Esfandiyar, Giv,
+##   Bijan) is exceptional; the *piyade* and *kamandar* are the institutional
+##   ordinary, the named-but-collective backbone that holds the line while
+##   the heroes decide outcomes in single combat (*mard-o-mard*, §5.2). The
+##   game's anchor categories already encode this split: Rostam is a future
+##   pahlavan-class unit (hero exceptionalism); Sarbaz-khaneh produces the
+##   institutional ordinary. The Iran player's army is BOTH layers — and
+##   Sarbaz-khaneh is where the second, larger, less-glorious layer comes
+##   from.
 ##
-## Cross-faction caveat (loremaster-leading-hypothesis, to be confirmed):
-##   Turan's military-economy probably does NOT route through a fixed
-##   "soldier-house" institution. The leading hypothesis is clan-based
-##   mobilization (Afrasiyab's allied kings each bring their own forces;
-##   the steppe-army assembles for a campaign and disperses after). Per
-##   Mazra'eh / Ma'dan cross-faction notes: each faction's gameplay
-##   institutions reflect its social organization; do NOT clone the
-##   Sarbaz-khaneh template for a Turan-side barracks — that produces
-##   hollow design. Flag for whoever owns Turan-side military scope.
+##   How the mechanic surfaces the cultural truth: Sarbaz-khaneh costs 100
+##   coin with no grain component — framing it as a *standing-army coin-
+##   economy institution* (the king's purse maintains the sepah), not a
+##   peasant-levy or war-time muster. construction_ticks = 780 (26s @
+##   SIM_HZ=30) lands the institutional commitment as DELIBERATE: 4× the
+##   Khaneh's household raise-time, 3× the Mazra'eh's field-clear time —
+##   building a sepah-institution is a longer commitment than building a
+##   house or a farm. Once built, the queue produces Piyade (spear-and-
+##   shield line) and Kamandar (the Parthian-shot archer tradition,
+##   00_SHAHNAMEH_RESEARCH.md §4 line 189) — the two units that ARE the
+##   Iran "ordinary military" the Shahnameh names. Pahlavan unlocks live
+##   elsewhere (hero progression, post-MVP); Sarbaz-khaneh stays in its
+##   lane as the institutional-ordinary producer.
+##
+##   Cross-faction caveat (loremaster leading hypothesis):
+##   Turan's military is NOT a Sarbaz-khaneh-clone. Per 00_SHAHNAMEH_
+##   RESEARCH.md §3 lines 163-165, Turan is "nomadic-steppe culture. Swift
+##   cavalry, horse archers, raiders. Broader, looser armies built on
+##   mobility." Per QUESTIONS_FOR_DESIGN.md Turan-economy entry, Turan's
+##   military organization most likely routes through MOBILE WAR-CAMPS
+##   (otaq-cluster, traveling with the herd) gated on the KHAN'S-LOYALTY /
+##   sworn-warrior mechanic — warriors bound to a named ruler-figure
+##   (Afrasiyab, Piran) rather than to a fixed institutional building.
+##   This is a STRUCTURAL MISMATCH sharper than the building-vs-building
+##   variant gap (cf. Ma'dan / baj): Iran's military identity LIVES in the
+##   institutional building; Turan's lives in the loyalty bond and the
+##   moving camp. **Do not clone Sarbaz-khaneh as a Turan building** — a
+##   naive copy would erase the steppe-vs-settled distinction that is the
+##   Iran-Turan asymmetry's whole point. When Turan Tier-1 military ships
+##   (post-MVP), expect a fundamentally different shape and require a
+##   fresh loremaster review.
+##
+##   Forward-compat note — identity-bearing-institutional anchor category:
+##   Sarbaz-khaneh is the FIRST instance of the **identity-bearing
+##   institutional** variant (loremaster anchor-category taxonomy, session-2
+##   retro: distinct from civic-anchor Khaneh/Mazra'eh, labor-organization
+##   Ma'dan, sacral-emitter Atashkadeh-pending). Future Tier-2 Iran
+##   military buildings INHERIT this anchor category but specialize the
+##   unit-class produced:
+##     - **Sowari-khaneh** (سواری‌خانه, "rider-house") — produces Savar
+##       cavalry (01_CORE_MECHANICS.md §5 line 194, 200 coin Tier 2).
+##       Same institutional-oath shape, specialized to the mounted
+##       tradition.
+##     - **Tirandazi** (تیراندازی, "arrow-shooting [practice]") — produces
+##       advanced Kamandar variants including Asb-savar Kamandar (line
+##       195, 175 coin Tier 2). Note: Tirandazi is *practice/discipline*,
+##       not *-khaneh*; the naming convention shifts slightly because the
+##       Parthian-shot tradition is canonically about *trained skill*
+##       transmission, not just the building. Clone the anchor-category
+##       framing, but flag the naming shape at template-clone time.
+##   Subsequent Iran military buildings inheriting this template should
+##   keep: (a) coin-economy framing (no grain cost), (b) deliberate-
+##   construction-time framing (institution-build is slower than house-
+##   build), (c) the pahlavan/sepah two-layer split (no hero-class
+##   production from these buildings).
 ##
 ## ## What lives here vs Building base
 ##
