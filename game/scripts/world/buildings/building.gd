@@ -13,10 +13,25 @@ extends Node3D
 ## What this base class DOES:
 ##   - Pins the field schema (kind, team, unit_id, is_complete) every
 ##     subclass exposes.
-##   - Owns the placement seam: place_at(world_pos, team, placer_unit_id)
-##     sets position + team, marks is_complete = true, and (in concrete
-##     subclasses' _on_placement_complete hook) bumps population_cap /
-##     emits building_placed / etc.
+##   - Owns the two-stage lifecycle seam (session 3 wave 1C):
+##       Stage 1 — place_at(world_pos, team, placer_unit_id) runs on
+##         the placement-finalization tick (sub-frame, the same tick the
+##         worker reaches the build site). It sets position + team,
+##         flips is_complete = true, fires _on_placement_complete.
+##         This is the *structural* arrival of the building (visible,
+##         click-targetable, navmesh-carved).
+##       Stage 2 — _on_construction_complete(placer_unit_id) runs after
+##         construction_ticks ticks elapse inside
+##         UnitState_Constructing._sim_tick. This is the *operational*
+##         arrival: the building begins functioning (Mazra'eh flips
+##         is_gatherable, Ma'dan registers as an extraction modifier
+##         on the adjacent mine, Atashkadeh would start emitting Farr).
+##     The two stages exist because a Khaneh now takes ~3s of dwell and
+##     Mazra'eh / Ma'dan take ~20s. The structural placement happens
+##     immediately on arrival so the player sees feedback (the building
+##     footprint appears, the progress bar starts), but the building
+##     does NOT yet function — workers cannot gather from a half-built
+##     Mazra'eh, a half-built Ma'dan does not buff the adjacent mine.
 ##   - Adds itself to the &"buildings" SceneTree group so consumers
 ##     (UI, AI, future production system) can iterate buildings without
 ##     walking the world subtree.
@@ -30,10 +45,12 @@ extends Node3D
 ##   - Resource deduction — UnitState_Constructing's on-arrival step
 ##     deducts via ResourceSystem.change_resource. The Building itself
 ##     doesn't reach into the economy.
-##   - Construction-in-progress visuals — Phase 3 session 1 wave 1C ships
-##     INSTANT placement (Khaneh appears the tick the worker arrives).
-##     Session 2 adds the progress-bar / in-progress mesh / partial-HP
-##     state alongside the proper construction timer.
+##   - Construction-in-progress visuals — session 3 wave 1C ships the
+##     construction timer + progress signal (consumed by the UI progress
+##     bar Control). The in-progress mesh / partial-HP state remains out
+##     of scope; the building's MeshInstance3D appears immediately at
+##     placement, and the dwell progress is communicated via the
+##     progress bar UI alone.
 ##
 ## Why extend Node3D directly (not SimNode):
 ##   Same rationale as ResourceNode: the Building lives in the world and
@@ -213,12 +230,20 @@ func place_at(world_pos: Vector3, owner_team: int, placer_unit_id: int) -> void:
 
 # === Subclass hooks ==========================================================
 
-## Called from inside place_at after the building's position / team /
-## is_complete have been set. Subclasses override to add concrete
-## side-effects:
+## Called from inside place_at — Stage 1 of the two-stage lifecycle.
+## Fires on the placement-finalization tick (sub-frame, the same tick
+## the worker reaches the build site), after the building's position /
+## team / is_complete have been written. Subclasses override for
+## *structural* side-effects — things that should happen as soon as
+## the building exists in the world even though it is not yet
+## operational:
 ##   - Khaneh: bump ResourceSystem.population_cap + emit building_placed.
-##   - Mazra'eh (session 2+): register as a Grain gather target.
-##   - Atashkadeh (session 2+): start emitting Farr per tick.
+##     (Khaneh keeps its activation here because population-cap is a
+##     resource-system invariant, not a gameplay-functional one.)
+##   - Mazra'eh: register with ResourceSystem.register_node, fog vision.
+##     The gatherable flip (is_gatherable = true) moves to Stage 2.
+##   - Ma'dan: emit building_placed, register fog vision. The mine
+##     modifier registration moves to Stage 2.
 ##
 ## Base class is a no-op so a subclass with NO post-placement side-effect
 ## (a future decorative building, perhaps?) needs no override.
@@ -226,6 +251,42 @@ func place_at(world_pos: Vector3, owner_team: int, placer_unit_id: int) -> void:
 ## placer_unit_id is the Kargar's id, forwarded for telemetry symmetry
 ## with apply_farr_change / change_resource's source_unit pattern.
 func _on_placement_complete(_placer_unit_id: int) -> void:
+	pass
+
+
+## Called from UnitState_Constructing._sim_tick after construction_ticks
+## ticks have elapsed since the worker's arrival at the build site —
+## Stage 2 of the two-stage lifecycle.
+##
+## Lifecycle sequence:
+##   place_at (Stage 1)                    ← structural arrival
+##       → _on_placement_complete (sub-frame, same tick)
+##   ...construction_ticks ticks elapse...
+##   _on_construction_complete (Stage 2)   ← operational arrival
+##
+## Subclasses override for *operational* side-effects — things gated on
+## the construction timer completing so the building cannot function
+## while it is half-built:
+##   - Mazra'eh: flip is_gatherable = true (workers may now gather).
+##   - Ma'dan: register as the adjacent MineNode's extraction modifier
+##     (the buff applies from this tick onward).
+##   - Atashkadeh (future): start emitting passive Farr per tick.
+##   - Sarbaz-khaneh (future): become eligible as a production target.
+##
+## Base class is a no-op. Khaneh does not override (its only side-effect
+## — the pop-cap bump — runs at Stage 1; a half-built Khaneh has no
+## operational dimension to gate).
+##
+## placer_unit_id is the Kargar's id of the worker that built this. May
+## be -1 if the worker died mid-construction (forward-compat — the
+## current Track 1 implementation tears down the construction state on
+## death, so this hook does not fire in that path, but the field is
+## permitted for symmetry with _on_placement_complete).
+##
+## Called from inside UnitState_Constructing._sim_tick (the worker's
+## _sim_tick). On-tick by construction; consumers can mutate spatial /
+## resource state without an _is_ticking guard.
+func _on_construction_complete(_placer_unit_id: int) -> void:
 	pass
 
 
