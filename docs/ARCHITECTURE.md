@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.24.0
+version: 0.25.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -286,6 +286,49 @@ game/
 - Spec said X; we built Y; reason: Z
 - Subsystem A took Phase N+1 (slipped one phase), reason: ...
 - Contract V was bumped from 1.x.0 to 1.y.0 during implementation; key change: ...
+
+### v0.25.0 — Phase 3 session 4 close retro: 8 §9 rules + §12.6 Agent-Liveness Protocol + Pitfall #15 ratified (2026-05-17)
+
+Phase 3 session 4 close retro ships as a coherent process PR documenting the lessons-learned from Wave 2A (Sarbaz-khaneh) + Wave 1D (navmesh resolution) + the retro process itself (which surfaced two channel-discipline failure modes in real-time). Six substantive retro inputs aggregated: 3 fresh-spawn `-retro` agents (process drift caught by user mid-retro + corrected) + 3 persistent-instance agents (gp-sys-p3s3, world-builder-p3s2, engine-architect-p3s2). The persistent-vs-fresh-spawn comparison is the strongest empirical evidence yet that persistent-instance reflection is categorically more valuable than fresh-spawn reflection on identical artifacts — most pointedly, engine-architect-p3s2 (persistent) rejected engine-architect-p3s4-retro (fresh-spawn)'s L7 lint proposal for Pitfall #15 as wrong-layer, a correction only the persistent voice's lived memory of L1-L6 lint architecture could produce.
+
+**What shipped (process artifacts):**
+
+- **STUDIO_PROCESS.md v1.7.0 → v1.8.0 (MINOR — additive)**:
+  - §9 2026-05-17 cluster (session-4 close retro): **8 new rules** across 4 sub-clusters:
+    - *Implementation-pattern cluster (4 rules):* super-call sweep + SSOT citation discipline + Pitfall #15 paired regression-test-mandatory rule + two-stage Building lifecycle named pattern. Source: gp-sys-p3s3 (persistent, definitive shape including "comment is the load-bearing artifact" refinement) + world-builder-p3s2 + fresh-spawn convergence.
+    - *Test-discipline cluster (2 rules):* hook-as-authoritative-gate (pre-commit hook overrides standalone `godot --headless --test`; canonical incident: PR #19's "33/34 farr_gauge" false-positive pre-block) + headless test independence (Track-N tests via `.new()` to decouple from Track-M scene ship-timing).
+    - *Pitfall-promotion ratification:* Pitfall #15 ratified as permanent in PROCESS_EXPERIMENTS.md; mechanism addendum captures silent-override signature + trigger-condition refinement (first nested-grandchild override exposes the syntax surface). **Defense-layer divergence resolved:** persistent engine-architect-p3s2 rejected fresh-spawn's L7 lint proposal — `.tscn` is not the lint script's responsibility class (L1-L6 are `.gd` source patterns). Final defense: regression-test pattern at first occurrence + ARCHITECTURE §3.1 documentation breadcrumb (deferred to next touching wave).
+    - *Meta-process cluster (3 rules):* dispatch-channel-discipline (retro reflections via SendMessage to persistent instances, not Agent-spawn — captures the real-time `-retro` mis-spawn) + agent-channel-discipline (every agent-def gets first-class "SendMessage is your channel; assistant-text is monologue" instruction; captures loremaster-p3s2 silent-channel + world-builder-p3s2 "above" pointer as canonical incidents) + heartbeat protocol with three-strike escalation.
+  - §12.6 Agent-Liveness Protocol — new subsection. Heartbeat ping shape + agent's obligated `[heartbeat-ack: <status>]` response form + three-strike escalation table + when-not-to-apply carve-outs.
+  - §10 sync log Phase 3 session 4 entry added — wave shape (1D navmesh + 2A Sarbaz-khaneh), retro inputs final tally (3 fresh-spawn + 3 persistent, all convergent with persistent additions load-bearing), strongest signals enumerated, carry-forwards routed.
+
+- **PROCESS_EXPERIMENTS.md Pitfall #15 mechanism addendum** — silent-override-signature paragraph + trigger-condition refinement (only surfaces at first nested-grandchild override). Cross-reference back to STUDIO_PROCESS.md §9 2026-05-17 (session-4) implementation-pattern cluster.
+
+- **Agent-def updates** — all `.claude/agents/*.md` get first-class SendMessage-as-channel discipline line (mandated by §9 meta-process cluster rule 2). gp-sys gets super-call sweep + SSOT citation rules + headless test independence pattern. world-builder gets Pitfall #15 awareness + inherited-scene regression-test pattern + git-log-check-before-pre-block discipline. engine-architect gets heartbeat protocol awareness + pre-spawn TaskList check (the engine-architect-p3s2 contribution to dispatch-channel discipline).
+
+**Key process learnings captured (load-bearing):**
+
+1. **Persistent-instance reflection is categorically more valuable than fresh-spawn for retros on the same artifacts.** This retro produced the strongest evidence yet: 3 fresh-spawn + 3 persistent responses to identical prompts; the persistent inputs converged with fresh-spawn directionally but added load-bearing nuance (e.g., the L7 lint rejection above) that the fresh-spawn could not produce. The §12.5.1 cross-session persistence rule is now empirically validated at retro-quality level, not just at within-session continuity level.
+
+2. **The retro topic codified the rule the retro itself violated, twice.** Two channel-discipline failures occurred during this retro's authoring: (a) lead spawned fresh `-retro` agents instead of SendMessage to persistent instances; user caught and corrected. (b) world-builder-p3s2's response referenced "see my text above" — full reflection produced as assistant-text, invisible to lead; only a 4-bullet summary came through SendMessage. Both incidents are captured as canonical incidents for the §9 meta-process cluster rules. The dark comedy aside, the empirical anchor pair is the strongest possible evidence the rules are load-bearing.
+
+3. **Super-call sweep meta-finding: the comment is the load-bearing artifact, NOT the super call itself.** gp-sys-p3s3's persistent contribution refined the rule shape — without the future-failure-mode-reasoning comment bracketing each super call, a future reader sees identical-looking code and may remove the "redundant" super. This is a manifestation of Manifesto Principle 6 (Tests as Specifications) applied to code: when behavior cannot be tested today (base is `pass`), the comment carries the spec.
+
+4. **Two-stage Building lifecycle seam is now load-bearing across 4 subclasses with 4 distinct Stage-2 shapes** — civic anchor (Khaneh = pop cap), resource producer (Mazra'eh = `is_gatherable` flip), labor organizer (Ma'dan = modifier registration), institutional (Sarbaz-khaneh = `is_ready_to_produce` flip). The pattern is mature enough to promote to a named architecture pattern in Building base header + ARCHITECTURE §2 row. The operational marker per-subclass (no base-level `is_operational` virtual yet) is the right level until N≥3 share near-identical bool-flip semantics; revisit when Atashkadeh ships (likely 5th case).
+
+**Carry-forwards to session 5:**
+
+- **Cross-document audit pass (NEW, user-requested):** review core documents (STUDIO_PROCESS.md, ARCHITECTURE.md, PROCESS_EXPERIMENTS.md, MANIFESTO.md, CLAUDE.md, 01_CORE_MECHANICS.md, DECISIONS.md, *_CONTRACT.md) for repetition, duplicates, and contradictions. STUDIO_PROCESS.md at ~50k tokens is dense enough that the question is no longer "can it fit in context" but "can lead and agents actually follow what's written?" Audit happens at session-5 kickoff before any new wave.
+- **Pitfall #15 documentation breadcrumb in ARCHITECTURE.md §3.1** — deferred until §3.1 is next touched (engine-architect-p3s2 recommendation).
+- **L7 lint rule for Pitfall #15** — REJECTED at this retro per persistent engine-architect's wrong-layer ruling. Status: closed-no-action.
+- **Tirandazi naming-shape forward-compat flag** (Task #159) — Wave 2B kickoff item.
+- **Anchor-category taxonomy dedicated doc** (Task #160) — Wave 2B kickoff item.
+- **BUILDING_CONTRACT.md authoring** — NICE-TO-HAVE per PR #19 architecture-reviewer; recommend before Phase 4 starts.
+- **Wave 3A** (fog-of-war data layer — world-builder) or **Wave 3B** (DummyAIController — ai-engineer, Task #71) per lead's call at session-5 kickoff.
+
+**Meta-observation: process discipline cost.** The user flagged this explicitly mid-retro: "I'm not as much worried about the budget size, but rather if you and the agents can follow it." STUDIO_PROCESS.md §9 is now ~360 lines / ~12k tokens by itself across three retro clusters. The §9 cluster naming + grep-able tags help, but the doc-density question is real. Session 5 will start with the audit pass before adding any new content.
+
+---
 
 ### v0.2.0 — Phase 0 Session 1 (2026-05-01)
 

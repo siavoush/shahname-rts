@@ -34,6 +34,57 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-17 — Phase 3 session 4: Sarbaz-khaneh (wave 2A) + Wave 1D navmesh resolution
+
+**Branch:** main (PR #18 + PR #19 merged) + `retro/phase-3-session-4-close` for the close retro
+
+**Driver:** lead orchestrating across two waves + close retro. Long-day continuation of session 3's same-calendar-date (2026-05-17) — three coherent units shipped: (1) Wave 1D navmesh dedicated wave closing the 4-round Wave 1C drift; (2) Wave 2A Sarbaz-khaneh as the 5th Tier-1 Iran building (4-of-5 shipped, Atashkadeh deferred to Phase 4); (3) session close retro capturing process learnings.
+
+**Commits:** 8 on Wave 2A branch (`1ff3039` scene → `8314a8a` class+tests → `2658405` build menu → `a351869` cultural-note → `812cdc9` ARCHITECTURE §6 v0.24.0 → `2f31b34` Pitfall #15 fix → `9f94a3c` builder-position deferral → `128af9f` super-call sweep → `0f986ff` lead cleanup → `07c6ca8` world-builder cleanup → `5a223fe` merge). Plus Wave 1D commit chain merged at PR #18 (`7e4c365`).
+
+**What shipped:**
+
+- **Wave 1D — Navmesh resolution (PR #18).** Explicit four-call pipeline (`parse_source_geometry_data(nav_mesh, source, get_tree().root)` + `bake_from_source_geometry_data(nav_mesh, source)`) in `building.gd` replaces the broken `region.bake_navigation_mesh()` convenience wrapper. Root cause validated against Godot 4.6 source: convenience wrapper hardcodes `this` as the parse root rather than respecting `SOURCE_GEOMETRY_ROOT_NODE_CHILDREN` source-geometry-mode. L25 + L26 RESOLVED in ARCHITECTURE §7. L6 lint guards async-variant only (allows the sync `bake_navigation_mesh(false)` form used by building.gd). Workers now route around all Building subclasses correctly in live-test. Honest archaeology via `docs/WAVE_1C_NAVMESH_SPIKE.md` v1.0.0 Round 4 resolution.
+
+- **Wave 2A — Sarbaz-khaneh (PR #19).** 5th Tier-1 Iran building, first identity-bearing-institutional anchor (vs Khaneh's civic-anchor, Mazra'eh's resource-producing, Ma'dan's labor-organization). Inherits building.tscn; wider-than-square footprint (3.0×1.2×2.0) reads as institutional barracks at default zoom; desaturated iron-red placeholder. `is_ready_to_produce` operational marker mirrors Mazra'eh's `is_gatherable` (flips at Stage 2 `_on_construction_complete`). Production-queue mechanics deferred to Phase 4. Cultural-note 4-part framing integrated by loremaster (pahlavan/sepah two-layer Iran-military framing — hero exceptionalism via Rostam vs. institutional ordinary via Piyade/Kamandar). 16 tests across `test_sarbaz_khaneh.gd` + `test_sarbaz_khaneh_scene.gd`.
+
+- **Pitfall #15 surfaced + fixed + promoted.** Initial scene ship at `1ff3039` used the wrong inherited-scene nested-child override syntax (`[node name="StaticBody3D/CollisionShape3D" parent="." index="0"]` — slash in `name=` is a literal char, not a path separator). Engine silently drops the override + emits a "Node vanished" warning. Workers walked through the long-axis strips of the visible building because the inherited 2.0×2.0 collision body shipped in place of the intended 3.0×2.0 footprint. Fix at `2f31b34` correctly uses `[node name="CollisionShape3D" parent="StaticBody3D"]`. Project-wide audit (godot-code-reviewer fresh-spawn): no other instances. Promoted to permanent Pitfall #15 in `docs/PROCESS_EXPERIMENTS.md` at `0f986ff`.
+
+- **Super-call sweep meta-finding.** gp-sys retroactively added `super._on_construction_complete(_placer_unit_id)` to Mazra'eh + Ma'dan during fix-up. Behavior unchanged today (base is `pass`); forward-compat lock against future base Stage-2 additions. Mirrors session-3's super()-call-on-placement-complete discipline applied at base-addition time. The meta-finding: when a new base virtual ships with non-trivial future-additions surface, prior-shipped subclasses inherit a silent lock — same-commit retrofit prevents drift.
+
+- **Heartbeat protocol introduced.** Mid-wave, loremaster-p3s2 went silent for ~60min — root cause was channel-mismatch (agent producing reflective content as assistant-text instead of SendMessage; invisible to lead). Lead introduced heartbeat-ping pattern: lead pings dispatched agents at silence intervals; agents must acknowledge via SendMessage. Pattern is now load-bearing; codified at session-4 close retro.
+
+- **Builder-position-during-construction deferred to QUESTIONS_FOR_DESIGN.** User observed worker stands inside building rather than outside; strategic implications (AoE2 harassment-target vs SC2 protected-during-construction) routed to design chat. Implementation choice ≠ gameplay decision — escalation discipline applied correctly.
+
+- **ARCHITECTURE.md §2 Building row + §6 v0.24.0.** Building row refreshed to full Tier-1 roster (4 of 5 shipped); §6 v0.24.0 entry captures Wave 2A close.
+
+- **Session-4 close retro shipped (STUDIO_PROCESS.md v1.7.0 → v1.8.0; ARCHITECTURE.md v0.24.0 → v0.25.0).** 8 new §9 rules across 4 sub-clusters (4 implementation-pattern + 2 test-discipline + Pitfall #15 ratification + 3 meta-process). New §12.6 Agent-Liveness Protocol subsection (heartbeat ping shape + three-strike escalation). Pitfall #15 mechanism addendum in PROCESS_EXPERIMENTS.md (silent-override signature + trigger-condition refinement). All 11 agent-defs got first-class SendMessage-as-channel discipline line. gp-sys + world-builder + engine-architect got domain-specific session-4 additions (SSOT citation discipline / Pitfall #15 awareness / pre-spawn TaskList check + heartbeat protocol). Retro produced strongest empirical evidence yet that persistent-instance reflection is categorically more valuable than fresh-spawn (engine-architect-p3s2 rejected fresh-spawn's L7 lint proposal as wrong-layer; only lived memory of L1-L6 architecture surfaces that distinction). Retro topic codified the rule the retro itself violated, twice (lead's `-retro` mis-spawn + world-builder-p3s2's "above" pointer — both became canonical incidents for the meta-process cluster rules).
+
+**Did not ship:**
+
+- Atashkadeh (Tier-1→Tier-2 gateway + Farr generator) — deferred to Phase 4 per CORE_MECHANICS §5 + §6.
+- Production queues / Sarbaz unit / military combat — Phase 4 scope.
+- Tirandazi naming-shape forward-compat formalization (Task #159) — Wave 2B kickoff item.
+- Anchor-category taxonomy dedicated doc (Task #160) — Wave 2B kickoff item.
+- **Cross-document audit pass** (NEW, user-requested at session-4 retro close 2026-05-17): review core documents (STUDIO_PROCESS.md, ARCHITECTURE.md, PROCESS_EXPERIMENTS.md, MANIFESTO.md, CLAUDE.md, 01_CORE_MECHANICS.md, DECISIONS.md, contracts) for repetition, duplicates, and contradictions. User flagged at session-4 retro: "I'm not as much worried about the budget size, but rather if you and the agents can follow it." STUDIO_PROCESS.md is now ~50k tokens; the question is no longer "fit in context" but "discipline-followability." Audit happens at session-5 kickoff before any new wave.
+
+**State for next session (Session 5 / Wave 2B or 3A or 3B):**
+
+- Same persistent agents survive per §12.5.1. Session-5 dispatches use same agent IDs (gp-sys-p3s3, world-builder-p3s2, etc., or their p3s5 successors per the reboot clause).
+- Three waves available, lead-orchestrated choice: **Wave 2B** (Tier-2 Sowari-khaneh + Tirandazi — Phase 4 entrance), **Wave 3A** (Fog-of-war data layer — world-builder, Task #71's prerequisite), **Wave 3B** (DummyAIController — ai-engineer, Task #71).
+- Open carry-forward SUGGEST items from PR #19 reviewers: BUILDING_CONTRACT.md authoring (NICE-TO-HAVE per architecture-reviewer; recommend before Phase 4 starts).
+- Pitfall #15 audit clean — future inherited-scene-with-nested-overrides authors should use the regression-test pattern from `test_sarbaz_khaneh_scene.gd::test_collision_shape_matches_mesh_footprint` as the canonical scaffold.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:**
+- Builder worker position during construction (inside vs outside the structure) — strategic implication for harassment-vulnerability balance.
+
+**Decisions made independently** (per CLAUDE.md "Escalation" rule #1 — non-design implementation choices):
+- Two-stage Building lifecycle's Stage 2 operational marker pattern (`is_ready_to_produce`) — mirrors Mazra'eh's `is_gatherable` precedent; per-subclass marker rather than base virtual (until 3+ subclasses share the pattern).
+- Wave 1D's explicit four-call navmesh pipeline location (in building.gd at `_on_placement_complete`) — the carve trigger lives where structural placement completes; consistent with terrain.gd's initial bake.
+- Pre-commit hook as the authoritative test gate (session learning: out-of-hook `godot --test` runs aren't authoritative; pre-blocking on transient out-of-hook failures was a process anti-pattern world-builder reported and lead corrected).
+
+---
+
 ## 2026-05-17 — Phase 3 session 2 close retro: process learnings ship as a coherent §9 cluster + cross-session persistence rule
 
 **Branch:** `retro/phase-3-session-2-close`
