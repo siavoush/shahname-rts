@@ -20,10 +20,13 @@
 ;                 │   bundled with the building scene per the wave-1A
 ;                 │   late-add lesson. Stone-grey/metal tint distinguishes
 ;                 │   from Khaneh/Mazra'eh.
-;                 └── SarbazKhanehButton ("Sarbaz-khaneh (100 Coin)") —
-;                     wave 2A. Martial-red tint distinguishes from the
-;                     others — barracks / training. Order is chronological:
-;                     Khaneh → Mazra'eh → Ma'dan → Sarbaz-khaneh.
+;                 ├── SarbazKhanehButton ("Sarbaz-khaneh (100 Coin)") —
+;                 │   wave 2A. Martial-red tint — barracks / training.
+;                 └── AtashkadehButton ("Atashkadeh (150 Coin / 50 Grain)")
+;                     — wave 2A.5. Fire-amber tint — sacred-flame
+;                     container. Tier-1 closure and Tier-2 gateway.
+;                     Order is chronological: Khaneh → Mazra'eh → Ma'dan
+;                     → Sarbaz-khaneh → Atashkadeh.
 ;
 ; Pitfall #1 mitigation + BUG-08 fix — mouse_filter discipline:
 ;   - Root: MOUSE_FILTER_STOP (value 0). BUG-08 fix — the entire menu
@@ -70,7 +73,7 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = -216.0
-offset_top = -266.0
+offset_top = -306.0
 offset_right = -16.0
 offset_bottom = -66.0
 mouse_filter = 0 ; MOUSE_FILTER_STOP — BUG-08 fix; menu surface is a click shield.
@@ -150,9 +153,30 @@ self_modulate = Color(0.55, 0.55, 0.60, 1.0)
 ; build_menu.gd connects .pressed in _ready (mirrors prior buttons).
 ; The button emits build_placement_started with
 ; SarbazKhaneh.KIND_SARBAZ_KHANEH + cost_x100 to enter placement mode.
-;
-; Order in the VBox: Khaneh → Mazra'eh → Ma'dan → Sarbaz-khaneh.
-; Chronological per ship order (matches build_menu.gd convention).
 layout_mode = 2
 text = "Sarbaz-khaneh (100 Coin)"
 self_modulate = Color(0.65, 0.30, 0.25, 1.0)
+
+[node name="AtashkadehButton" type="Button" parent="Root/Margin/VBox"]
+; Wave 2A.5 — the Atashkadeh (sacred-flame container) placement entry
+; point. Tier-1 closure (5th and final Tier-1 building) and Tier-2
+; gateway. Per 01_CORE_MECHANICS.md §5 the cost is dual-resource
+; (150 coin + 50 grain), so the label format is
+; "Atashkadeh (%d Coin / %d Grain)" — the only Tier-1 button with a
+; dual-cost surface. Same MOUSE_FILTER_STOP default as the other
+; buttons. Fire-amber tint (0.85, 0.65, 0.20) — warm sacred-flame
+; hue distinct from Khaneh's earthy tan, Mazra'eh's agricultural
+; green, Ma'dan's industrial grey, Sarbaz-khaneh's martial-red.
+;
+; The signal payload (build_placement_started) carries ONLY
+; cost_coin_x100 by contract (EventBus.build_placement_started
+; signature locked at coin-only). The 50 grain is deducted at
+; placement time inside UnitState_Constructing — the UI surface
+; shows both costs in the label, but the dispatch signal carries
+; one. Same UI vs sim-side separation as the other buttons.
+;
+; Order in the VBox: Khaneh → Mazra'eh → Ma'dan → Sarbaz-khaneh →
+; Atashkadeh. Chronological per ship order.
+layout_mode = 2
+text = "Atashkadeh (150 Coin / 50 Grain)"
+self_modulate = Color(0.85, 0.65, 0.20, 1.0)
