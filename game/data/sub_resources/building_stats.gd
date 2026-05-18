@@ -28,6 +28,14 @@ class_name BuildingStats extends Resource
 ## FarrSystem reads this field; apply_farr_change() is the chokepoint per CLAUDE.md.
 @export var farr_per_tick: float = 0.0
 
+## Farr generated passively per minute in x100 fixed-point (integer arithmetic).
+## 0 for buildings that do not generate Farr (the default for all non-sacral buildings).
+## Atashkadeh: +1 Farr/min = 100. Dadgah/Barghah: +0.5 Farr/min = 50.
+## Yadgar: +0.25 Farr/min = 25. Per 01_CORE_MECHANICS.md §4.3 Farr generators list.
+## Fixed-point scale per Sim Contract §1.6. FarrSystem may read farr_per_tick
+## (float path) or this field (integer path) — both represent the same source value.
+@export var farr_per_min_x100: int = 0
+
 ## Population cap contribution. Khaneh (house) adds +K to its owner team's
 ## population_cap when construction completes. Phase 3 session 1 wave 1C
 ## ships Khaneh first; future cap-contributing buildings (Sarbaz-khaneh?)

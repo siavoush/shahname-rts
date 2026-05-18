@@ -355,9 +355,26 @@ construction_ticks = 780
 farr_per_tick = 0.0
 
 ; Atashkadeh (fire temple) — 01_CORE_MECHANICS.md §5
-; +1 Farr/min passive = 1/1800 Farr/tick ≈ 0.000556 Farr/tick
-; Cost: "150 coin, 50 grain". Prerequisite for Tier 2 advance.
-; High HP — it is the sacred flame; losing it costs -5 Farr.
+; Cost: "150 coin, 50 grain" per §5 Tier-1 table (spec-SSOT; not a suggestion).
+; Prerequisite for Tier 2 advance (Qal'eh requires Atashkadeh built, per §8).
+;
+; Farr: +1 Farr/min continuous passive emit per §4.3 Farr generators list.
+;   farr_per_tick = 0.000556 = 1/1800 Farr/tick @ 30Hz (float path, FarrSystem today).
+;   farr_per_min_x100 = 100 = +1 Farr/min in x100 fixed-point per Sim Contract §1.6
+;   (integer path — first instance; forward-compat for Dadgah=50, Barghah=50,
+;   Yadgar=25 per §4.3 generators list). Both fields encode the same source value.
+;
+; Loss drain: −5 Farr per §4.3 Drains ("the sacred flame is extinguished").
+; This cost motivates max_hp = 600 — the sacred flame warrants more durability
+; than the barracks (400) or resource buildings (300). hp=400 (brief suggestion)
+; would be a regression; spec-wins: §4.3's −5 Farr drain names the sacred flame
+; as a qualitatively distinct loss event.
+;
+; construction_ticks = 900 = 30s @ 30Hz. Timing-ladder anchor:
+;   Khaneh(90=3s) < Mazra'eh(540=18s) < Ma'dan(660=22s)
+;   < Sarbaz-khaneh(780=26s) < Atashkadeh(900=30s) < Qal'eh(2700=90s per §8)
+; Atashkadeh is the slowest Tier-1 build — appropriate for the Tier-2 gateway.
+; balance-engineer: Wave 2A.5 D9 audit + farr_per_min_x100 schema addition.
 [sub_resource type="Resource" id="bldg_atashkadeh"]
 script = ExtResource("3_bldgstats")
 max_hp = 600.0
@@ -365,6 +382,7 @@ coin_cost = 150
 grain_cost = 50
 construction_ticks = 900
 farr_per_tick = 0.000556
+farr_per_min_x100 = 100
 
 ; =========================================================================
 ; FarrConfig sub-resource
@@ -525,7 +543,7 @@ hard_attack_army_threshold = 16
 
 [resource]
 script = ExtResource("1_balancedata")
-constants_version = "2026-05-17-phase-3-session-4-wave-2a-sarbaz-khaneh"
+constants_version = "2026-05-17-phase-3-session-5-wave-2a5-atashkadeh-farr-emit"
 units = {
 &"kargar": SubResource("unit_kargar"),
 &"piyade": SubResource("unit_piyade"),
