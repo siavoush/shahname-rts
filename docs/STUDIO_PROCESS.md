@@ -42,6 +42,21 @@ The principle behind everything below: **a real discussion only happens when the
 
 ---
 
+## 0.5 Session Start Checklist (read this if you're about to do work)
+
+The tactical entry path for any agent starting work in a fresh session. The rest of §0 sets context; this section sets action.
+
+1. **Verify branch** — `git status` shows you on `feat/<name>` or `proto/<name>`, NEVER `main` (per §9.D1).
+2. **Read the kickoff brief** — identify which §9 cluster(s) govern your task.
+3. **Skim that cluster's rules** — NOT all 50 rules; just the ones in your domain. Use the §9 cluster TOC to jump.
+4. **Begin TDD cycle** per the canonical anti-loop dispatch cycle in §9.D2 (read docs → write failing tests → implement → pre-commit gate → stage your files → verify diff → commit → confirm SHA → SendMessage).
+5. **Commit per §9.D4** — unconditional `git commit -- <pathspec>` form, even when you believe you're alone.
+6. **Broadcast via SendMessage** per §9.G3 — assistant-text is invisible to lead; SendMessage with `to: team-lead` is the only authoritative channel.
+
+This is the runbook for the first 90 seconds of a session. If you remember nothing else from this document, remember these six steps.
+
+---
+
 ## 1. When to Run a Sync
 
 Run a multi-agent sync when **2+ specialties have overlapping authority on a decision that's expensive to retrofit.** These are "gray zones" — places where building each agent's piece in isolation guarantees rework.
@@ -56,7 +71,7 @@ A sync costs ~2.5x the agent turns of solo reviews. Use the budget for foundatio
 
 ---
 
-## 2. The Four Discussion Patterns
+## 2. The Five Discussion Patterns
 
 Different gray zones have different shapes. Pick the pattern that fits.
 
@@ -242,11 +257,11 @@ This section is the **currently-binding form** of every accumulated process rule
 | §9.I | Engine-Feature Verification | 3 |
 | §9.J | Cultural / Loremaster Discipline | 4 |
 | §9.K | Retro Practice | 3 |
-| §9.L | Implementation Patterns | 5 |
+| §9.L | Implementation Patterns | 6 |
 | §9.M | Test Discipline | 5 |
 | §9.N | Investigation Reports | 1 |
 
-**Total: 50 active rules across 14 clusters.** Down from 81 dated entries in v1.8.0 — same load-bearing content, restructured to currently-binding form.
+**Total: 51 active rules across 14 clusters.** Down from 81 dated entries in v1.8.0 — same load-bearing content, restructured to currently-binding form. (L4 split into L4a/L4b at validation-test fix-up — see post-Test-1 commit for rationale.)
 
 ---
 
@@ -535,9 +550,13 @@ Cites Manifesto Principle 1 (Truth-Seeking — observe the race, don't deny it).
 
 #### D6. Broadcast `[blocked]` to lead via SendMessage when pre-commit hook fires
 
+**Mechanism (vocabulary).** "Broadcast" in this rule = **SendMessage with `to: team-lead`** (per channel-discipline G3). Not all-team-DM, not assistant-text, not a status-marker on a Task. SendMessage to lead is the authoritative channel.
+
 **Rule.** When the pre-commit hook blocks (regardless of cause), the blocked agent immediately sends `to: team-lead, summary: "[blocked] on <reason>", message: "..."`. The block is otherwise invisible to lead until the next commit attempt races. The `[blocked]` SendMessage produces a visible artifact in lead's inbox; lead can serialize commits across agents when needed.
 
 **Why.** Closes the asymmetric-discipline gap that single-agent staging discipline cannot close on its own.
+
+**See also: M3.** D6 says WHEN to broadcast `[blocked]` (after the hook actually fires). M3 says NOT to broadcast speculatively on out-of-hook test output (the hook is the authoritative gate). The canonical incident in M3 (Wave 2A PR #19 — world-builder's "33/34 farr_gauge" false-positive pre-block) is the canonical example of D6 triggered incorrectly. Both rules together: only broadcast `[blocked]` after the hook fires, never on speculative out-of-hook signal.
 
 **Operational corollary (local-safety-vs-pipeline-integrity tension).** When an agent's commit is at risk from race contamination (parallel work mutating shared scope), the temptation to "land before another race buries it" is a LOCAL OPTIMIZATION that the wave-mode rule (E1) explicitly forbids. The right move is to broadcast `[blocked]` and request explicit unblock from lead, NOT to ship out of order. The sequencing rule exists precisely to prevent agents making those local calls unilaterally.
 
@@ -690,6 +709,8 @@ Cites Manifesto Principle 1 (Truth-Seeking — verify the effect, not just the s
 
 *Scene-layer cousin of F3 — same "test the effect, not the presence" principle applied to scene composition.*
 
+**See also: M4.** F4 mandates the regression test EXISTS for any inherited-scene-with-nested-overrides at first occurrence. M4 specifies WHERE it lives (a separate `test_<subclass>_scene.gd` file owned by the scene author) and WHY (decouples test ship-timing from scene ship-timing per Track-N/Track-M separation). Both rules together: the regression test is mandatory (F4); it lives in the scene-author's parallel test file, not the class-behavior test file (M4).
+
 **Rule.** Any `.tscn` that uses inherited-scene composition (`instance=ExtResource(...)`) AND overrides a nested child node MUST include a test that instantiates the scene, walks to the overridden node, and asserts the overridden property has the SUBCLASS value (not the base value). The canonical pattern is `test_collision_shape_matches_mesh_footprint` in `test_sarbaz_khaneh_scene.gd` — the test fails immediately and loudly if the override silently falls back to the base.
 
 **Why.** Pitfall #15 (Godot inherited-scene nested-child override syntax — see `docs/PROCESS_EXPERIMENTS.md`) is a silent-override-failure class: scene loads cleanly, mesh renders at subclass dimensions, no lint catches the form. Only structural-effect verification at test time catches the divergence.
@@ -764,6 +785,8 @@ Cites Manifesto Principle 1 (Truth-Seeking — invisible content is unobservable
 ---
 
 ### §9.H — Cross-Cutting Verification
+
+> **Boundary note (H vs I).** Cluster H is **reviewer-discipline for cross-cutting consequences** of new schema/classification surfaces (does code-review + test-design + test-coverage triangulate?). Cluster I is **engine-API-dependent architecture claims** (does the engine actually behave as our spec assumes?). When a rule straddles both: default to **I if engine-API-dependent**, **H if reviewer-discipline for test-coverage or schema verification**.
 
 #### H1. Cross-cutting schema verification — triangulated rule covering three layers
 
@@ -989,21 +1012,43 @@ Cites Manifesto Principle 7 (SSOT — the activating mechanism's location should
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-3]
 
-#### L4. Super-call sweep — base-class owner ships subclass-override `super.<virtual>()` retrofit in the SAME COMMIT that gives the virtual a non-trivial body
+#### L4a. Super-call forward-compat discipline — every subclass override calls `super.<virtual>()` even when base is currently `pass`
 
-**Two-part trigger condition:** (a) a base virtual that prior subclasses called (or could be expected to call) gains a non-trivial body in any wave — "non-trivial" = anything more than `pass`, even a single mutation, signal emit, or state-flip; (b) prior-shipped subclasses exist that override the virtual.
+**Actor.** Subclass author at subclass-authoring time.
 
-**Action.** Same-commit sweep of ALL prior subclasses to add `super.<virtual_name>(args)` as the **first line** of their override. Bracket each retrofit with a 4-5 line comment carrying the **future-failure-mode reasoning** (NOT "added super" — explain WHY: "when base gains non-trivial X, silent-missing super would bite"). **The comment is the load-bearing artifact, not the super call itself**; without the reasoning comment, a future reader sees identical-looking code and may remove the "redundant" super. **The retrofit landing commit is the originating wave's commit; when caught reactively post-merge, the fix-up commit is owned by the base-class shipper, not the subclass authors.**
+**Trigger.** Authoring (or modifying) a subclass override of a base-class virtual hook (e.g., `_on_placement_complete`, `_on_construction_complete`, future `_on_<X>` virtuals on Building base or any other extension point with subclass overrides).
 
-**Audit command:** `git grep -n 'func _on_<virtual_name>' game/scripts/world/` to enumerate subclass overrides.
+**Rule.** As the FIRST LINE of every subclass override of a base virtual, write `super.<virtual_name>(args)` — even when the base body is currently `pass`. This is **forward-compat defense** against the day the base virtual gains a non-trivial body: subclasses that called super from day-1 inherit the new base behavior for free; subclasses that omitted super-by-default need a sweep retrofit (see L4b) when the base body lands.
 
-**Test pattern.** No behavioral test will catch this today (base is `pass`); the behavioral test lands when the base gains non-trivial body.
+**Load-bearing artifact.** A 2-4 line comment bracketing the `super()` call explaining the future-failure-mode reasoning — NOT "added super" (a future reader will remove the "redundant" super) but "Forward-compat: when base `_on_X` gains non-trivial body, silent-missing super would lose the base behavior in this subclass." The comment is what makes the discipline survive code review years from now.
+
+**Test pattern.** None today (base is `pass`); the behavioral test for super-call propagation lands when the base gains a non-trivial body (and L4b's sweep audit fires).
+
+**Canonical incident.** Wave 2A Sarbaz-khaneh `8314a8a` — gp-sys authored Sarbaz-khaneh with `super()` calls in BOTH `_on_placement_complete` AND `_on_construction_complete` even though base `_on_construction_complete` was `pass`. The discipline applied at authoring time meant Sarbaz-khaneh did NOT need a retrofit when the session-4 sweep audit (L4b) fired against Mazra'eh + Ma'dan.
+
+Cites Manifesto Principle 6 (Tests as Specifications — when behavior cannot be tested today, the comment carries the spec) + Principle 9 (Automated Enforcement — discipline applied at first authoring is cheaper than retrofit).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-3 implementation-pattern cluster]
+
+#### L4b. Super-call sweep audit — base-class shipper sweeps subclasses in the SAME COMMIT that gives the virtual a non-trivial body
+
+**Actor.** Base-class shipper at base-modification time.
+
+**Two-part trigger condition:** (a) a base virtual that prior subclasses called (or could be expected to call) gains a non-trivial body in any wave — "non-trivial" = anything more than `pass`, even a single mutation, signal emit, or state-flip; (b) prior-shipped subclasses exist that override the virtual without `super.<virtual>()` (i.e., subclasses that did NOT follow L4a at authoring time).
+
+**Action.** Same-commit sweep of ALL prior subclasses to add `super.<virtual_name>(args)` as the **first line** of their override. Bracket each retrofit with a 4-5 line comment carrying the **future-failure-mode reasoning** (per L4a — the comment is the load-bearing artifact, NOT the super call). **The retrofit landing commit is the originating wave's commit; when caught reactively post-merge, the fix-up commit is owned by the base-class shipper, not the subclass authors.**
+
+**Audit command:** `git grep -n 'func _on_<virtual_name>' game/scripts/world/` to enumerate subclass overrides. For each enumerated subclass, verify `super.<virtual>()` is the first line of its override; if missing, add it in the same commit.
+
+**Why this is the base-shipper's responsibility, not the subclass author's.** The subclass author may not know a base implementation was added in a separate commit on a different agent's branch. Silent missing super calls accumulate silently across waves. The proactive scan by the base shipper at the moment of base-body addition is the discipline; the reactive catch (post-merge reviewer) is luck.
 
 **Canonical incidents:**
-- **Original (session-3 wave-1C, `910bd9a`):** world-builder-p3s2 added `_on_placement_complete` rebake logic to Building base; all three subclasses (Khaneh, Mazra'eh, Ma'dan) had silent overrides with no super call. Caught reactively mid-wave but cleanly fixed in the same commit. Rule born.
-- **Sharpened (session-4 wave-2A, `128af9f`):** gp-sys retroactively added `super._on_construction_complete(_placer_unit_id)` to Mazra'eh + Ma'dan after PR #19 reviewer caught them missing. The base is currently `pass`, but the future-additions-surface lock-in is the point. Two-part trigger + "comment is load-bearing" articulation added.
+- **Origin (session-3 wave-1C `910bd9a`):** world-builder-p3s2 added `_on_placement_complete` rebake logic to Building base; all three subclasses (Khaneh, Mazra'eh, Ma'dan) had silent overrides with no super call. Caught reactively mid-wave but cleanly fixed in the same commit. Rule born.
+- **Sharpened (session-4 wave-2A `128af9f`):** gp-sys retroactively added `super._on_construction_complete(_placer_unit_id)` to Mazra'eh + Ma'dan after PR #19 reviewer caught them missing. Sarbaz-khaneh did NOT need retrofit because it had applied L4a at authoring time. Two-part trigger + "comment is load-bearing" articulation added at session-4 retro.
 
-Cites Manifesto Principle 6 (Tests as Specifications — when behavior cannot be tested today, the comment carries the spec) + Principle 8 (Separation of Concerns — base-class owner owns the override-chain integrity) + Principle 9 (Automated Enforcement — same-commit fix prevents silent drift).
+**Why L4a + L4b together (not one rule).** L4a is the per-author forward-compat discipline at SUBCLASS authoring time; L4b is the per-shipper sweep audit at BASE modification time. Different actors, different triggers, different moments. If only L4a fires, subclasses authored pre-L4a (Khaneh / Mazra'eh / Ma'dan in their original commits) still need retrofit when the base body changes — L4b handles that. If only L4b fires, every base-body addition triggers a sweep — L4a's at-authoring discipline reduces L4b's retrofit surface to zero over time.
+
+Cites Manifesto Principle 8 (Separation of Concerns — base-class shipper owns the override-chain integrity) + Principle 9 (Automated Enforcement — same-commit fix prevents silent drift).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-3 implementation-pattern cluster + 2026-05-17 session-4 implementation-pattern cluster]
 
@@ -1057,6 +1102,8 @@ Cites Manifesto Principle 4 (Lean Iteration — fail fast, in live-test, not in 
 
 #### M3. Pre-commit hook is the authoritative commit-readiness gate; out-of-hook runs are diagnostic
 
+**See also: D6.** D6 says WHEN to broadcast `[blocked]` (after the hook fires). M3 says NOT to broadcast speculatively on out-of-hook output. The canonical incident below (Wave 2A PR #19 "33/34 farr_gauge") is the canonical example of D6 triggered incorrectly. Both rules together: only broadcast `[blocked]` after the hook fires, never on speculative out-of-hook signal.
+
 **Rule.** When an out-of-hook test run reports a failure that the pre-commit hook did NOT report on a recent identical-working-tree state, the failure is a DIAGNOSTIC SIGNAL (investigate why the environments differ) — NOT a commit blocker. **Pre-commit hook verdicts override standalone test-run verdicts.** The reverse also holds: if the hook fires on a failure not visible to the standalone run, the hook is correct and the standalone run's environment is misconfigured.
 
 **Trigger condition.** Defer to the hook when you have evidence (via `git log`) that the hook passed on a contemporaneous state of the same file set. If you want to pre-check before commit, run the hook directly (`bash tools/run_tests.sh` or equivalent), NOT `godot --headless --test` raw.
@@ -1070,6 +1117,8 @@ Cites Manifesto Principle 1 (Truth-Seeking — the hook is the authoritative gat
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-4 test-discipline cluster]
 
 #### M4. Headless test independence — `.new()` decouples test ship-timing from scene ship-timing
+
+**See also: F4.** F4 mandates the inherited-scene regression test EXISTS at first occurrence; M4 specifies WHERE it lives. Together: regression test is mandatory (F4); it lives in the scene-author's parallel `test_<subclass>_scene.gd` file, not the class-behavior test file (M4). Two tests, two authors, two ship cadences, zero coupling.
 
 **Rule.** When Track-N owns the script and Track-M owns the scene, Track-N's tests use `.new()` not `preload(.tscn).instantiate()`. This decouples your test ship-timing from the scene file's existence on disk.
 
