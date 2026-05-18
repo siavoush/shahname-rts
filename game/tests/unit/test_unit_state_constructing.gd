@@ -244,6 +244,32 @@ func test_enter_accepts_sarbaz_khaneh_building_kind() -> void:
 		"enter must issue a path request to the build site for Sarbaz-khaneh")
 
 
+# Wave-2A.5 (2026-05-18): Atashkadeh ships as the fifth and final Tier-1
+# Iran building (Tier-1 closure). Anchor-category: sacral-emitter. Same
+# late-add discipline applied pre-emptively: the &"atashkadeh" entry is
+# in _BUILDING_SCENE_PATHS from Commit 1, NOT a follow-up after live-test
+# discovers the omission (per the session-2 wave-1A lesson internalized
+# at session-3 onward).
+func test_enter_accepts_atashkadeh_building_kind() -> void:
+	_unit = _spawn_kargar(Vector3.ZERO)
+	_unit.current_command = {
+		"kind": &"construct",
+		"payload": {
+			&"building_kind": &"atashkadeh",
+			&"target_position": Vector3(5.0, 0.0, 0.0),
+		},
+	}
+	_unit.fsm.transition_to(&"constructing")
+	_tick_fsm()
+	# State must NOT abort to idle — the kind is recognized in
+	# _BUILDING_SCENE_PATHS.
+	assert_ne(_unit.fsm.current.id, &"idle",
+		"Constructing must accept &\"atashkadeh\" building_kind — "
+		+ "present in _BUILDING_SCENE_PATHS at wave-2A.5 Commit 1")
+	assert_gt(_mock.call_log.size(), 0,
+		"enter must issue a path request to the build site for Atashkadeh")
+
+
 func test_enter_bails_to_idle_on_missing_target_position() -> void:
 	_unit = _spawn_kargar()
 	_unit.current_command = {

@@ -65,7 +65,8 @@ extends CanvasLayer
 ##   - i18n: every visible string flows through tr(). Strings:
 ##     UI_BUILD_MENU_HEADER, UI_BUILDING_KHANEH_COST,
 ##     UI_BUILDING_MAZRAEH_COST, UI_BUILDING_MADAN_COST,
-##     UI_BUILDING_SARBAZ_KHANEH_COST, UI_BUILDING_SARBAZ_KHANEH_TOOLTIP.
+##     UI_BUILDING_SARBAZ_KHANEH_COST, UI_BUILDING_SARBAZ_KHANEH_TOOLTIP,
+##     UI_BUILDING_ATASHKADEH_COST, UI_BUILDING_ATASHKADEH_TOOLTIP.
 ##     The Persian column stays empty per Tier 2 schedule.
 ##   - No sim-state writes. UI reads only. The build_placement_started
 ##     emission is read-shaped (no consumer mutates sim state in the
@@ -104,6 +105,11 @@ const _COLOR_BUTTON_MADAN: Color = Color(0.55, 0.55, 0.60)
 # the dark HUD palette.
 const _COLOR_BUTTON_SARBAZ_KHANEH: Color = Color(0.65, 0.30, 0.25)
 
+# Button color — fire-amber / sacred-flame hue for the Atashkadeh.
+# Warm gold-orange that reads as "kept flame" — distinct from
+# Sarbaz-khaneh's blood-rust and the other three buildings' tints.
+const _COLOR_BUTTON_ATASHKADEH: Color = Color(0.85, 0.65, 0.20)
+
 
 # === Node refs =============================================================
 # Resolved @onready against the build_menu.tscn structure.
@@ -115,6 +121,7 @@ const _COLOR_BUTTON_SARBAZ_KHANEH: Color = Color(0.65, 0.30, 0.25)
 @onready var _mazraeh_button: Button = $Root/Margin/VBox/MazraehButton
 @onready var _madan_button: Button = $Root/Margin/VBox/MadanButton
 @onready var _sarbaz_khaneh_button: Button = $Root/Margin/VBox/SarbazKhanehButton
+@onready var _atashkadeh_button: Button = $Root/Margin/VBox/AtashkadehButton
 
 
 # === Lifecycle =============================================================
@@ -135,6 +142,8 @@ func _ready() -> void:
 		_madan_button.pressed.connect(_on_madan_button_pressed)
 	if not _sarbaz_khaneh_button.pressed.is_connected(_on_sarbaz_khaneh_button_pressed):
 		_sarbaz_khaneh_button.pressed.connect(_on_sarbaz_khaneh_button_pressed)
+	if not _atashkadeh_button.pressed.is_connected(_on_atashkadeh_button_pressed):
+		_atashkadeh_button.pressed.connect(_on_atashkadeh_button_pressed)
 
 	# Subscribe to selection changes. Read-shaped signal; we only update
 	# UI-local visibility / button text in the handler.
@@ -161,6 +170,9 @@ func _exit_tree() -> void:
 	if _sarbaz_khaneh_button != null \
 			and _sarbaz_khaneh_button.pressed.is_connected(_on_sarbaz_khaneh_button_pressed):
 		_sarbaz_khaneh_button.pressed.disconnect(_on_sarbaz_khaneh_button_pressed)
+	if _atashkadeh_button != null \
+			and _atashkadeh_button.pressed.is_connected(_on_atashkadeh_button_pressed):
+		_atashkadeh_button.pressed.disconnect(_on_atashkadeh_button_pressed)
 	if EventBus.selection_changed.is_connected(_on_selection_changed):
 		EventBus.selection_changed.disconnect(_on_selection_changed)
 
@@ -213,6 +225,16 @@ func _refresh_button_labels() -> void:
 	var sarbaz_cost: int = _SarbazKhanehScript.call(&"cost_coin")
 	_sarbaz_khaneh_button.text = tr("UI_BUILDING_SARBAZ_KHANEH_COST") % [sarbaz_cost]
 	_sarbaz_khaneh_button.tooltip_text = tr("UI_BUILDING_SARBAZ_KHANEH_TOOLTIP")
+	# Atashkadeh is the only Tier-1 building with a dual-resource cost
+	# (01_CORE_MECHANICS.md §5: 150 coin, 50 grain). The label format
+	# substitutes both static values from BalanceData via the cost_coin /
+	# cost_grain static helpers — keeps the surface drift-proof if
+	# balance-engineer tunes either cost.
+	var atashkadeh_cost_coin: int = _AtashkadehScript.call(&"cost_coin")
+	var atashkadeh_cost_grain: int = _AtashkadehScript.call(&"cost_grain")
+	_atashkadeh_button.text = tr("UI_BUILDING_ATASHKADEH_COST") % [
+			atashkadeh_cost_coin, atashkadeh_cost_grain]
+	_atashkadeh_button.tooltip_text = tr("UI_BUILDING_ATASHKADEH_TOOLTIP")
 
 
 # === Button handler ========================================================
@@ -245,6 +267,19 @@ func _on_sarbaz_khaneh_button_pressed() -> void:
 			_SarbazKhanehScript.KIND_SARBAZ_KHANEH, cost_x100)
 
 
+func _on_atashkadeh_button_pressed() -> void:
+	# x100 fixed-point per Sim Contract §1.6 (whole-coin → coin_x100).
+	# Note: build_placement_started's signal contract carries ONLY coin
+	# cost (EventBus signal signature locked at coin-only). The 50-grain
+	# cost is deducted at placement time inside UnitState_Constructing
+	# (gp-sys's atashkadeh entry). UI shows both costs in the label, but
+	# the dispatch signal carries one. Same UI vs sim-side separation as
+	# every other button.
+	var cost_x100: int = _AtashkadehScript.call(&"cost_coin") * 100
+	EventBus.build_placement_started.emit(
+			_AtashkadehScript.KIND_ATASHKADEH, cost_x100)
+
+
 # === Duck-type helpers ====================================================
 
 # Worker check: a Unit whose `unit_type` reads as &"kargar". Phase 3 only
@@ -268,3 +303,4 @@ const _KhanehScript: Script = preload("res://scripts/world/buildings/khaneh.gd")
 const _MazraehScript: Script = preload("res://scripts/world/buildings/mazraeh.gd")
 const _MadanScript: Script = preload("res://scripts/world/buildings/madan.gd")
 const _SarbazKhanehScript: Script = preload("res://scripts/world/buildings/sarbaz_khaneh.gd")
+const _AtashkadehScript: Script = preload("res://scripts/world/buildings/atashkadeh.gd")
