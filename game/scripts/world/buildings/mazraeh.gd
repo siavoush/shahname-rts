@@ -162,12 +162,13 @@ func _on_placement_complete(placer_unit_id: int) -> void:
 	# (workers walk ONTO the farm, not around it), so the base class impl
 	# finds nav == null and returns early — zero cost, correct behavior.
 	super._on_placement_complete(placer_unit_id)
-	# ResourceSystem.register_node ships in wave 1A (gp-sys slice). Guard with
-	# has_method for forward-compat with tests that load Mazra'eh without
-	# the autoload available. Pass resource_kind (&"grain") — Mazra'eh.kind is
-	# &"mazraeh" (Building kind) so implicit would register under the wrong bucket.
-	if ResourceSystem.has_method(&"register_node"):
-		ResourceSystem.register_node(self, resource_kind)
+	# ResourceSystem.register_node ships (Phase 3 wave 1A, project.godot
+	# autoload). The wave-1B has_method guard was obsolete after the
+	# Stage-2 migration locked the autoload-presence question structurally;
+	# removed at Task #117 (Wave-1C carry-forward). Pass resource_kind
+	# (&"grain") — Mazra'eh.kind is &"mazraeh" (Building kind) so implicit
+	# would register under the wrong bucket.
+	ResourceSystem.register_node(self, resource_kind)
 	# FogSystem ships in wave 3A. Forward-compat guard: use SceneTree autoload
 	# pattern (Engine.has_singleton does NOT find GDScript autoloads — they are
 	# SceneTree children, not C++ singletons). Sight=0, is_static=true.

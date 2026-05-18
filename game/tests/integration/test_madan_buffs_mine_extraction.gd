@@ -45,6 +45,8 @@ const MineNodeScene: PackedScene = preload(
 	"res://scenes/world/resource_nodes/mine_node.tscn")
 const MadanScene: PackedScene = preload(
 	"res://scenes/world/buildings/madan.tscn")
+const MazraehScene: PackedScene = preload(
+	"res://scenes/world/buildings/mazraeh.tscn")
 const BuildingScript: Script = preload(
 	"res://scripts/world/buildings/building.gd")
 
@@ -52,6 +54,7 @@ const BuildingScript: Script = preload(
 var _mine: Variant = null
 var _madan: Variant = null
 var _madan2: Variant = null
+var _mazraeh: Variant = null
 
 
 func before_each() -> void:
@@ -61,6 +64,7 @@ func before_each() -> void:
 	_mine = null
 	_madan = null
 	_madan2 = null
+	_mazraeh = null
 
 
 func after_each() -> void:
@@ -70,9 +74,12 @@ func after_each() -> void:
 		_madan.queue_free()
 	if _madan2 != null and is_instance_valid(_madan2):
 		_madan2.queue_free()
+	if _mazraeh != null and is_instance_valid(_mazraeh):
+		_mazraeh.queue_free()
 	_mine = null
 	_madan = null
 	_madan2 = null
+	_mazraeh = null
 	ResourceSystem.reset()
 	BuildingScript.call(&"reset_id_counter")
 	SimClock.reset()
@@ -455,3 +462,92 @@ func test_madan_class_name_is_madan_no_apostrophe() -> void:
 		"madan.gd must declare class_name Madan (no apostrophe — "
 		+ "loremaster transliteration-consistency rule). "
 		+ "Script.get_global_name() must return \"Madan\". Got: " + global_name)
+
+
+# ===========================================================================
+# Task #117 — Mazra'eh adjacency exclusion (Wave-1C carry-forward)
+# ===========================================================================
+#
+# Load-bearing edge from session-3 Layer 1.5 enumeration: building-to-building
+# proximity ≠ modifier-target proximity. A Ma'dan placed adjacent to a Mazra'eh
+# (within `modifier_radius_m` = 4m default) must NOT register the Mazra'eh
+# as its modifier target. Ma'dan only buffs MineNodes (which live in the
+# &"resource_nodes" group); Mazra'eh is a Building subclass in &"buildings"
+# (NOT in &"resource_nodes"), so the group iteration structurally excludes
+# it. This test confirms the BEHAVIORAL consequence — no false-positive
+# modifier registration on a near Mazra'eh.
+#
+# Companion to test_madan_not_in_resource_nodes_group above (structural
+# group-membership check). That test asserts the field; this test asserts
+# the gameplay-observable consequence: Mazra'eh placed adjacent to Ma'dan
+# yields no buffer chain. If Ma'dan's discovery ever switches from
+# &"resource_nodes" to a broader group (or starts iterating &"buildings"
+# by mistake), the structural test still passes but this behavioral test
+# catches the regression.
+
+
+func _spawn_mazraeh_at(pos: Vector3) -> Variant:
+	var m: Variant = MazraehScene.instantiate()
+	add_child_autofree(m)
+	m.team = Constants.TEAM_IRAN
+	# Full lifecycle (Stage 1 + Stage 2) — adjacent Mazra'eh is operational.
+	m.place_at(pos, Constants.TEAM_IRAN, 1)
+	m._on_construction_complete(1)
+	return m
+
+
+func test_madan_adjacent_to_mazraeh_does_not_register_modifier_on_mazraeh() -> void:
+	# Mazra'eh at origin (within Ma'dan's 4m radius). Ma'dan placed at
+	# (3, 0, 0) is within radius. The Ma'dan's mine-discovery iterates
+	# &"resource_nodes" — Mazra'eh is NOT in that group (it's in
+	# &"buildings"). Modifier registration should NOT fire on the Mazra'eh.
+	#
+	# Two complementary observations:
+	#   (a) the Mazra'eh exposes no register_extraction_modifier method
+	#       (it's a Building subclass duck-typing the gather API, not the
+	#       modifier API). If Ma'dan's discovery returned the Mazra'eh, the
+	#       call would crash. We assert no crash on placement.
+	#   (b) the Ma'dan's _find_nearest_mine_within_radius returns null when
+	#       only a Mazra'eh is in radius — the internal seam exclusion.
+	_mazraeh = _spawn_mazraeh_at(Vector3.ZERO)
+	_madan = _spawn_madan_at(Vector3(3.0, 0.0, 0.0))
+	# Observation (a): placement completed without crash.
+	assert_true(_madan.is_complete,
+		"Task #117: Ma'dan placed adjacent to a Mazra'eh must complete "
+		+ "placement without crash (the discovery seam structurally "
+		+ "excludes Mazra'eh from the modifier-target search)")
+	# Observation (b): the internal discovery seam confirms exclusion.
+	var nearest: Variant = _madan._find_nearest_mine_within_radius(4.0)
+	assert_eq(nearest, null,
+		"Task #117 BEHAVIORAL: _find_nearest_mine_within_radius must "
+		+ "return null when only a Mazra'eh is in radius. Mazra'eh lives "
+		+ "in &\"buildings\", NOT in &\"resource_nodes\"; the group filter "
+		+ "is the structural lock. building-to-building proximity != "
+		+ "modifier-target proximity.")
+
+
+func test_madan_adjacent_to_mazraeh_and_mine_buffs_only_mine() -> void:
+	# Mixed scenario: Ma'dan placed with BOTH a Mazra'eh and a MineNode
+	# within radius. The Mazra'eh is at (-3, 0, 0); the MineNode is at
+	# (3, 0, 0). Ma'dan at origin should buff the MINE, ignoring the
+	# Mazra'eh. Confirms that Mazra'eh-in-radius does not even contribute
+	# to the discovery scan (Mazra'eh is structurally absent from the
+	# &"resource_nodes" iteration).
+	_mazraeh = _spawn_mazraeh_at(Vector3(-3.0, 0.0, 0.0))
+	_mine = _spawn_mine_at(Vector3(3.0, 0.0, 0.0))
+	_madan = _spawn_madan_at(Vector3.ZERO)
+	# The mine is buffed.
+	assert_eq(_mine.registered_modifier_count(), 1,
+		"Task #117: with Mazra'eh + Mine both in radius, the Ma'dan "
+		+ "registers as a modifier on the MINE only.")
+	# Behavioral verification of the buff: complete_extract yields the
+	# 1.5x payload (1500 x100), confirming the Ma'dan actually bonded to
+	# the mine and not the Mazra'eh.
+	_mine.request_extract(99)
+	SimClock._is_ticking = true
+	var payload: Dictionary = _mine.complete_extract(99)
+	SimClock._is_ticking = false
+	assert_eq(payload[&"amount_x100"], 1500,
+		"Task #117 BEHAVIORAL: buffed mine yields 1500 (1000 base × 1.5). "
+		+ "If Ma'dan had bonded to the Mazra'eh by mistake, the mine "
+		+ "would yield the base 1000 instead.")
