@@ -1,61 +1,156 @@
 extends "res://scripts/world/buildings/building.gd"
 ##
-## Atashkadeh (آتشکده) — Iran fire-temple. Fourth Tier-1 anchor-category
-## Building variant: **sacral-emitter** (the fifth anchor variant overall,
-## introducing the passive-Farr-emit pattern). Tier-1 closure: Atashkadeh
-## is the last of the five Tier-1 Iran buildings (Khaneh, Mazra'eh, Ma'dan,
-## Sarbaz-khaneh, Atashkadeh).
+## Atashkadeh (آتشکده) — Iran "fire-house" / sacred-flame container.
+## Fourth Tier-1 anchor-category Building variant: **sacral-emitter /
+## divine-source**. 5/5 closes the Iran Tier-1 roster.
 ##
-## Source: 01_CORE_MECHANICS.md §4.3 (Farr generators — Atashkadeh +1
-## Farr/min) + 01_CORE_MECHANICS.md §5 (Tier-1 row: 150 coin + 50 grain,
-## Tier-2 gateway prerequisite) + docs/ARCHITECTURE.md §6 (post-Wave 2A.5
-## close entry, version bumps at wave close).
+## Source: 01_CORE_MECHANICS.md §4.3 (Farr generators — "Atashkadeh (fire
+## temple): +1 Farr/min") + §5 (Tier 1 row: "+1 Farr/min, prerequisite for
+## Tier 2 advance; 150 coin, 50 grain") + §5 Tier-2 gating row ("requires
+## Farr ≥ 40 + Atashkadeh built").
 ##
-## Anchor-category taxonomy (per §9.J2 + Khaneh / Mazra'eh / Ma'dan /
-## Sarbaz-khaneh headers for prior anchors):
+## Anchor-category taxonomy (per session-2 retro's building-variant
+## classification — see Khaneh / Mazra'eh / Ma'dan / Sarbaz-khaneh headers
+## for prior anchors):
 ##   - Khaneh: civic-anchor (settled household + population cap).
-##   - Mazra'eh: resource-producing (Grain via duck-typed gather API).
+##   - Mazra'eh: civic-anchor / resource-producing (Grain).
 ##   - Ma'dan: labor-organization (modifier-emitter on adjacent mine).
-##   - Sarbaz-khaneh: identity-bearing institutional (army-producer
-##     pending Phase-4 production-queue, `is_ready_to_produce` flag).
-##   - **Atashkadeh: sacral-emitter** — the building that passively emits
-##     Farr at a fixed per-minute cadence. Distinct from prior four: not
-##     civic continuity, not material extraction, not labor-organization,
-##     not institutional-production — but the temple that channels divine
-##     legitimacy into the civilization meter. Tier-2 GATEWAY: the player
-##     must have Atashkadeh built (and Farr ≥ 40) to advance from Village
-##     to Fortress tier. The Farr-emit + Tier-2-gating make Atashkadeh
-##     unique in the Tier-1 roster — it is both a passive generator AND
-##     a structural prerequisite for tech progression.
+##   - Sarbaz-khaneh: identity-bearing institutional (unit-production).
+##   - **Atashkadeh: sacral-emitter / divine-source** — the building
+##     whose mere existence emits Farr per tick. Distinct from the prior
+##     four: not civic continuity, not material extraction, not labor-
+##     organization, not unit-production institution — but a *continuity-
+##     of-sacred-flame* container whose presence in the world is itself
+##     the legitimizing mechanism. This is the FIRST passive-emit
+##     building and the Tier-1 → Tier-2 gateway.
 ##
-## ## Cultural note — PLACEHOLDER for Commit 1.5 (loremaster framing)
+## Cultural note — atashkadeh (آتش‌کده), the place where the fire is kept:
 ##
-## *Atashkadeh* (آتشکده, lit. "fire-place" / "house of fire") — the
-## sacred precinct where the eternal flame is tended by the magi
-## (mowbedan), the source of ritual legitimacy that binds the king's
-## rule to the divine order. The mechanic surfaces this transformation:
-## Atashkadeh emits Farr passively at +1/min once construction completes,
-## representing the temple's role as the channel through which divine
-## sanction (farr-e izadi) flows into the civilization.
+##   *Atash* (آتش, fire) + *-kadeh* (-کده, "place / dwelling / abode";
+##   the same suffix in *deh-kadeh* / village, *mey-kadeh* / wine-house).
+##   The literal compound is **"fire-place"** or **"fire-house"** — a
+##   container, a dwelling FOR the flame. The dictionary-default English
+##   gloss "fire temple" is the tricky-gloss to handle with care: in
+##   modern English usage "temple" imports an Abrahamic house-of-worship
+##   register — congregation-space, scheduled service, a building people
+##   gather IN to face an altar. The atash-kadeh is structurally something
+##   else. It is the architectural container that exists so the sacred
+##   flame can be KEPT — tended continuously by hereditary fire-priests,
+##   never permitted to extinguish, fed only with consecrated wood. The
+##   community's relationship to it is not "we gather there to worship"
+##   but "we sustain it because its continuity is the continuity of the
+##   ordered cosmos." Lead with the literal "fire-house"; treat "fire
+##   temple" as the gloss that comes with theological baggage requiring
+##   correction.
 ##
-## The four-part cultural-note template (per §9.J2 + world-builder's
-## session-2 retro pattern) will be filled by loremaster-p3s5:
-##   1. Cultural referent — which Shahnameh episodes / characters anchor
-##      the "fire-temple as divine legitimacy" frame? (Jamshid's farr
-##      and its forfeit, Zoroaster's revelation, the legitimacy contests
-##      between Iran kings, the fire-tending magi caste.)
-##   2. Mechanic-surfaces-truth — how does +1 Farr/min + Tier-2 gating
-##      render the cultural truth in gameplay?
-##   3. Cross-faction caveat — Turan does NOT have an Atashkadeh-clone.
-##      The fire-temple is specifically Iranian / Zoroastrian; Turan's
-##      religious shape is distinct (shamanic / steppe-spiritual). Do
-##      NOT bake "sacral-emitter" semantics into the Building base.
-##   4. Forward-compat — future sacral-emitter buildings (Dadgah,
-##      Barghah per 01_CORE_MECHANICS.md §4.3 generators) inherit the
-##      anchor-category framing + passive-Farr-emit pattern. Field
-##      naming (is_emitting_farr) generalizes; per-subclass marker
-##      stays per §9.L5 N≥3 hold (Atashkadeh is the THIRD operational
-##      marker; N=3 not yet a strong pattern to abstract).
+##   The Shahnameh's load-bearing anchor (00_SHAHNAMEH_RESEARCH.md §1
+##   lines 85-88, Pishdadian foundational events): **Hushang** strikes
+##   a stone hunting a serpent, sparks fire, and institutes its keeping
+##   — Ferdowsi gives this moment the founding of the Sadeh festival.
+##   The Shahnameh frame is unambiguous: fire is not a metaphor for the
+##   divine, it is the visible-continuous medium through which the
+##   divine relates to legitimate kingship. *Farr-ī Yazdān* (فرّ ایزدی,
+##   "divine glory," 00_SHAHNAMEH_RESEARCH.md §229-231) is the same
+##   theological-political fact viewed from the ruler side: just kings
+##   carry the Farr, unjust kings lose it. Jamshid (§1 line 88) loses
+##   the Farr when his pride corrupts him and the order he founded
+##   falls — the same passage that anchors Ma'dan's metallurgical
+##   inheritance anchors Atashkadeh's theological one. **The
+##   Atashkadeh is where the sacred fire that legitimizes the king
+##   is kept burning. That is the source-truth the mechanic maps onto.**
+##
+##   How the mechanic surfaces the cultural truth: Atashkadeh emits
+##   +1 Farr/min CONTINUOUSLY while standing (01_CORE_MECHANICS.md
+##   §4.3 generators list) — passive, per-tick, no worker dwell, no
+##   trip, no action required. This is mechanically distinct from
+##   every prior building and the distinction IS the source-truth:
+##   the Farr does not flow because something is HARVESTED (Mazra'eh)
+##   or PRODUCED (Sarbaz-khaneh) or BUFFED (Ma'dan) — it flows because
+##   the sacred flame is being KEPT, continuously, the way fire-priests
+##   keep it. The mechanic IS the theology, not a metaphor laid over
+##   it. The Tier-1 → Tier-2 gateway condition (Farr ≥ 40 + Atashkadeh
+##   built, 01_CORE_MECHANICS.md §5 Tier-2 row) likewise IS the
+##   Shahnameh's claim that legitimate rule must be theologically
+##   anchored before it can scale — you do not become Qal'eh (fortress,
+##   the Tier-2 sovereign seat) without first sustaining the fire-house
+##   that gives sovereignty its source. Loss of Atashkadeh costs −5 Farr
+##   (§4.3 drains list: "Loss of an Atashkadeh building: −5 Farr — the
+##   sacred flame is extinguished"); this is not "building lost" damage,
+##   it is *sacred-flame extinguished* damage — the discontinuity itself
+##   is the wound.
+##
+##   Cross-faction caveat (loremaster leading hypothesis — singular,
+##   not a three-option list, per J3 cross-faction shape):
+##
+##   Turan's Farr economy almost certainly does NOT clone Atashkadeh.
+##   Per 00_SHAHNAMEH_RESEARCH.md §311 ("the Shahnameh is culturally
+##   Zoroastrian in its setting") + §307 ("design Turan as worthy
+##   rivals, not cartoon villains"), the cultural-theological fact is
+##   complex: Zoroastrianism is not exclusively Iranian, and historical
+##   fire-cult practice extended across pre-Islamic Iranian-language
+##   peoples broadly. BUT the *Shahnameh's* framing — which is the
+##   project's anchor, not historical Zoroastrianism in general —
+##   centers Farr-ī Yazdān as the legitimating substance of Iranian
+##   kingship in opposition to Turanian rulership. Turan's analogue,
+##   if any, likely routes through **khan-loyalty + steppe-mobile
+##   sworn-bond rituals** — legitimacy carried in the sworn relation
+##   between named ruler (Afrasiyab, Piran) and named warrior, not
+##   in a continuously-tended sacred-flame in a fixed sacral building.
+##   This is a STRUCTURAL MISMATCH sharper than the building-vs-
+##   building variant gap (cf. Sarbaz-khaneh / mobile war-camps;
+##   Ma'dan / baj; Mazra'eh / karavan): Iran's legitimacy LIVES in
+##   a tended-flame in a fixed building; Turan's lives in the
+##   loyalty bond and the named ruler. **Do not clone Atashkadeh as
+##   a Turan building** — a naive copy would erase the settled-
+##   theological vs steppe-personal asymmetry the Shahnameh's
+##   Iran-Turan dichotomy is built on. When Turan Tier-1 legitimacy
+##   mechanics ship (post-MVP), expect a fundamentally different
+##   shape and require a fresh loremaster review. This question is
+##   currently a design-chat candidate (Turan economy / legitimacy
+##   pending design ratification — flag for QUESTIONS_FOR_DESIGN
+##   if not already routed).
+##
+##   Forward-compat note — sacral-emitter anchor category and the
+##   Tier-1 → Tier-2 gateway:
+##
+##   Atashkadeh is the FIRST instance of the **sacral-emitter /
+##   divine-source** variant (loremaster anchor-category taxonomy,
+##   session-2 retro; predicted slot now occupied). Future Tier-2
+##   Iran sacral-emitter buildings INHERIT this anchor category but
+##   carry distinct sub-variant framing — the taxonomy may grow to
+##   accommodate the difference:
+##     - **Dadgah** (دادگاه, "place-of-justice"; *dād* justice +
+##       *-gāh* place) — +0.5 Farr/min (§4.3, §5 Tier-2 row). Same
+##       passive-emit mechanical shape, but the framing shifts from
+##       sacred-flame-continuity to **justice-as-Farr-source**.
+##       Shahnameh frame: a just king sustains Farr through right
+##       judgment (Kay Khosrow as the ideal just king, §1 line 103);
+##       Dadgah surfaces the institutional setting where justice is
+##       rendered. Sub-variant: sacral-emitter / justice-source.
+##     - **Barghah** (بارگاه, "audience-court / royal-court") —
+##       +0.5 Farr/min (§4.3, §5 Tier-2 row). Same passive-emit
+##       shape, framing shifts to **sovereignty-as-Farr-source** —
+##       the legitimate king holding court IS itself Farr-generating.
+##       Sub-variant: sacral-emitter / sovereignty-source.
+##     - **Yadgar** (یادگار, "memorial / remembrance") — +0.25
+##       Farr/min, only after a hero has died (§4.3, §5 Tier-2 row).
+##       Same passive-emit shape, framing is **remembrance-as-Farr-
+##       source** — naming-the-dead-heroes sustains the civilization's
+##       moral substance. Sub-variant: sacral-emitter / memorial-source.
+##   Subsequent Iran sacral-emitter buildings inheriting this template
+##   should keep: (a) continuous passive emit (no worker dwell, no
+##   action required — the building's *existence-while-tended* is the
+##   mechanic), (b) explicit framing of WHICH Shahnameh source-of-
+##   legitimacy this sub-variant surfaces (flame, justice, sovereignty,
+##   remembrance — they are NOT interchangeable), (c) registration with
+##   FarrSystem at Stage 2 (operational flip) rather than Stage 1
+##   (structural placement) — the sacred fire is not "burning" until
+##   construction completes; mirrors Mazra'eh.is_gatherable +
+##   Sarbaz-khaneh.is_ready_to_produce gating discipline (per L5
+##   two-stage seam). The Tier-1 → Tier-2 GATEWAY status, however,
+##   is unique to Atashkadeh — Dadgah / Barghah / Yadgar do not gate
+##   tier-up, only Atashkadeh does. Keep that asymmetry intact when
+##   the future-clone templates ship.
 ##
 ## ## What lives here vs Building base
 ##
