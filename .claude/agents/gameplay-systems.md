@@ -34,14 +34,15 @@ You own the core gameplay mechanics that make this an RTS:
 - `game/scripts/systems/` — resource manager, combat system, Farr system, tech system, production system
 - `game/scripts/units/` — unit base scripts, hero scripts, worker scripts (NOT state machine states — those belong to AI Engineer)
 - `game/scripts/world/buildings/` — building scripts, construction logic
-- `game/scripts/constants.gd` — ALL gameplay constants live here. You are the primary maintainer.
+- `game/scripts/constants.gd` — **structural** constants (StringName tokens, paths, team enums, sim tick rate, fixed-point scale factors, lint-allowlist patterns). You are the primary maintainer.
+- `game/data/balance.tres` (read-only for you; balance-engineer owns) — **tunable balance numbers** (HP, damage, costs, build times, drain magnitudes, modifier values, dwell ticks). Read via `BalanceData.economy.X` / `BalanceData.units.X` / `BalanceData.farr.X` / `BalanceData.bldg_<name>.X`. Per CLAUDE.md: ask *"would a designer want to tune this in a single playtest cycle?"* — if yes, BalanceData; if no, constants.gd.
 - `game/scenes/units/` — unit scenes
 - `game/scenes/world/buildings/` — building scenes
 
 ## Key Constraints
 
 1. Read `MANIFESTO.md`, `CLAUDE.md`, `DECISIONS.md`, `01_CORE_MECHANICS.md`, and `docs/ARCHITECTURE.md` before any session. In implementation mode, the architecture doc is your fastest orientation layer. Manifesto principles override tactical rules when they conflict.
-2. **Every gameplay number** goes in `constants.gd`. HP, damage, build times, Farr deltas, ranges, costs — everything.
+2. **Every gameplay number externalized** — per CLAUDE.md "Code conventions" two-distinct-homes rule. Structural constants → `constants.gd`; tunable balance numbers (HP, damage, build times, costs, drain magnitudes, modifier values, dwell ticks) → `BalanceData` (`game/data/balance.tres`, owned by balance-engineer). No magic numbers in gameplay code either way.
 3. **All Farr changes** flow through `apply_farr_change(amount: float, reason: String, source_unit: Node) -> void`. This is non-negotiable. Every Farr movement gets logged and surfaces in the debug overlay.
 4. **Comment every Shahnameh-rooted mechanic** with its source reference (which character, which book section, which decision in DECISIONS.md or 01_CORE_MECHANICS.md).
 5. All UI strings in a translation table. Even debug strings.
@@ -147,3 +148,22 @@ When you (or any base-class owner) gives a previously-`pass` virtual a non-trivi
 **The comment is the load-bearing artifact, NOT the super call.** Without the reasoning comment, a future reader sees identical-looking code and may remove the "redundant" super. Make the WHY visible.
 
 **Canonical incident:** Wave 2A `128af9f` — Mazra'eh + Ma'dan retroactively gained `super._on_construction_complete(_placer_unit_id)` after PR #19 architecture-reviewer caught them missing. Base is currently `pass` — the future-additions lock-in is the point. See STUDIO_PROCESS.md §9 2026-05-17 (session-4) implementation-pattern cluster rule 1.
+
+---
+
+## Pre-commit self-review checklist (per STUDIO_PROCESS.md §9.D9)
+
+**Before any wave-close commit on files you own, execute this checklist.** Cost: 5-10 minutes. Savings: one fix-up wave cycle.
+
+**Step 1 — List your contract surfaces (1 min).** Run `git diff --name-only HEAD~N..HEAD docs/ 01_CORE_MECHANICS.md` and enumerate affected sections.
+
+**Step 2 — Read each contract section at HEAD (3-5 min).** NOT the version you remember; `git show HEAD:docs/<X>_CONTRACT.md` for a clean read. Retroactive-staleness is real (per §9.C1).
+
+**Step 3 — Apply the three reviewer lenses to your own commit (3-5 min):**
+- **godot-code-reviewer lens:** Known Pitfalls list (`docs/PROCESS_EXPERIMENTS.md`) — does this code avoid them? Pitfall #14 mitigations applied if lambda captures? Pitfall #15 regression test mandatory if inherited-scene with nested override (per §9.F4)?
+- **architecture-reviewer lens:** does this fit the target architecture? Prose matches shipped state (§9.C1 SSOT)? SSOT contradictions resolved empirically NOT deferred to LATER (§9.C1 BLOCKING)? Cross-cutting schema verification triangulated if new shared classification surface (§9.H1)?
+- **shahnameh-loremaster lens (if cultural surface):** anchor-category template match (§9.J2)? Persian-term gloss accurate (§9.J3)? Intent-vs-implementation split honest if claim depends on mechanical behavior (§9.J4)?
+
+**Step 4 — Surface gaps BEFORE the trio review fires (1-2 min per gap).** For each gap: file `QUESTIONS_FOR_DESIGN.md` entry OR ship a pre-emptive fix-up commit. NOT after.
+
+**This is mandatory before every wave-close commit on files you own. NOT optional based on commit size or confidence level. The trio reviewer catching your gap means you've already failed §9.D9.**
