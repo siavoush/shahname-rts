@@ -51,9 +51,6 @@ text = "tick=0"
 
 [node name="SelectedUnitPanel" parent="." instance=ExtResource("7_panel")]
 
-[node name="AttackMoveHandler" type="Node" parent="."]
-script = ExtResource("11_attackmove")
-
 [node name="ClickHandler" type="Node" parent="."]
 script = ExtResource("5_click")
 
@@ -63,8 +60,9 @@ script = ExtResource("6_boxselect")
 [node name="DoubleClickSelect" type="Node" parent="."]
 script = ExtResource("8_doubleclick")
 
-; BuildPlacementHandler is placed AFTER ClickHandler / BoxSelectHandler /
-; DoubleClickSelect in sibling order so its _unhandled_input runs FIRST.
+; BuildPlacementHandler + AttackMoveHandler are placed AFTER ClickHandler /
+; BoxSelectHandler / DoubleClickSelect in sibling order so their
+; _unhandled_input runs FIRST.
 ; Godot dispatches _unhandled_input in REVERSE sibling order — the
 ; higher-index sibling fires first. Verified by the regression test
 ; `test_godot_unhandled_input_dispatch_order` in
@@ -72,22 +70,33 @@ script = ExtResource("8_doubleclick")
 ;
 ; BUG-10 fix (2026-05-14): the wave-1C placement put BPH at idx 4
 ; (between AttackMoveHandler and ClickHandler) under the mistaken
-; "lower-index = first" convention copied from AttackMoveHandler. That
-; convention is backwards; ClickHandler at the lower index actually
-; fired first and consumed every terrain click via deselect-all,
-; preventing BPH from ever reaching its confirm-click handler. The
-; selection-changed guard in BPH then cancelled the orphaned placement
-; state. Live-test #2 surfaced this; the log diagnostic at
-; `[click] LEFT: hit non-unit → deselect_all` arriving BEFORE the
-; `[build-placement] BUG-08 guard` line was the smoking gun.
+; "lower-index = first" convention. ClickHandler at the lower index
+; actually fired first and consumed every terrain click via deselect-all,
+; preventing BPH from ever reaching its confirm-click handler.
 ;
-; When in placement mode the handler calls
-; get_viewport().set_input_as_handled() so ClickHandler / BoxSelect /
-; DoubleClickSelect never see the confirm-click. When not in placement
-; mode the handler short-circuits and lets the other handlers run
-; normally.
+; L24 fix (2026-05-18, Phase 3 session 5): AttackMoveHandler had the
+; SAME inverted-convention bug — sat at idx 0 (fires LAST under reverse-
+; tree-order), so its next-click never reached AMH because ClickHandler
+; at idx 1 consumed terrain clicks first. Lead live-test confirmed:
+; Shift+A → click empty terrain → worker did nothing (camera panned via
+; camera_controller polling). Fix: AMH moved to AFTER BuildPlacementHandler
+; so its _unhandled_input runs FIRST under reverse-tree-order. Both
+; BPH and AMH now correctly conditionally-consume events (placement mode
+; for BPH; pending-state for AMH). Companion: attack_move_handler.gd
+; now requires `ek.shift_pressed` to enter pending state (plain `A`
+; remained a camera-pan-left key per WASD). Camera controller now
+; short-circuits horizontal A/D pan when Shift held to prevent
+; visible camera drift during attack-move command.
+;
+; When in placement mode (BPH) or pending mode (AMH) the handler calls
+; get_viewport().set_input_as_handled() so the lower-index handlers
+; never see the consumed event. When not active, the handler
+; short-circuits and lets the other handlers run normally.
 [node name="BuildPlacementHandler" type="Node" parent="."]
 script = ExtResource("13_buildplacement")
+
+[node name="AttackMoveHandler" type="Node" parent="."]
+script = ExtResource("11_attackmove")
 
 [node name="HealthBarsOverlay" parent="." instance=ExtResource("9_healthbars")]
 

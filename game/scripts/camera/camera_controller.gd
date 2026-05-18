@@ -213,10 +213,21 @@ func set_test_mode(on: bool) -> void:
 # camera contract says rotation is OUT, so the axis is screen-space and we can
 # bind directly to physical keys here.
 func _read_keyboard_pan_axis() -> Vector2:
+	# L24 fix (2026-05-18): when Shift is held, A/D are reserved for unit-
+	# command modifiers (Shift+A = attack-move per AttackMoveHandler). Camera
+	# horizontal pan must short-circuit under Shift to prevent visible camera
+	# drift while the player issues a Shift-modified command. Arrow keys
+	# (KEY_LEFT / KEY_RIGHT) remain unconditionally panning since they aren't
+	# shared with any unit-command modifier.
 	var ax: Vector2 = Vector2.ZERO
-	if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT):
+	var shift_held: bool = Input.is_key_pressed(KEY_SHIFT)
+	if Input.is_key_pressed(KEY_D) and not shift_held:
 		ax.x += 1.0
-	if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT):
+	elif Input.is_key_pressed(KEY_RIGHT):
+		ax.x += 1.0
+	if Input.is_key_pressed(KEY_A) and not shift_held:
+		ax.x -= 1.0
+	elif Input.is_key_pressed(KEY_LEFT):
 		ax.x -= 1.0
 	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP):
 		ax.y += 1.0

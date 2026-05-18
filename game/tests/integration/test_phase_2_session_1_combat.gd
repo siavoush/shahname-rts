@@ -1036,9 +1036,16 @@ func test_main_tscn_attack_move_handler_before_click_handler() -> void:
 	assert_not_null(ch, "main.tscn must contain ClickHandler")
 
 	if amh != null and ch != null:
-		assert_true(amh.get_index() < ch.get_index(),
-			"AttackMoveHandler (idx=%d) must appear BEFORE ClickHandler (idx=%d) "
-			% [amh.get_index(), ch.get_index()])
+		# Under Godot's reverse-tree-order _unhandled_input dispatch,
+		# HIGHER-index sibling fires FIRST. AMH must fire BEFORE ClickHandler
+		# so its pending-state can consume the next-click before ClickHandler
+		# deselects on terrain. L24 fix (2026-05-18): assertion flipped from
+		# `<` to `>` after AMH moved from idx 0 to after BPH. See main.tscn
+		# comment for the BUG-10 / L24 pattern context.
+		assert_true(amh.get_index() > ch.get_index(),
+			"AttackMoveHandler (idx=%d) must fire BEFORE ClickHandler (idx=%d) "
+			% [amh.get_index(), ch.get_index()]
+			+ "— higher index = fires first under reverse-tree-order")
 
 
 func _collect_unit_shaped_nodes(node: Node, out: Array) -> void:
@@ -1127,6 +1134,10 @@ func test_pitfall_5_attack_move_handler_before_click_handler_standalone() -> voi
 	assert_not_null(ch, "ClickHandler must be in main.tscn")
 	if amh == null or ch == null:
 		return
-	assert_true(amh.get_index() < ch.get_index(),
-		"Pitfall #5: AttackMoveHandler (idx=%d) must appear BEFORE ClickHandler (idx=%d) "
-		% [amh.get_index(), ch.get_index()])
+	# Pitfall #5: Godot dispatches _unhandled_input in REVERSE tree-order.
+	# HIGHER-index sibling fires FIRST. L24 fix (2026-05-18): assertion flipped
+	# from `<` to `>` after AMH moved from idx 0 to after BPH.
+	assert_true(amh.get_index() > ch.get_index(),
+		"Pitfall #5: AttackMoveHandler (idx=%d) must fire BEFORE ClickHandler (idx=%d) "
+		% [amh.get_index(), ch.get_index()]
+		+ "— higher index = fires first under reverse-tree-order")

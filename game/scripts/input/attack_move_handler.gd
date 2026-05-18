@@ -94,13 +94,19 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		match ek.keycode:
 			KEY_A:
+				# Shift+A is the attack-move modifier; plain `A` is reserved
+				# for camera pan-left (WASD). Without this guard, every
+				# camera-pan-left keypress would also toggle AMH-pending.
+				# L24 fix (2026-05-18, Phase 3 session 5).
+				if not ek.shift_pressed:
+					return
 				if SelectionManager.selection_size() == 0:
 					if DEBUG_LOG_CLICKS:
-						print("[attack-move] A pressed but no selection → no-op")
+						print("[attack-move] Shift+A pressed but no selection → no-op")
 					return
 				_attack_move_pending = true
 				if DEBUG_LOG_CLICKS:
-					print("[attack-move] A pressed → pending click")
+					print("[attack-move] Shift+A pressed → pending click")
 				get_viewport().set_input_as_handled()
 			KEY_ESCAPE:
 				if _attack_move_pending:
