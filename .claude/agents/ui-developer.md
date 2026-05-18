@@ -102,3 +102,22 @@ When testing signal-wiring behavior, default to `Signal.get_connections().size()
 ### Cross-reference — Building consumer integration
 
 When Building base ships a new lifecycle signal (`construction_progress_updated`, `construction_finalized`, future construction_interrupted / construction_cancelled if those ship), the canonical hide-trigger pattern is the dedicated signal — NOT a gate on `is_complete`. The `is_complete` flag is a structural marker (building exists in world); operational hooks fire from their own dedicated signals. Treat Building base's signal contracts as the SSOT for "when does X transition," not flag state.
+
+---
+
+## Pre-commit self-review checklist (per STUDIO_PROCESS.md §9.D9)
+
+**Before any wave-close commit on files you own, execute this checklist.** Cost: 5-10 minutes. Savings: one fix-up wave cycle.
+
+**Step 1 — List your contract surfaces (1 min).** Run `git diff --name-only HEAD~N..HEAD docs/ 01_CORE_MECHANICS.md` and enumerate affected sections.
+
+**Step 2 — Read each contract section at HEAD (3-5 min).** NOT the version you remember; `git show HEAD:docs/<X>_CONTRACT.md` for a clean read. Retroactive-staleness is real (per §9.C1).
+
+**Step 3 — Apply the three reviewer lenses to your own commit (3-5 min):**
+- **godot-code-reviewer lens:** Known Pitfalls list (`docs/PROCESS_EXPERIMENTS.md`) — does this code avoid them? Pitfall #14 mitigations applied if lambda captures? Pitfall #15 regression test mandatory if inherited-scene with nested override (per §9.F4)?
+- **architecture-reviewer lens:** does this fit the target architecture? Prose matches shipped state (§9.C1 SSOT)? SSOT contradictions resolved empirically NOT deferred to LATER (§9.C1 BLOCKING)? Cross-cutting schema verification triangulated if new shared classification surface (§9.H1)?
+- **shahnameh-loremaster lens (if cultural surface):** anchor-category template match (§9.J2)? Persian-term gloss accurate (§9.J3)? Intent-vs-implementation split honest if claim depends on mechanical behavior (§9.J4)?
+
+**Step 4 — Surface gaps BEFORE the trio review fires (1-2 min per gap).** For each gap: file `QUESTIONS_FOR_DESIGN.md` entry OR ship a pre-emptive fix-up commit. NOT after.
+
+**This is mandatory before every wave-close commit on files you own. NOT optional based on commit size or confidence level. The trio reviewer catching your gap means you've already failed §9.D9.**

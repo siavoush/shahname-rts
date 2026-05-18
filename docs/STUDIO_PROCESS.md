@@ -57,6 +57,25 @@ This is the runbook for the first 90 seconds of a session. If you remember nothi
 
 ---
 
+## 0.7 Project Glossary (read this if a term in §9 looked unfamiliar)
+
+Project-shared vocabulary used throughout §9 and agent-defs. Definitions for terms a fresh-spawn agent (or you, post-context-rotation) might not recognize from the active doc alone.
+
+- **Pitfall #N** — A Godot 4 / GDScript bug-pattern promoted to the permanent Known Pitfalls list in `docs/PROCESS_EXPERIMENTS.md`. Each entry has: mechanism, rule, canonical incident commit, regression test. Currently #1 through #15 promoted. The godot-code-reviewer's primary checklist. **Cited as "Pitfall #N" inline; see PROCESS_EXPERIMENTS.md for the full content.**
+- **Deviation #N** — A measured process deviation (Experiment 01). Tracks incidents like "verification loop" or "commit race" that recurred across sessions. Each deviation has a count and a target reduction. Currently #01 (verification-loop) and #02 (commit-race-via-staging-contamination) are the canonical examples. **See `docs/PROCESS_EXPERIMENTS.md` Experiment section.**
+- **Layer 1.5** — A reviewer-verdict enumeration discipline (§9.F2). When a wave introduces a new shared classification surface (SceneTree group, duck-type method, base-class field, EventBus signal), the reviewer outputs an explicit enumeration TABLE listing publishers / consumers / per-entity-type membership status. The "1.5" naming comes from the original Phase 3 session 2 retro where it was inserted between Layer 1 (structural checks) and Layer 2 (cross-cutting behavioral checks).
+- **L<N>** (e.g., L1, L6, L25) — An entry in `docs/ARCHITECTURE.md §7` LATER ledger. Outstanding architectural items: deferred decisions, known gaps, open spikes. Status markers: 🟡 in-progress, ✅ resolved (with strike-through), 📋 deferred. L25 + L26 are the canonical resolved-via-Wave-1D examples; L24 is currently open.
+- **Wave N<letter>** (e.g., Wave 1C, Wave 2A) — Implementation work-unit within a session. A "wave" is a coherent dispatchable scope (one building shipped, one system migrated, one bug fixed). Multiple waves per session; waves can be sequential-shared-tree or parallel-worktrees (§9.E1).
+- **Track N** (e.g., Track 1, Track 2A) — A sub-component within a parallel-worktrees wave. Each track has a distinct agent owner + distinct code surface. E.g., Wave 1C had Track 1 (state machine), Track 2A (UI overlay), Track 2B (signal seam), Track 3 (navmesh spike).
+- **§N.X** (e.g., §9.C1, §12.5.1) — In-doc anchor. The first digit/letter is the major section; subsequent digits/letters are subsections. §9.X are active rule clusters; §12.X are operating-mode subsections; §X.Y.Z is fine-grained.
+- **Persistent instance** — An agent instance that survives across waves (Tier 2 per §12.5) or across sessions (per §12.5.1). Addressable via SendMessage by ID (e.g., `gp-sys-p3s3`, `world-builder-p3s2`). Carries lived memory.
+- **Fresh-spawn** — A new agent instance with zero session memory. Used for PR-time external-audit reviewers (F1 Stage 2) and bias-check validation tests. Agent-tool spawn, not SendMessage.
+- **`-pNsN-<suffix>` naming convention** — Persistent agent ID format. `p3s3` = Phase 3 session 3. Suffix optional (`-retro`, `-fix-up`, etc.). Naming convention started Phase 3 session 1; older agents may use other shapes.
+- **PR #N** — GitHub pull request. The project uses PRs for all merges to main. PR numbers grow monotonically; recent ones (#14 through #22+) are project-internal references.
+- **SHA `<7-char>`** (e.g., `8314a8a`, `df25033`) — Git commit hash (7-char short form). Used as canonical-incident citations throughout active rules. Resolve via `git show <SHA>` for full context.
+
+---
+
 ## 1. When to Run a Sync
 
 Run a multi-agent sync when **2+ specialties have overlapping authority on a decision that's expensive to retrofit.** These are "gray zones" — places where building each agent's piece in isolation guarantees rework.
@@ -249,7 +268,7 @@ This section is the **currently-binding form** of every accumulated process rule
 | §9.A | Discussion & Sync Patterns | 4 |
 | §9.B | Lead Role & Facilitation | 3 |
 | §9.C | SSOT Discipline | 3 |
-| §9.D | Commit & Workspace Coordination | 8 |
+| §9.D | Commit & Workspace Coordination | 9 |
 | §9.E | Wave-Mode & Worktree | 2 |
 | §9.F | Wave-Close Review & Reviewer Architecture | 4 |
 | §9.G | Agent Persistence & Dispatch Channel | 3 |
@@ -261,7 +280,7 @@ This section is the **currently-binding form** of every accumulated process rule
 | §9.M | Test Discipline | 5 |
 | §9.N | Investigation Reports | 1 |
 
-**Total: 51 active rules across 14 clusters.** Down from 81 dated entries in v1.8.0 — same load-bearing content, restructured to currently-binding form. (L4 split into L4a/L4b at validation-test fix-up — see post-Test-1 commit for rationale.)
+**Total: 52 active rules across 14 clusters.** Down from 81 dated entries in v1.8.0 — same load-bearing content, restructured to currently-binding form. (L4 split into L4a/L4b at validation-test fix-up; D9 pre-commit self-review checklist added at PR C — both with provenance notes in their respective entries.)
 
 ---
 
@@ -591,6 +610,35 @@ Cites Manifesto Principle 6 (Partnership — coordinate explicitly) + Principle 
 Cites Manifesto Principle 1 (Truth-Seeking — the index is the binding state).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-01 post-Phase-0 + post-Phase-1-wave-2]
+
+#### D9. Pre-commit self-review checklist — read your own contract delta as the trio reviewer would, BEFORE the pre-commit hook fires
+
+**Rule.** Before any wave-close commit on files you own, execute this checklist. The cost is 5-10 minutes; the savings is one fix-up wave cycle. **This is the operational form of the rule the audit's FG3 finding flagged as too-vague.** The original prose ("read the contracts your changes write against as the trio reviewer would") existed since session-2 close but had two failures in Wave 2A alone — the rule was known, not followed. The checklist below is the concrete form designed to actually be executable at commit time.
+
+**Step 1 — List your contract surfaces (1 minute).** Which contract docs does your commit touch? Run `git diff --name-only HEAD~N..HEAD docs/ 01_CORE_MECHANICS.md` and enumerate the affected files + sections. Common surfaces: `docs/<X>_CONTRACT.md §<N>`, `01_CORE_MECHANICS.md §<N>`, `docs/ARCHITECTURE.md §2/§6/§7`, `MANIFESTO.md`.
+
+**Step 2 — Read each contract section at its current `HEAD` (3-5 minutes).** NOT the version you remember; the version on disk RIGHT NOW. `git show HEAD:docs/<X>_CONTRACT.md` if you want a clean read. The retroactive-staleness failure mode (C1) is real — shipped state can shift between authoring and your commit.
+
+**Step 3 — Apply the three reviewer lenses to your own commit (3-5 minutes).** Self-execute each role's question:
+- **godot-code-reviewer lens:** does this code avoid the [Known Pitfalls list](../docs/PROCESS_EXPERIMENTS.md)? Does it pass behavioral-vs-structural test discipline (F3)? Pitfall #14 mitigations applied if lambda captures? Pitfall #15 regression test mandatory if inherited-scene with nested override (F4)?
+- **architecture-reviewer lens:** does this fit the target architecture? Does the prose match shipped state (C1 SSOT canonical)? Are SSOT contradictions resolved empirically NOT deferred to LATER (C1 BLOCKING refinement)? Cross-cutting schema verification triangulated if new shared classification surface (H1)?
+- **shahnameh-loremaster lens (if cultural surface):** does the framing match the anchor-category template (J2)? Persian-term gloss accurate per literal-then-tricky-gloss (J3)? Intent-vs-implementation split honest if claim depends on mechanical behavior (J4)?
+
+**Step 4 — Surface gaps BEFORE the trio review fires (1-2 minutes per gap).** For each gap surfaced, file a `QUESTIONS_FOR_DESIGN.md` entry (for design decisions) OR ship a pre-emptive fix-up commit (for SSOT corrections). **Not after.** The trio reviewer catching your gap means you've already failed this rule.
+
+**Trigger condition.** Mandatory before EVERY wave-close commit on files you own. NOT optional based on commit size, NOT optional based on confidence level, NOT optional based on "I'm pretty sure this is clean." The hook for "is this clean?" is this checklist, NOT your self-assessment.
+
+**Time budget.** 7-12 minutes per wave-close commit. If it takes longer, your commit is probably too large; split it.
+
+**Followability mechanism.** This rule lives in each implementer's agent-def (gp-sys / world-builder / ui-developer / qa-engineer / balance-engineer / engine-architect) as a "Pre-commit self-review checklist" first-class section — so agents read it at every dispatch, not just at session start (the original FG3 failure mode was "agents don't re-read §9 each wave").
+
+**Canonical incidents.**
+- **Original (session-2, world-builder `91f48ad`):** caught own contract gaps pre-trio-review — `§1.4/§3.4` corrections to RNC. 5-10 minute pre-emptive read saved a fix-up wave cycle. Rule born.
+- **FG3 failure modes (session-4 wave-2A):** TWO violations of the (then-vague) rule in one wave: (a) `sarbaz_khaneh.gd:7` + `test_sarbaz_khaneh.gd:3` cited `02h_PHASE_3_SESSION_4_KICKOFF.md` — would have been caught by step 2 (read citation targets at HEAD); (b) `sarbaz_khaneh.tscn` `1ff3039` shipped with Pitfall #15 silent-override syntax — would have been caught by step 3 godot-code-reviewer lens applied. Both surfaced at PR review; both should have been caught pre-commit by the implementer.
+
+Cites Manifesto Principle 1 (Truth-Seeking — verify your own work before others have to) + Principle 9 (Automated Enforcement — discipline in agent-def at every-dispatch read-cadence > discipline in §9 at session-start read-cadence).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2 pre-commit-self-review (original prose); operationalized to checklist 2026-05-18 PR C]
 
 ---
 
