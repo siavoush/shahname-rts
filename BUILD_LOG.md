@@ -34,6 +34,69 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ## Entries
 
+## 2026-05-18 — Cross-doc audit: STUDIO_PROCESS active/history/sync-log split (v2.0.0 MAJOR)
+
+**Branches:** `audit/core-docs-cross-review` (PR #21) + `audit/studio-process-active-history-split` (PR #22)
+
+**Driver:** lead synthesizing 4 audit agents' findings (architecture-reviewer fresh-spawn studio-process-auditor + persistent gp-sys-p3s3 + persistent world-builder-p3s2 + persistent engine-architect-p3s2) + 4 validation-test reviewers (gp-sys-p3s3 + world-builder-p3s2 + engine-architect-p3s2 + fresh-spawn cold-read-bias-check). User flagged discipline-followability concern at session-4 retro close: *"can lead and agents actually follow what's written?"* — triggered this two-phase audit.
+
+**What shipped (PR #21 — quick fixes):**
+
+- ARCHITECTURE.md §2 row 167 (Mazra'eh) past-tense fix — forward-looking promise "wave 1C moves flip" was stale; migration shipped at `a507512`.
+- ARCHITECTURE.md §2 row 169 (Ma'dan) "INERT" claim corrected post-Wave-1D resolution.
+- gp-sys agent-def `Files You Own` path fixes — `game/scripts/buildings/` → `game/scripts/world/buildings/` (silently wrong for 4+ waves).
+- world-builder agent-def NavigationObstacle3D section rewritten — said L25 UNRESOLVED; Wave 1D resolved it at `df25033`. Updated to canonical pattern + canonical-incident pointer.
+- BUILD_LOG state-for-next-session — added L24 verification (AttackMoveHandler sibling-order audit, 🟡, open since 2026-05-14) to session-5 live-test cadence.
+
+**What shipped (PR #22 — the architectural restructure):**
+
+- **STUDIO_PROCESS.md v1.8.0 → v2.0.0 MAJOR.** Read-path break = MAJOR per §13 SemVer policy.
+- **§9 rewritten** as 51 currently-binding rules across 14 topical clusters with cluster TOC. Down from 81 dated entries — same load-bearing content, restructured to currently-binding form.
+- **§9 cluster TOC** at top of section enables "skim TOC → jump to cluster" navigation instead of "read top-to-bottom" chronological wading.
+- **§0.5 Session Start Checklist** — 6-step tactical runbook between §0 and §1 for fresh agents.
+- **§10 → 10-line pointer** to new `STUDIO_PROCESS_SYNC_LOG.md`.
+- **§12.2 wording fix** — "lead silent" v1.0-era framing replaced with lead-as-active-orchestrator per multi-agent persistent-instance architecture.
+- **§2 header fix** — "Four Discussion Patterns" → "Five" (Pattern E was added 2026-04-30 but header was never updated).
+- **§9.H/§9.I cluster boundary note** — disambiguates "engine-API-dependent (I)" vs "reviewer-discipline for test-coverage/schema (H)."
+- **F4↔M4 + D6↔M3 cross-references** — causally-linked rules now reference each other (regression-test mandatory ↔ test-file-location; blocked-broadcast-WHEN ↔ NOT-speculatively-on-out-of-hook).
+- **D6 broadcast mechanism clarification** — "Broadcast = SendMessage with `to: team-lead`" leading sentence.
+- **L4 split into L4a + L4b** — over-consolidation caught at validation; L4a = per-author forward-compat super-call discipline (subclass-author obligation), L4b = per-shipper sweep audit (base-class-shipper obligation). Different actors, different triggers, different moments.
+- **`docs/STUDIO_PROCESS_HISTORY.md` (new, ~440 lines).** Chronological §9 archaeology verbatim from pre-split version, with preamble explaining split rationale. Opt-in read at retro time.
+- **`docs/STUDIO_PROCESS_SYNC_LOG.md` (new, ~440 lines).** Chronological sync + session-close log, extracted from §10. Append-only, opt-in read.
+
+**Validation tests run BEFORE merge (Test 1 subjective + cold-read):**
+
+- 4 agents: 3 persistent (gp-sys-p3s3, world-builder-p3s2, engine-architect-p3s2) + 1 fresh-spawn architecture-reviewer cold-read (zero session memory of the restructure, bias control).
+- **Unanimous verdict: PREFER NEW FORM.** Each agent cited specific non-bias reasons. Cold-read cited 4-for-4 cluster TOC predictions, rules-are-operational-not-philosophical, "better than typical engineering docs."
+- **Lookup speed up 2-10× across reviewers** (TOC + cluster navigation vs chronological scan).
+- **No load-bearing content loss** in any spot-checked domain.
+- **6 pre-merge findings extracted and fixed** before merge (all listed under PR #22 above).
+
+**Honest meta-observations:**
+
+1. **User-clarified framing (saved to memory):** STUDIO_PROCESS.md is becoming a framework for autonomous LLM-multi-agent collaboration, not primarily for human consumption. Agent-validation signal is authoritative for doc-shape decisions. Lead retains gatekeeper role for work-impact evaluation but biases toward LLM-affordances.
+
+2. **The empirical-test discipline paid for itself.** Cold-read fresh-spawn found 4 findings (Four/Five header bug, missing cross-references, Session Start Checklist, project-vocab undefined) that persistent agents didn't surface — different lens, different value. Persistent agents found L4 over-consolidation (a substantive technical finding) that cold-read couldn't surface. Both classes of reviewer paid off.
+
+3. **Lead almost flunked the gatekeeper test by opening PR B for merge without running Test 1.** User caught: *"have you done the tests?"* Honest answer: no, deferred to session-5 startup. Wrong. Ran Test 1 pre-merge per user prompt; surfaced 6 fixes that materially improved the doc. Lesson: empirical-test discipline applies to LEAD's process changes too, not just specialist work. Saved as gatekeeper-failure-mode reminder.
+
+**Did not ship (PR C scope — deferred):**
+
+- Project-vocab glossary (Pitfall #N / Deviation #N / Layer 1.5) — cold-read finding.
+- Cross-references audit pass for rule-IDs (A1, D4, F3) — cold-read finding.
+- Agent-defs bidirectionally linked FROM active rules (e.g., F4 → engine-architect.md) — engine-architect finding.
+- **Pre-commit self-review prose → concrete checklists** — original audit FG3 followability finding. The BIG one for actually reducing rule-violation incidents.
+
+**State for next session:**
+
+- Session-5 startup runs Test 2 (objective followability over next 2-3 waves) per `project_post_audit_validation_test.md`. Track FG3-class incidents in Wave 2B / 3A / 3B retros; compare to session-4 baseline of 2 violations of pre-commit self-review in one wave.
+- PR C scope above can be done in any order; the FG3 followability fix is the highest-leverage item.
+- CLAUDE.md `constants.gd` rule is stale post-Phase-2 BalanceData ship — flagged to user; lead cannot modify CLAUDE.md.
+- Per `project_studio_process_framework_role.md` memory: future doc-shape decisions weight agent-validation signal as authoritative.
+- Per `project_obsidian_future.md` memory: future Obsidian-graph migration uses the cluster taxonomy + TOC as the seed structure.
+
+---
+
 ## 2026-05-17 — Phase 3 session 4: Sarbaz-khaneh (wave 2A) + Wave 1D navmesh resolution
 
 **Branch:** main (PR #18 + PR #19 merged) + `retro/phase-3-session-4-close` for the close retro
