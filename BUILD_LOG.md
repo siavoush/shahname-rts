@@ -89,11 +89,40 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 **State for next session:**
 
-- Session-5 startup runs Test 2 (objective followability over next 2-3 waves) per `project_post_audit_validation_test.md`. Track FG3-class incidents in Wave 2B / 3A / 3B retros; compare to session-4 baseline of 2 violations of pre-commit self-review in one wave.
-- PR C scope above can be done in any order; the FG3 followability fix is the highest-leverage item.
-- CLAUDE.md `constants.gd` rule is stale post-Phase-2 BalanceData ship — flagged to user; lead cannot modify CLAUDE.md.
+- Session-5 startup runs Test 2 (objective followability over next 2-3 waves) per `project_post_audit_validation_test.md`. Track FG3-class incidents in Wave 2A.5 / 2B / 2C / 3A retros; compare to session-4 baseline of 2 violations of pre-commit self-review in one wave.
+- PR C shipped post-this-entry at commit `f400b5d` (D9 pre-commit self-review checklist + glossary + CLAUDE.md alignment). FG3 followability fix is now live in active doc + 6 implementer agent-defs.
+- ~~CLAUDE.md `constants.gd` rule is stale~~ — DONE in PR C `bb0fe00` (user signed off). Two-distinct-homes shape: structural → constants.gd; tunable → BalanceData.
 - Per `project_studio_process_framework_role.md` memory: future doc-shape decisions weight agent-validation signal as authoritative.
 - Per `project_obsidian_future.md` memory: future Obsidian-graph migration uses the cluster taxonomy + TOC as the seed structure.
+
+**Session-5 game-work roadmap (ratified 2026-05-18 at audit close):**
+
+User direction: "wrap up process work soon and get back to game development." Recommended sequence (3-4 waves before next process check-in):
+
+1. **Session-5 startup hygiene (~15 min before any wave):**
+   - L24 live-test verification (AttackMoveHandler sibling-order audit, open since 2026-05-14). Single test: Shift+A → click empty terrain. If broken, apply §7 L24 prescribed fix.
+   - Wave 1C carry-forward Task #117 — obsolete `has_method` guard removal + Mazra'eh+Ma'dan adjacency test (small QA cleanup).
+   - Task #120 verification — Wave 1D `df25033` likely closed L25/L26; 2-min check to mark task complete.
+   - Each persistent agent reads the new STUDIO_PROCESS.md v2.0.0 at session start (this is Test 2 starting).
+
+2. **Wave 2A.5 — Atashkadeh** (Tier-1 closure, sacral-emitter anchor)
+   - Completes Iran's Tier-1 roster (5/5 buildings shipped).
+   - First sacral-emitter anchor — fourth distinct anchor category, new template-seed (J1 brief-time review fires).
+   - Introduces Farr-per-tick generation pattern that future Dadgah / Barghah inherit.
+   - **First real test of D9 checklist + Test 2 followability tracking.**
+
+3. **Wave 2B + 2C — Sowari-khaneh + Tirandazi** (Tier-2 entry, parallel-or-sequential per E1 wave-mode declaration)
+   - Settles Task #159 naming-shape question via Tirandazi.
+   - Second + third followability data points for Test 2.
+
+4. **Wave 3A (Fog-of-war data layer) OR ProductionSystem full** — lead's call at session-6 kickoff based on whether strategic-layer (fog) or tactical-layer (units actually produced) is the higher-leverage next step.
+
+**Explicit deferrals (NOT shipping next session):**
+- BUILDING_CONTRACT.md authoring — defer indefinitely. Authoring at 7+ buildings is stronger than at 4. The §9.L5 named pattern + canonical-incident shape already carries most contract value.
+- Cross-references audit pass for rule-IDs across all clusters (PR C deferred) — LOW leverage, defer indefinitely.
+- Agent-defs bidirectionally linked FROM active rules — LOW leverage, defer indefinitely.
+
+**Process budget for session 5:** ~15 min of hygiene; everything else is game work. Test 2 runs passively through wave retros.
 
 ---
 
