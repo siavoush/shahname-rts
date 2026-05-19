@@ -425,3 +425,86 @@ func test_sarbaz_khaneh_button_press_does_not_deduct_coin_synchronously() -> voi
 	var coin_after: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
 	assert_eq(coin_before, coin_after,
 		"SarbazKhanehButton press must NOT deduct Coin synchronously (Pitfall #4)")
+
+
+# ---------------------------------------------------------------------------
+# Atashkadeh button (Wave 2A.5)
+# ---------------------------------------------------------------------------
+
+func test_atashkadeh_button_visible_when_kargar_selected() -> void:
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var root: Control = _menu.get_node(^"Root")
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/AtashkadehButton")
+	assert_true(root.visible,
+		"BuildMenu root must be visible when a Kargar is selected")
+	assert_true(btn.visible,
+		"AtashkadehButton must be visible (parent visible, button visible)")
+
+
+func test_atashkadeh_button_uses_mouse_filter_stop() -> void:
+	# Same Pitfall #1 invariant as the other 4 buttons.
+	_menu = _spawn_menu()
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/AtashkadehButton")
+	assert_eq(btn.mouse_filter, Control.MOUSE_FILTER_STOP,
+		"AtashkadehButton must use MOUSE_FILTER_STOP (Pitfall #1)")
+
+
+func test_atashkadeh_button_label_shows_dual_cost() -> void:
+	# Atashkadeh is the only Tier-1 building with a dual-resource cost per
+	# 01_CORE_MECHANICS.md §5 (150 coin + 50 grain). The label format
+	# "Atashkadeh (%d Coin / %d Grain)" substitutes both static values
+	# from BalanceData.
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/AtashkadehButton")
+	assert_true(btn.text.contains("150"),
+		"AtashkadehButton label must include the coin cost (150) — got '%s'" % btn.text)
+	assert_true(btn.text.contains("50"),
+		"AtashkadehButton label must include the grain cost (50) — got '%s'" % btn.text)
+
+
+func test_atashkadeh_button_press_emits_build_placement_started_with_kind() -> void:
+	var captured: Array = []
+	var handler: Callable = func(kind: StringName, cost: int) -> void:
+		captured.append({&"kind": kind, &"cost": cost})
+	EventBus.build_placement_started.connect(handler)
+
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/AtashkadehButton")
+	btn.pressed.emit()
+	EventBus.build_placement_started.disconnect(handler)
+	assert_eq(captured.size(), 1,
+		"build_placement_started fires exactly once per AtashkadehButton press")
+	var ev: Dictionary = captured[0]
+	assert_eq(ev[&"kind"], &"atashkadeh",
+		"Signal carries building_kind = &\"atashkadeh\"")
+	# Signal contract: build_placement_started carries ONLY coin cost
+	# (50-grain cost is deducted at placement time inside
+	# UnitState_Constructing — gp-sys's atashkadeh entry, NOT UI).
+	assert_eq(ev[&"cost"], 15000,
+		"Signal carries cost_coin_x100 = 15000 (150 Coin × 100, grain not in signal)")
+
+
+func test_atashkadeh_button_press_does_not_deduct_resources_synchronously() -> void:
+	# Pitfall #4 symmetry: the Atashkadeh button is UI-shaped too. No Coin
+	# OR Grain mutation at press time — both deductions happen at placement
+	# (gp-sys's atashkadeh placement entry deducts both costs from the
+	# Constants.TEAM_IRAN balance once the worker arrives).
+	var coin_before: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	var grain_before: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/AtashkadehButton")
+	btn.pressed.emit()
+	var coin_after: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	var grain_after: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	assert_eq(coin_before, coin_after,
+		"AtashkadehButton press must NOT deduct Coin synchronously (Pitfall #4)")
+	assert_eq(grain_before, grain_after,
+		"AtashkadehButton press must NOT deduct Grain synchronously (Pitfall #4)")

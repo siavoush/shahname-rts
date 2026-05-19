@@ -1,0 +1,118 @@
+[gd_scene load_steps=6 format=3 uid="uid://shahnameh_atashkadeh_building"]
+
+; atashkadeh.tscn — Atashkadeh (آتشکده) "fire-house" scene.
+;
+; Source: 01_CORE_MECHANICS.md §5 — "Atashkadeh (fire temple): +1 Farr/min,
+; prerequisite for Tier 2 advance. 150 coin, 50 grain."
+;
+; Cultural framing: see atashkadeh.gd header (Cultural note block) for the
+; full sacral-emitter / divine-source anchor framing. Lead with the literal
+; "fire-house"; treat "fire temple" as the tricky-gloss (Abrahamic baggage).
+;
+; Fifth and final Tier-1 Iran building. Sacral-emitter anchor category —
+; the first passive-emit building and the Tier-1 → Tier-2 gateway.
+;
+; Inheriting building.tscn per the khaneh.tscn / sarbaz_khaneh.tscn pattern:
+;   - Overrides mesh size + material (2.0 × 1.8 × 2.5 — taller than prior
+;     buildings, reads as "monumental sacral structure" vs domestic / agrarian /
+;     industrial / military peers).
+;   - Overrides CollisionShape3D to match the new footprint (click-target
+;     accuracy — BUG-07 lesson). Height override (1.8 vs base 1.2) triggers
+;     Pitfall #15 F4 condition — regression test shipped in
+;     test_atashkadeh_scene.gd.
+;   - Overrides NavigationObstacle3D vertices to cover the 2.0 × 2.5 XZ
+;     footprint (±1.1 × ±1.35 + 0.1m margin per RNC §3.2 v1.4.0 sizing rule).
+;
+; Visual placeholder per CLAUDE.md "colored rectangles for buildings":
+;   - BoxMesh 2.0 × 1.8 × 2.5 — taller than all prior buildings (1.8 vs 1.2).
+;     The vertical emphasis reads as "monumental / sacral" at default zoom.
+;     Footprint is slightly narrower than Sarbaz-khaneh (2.0 XZ vs 3.0×2.0)
+;     — the Atashkadeh is not sprawling barracks but a contained precinct.
+;   - Emissive warm orange Color(0.95, 0.55, 0.15) with emission enabled.
+;     Distinct from all existing buildings:
+;       * Khaneh tan (0.78, 0.65, 0.45) — warm domestic
+;       * Mazra'eh green (0.55, 0.75, 0.35) — agrarian
+;       * Ma'dan stone-grey (0.5, 0.5, 0.55) — industrial
+;       * Sarbaz-khaneh iron-red (0.55, 0.25, 0.20) — military
+;       * MineNode gold (0.85, 0.7, 0.2) — resource node (not a building)
+;     The emissive orange reads as "active fire" from across the map. This
+;     IS the cultural truth: the atashkadeh exists so the sacred flame can
+;     be KEPT — the emission color surfaces "fire is burning here."
+;     StandardMaterial3D EMISSION_ENABLED_FLAG required for emission to render
+;     at runtime (not just editor-side). emission_energy_multiplier = 0.4 keeps
+;     it readable without washing out the albedo at normal zoom.
+;
+; NavigationObstacle3D — ACTIVE (not inert). The carve fires at placement
+; via the inherited _on_placement_complete → bake_navigation_mesh(false)
+; pipeline (building.gd Task #144 / 910bd9a). SOURCE_GEOMETRY_ROOT_NODE_CHILDREN
+; (terrain.gd Task #147 / be8c355) means the bake sees this obstacle even
+; though Atashkadeh spawns under &World as a sibling of Terrain.
+; Both affect_navigation_mesh + carve_navigation_mesh inherited from base — NOT
+; overridden here (would clear them). See building.tscn for dual-flag rationale.
+;
+; Footprint polygon math (per RNC §3.2 v1.4.0 + building.tscn base precedent):
+;   Mesh XZ: 2.0 × 2.5.  Half-extents: 1.0 × 1.25.
+;   Polygon margin: +0.1m per axis (compensates NAV_AGENT_RADIUS=0.5 erosion).
+;   Result: ±1.1 × ±1.35.
+
+[ext_resource type="PackedScene" uid="uid://shahnameh_building_base" path="res://scenes/world/buildings/building.tscn" id="1_building_template"]
+[ext_resource type="Script" path="res://scripts/world/buildings/atashkadeh.gd" id="2_atashkadeh"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_atashkadeh"]
+; Taller-than-square sacral footprint — 2.0 wide × 1.8 tall × 2.5 deep.
+; Taller than all prior buildings (1.8 vs 1.2) to read as "monumental
+; precinct" — the vertical emphasis carries the sacral/divine register.
+size = Vector3(2.0, 1.8, 2.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_atashkadeh"]
+; Emissive warm orange — fire-house with active sacred flame visible.
+; albedo_color carries the base warm orange; emission_color mirrors it
+; for the glow. emission_energy_multiplier = 0.4 is enough for a visible
+; "flame" read at default zoom without washing out the building silhouette.
+albedo_color = Color(0.95, 0.55, 0.15, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — matches unit / mine / building pipeline.
+emission_enabled = true
+emission = Color(0.95, 0.55, 0.15, 1.0)
+emission_energy_multiplier = 0.4
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_atashkadeh"]
+; Collision shape matches the visual mesh for click-target accuracy.
+; BUG-07 lesson: the inherited StaticBody3D provides the CollisionObject3D
+; ancestor; this shape must cover the full rendered silhouette.
+; Height is 1.8 (overrides base 1.2) — triggers Pitfall #15 F4 condition
+; — see test_atashkadeh_scene.gd for the mandatory regression test.
+size = Vector3(2.0, 1.8, 2.5)
+
+
+; Inherit the Building scene template; override mesh, material, collision, obstacle.
+[node name="Atashkadeh" instance=ExtResource("1_building_template")]
+script = ExtResource("2_atashkadeh")
+
+[node name="MeshInstance3D" parent="." index="0"]
+; Override mesh + material. Y-offset = half-height (0.9) so the bottom
+; face sits flush on terrain at Y=0 — same convention as building.tscn.
+; Height 1.8 → half-height 0.9 (vs base 1.2 → 0.6).
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+mesh = SubResource("BoxMesh_atashkadeh")
+material_override = SubResource("StandardMaterial3D_atashkadeh")
+
+[node name="CollisionShape3D" parent="StaticBody3D"]
+; Override collision shape to match the 2.0×1.8×2.5 mesh footprint.
+; Y-offset 0.9 co-locates with the mesh centre (half-height of 1.8).
+; Pitfall #15: Godot inherited-scene nested-child override syntax requires
+; parent="StaticBody3D" (path in parent attr), NOT name="StaticBody3D/CollisionShape3D"
+; (slash in name is a literal char, not a path separator — causes "node vanished" warning).
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+shape = SubResource("BoxShape3D_atashkadeh")
+
+[node name="NavigationObstacle3D" parent="." index="0"]
+; Override vertices for the 2.0×2.5 XZ footprint (base has 2.0×2.0).
+; Per RNC §3.2 v1.4.0: polygon at ±(half-extent + 0.1m margin):
+;   X: ±(1.0 + 0.1) = ±1.1.  Z: ±(1.25 + 0.1) = ±1.35.
+; Vertex order matches building.tscn: (-X,-Z), (+X,-Z), (+X,+Z), (-X,+Z).
+; affect_navigation_mesh + carve_navigation_mesh inherited from base — NOT
+; overridden here (would clear them). See building.tscn for dual-flag rationale.
+; radius updated to ~1.75 (≈ sqrt(1.1²+1.35²)) for editor visualization parity.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+vertices = PackedVector3Array(-1.1, 0, -1.35, 1.1, 0, -1.35, 1.1, 0, 1.35, -1.1, 0, 1.35)
+radius = 1.75
