@@ -453,6 +453,155 @@ func test_sim_tick_skips_placement_when_insufficient_coin() -> void:
 
 
 # ---------------------------------------------------------------------------
+# Wave 2A.5 fix-up — dual-cost (coin + grain) deduction tests
+# ---------------------------------------------------------------------------
+#
+# Live-test BUG-A: Atashkadeh placement deducted coin (150 → 0) but NOT
+# grain (50 → 50). UnitState_Constructing._perform_placement only handled
+# coin. Atashkadeh is the FIRST building with non-zero grain_cost; the
+# wiring gap surfaced because no prior subclass exercised the grain path.
+#
+# Fix-up shape: _perform_placement now runs both-or-neither affordability —
+# coin check + grain check BOTH BEFORE any deduction. Either insufficient
+# resource → return false → no debit on either. Both sufficient → deduct
+# coin then grain.
+#
+# Tests below cover the three relevant cases.
+
+func test_atashkadeh_placement_deducts_both_coin_and_grain() -> void:
+	# BEHAVIORAL positive case: player has 150 coin + 50 grain available
+	# (Iran starts with 150 coin + 100 grain per balance.tres seed). Build
+	# Atashkadeh. Expected: both deducted. Coin: 150 → 0. Grain: 100 → 50.
+	var coin_before: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	var grain_before: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	# Sanity: starting resources cover Atashkadeh's cost.
+	assert_true(coin_before >= 15000,
+		"sanity: starting Coin >= 150 (Atashkadeh cost). Got: %d x100" % coin_before)
+	assert_true(grain_before >= 5000,
+		"sanity: starting Grain >= 50 (Atashkadeh cost). Got: %d x100" % grain_before)
+	_unit = _spawn_kargar(Vector3.ZERO)
+	_unit.current_command = {
+		"kind": &"construct",
+		"payload": {
+			&"building_kind": &"atashkadeh",
+			&"target_position": Vector3(5.0, 0.0, 0.0),
+		},
+	}
+	_unit.fsm.transition_to(&"constructing")
+	for _i in range(1000):
+		_drive_one_loop()
+		if _unit.fsm.current.id == &"idle":
+			break
+	var coin_after: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	var grain_after: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	assert_eq(coin_before - coin_after, 15000,
+		"BEHAVIORAL: Atashkadeh placement deducts exactly 150 Coin "
+		+ "(15000 x100). BUG-A regression test.")
+	assert_eq(grain_before - grain_after, 5000,
+		"BEHAVIORAL: Atashkadeh placement deducts exactly 50 Grain "
+		+ "(5000 x100). BUG-A regression test — pre-fix-up, this was 0 "
+		+ "(grain path never read).")
+
+
+func test_placement_fails_when_insufficient_grain_does_not_debit_coin() -> void:
+	# BEHAVIORAL both-or-neither: drain grain to below Atashkadeh's
+	# requirement; leave coin sufficient. Placement must fail at the
+	# grain check AND coin must remain undebited. The pre-fix-up
+	# implementation would have debited coin first and only then noticed
+	# the missing grain check — but my fix checks both BEFORE deducting
+	# either, so this scenario produces a clean both-untouched failure.
+	#
+	# Iran starts with 100 grain x100 = 10000. Drain to 4000 (40 grain,
+	# below the 50-grain requirement).
+	SimClock._is_ticking = true
+	var have_grain_x100: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN, -(have_grain_x100 - 4000),
+		&"test_drain", null)
+	SimClock._is_ticking = false
+	assert_eq(ResourceSystem.grain_x100_for(Constants.TEAM_IRAN), 4000,
+		"sanity: Iran grain drained to 4000 x100 (40 grain — below 50 "
+		+ "Atashkadeh requirement)")
+	var coin_before: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+
+	_unit = _spawn_kargar(Vector3.ZERO)
+	_unit.current_command = {
+		"kind": &"construct",
+		"payload": {
+			&"building_kind": &"atashkadeh",
+			&"target_position": Vector3(5.0, 0.0, 0.0),
+		},
+	}
+	_unit.fsm.transition_to(&"constructing")
+	for _i in range(1000):
+		_drive_one_loop()
+		if _unit.fsm.current.id == &"idle":
+			break
+
+	# No building was placed.
+	assert_eq(get_tree().get_nodes_in_group(&"buildings").size(), 0,
+		"No Atashkadeh instantiated when grain insufficient at placement")
+	# BEHAVIORAL: coin stays at the pre-attempt value — both-or-neither
+	# discipline ensures the coin check passing doesn't trigger a debit
+	# when grain check fails downstream.
+	var coin_after: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	assert_eq(coin_before, coin_after,
+		"BEHAVIORAL: Coin must NOT be debited when grain check fails. "
+		+ "Pre-fix-up would have debited coin then failed grain check — "
+		+ "the both-or-neither restructure prevents the partial-failure "
+		+ "state. coin_before=%d coin_after=%d" % [coin_before, coin_after])
+	# Grain stays at 4000 — the grain check itself does not debit.
+	assert_eq(ResourceSystem.grain_x100_for(Constants.TEAM_IRAN), 4000,
+		"Grain stays at 4000 — no debit when placement fails at grain check")
+
+
+func test_placement_fails_when_insufficient_coin_does_not_check_grain() -> void:
+	# BEHAVIORAL early-return on coin failure: when coin is insufficient,
+	# the function returns at the coin check BEFORE querying grain. Grain
+	# is untouched whether sufficient or not — the coin check is the
+	# first gate.
+	#
+	# Drain coin to 0. Leave grain sufficient. Attempt Atashkadeh.
+	# Placement fails at coin; grain remains at starting value.
+	SimClock._is_ticking = true
+	var have_coin_x100: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_COIN, -have_coin_x100,
+		&"test_drain", null)
+	SimClock._is_ticking = false
+	assert_eq(ResourceSystem.coin_x100_for(Constants.TEAM_IRAN), 0,
+		"sanity: Iran coin drained to 0")
+	var grain_before: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+
+	_unit = _spawn_kargar(Vector3.ZERO)
+	_unit.current_command = {
+		"kind": &"construct",
+		"payload": {
+			&"building_kind": &"atashkadeh",
+			&"target_position": Vector3(5.0, 0.0, 0.0),
+		},
+	}
+	_unit.fsm.transition_to(&"constructing")
+	for _i in range(1000):
+		_drive_one_loop()
+		if _unit.fsm.current.id == &"idle":
+			break
+
+	# No building was placed.
+	assert_eq(get_tree().get_nodes_in_group(&"buildings").size(), 0,
+		"No Atashkadeh instantiated when coin insufficient at placement")
+	# Coin stays at 0 — no spurious deduction.
+	assert_eq(ResourceSystem.coin_x100_for(Constants.TEAM_IRAN), 0,
+		"Coin stays at 0 — no debit when placement fails at coin check")
+	# Grain UNTOUCHED — the coin check returned false BEFORE the grain
+	# branch executed.
+	assert_eq(ResourceSystem.grain_x100_for(Constants.TEAM_IRAN), grain_before,
+		"BEHAVIORAL: Grain unchanged after coin-insufficient failure. "
+		+ "The coin check returns false before any grain code path runs "
+		+ "(neither check nor debit fires on grain side).")
+
+
+# ---------------------------------------------------------------------------
 # exit — path cancel
 # ---------------------------------------------------------------------------
 

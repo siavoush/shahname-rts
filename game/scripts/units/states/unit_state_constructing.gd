@@ -409,24 +409,59 @@ func _perform_placement(ctx: Object) -> bool:
 	if &"unit_id" in ctx:
 		unit_id = int(ctx.unit_id)
 
-	# Cost check + deduction. The build menu pre-screens affordability
+	# Cost check + deduction. The build menu pre-screens coin affordability
 	# at dispatch time; this is the second line of defense for the
-	# "spent it during walk" edge case.
+	# "spent it during walk" edge case PLUS the only line of defense for
+	# grain (build menu does not currently pre-screen grain — see
+	# build_menu.gd line 272-277 comment which explicitly contracts grain
+	# deduction to this site).
+	#
+	# Both-or-neither affordability discipline (Wave-2A.5 fix-up): check
+	# BOTH costs BEFORE deducting either. If coin passes but grain fails
+	# (Atashkadeh: 150 coin + 50 grain, first building with dual cost),
+	# we must NOT have already debited coin — the player would lose 150
+	# coin AND fail to place the Atashkadeh, which is a worse failure
+	# mode than the current "no placement, no debit." Sequence: check
+	# coin → check grain → both pass → deduct coin → deduct grain.
+	#
+	# Coin check first (per the existing pre-fix-up precedent, and per
+	# the brief's "coin check first; if coin fails we don't even need
+	# to query grain" ordering). Grain check second.
 	var cost_coin: int = _resolve_cost_coin(_building_kind)
+	var cost_grain: int = _resolve_cost_grain(_building_kind)
 	if cost_coin > 0:
-		var have_x100: int = ResourceSystem.coin_x100_for(team)
-		if have_x100 < cost_coin * 100:
+		var have_coin_x100: int = ResourceSystem.coin_x100_for(team)
+		if have_coin_x100 < cost_coin * 100:
 			push_warning(
 				"UnitState_Constructing: insufficient Coin at placement "
 				+ "(team=%d, have_x100=%d, need_x100=%d, kind=%s) — "
-				% [team, have_x100, cost_coin * 100, _building_kind]
+				% [team, have_coin_x100, cost_coin * 100, _building_kind]
 				+ "transitioning to idle without placing"
 			)
 			return false
-		# Deduct via the chokepoint. Negative amount = spend per
-		# ResourceSystem's convention.
+	if cost_grain > 0:
+		var have_grain_x100: int = ResourceSystem.grain_x100_for(team)
+		if have_grain_x100 < cost_grain * 100:
+			push_warning(
+				"UnitState_Constructing: insufficient Grain at placement "
+				+ "(team=%d, have_x100=%d, need_x100=%d, kind=%s) — "
+				% [team, have_grain_x100, cost_grain * 100, _building_kind]
+				+ "transitioning to idle without placing (no coin debited)"
+			)
+			return false
+	# Both checks passed — now deduct. Order does not matter for
+	# correctness (no race window between the two debits — both run
+	# synchronously inside this _perform_placement frame), but coin
+	# first preserves the visible-order convention from the pre-fix-up
+	# implementation. Deduct via the chokepoint per ResourceSystem's
+	# negative-amount-is-spend convention.
+	if cost_coin > 0:
 		ResourceSystem.change_resource(
 			team, Constants.KIND_COIN, -cost_coin * 100,
+			&"building_construction", ctx)
+	if cost_grain > 0:
+		ResourceSystem.change_resource(
+			team, Constants.KIND_GRAIN, -cost_grain * 100,
 			&"building_construction", ctx)
 
 	# Instantiate and place. The Building scene must be added to a
@@ -554,6 +589,34 @@ func _resolve_cost_coin(kind: StringName) -> int:
 	if typeof(coin_v) != TYPE_INT and typeof(coin_v) != TYPE_FLOAT:
 		return 0
 	return int(coin_v)
+
+
+# Read the Grain cost from BalanceData.buildings[kind].grain_cost.
+# Mirrors _resolve_cost_coin exactly — same defensive fall-through
+# (missing file / entry / wrong type → 0). The grain-cost path went
+# unexercised until Atashkadeh shipped as the FIRST building with
+# non-zero grain_cost (Wave 2A.5 live-test BUG-A surfaced the gap;
+# build_menu.gd:272-277 contracts grain deduction to this site).
+# Returning 0 on missing entry preserves existing-subclass behavior
+# (Khaneh / Mazra'eh / Ma'dan / Sarbaz-khaneh all have grain_cost = 0
+# at BalanceData defaults — they skip the grain branch entirely).
+func _resolve_cost_grain(kind: StringName) -> int:
+	var path: String = Constants.PATH_BALANCE_DATA
+	if not FileAccess.file_exists(path):
+		return 0
+	var bd: Resource = load(path)
+	if bd == null:
+		return 0
+	var bldgs: Variant = bd.get(&"buildings")
+	if typeof(bldgs) != TYPE_DICTIONARY:
+		return 0
+	var stats: Variant = (bldgs as Dictionary).get(kind, null)
+	if stats == null:
+		return 0
+	var grain_v: Variant = stats.get(&"grain_cost")
+	if typeof(grain_v) != TYPE_INT and typeof(grain_v) != TYPE_FLOAT:
+		return 0
+	return int(grain_v)
 
 
 # Exit: cancel in-flight repath. Same pattern as Moving / Gathering.
