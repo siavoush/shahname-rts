@@ -50,12 +50,12 @@ Before ANY SendMessage to a persistent instance:
 
 | Agent-def (`.claude/agents/`) | Addressable name | Spawned | Status | Recent activity |
 |---|---|---|---|---|
-| `gameplay-systems.md` | **`gp-sys-p3s3`** | Phase 3 session 3 | Active | Wave 2B Track 1 (in flight) |
-| `world-builder.md` | **`world-builder-p3s2`** | Phase 3 session 2 | Active | Wave 2A.5 Atashkadeh scene |
+| `gameplay-systems.md` | **`gp-sys-p3s3`** | Phase 3 session 3 | Active | Wave 2B Track 1 closed `28f3e46` |
+| `world-builder.md` | **`world-builder-p3s2`** | Phase 3 session 2 | Active | Wave 2B Track 2 closed `2ebe95d` |
 | `balance-engineer.md` | **`balance-engineer-p3s3`** | Phase 3 session 3 | Active | Wave 2B Track 3 closed `6503b0c` |
-| `ui-developer.md` | **`ui-developer-p3s3`** | Phase 3 session 3 | Active | Wave 2A.5 build menu |
+| `ui-developer.md` | **`ui-developer-p3s3`** | Phase 3 session 3 | Active | Wave 2B Track 4 closed `8031103` |
 | `engine-architect.md` | **`engine-architect-p3s2`** (also addressable as `eng-arch-p3s2`?) | Phase 3 session 2 | Active | Wave 1D navmesh resolution |
-| `shahnameh-loremaster.md` | **`shahnameh-loremaster-p3s5`** | Phase 3 session 5 | Active | Wave 2B Track 0 + Track 5 closed |
+| `shahnameh-loremaster.md` | **`shahnameh-loremaster-p3s5`** | Phase 3 session 5 | Active | Wave 2B Track 0 brief-time review + Track 5 taxonomy doc closed `18e3f34` |
 | `qa-engineer.md` | (not currently active as persistent) | — | Inactive | Last active session 2 (qa-engineer-p3s2) |
 | `ai-engineer.md` | (not currently active as persistent) | — | Inactive | Last active Phase 0 |
 | `architecture-reviewer.md` | (spawned per-session for wave-close reviews) | per session | On-demand | — |

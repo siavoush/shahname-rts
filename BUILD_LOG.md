@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-21 (Phase 3 session 5 close retro)
+last_updated: 2026-05-22 (Phase 3 session 6 Wave 2B close — Iran Tier-2 entry)
 ---
 
 # Build Log
@@ -33,6 +33,57 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 ```
 
 ## Entries
+
+## 2026-05-22 — Phase 3 session 6 Wave 2B close: Iran Tier-2 entry (Sowari-khaneh + Tirandazi)
+
+**Branch:** `feat/wave-2b-tier2-entry` (this PR).
+
+**Driver:** lead orchestrating 6 implementation tracks + 1 lead Track 1.5 (cultural-note paste) + 1 lead-side process commit (AGENT_REGISTRY v1.0.0). User locked Wave 2B → 3A → 3B prioritization at session-6 kickoff. **First wave operating under session-5 close H3 + L6 + D9-extension + J4-refined disciplines** — all four refined rules dogfooded; all four applied cleanly.
+
+**Shipped:**
+
+- **Iran Tier-2 entry: 2 of 5 Tier-2 buildings shipped.** Sowari-khaneh (cavalry stable, 200 coin, 36s construction) + Tirandazi (archery range, 175 coin, 32s construction). Both classified as **slot-fit-verify** under the identity-bearing institutional anchor-category (axis = military-arm). Sub-slot taxonomy: sepah (Sarbaz-khaneh) / cavalry-tradition (Sowari-khaneh) / archery-tradition (Tirandazi).
+- **BuildingStats.tier dormant-schema field added** with full deferred-consumer chain documented. Sowari + Tirandazi first-populate with tier=2. Consumers (TechSystem / BuildPlacementHandler / BuildMenu / Atashkadeh+Farr prereq) deferred to Wave 2C / Phase 4. **H3 + L6 inaugural dogfood — clean preventive case** (zero-reader sweep at field-introduction, vs BUG-A's retroactive shape).
+- **`docs/ANCHOR_CATEGORY_TAXONOMY.md` v1.0.0** — dedicated SSOT for anchor-category taxonomy (loremaster Track 5). 7-section structure consolidates §9.J2 enumeration + J2 trichotomy decision flow + naming-shape-vs-anchor-shape discipline + Iran building assignments + Turan structural-mismatch predictions.
+- **`docs/AGENT_REGISTRY.md` v1.0.0** — addressable-name SSOT for persistent instances. **Surface response to mid-wave routing-failure canonical incident**: lead's Track 1 dispatch + 2 heartbeats routed to `gameplay-systems-p3s3` (agent-def file name) instead of `gp-sys-p3s3` (live addressable name). SendMessage returned success for each but landed in phantom inbox. User intervention surfaced the failure. Saved memory file `feedback_lead_sendmessage_routing.md`. STUDIO_PROCESS.md §9.G1 + §0.5 Session Start Checklist step 7 cross-references added.
+- **STUDIO_PROCESS.md v2.1.0 → v2.1.2** — §9.J2 SSOT refactor (PATCH 2.1.1) + AGENT_REGISTRY cross-references (PATCH 2.1.2).
+- **ARCHITECTURE.md v0.27.0 → v0.28.0** — §6 wave-close entry + §2 building row updated to "5/5 Tier-1 + 2/5 Tier-2 entry shipped."
+- **8 commits across the wave** (kickoff `b847e98` + balance Track 3 `6503b0c` + loremaster Track 5 `18e3f34` + §9.J2 SSOT refactor `786e97e` + agent registry `516cb00` + gp-sys Track 1 `28f3e46` + ui-developer Track 4 `8031103` + lead Track 1.5 `11c4a74` + world-builder Track 2 `2ebe95d`). 0 Pitfall #7 incidents across the 8-commit multi-agent sequence — pathspec discipline + git index.lock serialization held.
+
+**Quality signals:**
+
+- **0 FG3-class incidents** from per-agent D9 walkthrough perspective.
+- **5 L1 spec-wins / domain-defense instances** across the wave (balance-engineer 3 + ui-developer 1 + ui-developer 1). **Pattern is now multi-domain, not just balance-engineer's signature move.**
+- **D9 Step 2 verb-claim grep sub-step** applied by ui-developer (their own session-5 contribution) + gp-sys + lead pre-dispatch. **Rule worked exactly as designed** — 5-second grep saved potential BUG-A-class downstream surprises.
+- **J4 refined triples checklist** surfaced 2 first-exercise concerns (Savar + Asb-savar Kamandar unit-class existence) — both verified at HEAD before Track 1 dispatch. **Rule worked exactly as designed** — questions that would have been invisible under old single-sentence-deferral became structured + routed.
+- **D9 lens-walk N/A shorthand used N=5+ times** across agent reports. Codification was correct; agents internalized immediately.
+- **Pitfall #15 regression-test pattern refined** by world-builder (Tirandazi Y=1.0 guard fails in either direction from wrong override syntax — base 1.2 > override 1.0 catches both silent-fall-back AND wrong-value-application).
+- **Transient gut_loader hook race appeared 2× in 5-min window** (lead Track 1.5 + world-builder Track 2). §9.M3 retry-discipline navigated both. **world-builder's self-observation refines M3 trigger condition** — error-specificity is not a reliable signal of real vs transient failure.
+
+**Did not ship:**
+- Qal'eh (Tier-2 gateway building) + Barghah + Yadgar — deferred to future Tier-2 waves per session-6 kickoff scope.
+- Production-queue mechanics (Sowari + Tirandazi ship with `is_ready_to_produce` flag; queue + spawn deferred to Phase 4 per session-4 Sarbaz-khaneh precedent).
+- TechSystem gateway logic (consumer of `BuildingStats.tier` dormant field; the H3 first-exercise CONSUMER side ships at Wave 2C / Phase 4).
+- §9.B4 or §9.G2 lead-side channel-discipline rule codification (N=1 from this wave's AGENT_REGISTRY incident; needs N=3 graduation).
+
+**State for next session (session 7):**
+
+- **Iran Tier-2 entry shipped.** 2/5 Tier-2 buildings live; 3 more pending Phase 4.
+- **Carry-forwards:** Wave 3A (fog-of-war data layer — world-builder) is the immediate next wave per session-6 kickoff prioritization (2B → 3A → 3B). Then Wave 3B (DummyAIController — ai-engineer, Task #71).
+- **Process state:** D9 checklist + agent-registry + cluster TOC empirically load-bearing across multi-agent waves. Session-6 close retro has rich material — M3 refinement + multi-domain L1 + L5 N=5 watchlist + lead-side channel-discipline codification + transient-hook-race pattern.
+- **Memory files updated:** `feedback_lead_sendmessage_routing.md` (new — addressable-name verification rule).
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** None this session.
+
+**Decisions made independently (per CLAUDE.md Escalation rule #1):**
+- Sowari-khaneh + Tirandazi BoxMesh dimensions + colors (world-builder per visual-readability lens).
+- construction_ticks ladder values (balance-engineer L1 override of brief recommendations).
+- strings.csv key-shape convention preserved (ui-developer chose existing `UI_BUILDING_*` over brief's `BUILDING_LABEL_*` for cross-row consistency).
+- AGENT_REGISTRY.md creation + STUDIO_PROCESS.md §9.G1 + §0.5 cross-references (lead, in response to mid-wave routing-failure incident).
+- §9.J2 enumeration extracted to dedicated taxonomy doc per §9.C1 SSOT discipline (loremaster Track 5 + lead's §9.J2 prose refactor).
+- Arash Kamangir treatment deferred (user decision after chronology refresher — candidate for Phase-5 hero wave or Yadgar mechanic).
+
+---
 
 ## 2026-05-21 — Phase 3 session 5 close retro: H3 + L6 + D9 extension + J4 restructure (5-agent BUG-A convergence)
 
