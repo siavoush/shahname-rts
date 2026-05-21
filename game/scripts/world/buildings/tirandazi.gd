@@ -1,65 +1,118 @@
 extends "res://scripts/world/buildings/building.gd"
 ##
-## Tirandazi (تیراندازی) — Iran "arrow-shooting" / archery discipline. Second
-## Tier-2 Iran military building per 01_CORE_MECHANICS.md §5. Anchor-category:
-## **identity-bearing institutional** with **archery-tradition sub-slot**
-## (per docs/ANCHOR_CATEGORY_TAXONOMY.md v1.0.0 + Wave 2B loremaster Track 0
-## brief-time review, 2026-05-21).
+## Tirandazi (تیراندازی) — Iran "arrow-shooting practice-place" / archery
+## range. Second Tier-2 institutional building; **sub-slot** under the
+## identity-bearing institutional anchor-category established by
+## Sarbaz-khaneh (Wave 2A).
 ##
-## Source: 01_CORE_MECHANICS.md §5 line 195 ("Tirandazi — 175 coin Tier 2,
-## produces advanced Kamandar variants including Asb-savar Kamandar") +
-## docs/ARCHITECTURE.md §6 (post-Wave 2B close entry) +
-## docs/ANCHOR_CATEGORY_TAXONOMY.md v1.0.0 (anchor-category SSOT).
+## Source: 01_CORE_MECHANICS.md §5 line 195 (Tier-2 row — "Tirandazi
+## (archery range) — Produces advanced Kamandar variants — 175 coin") +
+## §5 line 189 (Tier-2 gating — requires Farr ≥ 40 + Atashkadeh built).
 ##
-## ## NAMING-SHAPE NOTE (-dazi suffix vs -khaneh)
+## Anchor-category sub-slot classification (per Wave 2B Track 0 loremaster
+## brief-time review — J2 watchlist trichotomy N=2 graduation):
 ##
-## Tirandazi's naming differs from its sibling identity-bearing-institutional
-## buildings: where Sarbaz-khaneh + Sowari-khaneh use *-khaneh* (house),
-## Tirandazi uses *-dazi* (shooting; the verbal-noun form of *andakhtan*,
-## "to throw / shoot"). Per loremaster Track 0 brief-time verdict (2026-05-21):
-## **the naming divergence is surface-language ONLY. Mechanical template-shape
-## is identical to Sarbaz-khaneh + Sowari-khaneh.** The `-dazi` suffix carries
-## cultural weight in the cultural-note prose (the Parthian-shot tradition
-## is canonically about *trained skill* transmission, not just the building),
-## but it does NOT alter:
-##   - the anchor-category (still identity-bearing institutional)
-##   - the lifecycle hooks (Stage 1 / Stage 2 identical)
-##   - the operational marker (still is_ready_to_produce)
-##   - the coin-economy framing (still coin-only, no grain)
-##   - the deliberate-construction-time framing
-## The naming-shape divergence is honored in the cultural-note prose at
-## Track 1.5 paste (loremaster authors the `-dazi` framing); the CODE
-## structure stays parallel.
+##   Outcome: **SLOT-FIT-VERIFY**. Tirandazi fills the predicted-empty
+##   *archery-tradition* sub-slot under the identity-bearing institutional
+##   anchor-category. The anchor-shape (institution that transforms civilian
+##   into named military arm via formal oath + trained skill) is invariant.
 ##
-## ## Cultural note — PLACEHOLDER for Track 1.5 (loremaster framing)
+##   Naming-shape divergence (Sarbaz-khaneh header prediction, locked at
+##   Wave 2B Track 0):
+##     Persian morphology marks the cultural register: *-khaneh* (house/
+##     place) for sepah / mounted-aristocracy; *-dazi* (practice/discipline)
+##     for archery. The Parthian-shot tradition is canonically about
+##     TRAINED SKILL transmitted master-to-apprentice — the *skill itself*
+##     is the load-bearing inheritance, not the building. **This is
+##     SURFACE-LANGUAGE divergence, NOT anchor-shape divergence.** The
+##     building still mechanically maps onto identity-bearing institutional
+##     (footprint + production-queue + Tier-2 gating + Stage-2 lifecycle);
+##     the *-dazi* suffix is Persian's way of saying "what matters here is
+##     the practice that happens at this place," not "this is a new kind
+##     of building."
 ##
-## *Tirandazi* (تیراندازی, lit. "arrow-throwing" / "arrow-shooting") — the
-## institution of archery as a trained discipline. The mechanic surfaces
-## the cultural truth: the Parthian-shot tradition (firing accurately while
-## riding away — the iconic Iranian archery technique) is a TRAINED SKILL
-## transmitted across generations, housed in a formal institution.
+##   Sub-slot taxonomy under identity-bearing institutional:
+##     - generic-infantry sepah   → Sarbaz-khaneh (Tier 1, Wave 2A)
+##     - cavalry-tradition         → Sowari-khaneh (Tier 2, Wave 2B)
+##     - **archery-tradition       → Tirandazi (Tier 2, Wave 2B)**
 ##
-## [TRACK 1.5 PASTE] Loremaster Track 0 brief-time block routes from lead
-## post-Track-1 ship. Four-element template:
-##   1. Cultural referent — Shahnameh episodes anchoring the archery
-##      tradition (Arash the Archer; Aresh-e Kamangir's bow-shot that
-##      defined Iran-Turan border; the legendary kamandar archers per
-##      00_SHAHNAMEH_RESEARCH.md §4 line 189).
-##   2. Mechanic-surfaces-truth — how 175-coin + 960-tick construction
-##      (slightly cheaper + slightly faster than Sowari-khaneh's
-##      200-coin + 1080-tick cavalry-institution) lands archery-
-##      institution as MORE EFFICIENT to train but with a specialized
-##      output (Asb-savar Kamandar: the mounted archer).
-##   3. Cross-faction caveat — Turan's archery tradition is the canonical
-##      threat (the horse-archer culture per §3 line 163-165). The
-##      structural mismatch: Iran's archery is institutional (trained
-##      in a formal building); Turan's is native (steppe-children
-##      learn to ride and shoot before they walk).
-##   4. Forward-compat — the parent variant (identity-bearing
-##      institutional) now has 3 sub-slots populated: generic-infantry
-##      sepah (Sarbaz-khaneh), cavalry-tradition (Sowari-khaneh),
-##      archery-tradition (Tirandazi). The -dazi naming-shape note
-##      goes HERE in the prose, not in code.
+## Cultural note — tirandazi (تیراندازی), the practice of arrow-shooting:
+##
+##   *Tir* (تیر, arrow) + *andazi* (انداز + nominalizer, "the throwing /
+##   shooting of"; from *andakhtan* — to throw, release). The literal
+##   compound is "arrow-shooting" — the PRACTICE itself, with the building
+##   being where the practice happens. The English gloss "archery range"
+##   is the tricky-gloss to handle with care: in modern usage "range"
+##   imports a recreational-sport register (the place where one practices
+##   for leisure or sport-competition) that compresses Tirandazi's
+##   institutional weight. The Parthian-shot is not a sport; it is a
+##   military-cultural inheritance whose transmission is the substance
+##   of Iran's archery tradition. "Archery-discipline" is closer; "the
+##   place where the arrow-shooting skill is trained" is the literal
+##   shape.
+##
+##   The Shahnameh's load-bearing anchor (00_SHAHNAMEH_RESEARCH.md §4
+##   line 189): "Persian/Parthian archery was legendary in the ancient
+##   world." This is not flavor — the Parthian-shot (turning in the
+##   saddle, releasing under the horse's neck, hitting at gallop) is
+##   the most famous military technique attributed to the Iranian-
+##   plateau peoples in the ancient sources. The Shahnameh's Kamandar
+##   is the institutional-ordinary inheritor of that tradition — not
+##   Arash-the-Archer (the mythological hero-archer whose bow-shot
+##   defines the Iran-Turan border in legend; he is hero-class, not
+##   institutional-class, and lives outside Tirandazi's scope). The
+##   Kamandar collective who hold the field while pahlavans decide
+##   single combat (mard-o-mard) ARE Tirandazi's product; the
+##   hero-archer Arash is NOT. (Arash treatment in MVP scope deferred;
+##   candidate for Phase-5 hero wave or Yadgar/hero-monument mechanic.)
+##
+##   How the mechanic surfaces the cultural truth: Tirandazi costs
+##   175 coin with no grain component (clone-rule: coin-economy
+##   framing). The cost is slightly LOWER than Sowari-khaneh's 200
+##   coin — archery requires bow + arrow + training-ground but not
+##   the warhorse + armor + stable-keeper infrastructure of mounted
+##   aristocracy. The Tier-2 placement gating (Qal'eh + Farr ≥ 40
+##   prereqs, deferred Wave 2C) anchors the cultural-political fact
+##   that institutional-archery (as distinct from a single hunter
+##   with a bow) requires the legitimate kingdom's training-and-
+##   transmission apparatus. Construction_ticks = 960 (balance-engineer's
+##   ladder-defense at 32s; slightly less than Sowari-khaneh's 1080
+##   per the no-horses-to-train-alongside-warriors reasoning) reflects
+##   the institutional commitment of training the skill.
+##
+##   Cross-faction caveat (loremaster leading hypothesis — singular,
+##   not a list, per J3 cross-faction shape):
+##
+##   Turan's archery is NOT a Tirandazi-clone. Per
+##   00_SHAHNAMEH_RESEARCH.md §3 line 163 + §4 line 199, Turan's
+##   horse-archer is the *steppe-horse-archer* tradition — light,
+##   mobile, harassment-formation, the bow learned-from-childhood-on-
+##   horseback as daily-life skill, NOT institutionally-trained at a
+##   named building. The structural mismatch is sharp: Iran's archery
+##   tradition LIVES in institutional training (Tirandazi as the
+##   place where the Parthian-shot is formally transmitted); Turan's
+##   LIVES in the herder-warrior's daily practice from horseback (the
+##   bow is part of his life, not a training-pathway he enters). **Do
+##   not clone Tirandazi as a Turan building.** When Turan Tier-2
+##   archery ships (post-MVP), expect a fundamentally different shape
+##   and require a fresh loremaster review. Turan economy still
+##   pending design ratification — flag for QUESTIONS_FOR_DESIGN.md
+##   if not already routed.
+##
+##   Forward-compat note — naming-shape vs anchor-shape:
+##
+##   Tirandazi's *-dazi* suffix is the first instance of a
+##   surface-language divergence within a same-anchor-category sub-slot
+##   cluster. Future Iran buildings may use further Persian morphological
+##   shapes (*-gah* place, *-kadeh* dwelling, *-gar* doer, *-zar*
+##   place-of-X) that mark cultural register without indicating
+##   anchor-shape divergence. The discipline locked at Wave 2B Track 0:
+##   *Persian naming convention is one input to brief-time anchor-
+##   category classification, but mechanical/cultural-load criteria
+##   are the decisive inputs. Naming morphology surfaced in the
+##   cultural-note header; anchor-shape determined independently.*
+##   See docs/ANCHOR_CATEGORY_TAXONOMY.md §3 for the
+##   naming-shape-vs-anchor-shape sub-section.
 ##
 ## ## What lives here vs Building base
 ##
