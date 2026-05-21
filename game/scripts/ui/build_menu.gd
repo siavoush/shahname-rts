@@ -64,11 +64,13 @@ extends CanvasLayer
 ## Sim Contract / lint compliance:
 ##   - i18n: every visible string flows through tr(). Strings:
 ##     UI_BUILD_MENU_HEADER, UI_BUILDING_KHANEH_COST,
-##     UI_BUILDING_MAZRAEH_COST, UI_BUILDING_MADAN_COST,
-##     UI_BUILDING_SARBAZ_KHANEH_COST, UI_BUILDING_SARBAZ_KHANEH_TOOLTIP,
-##     UI_BUILDING_ATASHKADEH_COST, UI_BUILDING_ATASHKADEH_TOOLTIP,
-##     UI_BUILDING_SOWARI_KHANEH_COST, UI_BUILDING_SOWARI_KHANEH_TOOLTIP,
-##     UI_BUILDING_TIRANDAZI_COST, UI_BUILDING_TIRANDAZI_TOOLTIP.
+##     UI_BUILDING_KHANEH_TOOLTIP, UI_BUILDING_MAZRAEH_COST,
+##     UI_BUILDING_MAZRAEH_TOOLTIP, UI_BUILDING_MADAN_COST,
+##     UI_BUILDING_MADAN_TOOLTIP, UI_BUILDING_SARBAZ_KHANEH_COST,
+##     UI_BUILDING_SARBAZ_KHANEH_TOOLTIP, UI_BUILDING_ATASHKADEH_COST,
+##     UI_BUILDING_ATASHKADEH_TOOLTIP, UI_BUILDING_SOWARI_KHANEH_COST,
+##     UI_BUILDING_SOWARI_KHANEH_TOOLTIP, UI_BUILDING_TIRANDAZI_COST,
+##     UI_BUILDING_TIRANDAZI_TOOLTIP.
 ##     The Persian column stays empty per Tier 2 schedule.
 ##   - No sim-state writes. UI reads only. The build_placement_started
 ##     emission is read-shaped (no consumer mutates sim state in the
@@ -240,12 +242,23 @@ func _refresh_from_selection() -> void:
 # can't afford it.
 func _refresh_button_labels() -> void:
 	_header_label.text = tr("UI_BUILD_MENU_HEADER")
+	# Khaneh / Mazra'eh / Ma'dan tooltips added Wave 2B fix-wave (BUG-B1).
+	# The three older buildings were grandfathered without tooltips when
+	# the tooltip pattern was introduced at Wave 2A (Sarbaz-khaneh). Live-
+	# test surfaced the asymmetry. J3 literal-first framing per loremaster
+	# discipline — Ma'dan especially is load-bearing ("ore-source /
+	# generative place" NOT industrial-revolution "mine" baggage, per
+	# madan.gd header lines ~25-32 + Pishdadian civilizational-invention
+	# triad framing).
 	var khaneh_cost: int = _KhanehScript.call(&"cost_coin")
 	_khaneh_button.text = tr("UI_BUILDING_KHANEH_COST") % [khaneh_cost]
+	_khaneh_button.tooltip_text = tr("UI_BUILDING_KHANEH_TOOLTIP")
 	var mazraeh_cost: int = _MazraehScript.call(&"cost_coin")
 	_mazraeh_button.text = tr("UI_BUILDING_MAZRAEH_COST") % [mazraeh_cost]
+	_mazraeh_button.tooltip_text = tr("UI_BUILDING_MAZRAEH_TOOLTIP")
 	var madan_cost: int = _MadanScript.call(&"cost_coin")
 	_madan_button.text = tr("UI_BUILDING_MADAN_COST") % [madan_cost]
+	_madan_button.tooltip_text = tr("UI_BUILDING_MADAN_TOOLTIP")
 	var sarbaz_cost: int = _SarbazKhanehScript.call(&"cost_coin")
 	_sarbaz_khaneh_button.text = tr("UI_BUILDING_SARBAZ_KHANEH_COST") % [sarbaz_cost]
 	_sarbaz_khaneh_button.tooltip_text = tr("UI_BUILDING_SARBAZ_KHANEH_TOOLTIP")
