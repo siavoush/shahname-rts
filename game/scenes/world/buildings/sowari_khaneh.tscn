@@ -1,0 +1,110 @@
+[gd_scene load_steps=6 format=3 uid="uid://shahnameh_sowari_khaneh_building"]
+
+; sowari_khaneh.tscn — Sowari-khaneh (سواری‌خانه) "rider-house" / cavalry barracks scene.
+;
+; Source: 01_CORE_MECHANICS.md §5 line 194 — "Sowari-khaneh — 200 coin Tier 2,
+; produces Savar cavalry."
+;
+; Cultural framing: see sowari_khaneh.gd header (Cultural note block) for the
+; identity-bearing-institutional / cavalry-tradition anchor framing.
+; Lead with "rider-house" (literal); "cavalry barracks" is a serviceable gloss.
+;
+; First Tier-2 Iran military building. Identity-bearing institutional anchor,
+; cavalry-tradition sub-slot per docs/ANCHOR_CATEGORY_TAXONOMY.md v1.0.0.
+;
+; Inheriting building.tscn per the khaneh.tscn / sarbaz_khaneh.tscn pattern:
+;   - Overrides mesh size + material (3.0 × 1.4 × 2.5 — wider-and-deeper than
+;     Sarbaz-khaneh's 3.0×1.2×2.0, slightly taller; reads as "stable housing
+;     larger occupants" vs the institutional infantry barracks shape).
+;   - Overrides CollisionShape3D to match the new footprint (click-target
+;     accuracy — BUG-07 lesson). Both Y-height (1.4 vs base 1.2) and Z-depth
+;     (2.5 vs base 2.0) differ from base, triggering Pitfall #15 F4 condition
+;     — regression test shipped in test_sowari_khaneh_scene.gd.
+;   - Overrides NavigationObstacle3D vertices to cover the 3.0 × 2.5 XZ
+;     footprint (±1.6 × ±1.35 per RNC §3.2 v1.4.0 sizing rule).
+;
+; Visual placeholder per CLAUDE.md "colored rectangles for buildings":
+;   - BoxMesh 3.0 × 1.4 × 2.5 — wider-than-Sarbaz-khaneh (3.0 shared), taller
+;     (1.4 vs 1.2), deeper (2.5 vs 2.0). Reads as "stable housing warhorses"
+;     at default zoom — the wider-deeper footprint carries the "more room than
+;     infantry barracks" read.
+;   - Bronze / horse-leather brown Color(0.70, 0.50, 0.25) — warm burnished tone.
+;     Distinct from all existing buildings:
+;       * Khaneh tan (0.78, 0.65, 0.45) — warm domestic (paler)
+;       * Mazra'eh green (0.55, 0.75, 0.35) — agrarian
+;       * Ma'dan stone-grey (0.5, 0.5, 0.55) — industrial
+;       * Sarbaz-khaneh iron-red (0.55, 0.25, 0.20) — military iron
+;       * Atashkadeh emissive orange (0.95, 0.55, 0.15) — sacred fire
+;     The bronze-leather reads "horse tack + armor" — the cavalry-tradition
+;     material register, distinct from the infantry-iron of Sarbaz-khaneh.
+;
+; NavigationObstacle3D — ACTIVE (not inert). The carve fires at placement
+; via the inherited _on_placement_complete → bake_navigation_mesh(false)
+; pipeline (building.gd Task #144 / 910bd9a). SOURCE_GEOMETRY_ROOT_NODE_CHILDREN
+; (terrain.gd Task #147 / be8c355) means the bake sees this obstacle even
+; though Sowari-khaneh spawns under &World as a sibling of Terrain.
+; Both affect_navigation_mesh + carve_navigation_mesh inherited from base — NOT
+; overridden here (would clear them). See building.tscn for dual-flag rationale.
+;
+; Footprint polygon math (per RNC §3.2 v1.4.0 + building.tscn base precedent):
+;   Mesh XZ: 3.0 × 2.5.  Half-extents: 1.5 × 1.25.
+;   Polygon margin: +0.1m per axis (compensates NAV_AGENT_RADIUS=0.5 erosion).
+;   Result: ±1.6 × ±1.35.
+
+[ext_resource type="PackedScene" uid="uid://shahnameh_building_base" path="res://scenes/world/buildings/building.tscn" id="1_building_template"]
+[ext_resource type="Script" path="res://scripts/world/buildings/sowari_khaneh.gd" id="2_sowari_khaneh"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_sowari_khaneh"]
+; Wider-and-deeper stable shape — 3.0 wide × 1.4 tall × 2.5 deep.
+; Wider than Sarbaz-khaneh (same 3.0 width, more depth) and slightly taller;
+; reads as "stable housing larger occupants" vs the infantry barracks.
+size = Vector3(3.0, 1.4, 2.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_sowari_khaneh"]
+; Bronze / horse-leather brown — cavalry-tradition material register.
+; Warmer and more saturated than Khaneh tan; distinct from Sarbaz-khaneh's
+; iron-red. Reads as "horse tack + burnished bronze armor" from across the map.
+albedo_color = Color(0.70, 0.50, 0.25, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — matches unit / mine / building pipeline.
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_sowari_khaneh"]
+; Collision shape matches the visual mesh for click-target accuracy.
+; BUG-07 lesson: the inherited StaticBody3D provides the CollisionObject3D
+; ancestor; this shape must cover the full rendered silhouette.
+; Both Y (1.4 vs base 1.2) and Z (2.5 vs base 2.0) differ — triggers Pitfall
+; #15 F4 condition; see test_sowari_khaneh_scene.gd for regression test.
+size = Vector3(3.0, 1.4, 2.5)
+
+
+; Inherit the Building scene template; override mesh, material, collision, obstacle.
+[node name="SowariKhaneh" instance=ExtResource("1_building_template")]
+script = ExtResource("2_sowari_khaneh")
+
+[node name="MeshInstance3D" parent="." index="0"]
+; Override mesh + material. Y-offset = half-height (0.7) so the bottom
+; face sits flush on terrain at Y=0 — same convention as building.tscn.
+; Height 1.4 → half-height 0.7 (vs base 1.2 → 0.6).
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+mesh = SubResource("BoxMesh_sowari_khaneh")
+material_override = SubResource("StandardMaterial3D_sowari_khaneh")
+
+[node name="CollisionShape3D" parent="StaticBody3D"]
+; Override collision shape to match the 3.0×1.4×2.5 mesh footprint.
+; Y-offset 0.7 co-locates with the mesh centre (half-height of 1.4).
+; Pitfall #15: Godot inherited-scene nested-child override syntax requires
+; parent="StaticBody3D" (path in parent attr), NOT name="StaticBody3D/CollisionShape3D"
+; (slash in name is a literal char, not a path separator — causes "node vanished" warning).
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+shape = SubResource("BoxShape3D_sowari_khaneh")
+
+[node name="NavigationObstacle3D" parent="." index="0"]
+; Override vertices for the 3.0×2.5 XZ footprint (base has 2.0×2.0).
+; Per RNC §3.2 v1.4.0: polygon at ±(half-extent + 0.1m margin):
+;   X: ±(1.5 + 0.1) = ±1.6.  Z: ±(1.25 + 0.1) = ±1.35.
+; Vertex order matches building.tscn: (-X,-Z), (+X,-Z), (+X,+Z), (-X,+Z).
+; affect_navigation_mesh + carve_navigation_mesh inherited from base — NOT
+; overridden here (would clear them). See building.tscn for dual-flag rationale.
+; radius updated to ~2.09 (≈ sqrt(1.6²+1.35²)) for editor visualization parity.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
+vertices = PackedVector3Array(-1.6, 0, -1.35, 1.6, 0, -1.35, 1.6, 0, 1.35, -1.6, 0, 1.35)
+radius = 2.1
