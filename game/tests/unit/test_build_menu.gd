@@ -508,3 +508,119 @@ func test_atashkadeh_button_press_does_not_deduct_resources_synchronously() -> v
 		"AtashkadehButton press must NOT deduct Coin synchronously (Pitfall #4)")
 	assert_eq(grain_before, grain_after,
 		"AtashkadehButton press must NOT deduct Grain synchronously (Pitfall #4)")
+
+
+# ---------------------------------------------------------------------------
+# Sowari-khaneh button (Wave 2B — Iran Tier-2 entry)
+# ---------------------------------------------------------------------------
+
+func test_sowari_khaneh_button_visible_when_kargar_selected() -> void:
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var root: Control = _menu.get_node(^"Root")
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/SowariKhanehButton")
+	assert_true(root.visible,
+		"BuildMenu root must be visible when a Kargar is selected")
+	assert_true(btn.visible,
+		"SowariKhanehButton must be visible (parent visible, button visible)")
+
+
+func test_sowari_khaneh_button_uses_mouse_filter_stop() -> void:
+	# Same Pitfall #1 invariant as the other 5 buttons.
+	_menu = _spawn_menu()
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/SowariKhanehButton")
+	assert_eq(btn.mouse_filter, Control.MOUSE_FILTER_STOP,
+		"SowariKhanehButton must use MOUSE_FILTER_STOP (Pitfall #1)")
+
+
+func test_sowari_khaneh_button_label_shows_cost() -> void:
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/SowariKhanehButton")
+	# tr("UI_BUILDING_SOWARI_KHANEH_COST") → "Sowari-khaneh (%d Coin)" →
+	# "Sowari-khaneh (200 Coin)" per balance.tres bldg_sowari_khaneh.coin_cost=200.
+	assert_true(btn.text.contains("200"),
+		"SowariKhanehButton label must include the cost (200) — got '%s'" % btn.text)
+	assert_true(btn.text.contains("Sowari"),
+		"SowariKhanehButton label must include the Persian-romanized name — got '%s'" % btn.text)
+
+
+func test_sowari_khaneh_button_press_emits_build_placement_started_with_kind() -> void:
+	var captured: Array = []
+	var handler: Callable = func(kind: StringName, cost: int) -> void:
+		captured.append({&"kind": kind, &"cost": cost})
+	EventBus.build_placement_started.connect(handler)
+
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/SowariKhanehButton")
+	btn.pressed.emit()
+	EventBus.build_placement_started.disconnect(handler)
+	assert_eq(captured.size(), 1,
+		"build_placement_started fires exactly once per SowariKhanehButton press")
+	var ev: Dictionary = captured[0]
+	assert_eq(ev[&"kind"], &"sowari_khaneh",
+		"Signal carries building_kind = &\"sowari_khaneh\"")
+	assert_eq(ev[&"cost"], 20000,
+		"Signal carries cost_coin_x100 = 20000 (200 Coin × 100)")
+
+
+# ---------------------------------------------------------------------------
+# Tirandazi button (Wave 2B — Iran Tier-2 entry)
+# ---------------------------------------------------------------------------
+
+func test_tirandazi_button_visible_when_kargar_selected() -> void:
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var root: Control = _menu.get_node(^"Root")
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/TirandaziButton")
+	assert_true(root.visible,
+		"BuildMenu root must be visible when a Kargar is selected")
+	assert_true(btn.visible,
+		"TirandaziButton must be visible (parent visible, button visible)")
+
+
+func test_tirandazi_button_uses_mouse_filter_stop() -> void:
+	# Same Pitfall #1 invariant as the other 6 buttons.
+	_menu = _spawn_menu()
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/TirandaziButton")
+	assert_eq(btn.mouse_filter, Control.MOUSE_FILTER_STOP,
+		"TirandaziButton must use MOUSE_FILTER_STOP (Pitfall #1)")
+
+
+func test_tirandazi_button_label_shows_cost() -> void:
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/TirandaziButton")
+	# tr("UI_BUILDING_TIRANDAZI_COST") → "Tirandazi (%d Coin)" →
+	# "Tirandazi (175 Coin)" per balance.tres bldg_tirandazi.coin_cost=175.
+	assert_true(btn.text.contains("175"),
+		"TirandaziButton label must include the cost (175) — got '%s'" % btn.text)
+	assert_true(btn.text.contains("Tirandazi"),
+		"TirandaziButton label must include the Persian-romanized name — got '%s'" % btn.text)
+
+
+func test_tirandazi_button_press_emits_build_placement_started_with_kind() -> void:
+	var captured: Array = []
+	var handler: Callable = func(kind: StringName, cost: int) -> void:
+		captured.append({&"kind": kind, &"cost": cost})
+	EventBus.build_placement_started.connect(handler)
+
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/TirandaziButton")
+	btn.pressed.emit()
+	EventBus.build_placement_started.disconnect(handler)
+	assert_eq(captured.size(), 1,
+		"build_placement_started fires exactly once per TirandaziButton press")
+	var ev: Dictionary = captured[0]
+	assert_eq(ev[&"kind"], &"tirandazi",
+		"Signal carries building_kind = &\"tirandazi\"")
+	assert_eq(ev[&"cost"], 17500,
+		"Signal carries cost_coin_x100 = 17500 (175 Coin × 100)")
