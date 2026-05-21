@@ -159,11 +159,25 @@ When you (or any base-class owner) gives a previously-`pass` virtual a non-trivi
 
 **Step 2 — Read each contract section at HEAD (3-5 min).** NOT the version you remember; `git show HEAD:docs/<X>_CONTRACT.md` for a clean read. Retroactive-staleness is real (per §9.C1).
 
+**Step 2 sub-step — brief-asserted infrastructure verb-claim grep (§9.D9 session-5 extension).** If your dispatch brief contains a verb-claim about a downstream consumer file ("grain deducted at placement time in UnitState_Constructing", "X registered with Y", "Z fires when W happens"), `grep` the named consumer file for the verb's implementation BEFORE consuming the claim. Pattern: brief sentence uses passive voice about a downstream effect → grep the verb's actor file. Catches first-exercise gaps (§9.H3) the brief author may not have verified. Canonical incident: BUG-A (grain-deduction wiring asserted in brief but `_resolve_cost_grain` didn't exist at HEAD).
+
 **Step 3 — Apply the three reviewer lenses to your own commit (3-5 min):**
 - **godot-code-reviewer lens:** Known Pitfalls list (`docs/PROCESS_EXPERIMENTS.md`) — does this code avoid them? Pitfall #14 mitigations applied if lambda captures? Pitfall #15 regression test mandatory if inherited-scene with nested override (per §9.F4)?
-- **architecture-reviewer lens:** does this fit the target architecture? Prose matches shipped state (§9.C1 SSOT)? SSOT contradictions resolved empirically NOT deferred to LATER (§9.C1 BLOCKING)? Cross-cutting schema verification triangulated if new shared classification surface (§9.H1)?
-- **shahnameh-loremaster lens (if cultural surface):** anchor-category template match (§9.J2)? Persian-term gloss accurate (§9.J3)? Intent-vs-implementation split honest if claim depends on mechanical behavior (§9.J4)?
+- **architecture-reviewer lens:** does this fit the target architecture? Prose matches shipped state (§9.C1 SSOT)? SSOT contradictions resolved empirically NOT deferred to LATER (§9.C1 BLOCKING)? Cross-cutting schema verification triangulated if new shared classification surface (§9.H1)? **First-exercise-of-dormant-schema (§9.H3): does my work first-populate a previously-dormant field, integration path, or taxonomy slot? If yes, what cross-track verification did I do?**
+- **shahnameh-loremaster lens (if cultural surface):** anchor-category template match (§9.J2)? Persian-term gloss accurate (§9.J3)? Intent-vs-implementation split honest if claim depends on mechanical behavior (§9.J4 — and if so, mechanical dependencies enumerated as claim→mechanism→reviewer triples)?
+
+**Step 3 — Lens-walk N/A shorthand (§9.D9 session-5 extension, N=3 met).** A lens that genuinely does not apply may be marked `<Lens>: N/A — <one-line reason>` instead of boilerplate-prose-walking. Distinguishes "lens walked, no finding" from "lens not applicable." Use N/A when walking would produce only tautological prose; use prose form if anything worth noting (including no-finding adjacent-risk observations).
 
 **Step 4 — Surface gaps BEFORE the trio review fires (1-2 min per gap).** For each gap: file `QUESTIONS_FOR_DESIGN.md` entry OR ship a pre-emptive fix-up commit. NOT after.
 
 **This is mandatory before every wave-close commit on files you own. NOT optional based on commit size or confidence level. The trio reviewer catching your gap means you've already failed §9.D9.**
+
+---
+
+## Forward-compat-guard-sweep at field-default-change (§9.L6)
+
+**When you ship the first non-default value for a previously-defaulted BalanceData/schema field**, every callsite that reads the field must be swept for forward-compat-guard coverage matching the field's semantics. Audit command: `git grep -n '<field_name>' game/scripts/` to enumerate readers. For each reader, verify the guard shape is consistent. If a callsite has no guard but assumes non-zero (or has a guard with no actual implementation when non-zero), **fix in the SAME COMMIT** as the field-first-population.
+
+**Why this is your responsibility, not the schema-author's.** The schema-author may have shipped the field in dormant form many waves earlier; they're not present at the moment the field is first-populated. You are the in-context expert on when the dormant infrastructure must wake up.
+
+**Canonical incident:** Wave 2A.5 BUG-A — `BuildingStats.grain_cost` shipped at Phase 2 with default 0; `UnitState_Constructing` had `_resolve_cost_coin` deducting coin via `if cost_coin > 0:` guard; parallel `grain_cost` reader DID NOT EXIST (schema-present, callsite-absent). Atashkadeh's `grain_cost = 50` first-populated the field; deduction never fired. Fix at `dfa9a33` added both-or-neither affordability + `_resolve_cost_grain` + parallel `change_resource(GRAIN, ...)`. A pre-commit `git grep grain_cost game/scripts/` sweep at Atashkadeh's first-non-zero population would have caught the absent-callsite gap.

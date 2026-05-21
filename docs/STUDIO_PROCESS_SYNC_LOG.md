@@ -14,7 +14,7 @@ ssot_for:
 references: [STUDIO_PROCESS.md, STUDIO_PROCESS_HISTORY.md, ARCHITECTURE.md]
 tags: [process, sync-log, history, retros]
 created: 2026-05-18
-last_updated: 2026-05-18
+last_updated: 2026-05-21
 ---
 
 # Studio Process — Sync Log
@@ -437,6 +437,58 @@ Three working tracks shipped + one navmesh sub-track deferred per lead's option-
 - Builder worker position during construction (inside vs outside the structure) — strategic implication for harassment-vulnerability balance. (Added at `9f94a3c`.)
 
 **The session validates the persistent-instance architecture AND surfaces its failure modes.** Channel-discipline gaps (loremaster silent ~60min; world-builder-p3s2 summary-only response) are real and recoverable when caught quickly. Heartbeat protocol + agent-def first-class SendMessage line are the structural defenses. Persistence + lived memory remain load-bearing — fresh-spawn `-retro` agents produced substantive content that converged with persistent reflections directionally, but the lived-memory layer is irreplaceable for the friction-points that didn't make it into commits.
+
+---
+
+### Phase 3 session 5 — Cross-doc audit + Wave 2A.5 Atashkadeh + BUG-A retro convergence
+
+**Date:** 2026-05-18 (cross-doc audit, PRs #21 → #24) → 2026-05-20 (Wave 2A.5 Atashkadeh, PR #28) → 2026-05-21 (session-5 close retro).
+**Sync pattern:** N/A — multi-arc implementation session with close retro. Three coherent arcs: cross-doc audit (process work), Wave 2A.5 Atashkadeh (Iran Tier-1 closure 5/5), session-5 close retro (BUG-A learnings).
+**Persistent agents active:** gp-sys-p3s3, world-builder-p3s2, balance-engineer-p3s3, ui-developer-p3s3, engine-architect-p3s2, shahnameh-loremaster-p3s5 (loremaster-p3s5 spawned at session-5 for Atashkadeh cultural-note work — first session with this loremaster instance carrying lived memory of a building cultural-note delivery).
+**PRs (this session):** [#21](https://github.com/siavoush/shahnameh-rts/pull/21) (audit PR A — quick fixes), [#22](https://github.com/siavoush/shahnameh-rts/pull/22) (audit PR B — STUDIO_PROCESS active/history/sync-log split v2.0.0 MAJOR), [#23](https://github.com/siavoush/shahnameh-rts/pull/23) (Task #117 carry-forward — has_method guard removal + Mazra'eh/Ma'dan adjacency test), [#24](https://github.com/siavoush/shahnameh-rts/pull/24) (audit PR C — D9 pre-commit self-review checklist), [#27](https://github.com/siavoush/shahnameh-rts/pull/27) (L24 fix — AMH sibling-order + Shift modifier), [#28](https://github.com/siavoush/shahnameh-rts/pull/28) (Wave 2A.5 Atashkadeh), session-5 close retro PR (this PR).
+
+**Wave shape:**
+
+**Cross-doc audit (PRs #21 + #22 + #24).** User-flagged at session-4 close: *"the concern is discipline-followability, not budget."* Two-phase audit: PR #21 quick fixes (ARCHITECTURE §2 row fixes, agent-def path corrections, BUILD_LOG L24 carry-forward); PR #22 STUDIO_PROCESS v1.8.0 → v2.0.0 MAJOR (active/history/sync-log split + cluster TOC + §0.5 Session Start Checklist + §0.7 Project Glossary + 52 currently-binding rules across 14 clusters); PR #24 D9 pre-commit self-review checklist operationalized as 4-step concrete form. Test 1 (4 reviewers — 3 persistent + 1 fresh-spawn cold-read) ratified PR #22 unanimously before merge. **Test 2 hypothesis:** if D9 operationalization works, FG3-class incidents drop toward zero in Wave 2A.5.
+
+**Wave 2A.5 — Atashkadeh (PR #28).** Iran Tier-1 closure 5/5; first sacral-emitter / divine-source anchor variant (4th and final variant in loremaster's anchor-category taxonomy). 5 commits across 4 implementation tracks + lead wave-close. **Wave-quality signal:** 0 FG3-class incidents from per-agent perspective; 6 D9 walkthroughs reported with substantive findings each; spec-wins-over-lead's-casual-reading caught at D9 Step 2 (balance-engineer max_hp = 600 retained vs lead's mis-suggested 400); Pitfall #15 trigger fires + correctly handled by world-builder (same agent who originated the canonical incident at session-4 wave 2A — pattern transfer worked). **Test 2 result: holds.**
+
+**BUG-A — grain not deducted on Atashkadeh placement (lead live-test surface).** Atashkadeh first building with `grain_cost > 0`; `BuildingStats.grain_cost` schema field had existed since Phase 2 but `UnitState_Constructing` had no `_resolve_cost_grain` callsite. Lead's brief asserted "grain deducted at placement time in UnitState_Constructing (gp-sys's atashkadeh entry)" — claim was structurally false. Per-agent D9 walkthroughs were clean WITHIN scope; the seam BETWEEN scopes was nobody's named responsibility. Fix at `dfa9a33` (gp-sys-p3s3) added `_resolve_cost_grain` + both-or-neither affordability + parallel `change_resource(GRAIN, ...)` + 3 regression tests. User's directive at BUG-A retrospective (2026-05-20): *"in no team, ever, no where, human or AI, do we get to that goal of 'self organization' if the members of the team blindly trusts the leader. So sure, you made a mistake, won't be your last. The team should have pushed back. This should be brought to the retro and let the agents SEE this properly... DON'T give them the answer right away, let them discuss and think for themselves first on why it happened."*
+
+**L24 fix (PR #27, lead-direct under §9.B2 carve-out).** Pre-Atashkadeh hygiene work surfaced L24 as broken via live-test. Three coordinated bugs: (a) AMH sibling-order at idx 0 fired LAST under reverse-tree-order — moved to idx 4 (highest sibling, fires FIRST); (b) AMH KEY_A had no Shift modifier check — `if not ek.shift_pressed: return` guard added; (c) Camera A/D polling bypassed event-dispatch — short-circuits on KEY_SHIFT held. ARCHITECTURE §7 L24 marked CLOSED.
+
+**Retro inputs (5/5 substantive, all via SendMessage to persistent instances):** gp-sys-p3s3, world-builder-p3s2, balance-engineer-p3s3, ui-developer-p3s3, shahnameh-loremaster-p3s5 (heartbeat ping required after initial idle-only response; substantive reflection landed post-heartbeat). **Dispatch discipline:** zero `-retro` fresh-spawn agents this retro (corrective vs session-4 process drift; lesson internalized; saved to `feedback_retro_dispatch_via_sendmessage.md` memory file at session-4 close). **Facts-not-diagnosis dispatch discipline:** lead's retro prompts surfaced only FACTS (brief asserted X, path didn't exist, agents shipped, bug surfaced at live-test) without pre-framing the failure layer. **First empirical validation:** all 5 agents independently landed on "missing-rule failure, not existing-rule failure" with no "lead's fault" framing. Saved to `feedback_retro_facts_not_diagnosis.md` memory file.
+
+**Strongest single retro signal:** 5-agent convergence on the **first-exercise-of-dormant-X** trigger condition. Five different vocabularies (schema-present-but-never-populated / first-non-zero-value alarm / dual-field coexistence / first-exercise-of-dormant-schema/contract-surface / first-exercise-of-dormant-schema-or-integration-or-taxonomy-slot) describing the same structural shape. Convergence emerged independently across 5 agents working from independent dispatch prompts; no agent saw another's reflection before drafting their own. The convergence-without-pre-framing is itself the artifact validating the facts-not-diagnosis dispatch discipline.
+
+**§9 cluster shipped (2026-05-21 session-5 close, 2 new rules + 1 modification + 1 restructure + 3 watchlist additions):**
+- **H3 (NEW, §9.H +1)** — First-exercise-of-dormant-schema integration verification — brief-time call-out + agent D9 self-check.
+- **L6 (NEW, §9.L +1)** — Forward-compat-guard-sweep at field-default-change.
+- **D9 modification** — Step 2 sub-step (brief-asserted infrastructure verb-claim grep) + Step 3 first-exercise self-check + N=3 lens-walk N/A shorthand codified.
+- **J4 restructure** — Claim → mechanism → reviewer triples checklist replaces single "defer mechanical to technical" sentence.
+- **J2/J3/J4 watchlist additions (3, N=1, awaiting N=3 trigger)** — Brief-time outcome trichotomy / J3 baggage-intensity annotation / Player-visible cultural-claim surfaces sub-section.
+
+Total active rules: 52 → 54 across 14 clusters. STUDIO_PROCESS.md v2.0.0 → v2.1.0 (MINOR, additive).
+
+**§9 cluster shipped (2026-05-18, audit PRs, retroactively logged):**
+- STUDIO_PROCESS v1.8.0 → v2.0.0 (MAJOR — read-path break) at PR #22: 81 dated bullets → 52 currently-binding rules in 14 topical clusters with TOC + §0.5 Session Start Checklist + §0.7 Project Glossary. STUDIO_PROCESS_HISTORY.md (~440 lines chronological archaeology) + STUDIO_PROCESS_SYNC_LOG.md (this file, ~440 lines extracted from §10) created.
+- D9 operationalized as 4-step concrete checklist at PR #24 (vs prior vague "read the contracts your changes write against as the trio reviewer would"). Mirrored to 6 implementer agent-defs as first-class "Pre-commit self-review checklist" section.
+
+**Pitfall promotions:** None this session. Pitfall #15 already promoted at session-4; no new Godot pitfalls surfaced.
+
+**Agent-def updates routed for retro PR:** D9 checklist mirroring already shipped at PR #24 for all 6 implementer agent-defs (gp-sys / world-builder / ui-developer / qa-engineer / balance-engineer / engine-architect). H3 first-exercise self-check + L6 forward-compat-guard-sweep + J4 triples will be added to relevant agent-defs in this retro PR.
+
+**Carry-forwards routed to session 6:**
+- Wave 2B (Tier-2 Sowari-khaneh + Tirandazi entry) — Tasks #159 + #160 still pending.
+- Wave 3A (fog-of-war data layer — world-builder) or Wave 3B (DummyAIController — ai-engineer, Task #71) per lead's call at session-6 kickoff.
+- BUILDING_CONTRACT.md authoring before Phase 4 starts (NICE-TO-HAVE per PR #19 architecture-reviewer).
+- Anchor-category taxonomy dedicated doc (Task #160) — Wave 2B kickoff.
+- 3 single-agent watchlist proposals (J2 trichotomy + J3 baggage-intensity + J4 player-visible-surfaces) — codify if N=3 trigger lands at session 6+.
+- N=1 empirical-validation of facts-not-diagnosis retro discipline → memory file `feedback_retro_facts_not_diagnosis.md` carries forward; codification candidate at next session where retro discipline applies.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** None this session.
+
+**Closing observation:** Phase 3 session 5 is the third session in a row where the persistent-instance + SendMessage architecture compounded value rather than degraded. **The user's discipline-followability concern at session-4 close motivated the cross-doc audit, which motivated the D9 operationalization, which motivated Wave 2A.5's 0-FG3 wave-quality signal, which surfaced BUG-A as the ONE remaining structural gap, which produced 5-agent convergent diagnosis of H3 + L6 + J4 refinements.** Each step's output became the next step's input. **Phase 3 ships clean with Iran Tier-1 complete (5/5).** Phase 4 entry conditions satisfied.
 
 ---
 

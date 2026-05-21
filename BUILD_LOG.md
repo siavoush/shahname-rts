@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-17 (Phase 3 session 2 close retro)
+last_updated: 2026-05-21 (Phase 3 session 5 close retro)
 ---
 
 # Build Log
@@ -33,6 +33,50 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 ```
 
 ## Entries
+
+## 2026-05-21 — Phase 3 session 5 close retro: H3 + L6 + D9 extension + J4 restructure (5-agent BUG-A convergence)
+
+**Branch:** `feat/session-5-close-retro` (this PR).
+
+**Driver:** lead synthesizing 5 persistent-instance SendMessage retro reflections (gp-sys-p3s3, world-builder-p3s2, balance-engineer-p3s3, ui-developer-p3s3, shahnameh-loremaster-p3s5). **Zero `-retro` fresh-spawn drift this retro** — corrective discipline lesson from session-4 close internalized + saved to memory. **Facts-not-diagnosis dispatch discipline** applied per user directive (2026-05-20): open prompts surfaced FACTS only (brief asserted X, path didn't exist, agents shipped, bug surfaced at live-test) without pre-naming the failure layer. **First empirical validation:** all 5 agents independently landed on "missing-rule failure, not existing-rule failure" with no "lead's fault" framing.
+
+**Shipped:**
+
+- **STUDIO_PROCESS.md v2.0.0 → v2.1.0 (MINOR, additive).**
+  - **§9.H +1: H3 (NEW)** — First-exercise-of-dormant-schema integration verification. Sister rule to H1 (H1 = new shape; H3 = new value in existing shape). Two-layer intervention (brief-time call-out + agent D9 self-check). Triggered by 5-agent convergence on BUG-A.
+  - **§9.L +1: L6 (NEW)** — Forward-compat-guard-sweep at field-default-change. Same forward-compat shape as L4a/L4b applied to schema-field read-callsite-symmetry. `git grep <field>` sweep in same commit as first-non-default-value.
+  - **§9.D modification (D9 extension)** — Step 2 brief-asserted-infrastructure verb-claim grep sub-step + Step 3 first-exercise self-check + N=3 lens-walk N/A shorthand codified.
+  - **§9.J modification (J4 restructure)** — Claim → mechanism → reviewer triples checklist replaces single "defer mechanical to technical" sentence.
+  - **§9.J watchlist additions (3, N=1)** — J2 brief-time-outcome-trichotomy + J3 baggage-intensity annotation + J4 player-visible-cultural-claim-surfaces sub-section.
+  - Cluster TOC updated: §9.H 2→3, §9.L 6→7, total 52→54.
+
+- **STUDIO_PROCESS_HISTORY.md** — 2026-05-21 cluster appended with chronological archaeology + per-agent attribution + canonical incidents.
+
+- **STUDIO_PROCESS_SYNC_LOG.md** — Phase 3 session 5 entry appended covering cross-doc audit + Wave 2A.5 + BUG-A retro.
+
+- **docs/ARCHITECTURE.md** — v0.27.0 §6 wave-close entry documenting retro learnings + carry-forwards.
+
+- **Agent-defs (relevant implementers)** — H3 first-exercise self-check + L6 forward-compat-guard-sweep + J4 triples-checklist mirrored to gp-sys / world-builder / balance-engineer / ui-developer / shahnameh-loremaster agent-defs.
+
+**Did not ship:**
+- BUILDING_CONTRACT.md authoring (NICE-TO-HAVE per PR #19 review; deferred to before Phase 4).
+- Anchor-category taxonomy dedicated doc (Task #160; Wave 2B kickoff).
+- Codification of 3 single-agent watchlist proposals (N=1; awaiting N=3 trigger at future sessions).
+
+**State for next session (session 6):**
+
+- **Phase 3 ships clean. Iran Tier-1 complete (5/5).** Phase 4 entry conditions satisfied.
+- **Carry-forwards:** Wave 2B (Tier-2 Sowari-khaneh + Tirandazi entry — Tasks #159 + #160) OR Wave 3A (fog-of-war data layer — world-builder) OR Wave 3B (DummyAIController — ai-engineer, Task #71). Lead's call at session-6 kickoff.
+- **Process discipline state:** D9 checklist + agent-def mirroring + cluster TOC empirically load-bearing (Wave 2A.5 = 0 FG3-class incidents vs session-4 baseline of 2). 5-agent retro convergence + facts-not-diagnosis discipline are the new operating-mode baseline.
+- **Memory files updated this session:** `feedback_retro_facts_not_diagnosis.md` (first empirical validation).
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** None this session.
+
+**Decisions made independently (per CLAUDE.md Escalation rule #1):**
+- N=3 graduation decision on lens-walk N/A shorthand (gp-sys-p3s3 + loremaster-p3s5 + Task #166 watchlist met the threshold).
+- 3 watchlist items (J2 trichotomy / J3 baggage-intensity / J4 player-visible-surfaces) parked at N=1 rather than codified — both per user agreement and per N=3 discipline.
+
+---
 
 ## 2026-05-18 — Cross-doc audit: STUDIO_PROCESS active/history/sync-log split (v2.0.0 MAJOR)
 
