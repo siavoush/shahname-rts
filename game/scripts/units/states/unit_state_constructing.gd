@@ -122,6 +122,8 @@ const _BUILDING_SCENE_PATHS: Dictionary = {
 	&"madan": "res://scenes/world/buildings/madan.tscn",
 	&"sarbaz_khaneh": "res://scenes/world/buildings/sarbaz_khaneh.tscn",
 	&"atashkadeh": "res://scenes/world/buildings/atashkadeh.tscn",
+	&"sowari_khaneh": "res://scenes/world/buildings/sowari_khaneh.tscn",
+	&"tirandazi": "res://scenes/world/buildings/tirandazi.tscn",
 }
 
 
