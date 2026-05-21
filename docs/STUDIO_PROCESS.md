@@ -2,7 +2,7 @@
 title: Studio Process — How the Virtual Studio Operates
 type: process
 status: living
-version: 2.0.0
+version: 2.1.0
 owner: team
 summary: Operating contract for multi-agent collaboration — currently-binding active rules + facilitation patterns + mode separation. Chronological archaeology in STUDIO_PROCESS_HISTORY.md; sync log in STUDIO_PROCESS_SYNC_LOG.md.
 audience: all
@@ -21,7 +21,7 @@ ssot_for:
 references: [MANIFESTO.md, ARCHITECTURE.md, STUDIO_PROCESS_HISTORY.md, STUDIO_PROCESS_SYNC_LOG.md]
 tags: [process, syncs, retros, ssot, modes, semver, frontmatter]
 created: 2026-04-30
-last_updated: 2026-05-18
+last_updated: 2026-05-21
 ---
 
 # Studio Process — How the Virtual Studio Operates
@@ -272,15 +272,15 @@ This section is the **currently-binding form** of every accumulated process rule
 | §9.E | Wave-Mode & Worktree | 2 |
 | §9.F | Wave-Close Review & Reviewer Architecture | 4 |
 | §9.G | Agent Persistence & Dispatch Channel | 3 |
-| §9.H | Cross-Cutting Verification | 2 |
+| §9.H | Cross-Cutting Verification | 3 |
 | §9.I | Engine-Feature Verification | 3 |
 | §9.J | Cultural / Loremaster Discipline | 4 |
 | §9.K | Retro Practice | 3 |
-| §9.L | Implementation Patterns | 6 |
+| §9.L | Implementation Patterns | 7 |
 | §9.M | Test Discipline | 5 |
 | §9.N | Investigation Reports | 1 |
 
-**Total: 52 active rules across 14 clusters.** Down from 81 dated entries in v1.8.0 — same load-bearing content, restructured to currently-binding form. (L4 split into L4a/L4b at validation-test fix-up; D9 pre-commit self-review checklist added at PR C — both with provenance notes in their respective entries.)
+**Total: 54 active rules across 14 clusters.** Down from 81 dated entries in v1.8.0 — same load-bearing content, restructured to currently-binding form. (L4 split into L4a/L4b at validation-test fix-up; D9 pre-commit self-review checklist added at PR C; H3 first-exercise-of-dormant-schema + L6 forward-compat-guard-sweep + J4 claim→mechanism→reviewer-triples refinement + D9 lens-walk N/A shorthand added at session-5 close retro — all with provenance notes in their respective entries.)
 
 ---
 
@@ -619,10 +619,14 @@ Cites Manifesto Principle 1 (Truth-Seeking — the index is the binding state).
 
 **Step 2 — Read each contract section at its current `HEAD` (3-5 minutes).** NOT the version you remember; the version on disk RIGHT NOW. `git show HEAD:docs/<X>_CONTRACT.md` if you want a clean read. The retroactive-staleness failure mode (C1) is real — shipped state can shift between authoring and your commit.
 
+**Step 2 sub-step — brief-asserted infrastructure verification (added session-5 close, BUG-A canonical).** If your dispatch brief contains a **verb-claim** about a downstream consumer file ("grain deducted at placement time in UnitState_Constructing", "X registered with Y", "Z fires when W happens") — meaning the brief asserts a piece of code or wiring exists in another agent's scope that your work consumes — `grep` the named consumer file for the verb's implementation BEFORE consuming the claim. If the path doesn't exist at HEAD, escalate before commit. Brief-claims about already-shipped state are reviewable like contract sections; the grep takes seconds and catches first-exercise gaps (H3) the brief author may not have verified. Pattern: brief sentence uses passive voice about a downstream effect → grep the verb's actor file before trusting the sentence.
+
 **Step 3 — Apply the three reviewer lenses to your own commit (3-5 minutes).** Self-execute each role's question:
 - **godot-code-reviewer lens:** does this code avoid the [Known Pitfalls list](../docs/PROCESS_EXPERIMENTS.md)? Does it pass behavioral-vs-structural test discipline (F3)? Pitfall #14 mitigations applied if lambda captures? Pitfall #15 regression test mandatory if inherited-scene with nested override (F4)?
-- **architecture-reviewer lens:** does this fit the target architecture? Does the prose match shipped state (C1 SSOT canonical)? Are SSOT contradictions resolved empirically NOT deferred to LATER (C1 BLOCKING refinement)? Cross-cutting schema verification triangulated if new shared classification surface (H1)?
-- **shahnameh-loremaster lens (if cultural surface):** does the framing match the anchor-category template (J2)? Persian-term gloss accurate per literal-then-tricky-gloss (J3)? Intent-vs-implementation split honest if claim depends on mechanical behavior (J4)?
+- **architecture-reviewer lens:** does this fit the target architecture? Does the prose match shipped state (C1 SSOT canonical)? Are SSOT contradictions resolved empirically NOT deferred to LATER (C1 BLOCKING refinement)? Cross-cutting schema verification triangulated if new shared classification surface (H1)? **First-exercise-of-dormant-schema / dormant-integration / dormant-taxonomy-slot (H3) — does my work first-populate a previously-dormant surface? If yes, what cross-track verification did I do?**
+- **shahnameh-loremaster lens (if cultural surface):** does the framing match the anchor-category template (J2)? Persian-term gloss accurate per literal-then-tricky-gloss (J3)? Intent-vs-implementation split honest if claim depends on mechanical behavior (J4 — and if so, are mechanical dependencies enumerated as claim→mechanism→reviewer triples)?
+
+**Step 3 — Lens-walk N/A shorthand (codified session-5 close, N=3 met).** A lens that genuinely does not apply to your commit may be marked `<Lens>: N/A — <one-line reason>` instead of boilerplate-prose-walking it. Distinguishes "lens walked, no finding" (a substantive walk produced no finding) from "lens not applicable" (the commit type doesn't touch this lens at all) — two epistemically different states that boilerplate previously conflated. **Trigger:** if walking the lens would produce only "no relevant code touched" or similar tautological prose, use N/A form. If you find ANYTHING worth noting (even a no-finding observation about adjacent risk), use the prose form. N=3 met by: gp-sys-p3s3 Task #117 carry-forward + loremaster-p3s5 session-5 wave-2A.5 reflection + Task #166 explicit watchlist entry → graduated to active at session-5 close.
 
 **Step 4 — Surface gaps BEFORE the trio review fires (1-2 minutes per gap).** For each gap surfaced, file a `QUESTIONS_FOR_DESIGN.md` entry (for design decisions) OR ship a pre-emptive fix-up commit (for SSOT corrections). **Not after.** The trio reviewer catching your gap means you've already failed this rule.
 
@@ -635,10 +639,11 @@ Cites Manifesto Principle 1 (Truth-Seeking — the index is the binding state).
 **Canonical incidents.**
 - **Original (session-2, world-builder `91f48ad`):** caught own contract gaps pre-trio-review — `§1.4/§3.4` corrections to RNC. 5-10 minute pre-emptive read saved a fix-up wave cycle. Rule born.
 - **FG3 failure modes (session-4 wave-2A):** TWO violations of the (then-vague) rule in one wave: (a) `sarbaz_khaneh.gd:7` + `test_sarbaz_khaneh.gd:3` cited `02h_PHASE_3_SESSION_4_KICKOFF.md` — would have been caught by step 2 (read citation targets at HEAD); (b) `sarbaz_khaneh.tscn` `1ff3039` shipped with Pitfall #15 silent-override syntax — would have been caught by step 3 godot-code-reviewer lens applied. Both surfaced at PR review; both should have been caught pre-commit by the implementer.
+- **BUG-A first-exercise-of-dormant-schema (session-5 wave-2A.5):** the per-agent D9s were ALL clean within scope (every implementer ran D9, reported substantive findings each — 6 D9 walkthroughs total). The seam BETWEEN scopes — the brief's verb-claim "grain deducted at placement time in UnitState_Constructing" — was nobody's named D9 surface. The grain-deduction path didn't exist at HEAD. Five-agent retro converged independently: Step 2 brief-asserted-infrastructure verification sub-step + Step 3 first-exercise-of-dormant-schema self-check (H3) added to close this gap-class. **Not a D9-was-followed-and-failed instance; a D9-coverage-gap instance.** D9 covers WITHIN-SCOPE; H3 + Step 2 sub-step cover BRIEF-ASSERTED-INFRASTRUCTURE-ACROSS-SCOPES.
 
 Cites Manifesto Principle 1 (Truth-Seeking — verify your own work before others have to) + Principle 9 (Automated Enforcement — discipline in agent-def at every-dispatch read-cadence > discipline in §9 at session-start read-cadence).
 
-[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2 pre-commit-self-review (original prose); operationalized to checklist 2026-05-18 PR C]
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2 pre-commit-self-review (original prose); operationalized to checklist 2026-05-18 PR C; Step 2 sub-step + Step 3 first-exercise self-check + lens-walk N/A shorthand added 2026-05-21 session-5 close]
 
 ---
 
@@ -866,6 +871,39 @@ Cites Manifesto Principle 1 (Truth-Seeking — verify against shipped reality) a
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-3]
 
+#### H3. First-exercise-of-dormant-schema integration verification — brief-time call-out + agent D9 self-check
+
+*Sister rule to H1. H1 fires on **new shape** (new SceneTree group, new duck-type method, new base-class field). H3 fires on **new value in an existing shape** (first-non-zero value, first-occupant of a structured taxonomy slot, first-wiring of a schema-present-but-callsite-absent integration path). Both are cross-cutting integration risks; they manifest differently and need different reviewer lenses.*
+
+**Rule.** When a wave **first-exercises a previously-dormant** schema field, integration path, or taxonomy slot — i.e., the surface has shipped for N waves with default/empty state and a new participant in this wave is the first to populate it with a non-trivial value — the wave-brief AND the agent's D9 walkthrough BOTH carry an explicit cross-track integration verification step.
+
+**Trigger conditions (any one fires the rule):**
+1. New building/unit/feature configures a BalanceData/schema field that has existed since an earlier wave but has been zero/default/empty across all prior subclasses (e.g., BUG-A: `grain_cost = 50` on Atashkadeh when all 4 prior buildings had `grain_cost = 0`).
+2. New participant fills a previously-empty slot in a structured taxonomy (e.g., 4th anchor-category variant completing the Iran-Tier-1 anchor-category roster at first-instance).
+3. A previously schema-present-but-never-populated integration path (signal, autoload-registry, lifecycle hook) is first-wired by this wave.
+
+**Two-layer intervention (brief-time + D9-time):**
+
+- **Brief-time (lead's responsibility, pre-dispatch).** When the wave-brief asserts the existence or wiring of cross-cutting infrastructure that has been dormant before this wave, lead includes a "dormant-schema first-exercise" call-out section in the brief identifying (a) the dormant surface being first-exercised, (b) every consumer file the new value flows through, (c) which **named agent** owns the cross-track verification for that surface. No implicit hand-offs; cross-track integration gets a name.
+- **D9 Step 3 self-check (every agent's responsibility, pre-commit).** Each agent's D9 walkthrough self-asks: *"Does my work first-exercise a previously-dormant schema field, integration path, or taxonomy slot? If yes, what cross-track verification did I do?"* The honest answer "no cross-track verification" is to escalate before commit, not to ship.
+
+**Relationship to L6.** H3 is the **trigger condition** (first-exercise-of-dormant); L6 is the **action shape** (sweep all callsites matching the field's read pattern in the same commit that first-populates the field). H3 fires the alarm; L6 names what to do about it.
+
+**Canonical incident.** Wave 2A.5 BUG-A — Atashkadeh first building with `grain_cost > 0` (all 4 prior buildings had `grain_cost = 0`). `BuildingStats.grain_cost` schema field had existed since Phase 2; the grain-deduction codepath in `UnitState_Constructing` had never been exercised. The lead's brief asserted "grain deducted at placement time in UnitState_Constructing (gp-sys's atashkadeh entry)" — claim was structurally false because `_resolve_cost_grain` didn't exist. Each per-agent D9 walkthrough was clean within scope; the seam between scopes was nobody's named responsibility. Bug surfaced at lead live-test; fix at `dfa9a33` added both-or-neither affordability + grain deduction wiring + 3 regression tests. **Five-agent retro (session-5 close) converged independently on this rule shape; none said "lead's fault" — all framed it as "missing-rule failure, not existing-rule failure."**
+
+**Convergent retro evidence (session-5 close, five persistent agents, independent angles):**
+- gp-sys-p3s3: "H1 sub-check refinement — when a new building type configures a field schema-present-but-never-populated, trigger explicit cross-cutting-callsite audit"
+- world-builder-p3s2: "first-non-zero-value alarm + two-layer/three-layer defense theory" (brief-names-risk + agent-def-carries-pattern + Step-2-puts-live-example)
+- balance-engineer-p3s3: "dual-field coexistence pattern + brief-authoring-time intervention point"
+- ui-developer-p3s3: "first-exercise of dormant schema/contract surface never previously exercised" + verb-claim grep sub-step (operationalized in D9 Step 2 sub-step)
+- loremaster-p3s5: "first-exercise of dormant schema / integration path / taxonomy slot" + parallel taxonomy-completion-event surface (anchor-category roster Iran-Tier-1 completed at Atashkadeh = first-exercise event in J-cluster, parallel to BUG-A's first-exercise event in schema-cluster)
+
+Five independent angles, same trigger shape, same intervention layers. The convergence-without-pre-framing was itself a process validation (see Test 2 + meta-process discipline in §9.K).
+
+Cites Manifesto Principle 1 (Truth-Seeking — verify that dormant infrastructure actually exists before consuming it) + Principle 6 (Partnership — cross-track seams need named owners, not implicit hand-offs) + Principle 10 (Feedback Cycle — first-exercise events are the cheapest moment to discover gaps; live-test is the most expensive).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-21 session-5 close]
+
 ---
 
 ### §9.I — Engine-Feature Verification
@@ -939,7 +977,9 @@ Cites Manifesto Principle 4 (Lean Iteration — compressing the wave-close fix l
 
 **Open question.** The taxonomy may be exhaustive for Iran-side at MVP scope; Turan economy will likely surface a fifth-or-sixth variant when it ships. Re-examine at Phase 4 retro.
 
-[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2]
+**Watchlist refinement (loremaster-p3s5 session-5 close, N=1 — awaiting N=3 trigger).** When brief-time review fires on a new concrete subclass, classify the outcome as one of three: (a) **clone-check** (same-as-existing slot — verify the clone is faithful to the existing template), (b) **slot-fit-verify** (fills a predicted-empty slot — verify slot-fit per the prediction), (c) **taxonomy-growth-required** (demands a new slot — surfaces a taxonomy gap to discuss before shipping). Three named outcomes route to three different review shapes. Iran Tier-1 (4/4 anchor-category variants) shipped 4-for-4 in their predicted slots without retrofit, validating the taxonomy's predictive power — but that's the easy case; the harder case is Turan economy, where structural-mismatch is the prediction (khan-loyalty + steppe-mobile sworn-bond is NOT a building-clone pattern). Currently a single agent's proposal; needs N=3 to graduate to active.
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2; watchlist refinement added 2026-05-21 session-5 close]
 
 #### J3. Literal-then-tricky-gloss discipline (Persian-term Pattern)
 
@@ -957,17 +997,45 @@ Cites Manifesto Principle 4 (Lean Iteration — compressing the wave-close fix l
 - *farr* — "glory" loses legitimizing-political-theology layer
 - *sepah* — "army" loses institutional layer Sarbaz-khaneh inherits
 
-[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2]
+**Watchlist refinement (loremaster-p3s5 session-5 close, N=1 — awaiting N=3 trigger).** Watchlist entries annotate **baggage-intensity** (high / medium / low):
+- **High** — tricky-gloss must be corrected explicitly in-prose. Examples: *atashkadeh* (Abrahamic congregation-space baggage on "fire temple"), *ma'dan* (industrial-revolution baggage on "mine").
+- **Medium** — tricky-gloss should be noted parenthetically. Examples: *sarbaz* (register-loss to "soldier" but not actively misleading).
+- **Low** — literal preferred but gloss acceptable.
 
-#### J4. Intent-vs-implementation split for cultural / non-technical claims
+Annotations sharpen the block's framing without expanding the rule's scope. Currently a single agent's proposal; needs N=3 to graduate to active.
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2; watchlist refinement added 2026-05-21 session-5 close]
+
+#### J4. Intent-vs-implementation split for cultural / non-technical claims — claim → mechanism → reviewer triples
 
 **Rule.** When a non-technical reviewer (loremaster, balance-engineer, ai-engineer in design-mode review) makes a verdict that depends on a specific mechanical / technical behavior, the verdict must distinguish (a) "the framing aligns with STATED INTENT" — within the non-technical reviewer's lane — from (b) "the framing aligns with SHIPPED BEHAVIOR" — typically requires technical verification outside the non-technical reviewer's lane. The non-technical reviewer approves (a) when justified and DEFERS (b) explicitly to the technical reviewers (engine-architect, godot-code-reviewer, architecture-reviewer) rather than implicitly endorsing both.
 
-**Canonical incident.** Phase 3 session 2 wave 1B — loremaster's APPROVE praised RNC §4.7.5's "navmesh-obstacle reinforces cultural framing" as "form-follows-source at the engine layer." Engine-architect's later live-test investigation surfaced the mechanical half is INERT (NavigationObstacle3D radius-only mode doesn't affect `NavigationServer3D.map_get_path` queries). The cultural CATEGORY distinction (labor-organization vs civic-anchor frame) holds independently; the "form-follows-source" alignment was overweighted because it depended on mechanical behavior loremaster couldn't verify directly. The honest verdict would have been: *"cultural framing aligns with stated intent; defer mechanical verification to engine-architect."*
+**Refinement (session-5 close): claim → mechanism → reviewer triples.** When a cultural / non-technical block makes ANY claim that depends on mechanical behavior, the block-author enumerates each claim as a structured triple: `<cultural assertion> → <list of mechanical dependencies> → <named reviewer(s) for each>`. **This replaces the single "defer mechanical to technical" sentence with a structured checklist that surfaces ALL the mechanical dependencies the cultural-claim rests on — not just the ONE the author noticed.** The single-sentence form is one author asserting one thing; the structured triples surface the full dependency graph.
 
-Cites Manifesto Principle 1 (Truth-Seeking — verify before endorsing alignment).
+**Example (Atashkadeh, what the refinement produces):**
 
-[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2]
+> *"Atashkadeh emits +1 Farr/min CONTINUOUSLY while standing"*
+> → depends on: (a) FarrSystem registration [engine-architect], (b) per-tick emit pattern [gp-sys], (c) Stage-2 flip [gp-sys], (d) BalanceData entry [balance-engineer].
+>
+> *"150 coin, 50 grain cost honoring institutional weight"*
+> → depends on: (e) coin deduction wiring [gp-sys], (f) grain deduction wiring [gp-sys], (g) BalanceData cost entry [balance-engineer].
+>
+> *"Tier-1→Tier-2 gateway anchors theologically before scaling"*
+> → depends on: (h) tier-up gate reading Atashkadeh-built state [gp-sys/balance-engineer], (i) Farr threshold check [Phase-4 scope].
+
+**Why structured triples matter.** The cultural-truth-claim is a **load-bearing contract on the implementation**, not narrative voice-over. When the loremaster writes "the mechanic IS the theology," they are asserting that the shipped mechanic will reflect the named theology. Partial mechanic = partial theology = the cultural-claim has been over-promised at brief-time. The triples checklist surfaces every mechanical surface the cultural-claim rests on, so each gets routed to a named reviewer instead of trusted-as-implicit-existing.
+
+**Trigger.** Mandatory at brief-time cultural review for any new building / unit / hero whose cultural-claim asserts mechanical behavior. The loremaster's brief-time output INCLUDES the triples checklist; lead routes each triple's reviewer per the named owners.
+
+**Canonical incident (original).** Phase 3 session 2 wave 1B — loremaster's APPROVE praised RNC §4.7.5's "navmesh-obstacle reinforces cultural framing" as "form-follows-source at the engine layer." Engine-architect's later live-test investigation surfaced the mechanical half is INERT (NavigationObstacle3D radius-only mode doesn't affect `NavigationServer3D.map_get_path` queries). The cultural CATEGORY distinction (labor-organization vs civic-anchor frame) holds independently; the "form-follows-source" alignment was overweighted because it depended on mechanical behavior loremaster couldn't verify directly. The honest verdict would have been: *"cultural framing aligns with stated intent; defer mechanical verification to engine-architect."*
+
+**Canonical incident (refinement, session-5 close).** Wave 2A.5 — loremaster-p3s5's cultural-claim "the mechanic IS the theology, not a metaphor laid over it" implicitly rested on FOUR mechanical surfaces (FarrSystem registration, per-tick emit, Stage-2 flip, grain-deduction wiring). J4-as-originally-written deferred ONE (FarrSystem) explicitly via the Phase-4 deferred note; the other three were trusted as implicit-existing. The grain-deduction surface was the one that didn't exist (BUG-A). **The triples checklist refinement would have surfaced all four at brief-time**, with grain-deduction routed to gp-sys with an explicit verification ask — closing the exact gap BUG-A occupied.
+
+**Watchlist (loremaster-p3s5 session-5 close, N=1 — awaiting N=3 trigger).** Loremaster brief-time review output additionally includes a **"player-visible cultural-claim surfaces"** sub-section identifying strings.csv rows / tooltip text / HUD labels that should carry the cultural framing. Currently the cultural framing lives in the `.gd` header comment — visible to future loremasters and code-reviewers, NOT to players. For the project's stated bilingual-UI ambition (00_SHAHNAMEH_RESEARCH.md §303 *"this will mean the world to the Iranian diaspora audience"*), player-visible surfaces are where the cultural-claim actually meets the audience. Currently a single agent's proposal; needs N=3 to graduate to active.
+
+Cites Manifesto Principle 1 (Truth-Seeking — verify before endorsing alignment) + Principle 6 (Partnership — named reviewers for named dependencies; no implicit hand-offs).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2; claim→mechanism→reviewer triples refinement + player-visible-surfaces watchlist added 2026-05-21 session-5 close]
 
 ---
 
@@ -1121,6 +1189,28 @@ Cites Manifesto Principle 8 (Separation of Concerns — base-class shipper owns 
 Cites Manifesto Principle 6 (Trust the simple shape until it cracks — N=2 marker subclasses with distinct semantics is not yet a pattern strong enough to abstract).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-4 implementation-pattern cluster]
+
+#### L6. Forward-compat-guard-sweep at field-default-change — sweep all callsites in the same commit that first-populates a previously-defaulted field
+
+**Actor.** Schema-field-shipper at the moment the field gains its first non-default value.
+
+**Trigger.** When a field that has been shipped with a default value across N prior subclasses / participants (e.g., `@export var grain_cost: int = 0` on BuildingStats; `@export var farr_per_min_x100: int = 0` on BuildingStats; any `@export var X: Y = <default>` schema field) gains its **first non-default value** via a new wave's commit, every callsite that reads the field MUST be swept for forward-compat-guard coverage matching the field's semantics.
+
+**Rule.** Schema-defaults-with-forward-compat-guard pattern: when a field is added with a default value (typically 0 / empty / null) AND a forward-compat guard like `if cost > 0:` is added at one callsite, every parallel callsite that reads the same field is presumed to need the same guard shape OR a parallel implementation. When the first non-default value ships, sweep all readers — same commit, before commit lands.
+
+**Audit command.** `git grep -n '<field_name>' <scope>` to enumerate readers. For each reader, verify the guard shape is consistent. If a callsite has no guard but assumes the field is non-zero (or vice versa, has a guard that protects against zero but no actual implementation when non-zero), fix in the **same commit** as the field-first-population.
+
+**Why this is the field-shipper's responsibility, not the schema-author's.** The schema-author may have shipped the field in dormant form many waves earlier; they're not present at the moment the field is first-populated. The shipper of the first non-default value is the one with the in-context knowledge that the dormant infrastructure must now wake up. Reactive catches (post-merge reviewer, live-test) are luck; the same-commit sweep is the discipline.
+
+**Relationship to H3.** H3 (cluster H) is the **trigger condition** — "first-exercise of dormant schema". L6 (this rule, cluster L) is the **action shape** — "sweep all callsites in the same commit". H3 fires the alarm at brief-time + D9-time; L6 names what to do at code-time. Both fire together on first-non-default-value events.
+
+**Relationship to L4a/L4b.** L4a/L4b are the **super-call forward-compat** pattern (subclass-override calls super even when base is `pass`); L6 is the **schema-field-default-change forward-compat** pattern (field-reader callsites swept when field is first-populated). Same shape (forward-compat discipline applied at moment-of-change), different surfaces (override-chain integrity vs. read-callsite-symmetry). The author-vs-shipper actor split is the same: L4a-author + L4b-shipper ↔ L6-shipper.
+
+**Canonical incident.** Wave 2A.5 BUG-A — `BuildingStats.grain_cost` shipped at Phase 2 with default 0. `UnitState_Constructing._sim_tick` had `_resolve_cost_coin` deducting coin via `if cost_coin > 0:` guard at the placement-affordability check. The parallel `grain_cost` reader / deducer **DID NOT EXIST** — schema-present, callsite-absent. Atashkadeh's `grain_cost = 50` first-populated the field; the deduction never fired because the callsite wasn't there. Fix at `dfa9a33` added `_resolve_cost_grain` + both-or-neither affordability + parallel `change_resource(GRAIN, ...)` call. **A pre-commit `git grep grain_cost game/scripts/` sweep at Atashkadeh's first-non-zero population would have caught the absent-callsite gap** (`grep` returns the BalanceData reader but NO consumer in UnitState_Constructing — that asymmetry is the audit signal).
+
+Cites Manifesto Principle 9 (Automated Enforcement — `git grep` sweep is a cheap structural lock; relying on per-callsite memory accumulates silent drift) + Principle 1 (Truth-Seeking — verify shape symmetry across all readers, don't assume).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-21 session-5 close]
 
 ---
 

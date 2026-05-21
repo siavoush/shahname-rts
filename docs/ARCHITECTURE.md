@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.26.0
+version: 0.27.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -18,8 +18,8 @@ ssot_for:
 references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md, RESOURCE_NODE_CONTRACT.md, AI_DIFFICULTY.md, ../02_IMPLEMENTATION_PLAN.md, STUDIO_PROCESS.md, WAVE_1C_NAVMESH_SPIKE.md]
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
-last_updated: 2026-05-17
-# bumped to v0.24.0 — Phase 3 session 4 Wave 2A close: Sarbaz-khaneh (5th Tier-1 Iran building, identity-bearing-institutional anchor variant). 5 commits across 5 parallel tracks. Cultural-note locks the pahlavan/sepah two-layer Iran-military framing for future Phase 5 Rostam scenarios. Tirandazi naming-shape flag captured for future Tier-2 wave brief.
+last_updated: 2026-05-21
+# bumped to v0.27.0 — Phase 3 session 5 close retro: 2 §9 rules (H3 first-exercise-of-dormant-schema + L6 forward-compat-guard-sweep) + D9 extension (Step 2 verb-claim sub-step + Step 3 first-exercise self-check + N=3 lens-walk N/A shorthand) + J4 restructure (claim→mechanism→reviewer triples) + 3 J-cluster watchlist additions. 5-agent SendMessage retro convergence on BUG-A. First empirical validation of facts-not-diagnosis retro discipline.
 ---
 
 # Architecture — Target Shape and Build State
@@ -286,6 +286,51 @@ game/
 - Spec said X; we built Y; reason: Z
 - Subsystem A took Phase N+1 (slipped one phase), reason: ...
 - Contract V was bumped from 1.x.0 to 1.y.0 during implementation; key change: ...
+
+### v0.27.0 — Phase 3 session 5 close retro: 2 §9 rules + D9 extension + J4 restructure + 5-agent BUG-A convergence (2026-05-21)
+
+Phase 3 session 5 close retro ships as a coherent process PR documenting the lessons-learned from the cross-doc audit (PRs #21+#22+#24), Wave 2A.5 Atashkadeh (PR #28), and BUG-A's 5-agent retro convergence. **Five substantive SendMessage reflections from five persistent agents** (gp-sys-p3s3, world-builder-p3s2, balance-engineer-p3s3, ui-developer-p3s3, shahnameh-loremaster-p3s5), all routed via SendMessage to persistent instances — **zero `-retro` fresh-spawn drift this session** (corrective vs session-4; lesson internalized + saved to memory). The retro produced the strongest empirical evidence yet for two distinct process disciplines: (1) **persistent-instance SendMessage routing produces higher-fidelity reflection than fresh-spawn audit** (validated again at session-5; loremaster-p3s5's J4 refinement only emerged from lived authoring of the Atashkadeh cultural-note), and (2) **facts-not-diagnosis dispatch discipline produces shared-responsibility convergence** rather than lead-blame convergence (first empirical validation; 5 agents independently landed on "missing-rule failure, not existing-rule failure" with no "lead's fault" framing — per user-directive saved to `feedback_retro_facts_not_diagnosis.md`).
+
+**What shipped (process artifacts):**
+
+- **STUDIO_PROCESS.md v2.0.0 → v2.1.0 (MINOR — additive):**
+  - **§9.H +1: H3 (NEW)** — First-exercise-of-dormant-schema integration verification. Sister rule to H1 (H1 = new shape; H3 = new value in existing shape). Two-layer intervention: brief-time call-out (lead's responsibility — enumerate "dormant-schema first-exercise" section identifying surface + consumers + named cross-track verifier) + D9 Step 3 self-check (every agent — "does my work first-exercise dormant X?"). Trigger conditions: (1) first-non-zero value of schema field present since earlier wave; (2) first-occupant of structured taxonomy slot; (3) first-wiring of schema-present-but-callsite-absent integration path. Canonical incident: Wave 2A.5 BUG-A (first non-zero `grain_cost`).
+  - **§9.L +1: L6 (NEW)** — Forward-compat-guard-sweep at field-default-change. When a previously-defaulted field gains its first non-default value, sweep all callsites via `git grep` in the SAME COMMIT. Relationship to H3: H3 fires the alarm; L6 names the action shape. Relationship to L4a/L4b: same forward-compat-discipline applied to a different surface (schema-field read-callsite-symmetry vs. super-call override-chain integrity).
+  - **§9.D modification (D9 extension):** Step 2 sub-step (brief-asserted infrastructure verb-claim grep — for verb-claims in the brief about downstream consumer files, grep the named file for the verb's implementation before consuming the claim) + Step 3 first-exercise self-check + N=3 lens-walk N/A shorthand codified (`<Lens>: N/A — <one-line reason>` distinguishes "lens walked, no finding" from "lens not applicable"). N=3 met by gp-sys-p3s3 + loremaster-p3s5 + Task #166 watchlist convergence.
+  - **§9.J modification (J4 restructure):** Claim → mechanism → reviewer triples checklist replaces single "defer mechanical to technical" sentence. Cultural-truth-claim is a load-bearing contract on the implementation; partial mechanic = partial theology. Refinement-canonical incident: Wave 2A.5's "the mechanic IS the theology" claim rested on 4 mechanical surfaces (FarrSystem / per-tick emit / Stage-2 flip / grain-deduction); J4-as-original deferred 1 explicitly, trusted 3 as implicit-existing; grain-deduction was the missing one (BUG-A).
+  - **§9.J watchlist additions (3, N=1):** J2 brief-time-outcome-trichotomy (clone-check / slot-fit-verify / taxonomy-growth-required) + J3 baggage-intensity annotation (high/medium/low) + J4 player-visible cultural-claim-surfaces sub-section.
+  - **§9 cluster TOC** updated: §9.H 2→3, §9.L 6→7, total 52→54.
+
+- **STUDIO_PROCESS_HISTORY.md** — appended 2026-05-21 cluster (Phase 3 session 5 close retro) with full chronological archaeology of all rule additions + canonical incidents + per-agent attribution.
+
+- **STUDIO_PROCESS_SYNC_LOG.md** — appended Phase 3 session 5 entry covering all three session arcs (cross-doc audit, Wave 2A.5, BUG-A retro).
+
+- **Agent-def updates** — H3 first-exercise-of-dormant-schema self-check + L6 forward-compat-guard-sweep + J4 triples-checklist mirroring routed to relevant agent-defs (gp-sys / world-builder / balance-engineer / ui-developer for H3+L6; shahnameh-loremaster for J4 triples). D9 mirroring already shipped at PR #24.
+
+**Key process learnings captured (load-bearing):**
+
+1. **5-agent convergence on first-exercise-of-dormant-X without pre-framing is the strongest validation yet of facts-not-diagnosis retro dispatch.** Lead's retro prompts surfaced only FACTS (brief asserted X, path didn't exist, agents shipped, bug surfaced at live-test) without naming the failure layer. All 5 agents independently produced the same trigger-shape diagnosis in different vocabularies. Convergence-without-pre-framing is the artifact validating the discipline. The user-directive origin: non-blind trust in leader is the precondition for self-organization.
+
+2. **H3 + L6 + D9 Step 2 sub-step are complementary at different cost points.** H3 = brief-time (cheapest — catches dormant-schema first-exercise BEFORE any agent dispatches). D9 Step 2 sub-step = per-agent at commit-time (medium — catches verb-claim divergence at per-implementer scale). L6 = same-commit-as-first-non-zero (cheapest at code-time — catches absent-callsite gap at the moment-of-field-population). Together they form three-layer defense in depth at three cost levels.
+
+3. **Loremaster's J4 refinement is the cultural-side mirror of H3.** Cultural-truth-claims have load-bearing dependency on mechanical surfaces. Triples checklist enumerates ALL mechanical dependencies (not just the ONE the author noticed) and routes each to a named reviewer. The cultural-claim "the mechanic IS the theology" turned out to be a 4-mechanical-surface claim; J4-as-original deferred 1 (FarrSystem) explicitly while trusting 3 (per-tick emit / Stage-2 flip / grain-deduction) as implicit-existing — grain-deduction was BUG-A.
+
+4. **Persistent-instance lived memory continues to compound value across sessions.** Loremaster-p3s5 is a NEW persistent instance (spawned at session-5 for first time); their J4 refinement could only emerge from authoring the Atashkadeh cultural-note + experiencing the BUG-A revelation. World-builder-p3s2's "two-layer/three-layer defense theory" framing emerged from their accumulated experience across 5 sessions of pattern-application. Persistence is the substrate that makes lived-experience aggregation possible.
+
+5. **Test 2 followability hypothesis confirmed.** D9 operationalization at PR #24 + cross-doc audit + agent-def mirroring produced **0 FG3-class incidents in Wave 2A.5** (vs session-4 wave 2A baseline of 2). 6 D9 walkthroughs reported with substantive findings each. Spec-wins-over-lead caught at D9 Step 2. Pitfall #15 trigger correctly handled by world-builder. The D9 checklist+ agent-def mirroring + cluster TOC are observably load-bearing for the FG3-failure-mode-class they were designed to address.
+
+**Carry-forwards to session 6:**
+
+- **Wave 2B (Tier-2 Sowari-khaneh + Tirandazi entry)** — Tasks #159 + #160 still pending; first Tier-2 building shipping.
+- **Wave 3A (fog-of-war data layer — world-builder)** OR **Wave 3B (DummyAIController — ai-engineer, Task #71)** per lead's call at session-6 kickoff.
+- **BUILDING_CONTRACT.md authoring** — NICE-TO-HAVE per PR #19 architecture-reviewer; recommend before Phase 4 starts.
+- **Anchor-category taxonomy dedicated doc** (Task #160) — Wave 2B kickoff item.
+- **3 watchlist items (N=1)** awaiting N=3 trigger: J2 clone-check/slot-fit-verify/taxonomy-growth-required outcome trichotomy, J3 baggage-intensity annotation, J4 player-visible cultural-claim surfaces sub-section.
+- **Facts-not-diagnosis retro discipline (N=1 empirical validation)** — codification candidate at next session where retro discipline applies; in memory file for now.
+
+**Meta-observation: process discipline payoff.** Three sessions ago at session-3 close, the user-flagged concern was "are we accumulating useful structure or just verbosity?" Session-5 close answers empirically: **structure that produced 0-FG3 Wave 2A.5 + 5-agent convergent BUG-A diagnosis is structure that compounds value.** The Phase 3 process arc — session-1 brief-time review formalization, session-2 stash-on-block + super-call sweep, session-3 dispatch-channel discipline + Pitfall #15 promotion, session-4 D9 operationalization + cross-doc audit, session-5 H3 + L6 + J4 refinement — each session's process output became the next session's substrate. **Iran Tier-1 ships clean (5/5).** Phase 4 entry conditions satisfied.
+
+---
 
 ### v0.26.0 — Phase 3 session 5 Wave 2A.5 close: Atashkadeh (5/5 Tier-1 Iran COMPLETE; sacral-emitter anchor; Tier-1→Tier-2 gateway) (2026-05-18)
 

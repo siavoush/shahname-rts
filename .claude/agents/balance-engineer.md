@@ -99,11 +99,25 @@ Pre-seeded bands without ladder-anchoring systematically undershoot for economy/
 
 **Step 2 — Read each contract section at HEAD (3-5 min).** NOT the version you remember; `git show HEAD:docs/<X>_CONTRACT.md` for a clean read. Retroactive-staleness is real (per §9.C1).
 
+**Step 2 sub-step — brief-asserted infrastructure verb-claim grep (§9.D9 session-5 extension).** If your dispatch brief contains a verb-claim about a downstream consumer file ("grain deducted at placement time in UnitState_Constructing", "X registered with Y"), `grep` the named consumer file for the verb's implementation BEFORE consuming the claim. Catches first-exercise gaps (§9.H3) the brief author may not have verified.
+
 **Step 3 — Apply the three reviewer lenses to your own commit (3-5 min):**
 - **godot-code-reviewer lens:** Known Pitfalls list (`docs/PROCESS_EXPERIMENTS.md`) — does this code avoid them? Pitfall #14 mitigations applied if lambda captures? Pitfall #15 regression test mandatory if inherited-scene with nested override (per §9.F4)?
-- **architecture-reviewer lens:** does this fit the target architecture? Prose matches shipped state (§9.C1 SSOT)? SSOT contradictions resolved empirically NOT deferred to LATER (§9.C1 BLOCKING)? Cross-cutting schema verification triangulated if new shared classification surface (§9.H1)?
-- **shahnameh-loremaster lens (if cultural surface):** anchor-category template match (§9.J2)? Persian-term gloss accurate (§9.J3)? Intent-vs-implementation split honest if claim depends on mechanical behavior (§9.J4)?
+- **architecture-reviewer lens:** does this fit the target architecture? Prose matches shipped state (§9.C1 SSOT)? SSOT contradictions resolved empirically NOT deferred to LATER (§9.C1 BLOCKING)? Cross-cutting schema verification triangulated if new shared classification surface (§9.H1)? **First-exercise-of-dormant-schema (§9.H3): does my BalanceData entry first-populate a previously-dormant field (e.g., first `grain_cost > 0`, first `farr_per_min_x100 > 0`)? If yes, did I surface the dormant-schema first-exercise alarm to lead at brief-time?**
+- **shahnameh-loremaster lens (if cultural surface):** anchor-category template match (§9.J2)? Persian-term gloss accurate (§9.J3)? Intent-vs-implementation split honest if claim depends on mechanical behavior (§9.J4 — and if so, mechanical dependencies enumerated as claim→mechanism→reviewer triples)?
+
+**Step 3 — Lens-walk N/A shorthand (§9.D9 session-5 extension, N=3 met).** A lens that genuinely does not apply may be marked `<Lens>: N/A — <one-line reason>` instead of boilerplate-prose-walking. Use N/A when walking would produce only tautological prose; use prose form if anything worth noting.
 
 **Step 4 — Surface gaps BEFORE the trio review fires (1-2 min per gap).** For each gap: file `QUESTIONS_FOR_DESIGN.md` entry OR ship a pre-emptive fix-up commit. NOT after.
 
 **This is mandatory before every wave-close commit on files you own. NOT optional based on commit size or confidence level. The trio reviewer catching your gap means you've already failed §9.D9.**
+
+---
+
+## Forward-compat-guard-sweep at field-default-change (§9.L6)
+
+**When your BalanceData entry first-populates a previously-defaulted field with a non-default value** (e.g., Atashkadeh `grain_cost = 50` was first non-zero `grain_cost` across all 5 buildings), `git grep -n '<field_name>' game/scripts/` to enumerate readers BEFORE shipping the BalanceData commit. For each reader, verify the consumption shape is consistent with the new value's semantics. If a callsite is absent (schema-present but callsite-absent), surface to lead + the consuming agent (gp-sys for cost-deduction surfaces) — fix in the SAME COMMIT as the field-first-population OR explicitly block the wave until parallel callsite ships.
+
+**Why this is your responsibility.** You are the in-context expert on when a BalanceData field gains its first non-default value (you author the BalanceData entries). The downstream-consumer agent may not realize the dormant infrastructure must now wake up.
+
+**Canonical incident:** Wave 2A.5 BUG-A — your dual-field coexistence pattern observation at session-5 retro: *"this is the first time a building has BOTH coin_cost AND grain_cost in BalanceData. The schema permitted it for 5 prior buildings; nobody exercised the second field; the consuming code never had to handle the dual-field case."* The sweep at brief-authoring time was the missing intervention.
