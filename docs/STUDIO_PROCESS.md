@@ -2,7 +2,7 @@
 title: Studio Process — How the Virtual Studio Operates
 type: process
 status: living
-version: 2.1.0
+version: 2.1.1
 owner: team
 summary: Operating contract for multi-agent collaboration — currently-binding active rules + facilitation patterns + mode separation. Chronological archaeology in STUDIO_PROCESS_HISTORY.md; sync log in STUDIO_PROCESS_SYNC_LOG.md.
 audience: all
@@ -966,20 +966,20 @@ Cites Manifesto Principle 4 (Lean Iteration — compressing the wave-close fix l
 
 #### J2. Anchor-category enumeration for Building subclasses
 
-**Rule.** Building subclasses fall into one of several cultural-anchor categories, each requiring a distinct template-shape in the cultural-note block. Currently enumerated:
-
-1. **Civic-anchor** (Khaneh, Mazra'eh) — resource-producer or pop-cap; settled-life continuity; household + land anchors.
-2. **Labor-organization** (Ma'dan) — modifier-emitter on existing producer; practice-of-craft transmitted across generations.
-3. **Identity-bearing institutional** (Sarbaz-khaneh) — unit-production-queue; Iran-as-faction self-conception; pahlavan + sepah traditions.
-4. **Sacral-emitter / divine-source** *(predicted, not yet shipped — Atashkadeh, Phase 4+)* — continuous-emit-of-resource (Farr per tick); sacred-fire continuity; divine legitimacy.
+**Rule.** Building subclasses fall into one of several cultural-anchor categories, each requiring a distinct template-shape in the cultural-note block. **Enumeration + sub-slot taxonomy + per-variant template-shape spec live in [`docs/ANCHOR_CATEGORY_TAXONOMY.md`](ANCHOR_CATEGORY_TAXONOMY.md) §1** (extracted to dedicated SSOT 2026-05-21 at Wave 2B Track 5 per §9.C1 — the enumeration cannot live in two places).
 
 **Brief-time review uses anchor-category classification as the first-pass question:** "which variant does this building belong to? Same-as-existing or new variant?" Variant misclassification at brief-time is the highest-value risk to catch (per Ma'dan's wave-1B brief-time exchange where lead initially framed Jamshid as "tangential" — a sign that loremaster needed to refine to "this is a labor-organization variant, not a civic-anchor clone").
 
-**Open question.** The taxonomy may be exhaustive for Iran-side at MVP scope; Turan economy will likely surface a fifth-or-sixth variant when it ships. Re-examine at Phase 4 retro.
+**Brief-time review trichotomy (watchlist refinement, loremaster-p3s5 session-5 close, N=2 at Wave 2B Track 0 — codified shape in [`docs/ANCHOR_CATEGORY_TAXONOMY.md`](ANCHOR_CATEGORY_TAXONOMY.md) §2).** Three named outcomes:
+- (a) **clone-check** — same-as-existing slot; verify clone is faithful.
+- (b) **slot-fit-verify** — fills a predicted-empty slot; verify slot-fit per the prediction.
+- (c) **taxonomy-growth-required** — demands a new anchor-category or sub-slot; surfaces a taxonomy gap.
 
-**Watchlist refinement (loremaster-p3s5 session-5 close, N=1 — awaiting N=3 trigger).** When brief-time review fires on a new concrete subclass, classify the outcome as one of three: (a) **clone-check** (same-as-existing slot — verify the clone is faithful to the existing template), (b) **slot-fit-verify** (fills a predicted-empty slot — verify slot-fit per the prediction), (c) **taxonomy-growth-required** (demands a new slot — surfaces a taxonomy gap to discuss before shipping). Three named outcomes route to three different review shapes. Iran Tier-1 (4/4 anchor-category variants) shipped 4-for-4 in their predicted slots without retrofit, validating the taxonomy's predictive power — but that's the easy case; the harder case is Turan economy, where structural-mismatch is the prediction (khan-loyalty + steppe-mobile sworn-bond is NOT a building-clone pattern). Currently a single agent's proposal; needs N=3 to graduate to active.
+**Graduation status.** N=2 at Wave 2B Track 0 (Sowari-khaneh + Tirandazi both classified as slot-fit-verify under identity-bearing institutional sub-slot taxonomy — axis = military-arm). N=3 graduation expected at Phase-4 first sacral-emitter sub-variant (Dadgah) brief-time review. Until N=3 met: rule applies as watchlist-refinement (followable, not yet ratified). At N=3: graduates to active and the taxonomy doc moves from "currently a single agent's proposal" framing to "ratified."
 
-[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2; watchlist refinement added 2026-05-21 session-5 close]
+**Open question.** Turan economy may surface fundamentally different anchor-categories (default-fire (c) taxonomy-growth-required at first Turan building brief-time per the structural-mismatch hypothesis articulated in [`docs/ANCHOR_CATEGORY_TAXONOMY.md`](ANCHOR_CATEGORY_TAXONOMY.md) §5).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2; watchlist refinement added 2026-05-21 session-5 close; enumeration extracted to dedicated SSOT doc + N=2 graduation status added 2026-05-21 Wave 2B Track 5 (`18e3f34`)]
 
 #### J3. Literal-then-tricky-gloss discipline (Persian-term Pattern)
 
