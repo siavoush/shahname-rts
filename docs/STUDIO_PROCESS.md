@@ -2,7 +2,7 @@
 title: Studio Process — How the Virtual Studio Operates
 type: process
 status: living
-version: 2.1.1
+version: 2.1.2
 owner: team
 summary: Operating contract for multi-agent collaboration — currently-binding active rules + facilitation patterns + mode separation. Chronological archaeology in STUDIO_PROCESS_HISTORY.md; sync log in STUDIO_PROCESS_SYNC_LOG.md.
 audience: all
@@ -52,8 +52,9 @@ The tactical entry path for any agent starting work in a fresh session. The rest
 4. **Begin TDD cycle** per the canonical anti-loop dispatch cycle in §9.D2 (read docs → write failing tests → implement → pre-commit gate → stage your files → verify diff → commit → confirm SHA → SendMessage).
 5. **Commit per §9.D4** — unconditional `git commit -- <pathspec>` form, even when you believe you're alone.
 6. **Broadcast via SendMessage** per §9.G3 — assistant-text is invisible to lead; SendMessage with `to: team-lead` is the only authoritative channel.
+7. **Lead-only — verify addressable name before SendMessage to a persistent instance** (per §9.G1). Check `docs/AGENT_REGISTRY.md` for the live addressable name; cross-check against the most recent `<teammate-message teammate_id="X">` block. Agent-def file names are NOT addressable names.
 
-This is the runbook for the first 90 seconds of a session. If you remember nothing else from this document, remember these six steps.
+This is the runbook for the first 90 seconds of a session. If you remember nothing else from this document, remember these seven steps.
 
 ---
 
@@ -792,6 +793,8 @@ Cites Manifesto Principle 1 (Truth-Seeking — test the effect, not the syntax) 
 **Plus PR-time fresh-spawn for external-audit (§9.F1 Stage 2).** This is a distinct fourth class — fresh-spawn at PR-time for roles whose value depends on project-context-naivety.
 
 **Cross-session persistence (§12.5.1):** Tier-1 and Tier-2 persistent instances survive across session boundaries by default. Reboot is exception, not procedure.
+
+**Addressable-name registry (added 2026-05-21 Wave 2B Track 1 routing-failure canonical incident).** Persistent-instance SendMessage `to:` field is a free-form string with no validation — sending to an agent-def file name (e.g., `gameplay-systems-pNsM`) instead of the actual addressable name (e.g., `gp-sys-p3s3`) produces `success: true` but lands in a phantom inbox. **`docs/AGENT_REGISTRY.md` is the canonical SSOT for live addressable names.** Pre-dispatch verification protocol: (a) check the registry, (b) cross-check against the most recent `<teammate-message teammate_id="X">` block from that instance — teammate_id is the runtime-authoritative addressable name, (c) if registry and teammate_id disagree, update the registry. **Never invent a name from the agent-def file name.** Lead owns registry maintenance; any agent can flag routing-mismatch incidents via SendMessage.
 
 **Canonical text + operational details live in §12.5 and §12.5.1.** §9 carries the dispatch-side operational disciplines (G2, G3) that flow FROM the persistence model.
 
