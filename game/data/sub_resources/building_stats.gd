@@ -48,6 +48,25 @@ class_name BuildingStats extends Resource
 ## point pending playtest; balance-engineer tunes via balance.tres.
 @export var population_capacity: int = 0
 
+## Building's tier in the tech progression (1 = Tier 1 baseline, 2 = Tier 2,
+## etc.). Used by future TechSystem to gate placement on tier prereqs.
+##
+## H3 dormant-schema first-exercise (per §9.H3, Wave 2B Track 3):
+## All 5 existing Tier-1 buildings (Khaneh, Mazra'eh, Ma'dan, Sarbaz-khaneh,
+## Atashkadeh) inherit the default `tier = 1`. Sowari-khaneh + Tirandazi
+## (Wave 2B) first-populate this field with `tier = 2` — the H3-trigger
+## moment. Consumers DEFERRED to Wave 2C / Phase 4: TechSystem.is_tier_2_
+## unlocked, BuildPlacementHandler / BuildMenu gating reads, Atashkadeh-
+## built + Farr >= 40 prereq checks. Zero existing readers at field-intro
+## time (L6 sweep result documented in commit message).
+##
+## When Wave 2C ships the gateway logic, that wave will first-populate the
+## CONSUMER side of this field — triggering its own H3 + L6 sweep at THAT
+## moment for the new consumer callsites.
+##
+## Spec reference: 01_CORE_MECHANICS.md §5 lines 189-199 (Tier-2 buildings).
+@export var tier: int = 1
+
 
 # === Modifier-emitter fields (wave 1B — Ma'dan) =============================
 #
