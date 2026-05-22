@@ -108,3 +108,57 @@ class_name BuildingStats extends Resource
 ## (first-registered-wins). When true, modifiers compound multiplicatively
 ## (1.5x × 1.5x = 2.25x for two Ma'dans on one mine).
 @export var modifier_stacks: bool = false
+
+
+# === Training-production fields (Wave 3A.6) ===================================
+#
+# H3 dormant-schema first-exercise (per §9.H3, Wave 3A.6 Track 3):
+# These 9 fields ship with zero defaults on all BuildingStats instances.
+# First-populated by the 3 producer sub-resources in balance.tres at Wave 3A.6.
+# First runtime read lives in Building.request_train() — the H3-trigger moment.
+#
+# Per §9.L9 fallback-by-failure-visibility-shape: zero defaults produce
+# instant-free training if BalanceData read fails — visibly wrong (free units
+# pop out instantly) but diagnosable.
+#
+# Naming convention locked by lead (§3.4): train_<unit_kind>_<field>
+# where field ∈ {cost_coin, cost_grain, dwell_ticks}.
+# Reads happen via BalanceData.bldg_<producer>.train_<unit>_<field>.
+#
+# §9.L6 forward-compat-guard-sweep (at Wave 3A.6 field-intro time):
+# Zero readers exist on BuildingStats.train_* at this commit — all consumer
+# call-sites deferred to Track 1 (Building.request_train) shipping this wave.
+#
+# Balance rationale: training costs align with UnitStats.coin_cost / grain_cost
+# (the original per-unit cost intent). Building-level fields enable future
+# per-producer differentiation (Tier-2 barracks could train Piyade cheaper).
+# Dwell times set to brief §1 values (90/120/150 ticks = 3/4/5s) for MVP
+# feedback loop — shorter than UnitStats.production_ticks (600/720/900) to
+# keep live-test iteration fast.
+
+## Coin cost for Sarbaz-khaneh to train one Piyade.
+@export var train_piyade_cost_coin: int = 0
+
+## Grain cost for Sarbaz-khaneh to train one Piyade.
+@export var train_piyade_cost_grain: int = 0
+
+## Ticks for Sarbaz-khaneh to complete training one Piyade.
+@export var train_piyade_dwell_ticks: int = 0
+
+## Coin cost for Sowari-khaneh to train one Savar.
+@export var train_savar_cost_coin: int = 0
+
+## Grain cost for Sowari-khaneh to train one Savar.
+@export var train_savar_cost_grain: int = 0
+
+## Ticks for Sowari-khaneh to complete training one Savar.
+@export var train_savar_dwell_ticks: int = 0
+
+## Coin cost for Tirandazi to train one Kamandar.
+@export var train_kamandar_cost_coin: int = 0
+
+## Grain cost for Tirandazi to train one Kamandar.
+@export var train_kamandar_cost_grain: int = 0
+
+## Ticks for Tirandazi to complete training one Kamandar.
+@export var train_kamandar_dwell_ticks: int = 0

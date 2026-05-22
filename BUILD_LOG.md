@@ -12,12 +12,66 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-22 (Phase 3 session 7 Wave 3A.5 close — fog vision sources + per-tick recompute + first cross-track diagnostic loop)
+last_updated: 2026-05-23 (Phase 3 session 7 Wave 3A.6 close — first playable production loop + 4 substantive §9 retro candidates)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-05-23 — Phase 3 session 7 Wave 3A.6 close: first playable production loop (4 §9 retro candidates surfaced)
+
+**Branch:** `feat/wave-3a-6-building-production` **Commits:** `ac0416d` (Track 1) + `cd33aef` (Track 3) + `67606ed` (Track 2)
+
+**What shipped (3 sequenced-on-same-branch commits, 20 files, 2429 insertions):**
+
+1. **`building.gd` base** (+385 lines) — production state machine. `produces: Array[StringName]` field. `request_train(unit_kind) -> bool` validates produces.has + idle-state + can-afford coin/grain + pop-cap. Deducts atomically. Per-tick `_on_sim_phase &"movement"` dwell driver. `_spawn_trained_unit` reuses main.gd's _spawn_unit pattern + inline _UNIT_SCENE_PATHS table (Iran + Turan mirrors for Wave 3B forward-compat). Rally-point offset: Iran +Z, Turan -Z. `production_state_changed(building_id, state, unit_kind, progress_fraction)` signal.
+
+2. **3 producer subclass overrides:** Sarbaz-khaneh→Piyade, Sowari-khaneh→Savar, Tirandazi→Kamandar. **AsbSavarKamandar deferral test locks the brief's scope cut** (Sowari-khaneh.produces.has(&"asb_savar_kamandar") == false explicitly asserted).
+
+3. **`building_stats.gd`** (+54 lines) — 9 new `train_<unit>_<field>` fields per H3 naming convention. §9.L9 per-field fallback semantics: cost_coin/grain=0 (fail-visibly) + dwell_ticks=30 (match-shipped 1s @ 30Hz).
+
+4. **`balance.tres`** — Piyade 50c/10g/90t, Savar 75c/20g/150t, Kamandar 60c/15g/120t. §9.L1 spec-wins applied (balance-engineer used UnitStats as canonical cost-source).
+
+5. **`production_panel.tscn` + `production_panel.gd`** (+639 lines NEW) — `class_name ProductionPanel`. Center-top modal Control with MOUSE_FILTER_STOP click-shield. Subscribes to building.production_state_changed. §9.L7 affordability sweep mirrors build_menu BUG-B2 pattern (EventBus.resource_changed re-sweep + button-disabled per shortfall + click-time both-or-neither delegated to request_train for sim-side atomicity).
+
+6. **`click_handler.gd`** (+110 lines) — `_find_owned_producer_ancestor` + `_open_production_panel` routing. Owned-producer building click → ProductionPanel-open; enemy + non-producer + incomplete-producer → existing deselect behavior. **Resolves the original BUG flagged at 3A.5 live-test** ("can't click buildings to train units").
+
+7. **`strings.csv`** + binary regen — 11 new UI_PRODUCTION_* keys.
+
+8. **`main.tscn`** — ProductionPanel instance + ext_resource (load_steps 13 → 14).
+
+9. **Tests:** 21 building base + 3 per-producer (gp-sys) + 1 integration `test_phase_3_building_production.gd` + 6 BalanceData (balance-engineer) + 14 ProductionPanel + 5 click_handler routing (ui-developer). **Suite at HEAD: 1466 / 1462 passing / 0 failing / 4 pre-existing risky.** Zero regressions.
+
+**4 substantive retro candidates surfaced (session-7 close hopper):**
+
+- **gp-sys cross-track diagnostic N=2** (Task #207) — gp-sys caught bugs in other tracks before commit, two consecutive waves (3A.5 + 3A.6). Robust pattern, worth codifying.
+- **Workspace-bleed incident N=2** (Task #208) — ui-developer lost 3 of 4 file edits (main.tscn / strings.csv / click_handler.gd reverted; test_click_handler.gd persisted). Root cause unknown. N=2 with session-5; investigation warranted.
+- **Task #199 dogfooded empirically N=2** — `await get_tree().process_frame` SimClock pollution caught again, this time on ui-developer's own commit attempt. Pre-commit gate catches it. Pitfall graduates from "candidate" to "documented" at retro.
+- **3 defensible §9.E1 paths in single wave** (Task #195 evidence) — balance-engineer [blocked]+wait then stash-and-discard; ui-developer parallel-scaffold-then-rebase. Combined with 3A.0/3A.5: 5 distinct paths empirically observed.
+
+**Plus 1 process-system anomaly (Task #209):** TaskUpdate/TaskCreate calls by lead caused task_assignment records to re-emit to agent inboxes (gp-sys + ui-developer both flagged). May be expected behavior; investigation needed.
+
+**Open questions added to `QUESTIONS_FOR_DESIGN.md`:** None. Implementation choices made per CLAUDE.md escalation rule #1:
+- Rally-point fixed offset (Iran +Z / Turan -Z, footprint-derived) — gp-sys's call per kickoff "simplest path" guidance.
+- Spawn integration via inline _UNIT_SCENE_PATHS table on Building base (not new MatchSystem autoload) — gp-sys's call.
+- Per-field §9.L9 fallback semantics (cost=0 fail-visibly + dwell=30 match-shipped) — balance-engineer's call per L9 rationale.
+- Strict-mode test guards for not-yet-populated BalanceData fields — ui-developer's discipline (graduate to non-zero after Track 3 ships).
+
+**State for next session:**
+- **Wave 3B (DummyAIController)** is the immediate next. 3A.6 ships the production system DummyAI will drive (`building.request_train` + `is_visible_to`). Turan-mirror scene paths in building.gd are forward-compat.
+- **Session-7 close retro material:** ≥9 substantive candidates accumulated (5 from prior 3A waves + 4 new from 3A.6 + 1 process anomaly). Rich evidence for synthesis.
+- **Possible live-test driven balance round** if Piyade/Savar/Kamandar costs feel wrong post-live-test — balance-engineer single-commit `.tres` edit.
+
+**Cross-agent coordination:** 3 implementer tracks (gp-sys Track 1 / ui-developer Track 2 / balance-engineer Track 3) + 2 standby (world-builder + engine-architect). Coordination was unusually rich:
+- 3 §9.D7(b) broadcast events (3-file revert, inbox anomaly, SimClock leak diagnosis) — all resolved without lead-escalation-cascade.
+- 1 §9.M3 retry-once empirical confirmation (balance-engineer Godot stale-parse-cache flake).
+- 2 cross-track diagnostic loops (gp-sys → ui-developer twice).
+- 3 distinct §9.E1 path choices in single wave.
+
+**`02n_PHASE_3_SESSION_7_WAVE_3A_6_KICKOFF.md` is ephemeral per §9.C3** — defer deletion to session-7 close hygiene (along with `02l_*` + `02m_*` already on disk).
 
 ---
 

@@ -354,6 +354,17 @@ coin_cost = 100
 grain_cost = 0
 construction_ticks = 780
 farr_per_tick = 0.0
+; Wave 3A.6 training schema (H3 first-exercise, balance-engineer Track 3):
+; Costs align with UnitStats.coin_cost / grain_cost (Piyade: 50c/10g) — the
+; per-unit cost intent set at unit-design time. BuildingStats fields enable
+; future per-producer overrides without touching UnitStats.
+; Dwell 90 ticks = 3s @ 30Hz per brief §1 starting point (faster than
+; UnitStats.production_ticks=600 to keep MVP loop snappy).
+; §9.L1: spec is silent on training costs; brief values are starting points.
+; Using UnitStats values as canonical source for coin/grain; brief dwell kept.
+train_piyade_cost_coin = 50
+train_piyade_cost_grain = 10
+train_piyade_dwell_ticks = 90
 
 ; Atashkadeh (fire temple) — 01_CORE_MECHANICS.md §5
 ; Cost: "150 coin, 50 grain" per §5 Tier-1 table (spec-SSOT; not a suggestion).
@@ -423,6 +434,11 @@ modifier_value_x100 = 0
 modifier_radius_m = 0.0
 modifier_stacks = false
 tier = 2
+; Wave 3A.6 training schema: Savar (UnitStats: coin=75, grain=20).
+; Dwell 150 ticks = 5s per brief §1.
+train_savar_cost_coin = 75
+train_savar_cost_grain = 20
+train_savar_dwell_ticks = 150
 
 ; Tirandazi (تیراندازی, archery range) — 01_CORE_MECHANICS.md §5
 ; Produces advanced Kamandar variants (Asb-savar Kamandar / Parthian-shot).
@@ -456,6 +472,11 @@ modifier_value_x100 = 0
 modifier_radius_m = 0.0
 modifier_stacks = false
 tier = 2
+; Wave 3A.6 training schema: Kamandar (UnitStats: coin=60, grain=15).
+; Dwell 120 ticks = 4s per brief §1.
+train_kamandar_cost_coin = 60
+train_kamandar_cost_grain = 15
+train_kamandar_dwell_ticks = 120
 
 ; =========================================================================
 ; FarrConfig sub-resource
@@ -661,7 +682,7 @@ sight_madan_cells = 0
 
 [resource]
 script = ExtResource("1_balancedata")
-constants_version = "2026-05-22-phase-3-session-7-wave-3a0-fog-config-entry"
+constants_version = "2026-05-23-phase-3-session-7-wave-3a6-training-schema"
 units = {
 &"kargar": SubResource("unit_kargar"),
 &"piyade": SubResource("unit_piyade"),

@@ -279,3 +279,54 @@ func test_tirandazi_cost_coin_returns_balance_data_value_or_fallback() -> void:
 	assert_eq(cost, 175,
 		"Tirandazi.cost_coin() must return 175 (BalanceData or fallback "
 		+ "both ship 175 per 01_CORE_MECHANICS.md §5 line 195). Got: %d" % cost)
+
+
+# ---------------------------------------------------------------------------
+# Wave 3A.6 Track 1 — produces field + production state machine
+# ---------------------------------------------------------------------------
+#
+# Per 02n_PHASE_3_SESSION_7_WAVE_3A_6_KICKOFF.md §4 Track 1.
+
+func test_tirandazi_produces_kamandar() -> void:
+	# Wave 3A.6 — Tirandazi trains Kamandar. Per the building's cultural-note
+	# header, Tirandazi is the *practice/discipline* of arrow-shooting, the
+	# Parthian-shot tradition (00_SHAHNAMEH_RESEARCH.md §4 line 189).
+	_tirandazi = _spawn_tirandazi()
+	assert_eq(_tirandazi.produces.size(), 1,
+		"Tirandazi.produces must contain exactly one entry (Kamandar)")
+	assert_true(_tirandazi.produces.has(&"kamandar"),
+		"Tirandazi.produces must include &\"kamandar\"")
+	assert_false(_tirandazi.produces.has(&"asb_savar_kamandar"),
+		"Tirandazi must NOT produce AsbSavarKamandar at 3A.6 (deferred per kickoff §1)")
+	assert_false(_tirandazi.produces.has(&"piyade"),
+		"Tirandazi must NOT produce Piyade — that's Sarbaz-khaneh's role")
+	assert_false(_tirandazi.produces.has(&"savar"),
+		"Tirandazi must NOT produce Savar — that's Sowari-khaneh's role")
+
+
+func test_tirandazi_request_train_kamandar_succeeds_when_complete() -> void:
+	_tirandazi = _spawn_tirandazi()
+	_tirandazi.is_complete = true
+	SimClock._is_ticking = true
+	ResourceSystem.change_population_cap(
+		Constants.TEAM_IRAN, 10, &"test", null)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_COIN, 100000, &"t", null)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN, 100000, &"t", null)
+	var ok: bool = _tirandazi.request_train(&"kamandar")
+	SimClock._is_ticking = false
+	assert_true(ok,
+		"Tirandazi must accept Kamandar training given resources + pop room")
+	assert_eq(_tirandazi._production_state, &"training")
+	assert_eq(_tirandazi._production_unit, &"kamandar")
+
+
+func test_tirandazi_request_train_piyade_denied() -> void:
+	_tirandazi = _spawn_tirandazi()
+	_tirandazi.is_complete = true
+	SimClock._is_ticking = true
+	var ok: bool = _tirandazi.request_train(&"piyade")
+	SimClock._is_ticking = false
+	assert_false(ok,
+		"Tirandazi must deny Piyade training (piyade ∉ produces)")

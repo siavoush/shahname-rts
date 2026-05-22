@@ -218,6 +218,12 @@ var is_ready_to_produce: bool = false
 
 func _init() -> void:
 	kind = KIND_SOWARI_KHANEH
+	# Wave 3A.6 Track 1 — Sowari-khaneh produces Savar (Tier-2 cavalry).
+	# Per kickoff §1: NOT [&"savar", &"asb_savar_kamandar"] — AsbSavarKamandar
+	# production is explicitly deferred to Phase 4 / Tier-2-polish wave. The
+	# production locus question (Sowari-khaneh-as-2nd-option vs new building)
+	# is open per 01_CORE_MECHANICS.md ambiguity; ship Savar alone for 3A.6.
+	produces = [&"savar"]
 
 
 func _ready() -> void:
@@ -226,6 +232,9 @@ func _ready() -> void:
 	# headers). The base class doesn't currently read kind directly, but
 	# the symmetry guards future refactors.
 	kind = KIND_SOWARI_KHANEH
+	# Dual-init mirror — scene defaults clobber _init writes between _init
+	# and _ready (kargar.gd header pattern). Same shape as `kind` above.
+	produces = [&"savar"]
 	super._ready()
 
 

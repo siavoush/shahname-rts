@@ -158,10 +158,23 @@ func process_left_click_hit(hit: Dictionary) -> void:
 			print("[click] LEFT: hit unit id=", uid_v, " collider=", hit.get(&"collider"))
 		SelectionManager.select_only(unit)
 	else:
-		# Hit something that wasn't a unit (terrain, future props, etc.) — deselect.
-		if DEBUG_LOG_CLICKS:
-			print("[click] LEFT: hit non-unit collider=", hit.get(&"collider"), " → deselect_all")
-		SelectionManager.deselect_all()
+		# Wave 3A.6 Track 2: hit was not a unit — but it MIGHT be an owned
+		# producer building. Walk up from the collider looking for an
+		# ancestor with non-empty `produces` (Track 1 contract surface).
+		# If found AND team == player team, open ProductionPanel; else
+		# fall through to deselect.
+		var producer: Node3D = _find_owned_producer_ancestor(hit.get(&"collider"))
+		if producer != null:
+			if DEBUG_LOG_CLICKS:
+				print("[click] LEFT: hit owned producer building kind=",
+						producer.get(&"kind"), " → opening ProductionPanel")
+			_open_production_panel(producer)
+		else:
+			# Hit something that wasn't a unit or producer (terrain, future
+			# props, etc.) — deselect.
+			if DEBUG_LOG_CLICKS:
+				print("[click] LEFT: hit non-unit collider=", hit.get(&"collider"), " → deselect_all")
+			SelectionManager.deselect_all()
 
 
 # ============================================================================
@@ -507,3 +520,92 @@ func get_world_3d_safe() -> World3D:
 		return null
 	# In Godot 4, `Viewport.get_world_3d()` returns the scene's World3D.
 	return viewport.find_world_3d()
+
+
+# ============================================================================
+# Wave 3A.6 Track 2 — owned-producer-building click → ProductionPanel
+# ============================================================================
+#
+# When a left-click hits a non-unit collider, the click MIGHT be on a
+# building owned by the player. If that building has a non-empty `produces`
+# field (Track 1 contract surface — Sarbaz-khaneh / Sowari-khaneh /
+# Tirandazi at MVP), we open the ProductionPanel for it instead of
+# deselect-all'ing.
+#
+# Why walk-up-from-collider: the building's clickable surface is its
+# StaticBody3D child (set up in building.tscn per BUG-07 lesson). The
+# raycast hits the StaticBody3D, NOT the Building Node3D root. We walk
+# upward from the collider looking for the first ancestor that has the
+# `produces` schema field — that's the Building root.
+#
+# Why team check: clicking an enemy building should NOT open OUR
+# production panel. Future Phase 4+ may show an "info panel" for enemy
+# buildings; for MVP, enemy-building click falls through to deselect.
+
+## Walk up from `collider` (a Node, typically a StaticBody3D) looking for
+## an ancestor with a non-empty `produces` field AND team == player team
+## (Constants.TEAM_IRAN at MVP). Returns the Building root Node3D, or null.
+##
+## Defensive: returns null on any of:
+##   - collider is null or freed
+##   - no ancestor has a `produces` field
+##   - the ancestor's `produces` is empty (non-producer building)
+##   - the ancestor's team != TEAM_IRAN (enemy building)
+##   - the building isn't yet `is_complete = true` (still under
+##     construction — opening the panel would show a 0% progress bar
+##     for the placement state and confuse the player)
+func _find_owned_producer_ancestor(collider: Variant) -> Node3D:
+	if collider == null:
+		return null
+	if not (collider is Node):
+		return null
+	var node: Node = collider as Node
+	while node != null:
+		if (&"produces" in node) and (&"team" in node):
+			# Candidate. Check the gates.
+			var produces_v: Variant = node.get(&"produces")
+			if typeof(produces_v) == TYPE_ARRAY and not (produces_v as Array).is_empty():
+				var team_v: Variant = node.get(&"team")
+				if typeof(team_v) == TYPE_INT and int(team_v) == Constants.TEAM_IRAN:
+					# Optional: is_complete gate. A still-being-built
+					# producer shouldn't open the panel — the player
+					# can't train from it yet. is_complete may be
+					# absent on duck-typed test fixtures; treat
+					# absent as "complete" defensively.
+					var is_complete_v: Variant = node.get(&"is_complete")
+					var is_complete: bool = true
+					if typeof(is_complete_v) == TYPE_BOOL:
+						is_complete = bool(is_complete_v)
+					if is_complete and node is Node3D:
+						return node as Node3D
+		node = node.get_parent()
+	return null
+
+
+## Locate the ProductionPanel CanvasLayer node in the scene and open() it
+## for the given building. The panel lives at the same scene-layer as
+## the other HUD CanvasLayers (BuildMenu, ResourceHUD, etc.) —
+## main.tscn instances it once at boot.
+##
+## Path-resolve via group lookup rather than hardcoded scene path —
+## tolerant of main.tscn reorgs.
+func _open_production_panel(building: Node3D) -> void:
+	var tree: SceneTree = get_tree()
+	if tree == null:
+		return
+	# ProductionPanel adds itself to the &"production_panel" group on
+	# _ready (defensive single-instance discovery — same pattern as
+	# build_menu's _is_kargar_shaped resolution).
+	var panels: Array = tree.get_nodes_in_group(&"production_panel")
+	if panels.is_empty():
+		# Panel not yet in scene (boot-order race or test environment
+		# without ProductionPanel instanced). Defensive: log + fall
+		# through. The user still sees the building, but no panel
+		# opens; lead's live-test will notice + flag.
+		if DEBUG_LOG_CLICKS:
+			print("[click] LEFT: no ProductionPanel in scene; producer click ignored")
+		return
+	var panel: Node = panels[0]
+	if not panel.has_method(&"open"):
+		return
+	panel.call(&"open", building)

@@ -205,6 +205,14 @@ var is_ready_to_produce: bool = false
 
 func _init() -> void:
 	kind = KIND_SARBAZ_KHANEH
+	# Wave 3A.6 Track 1 — Sarbaz-khaneh produces Piyade (institutional
+	# spear-and-shield line; the "ordinary military" backbone of Iran's
+	# two-layer army per the cultural-note above). Tier-1 Iran's first
+	# producer building. Per kickoff §1: NOT Kamandar — that's Tirandazi.
+	# Single-kind for now; if balance/design adds more producible kinds
+	# from Sarbaz-khaneh later, extend the array (the base API supports
+	# any number).
+	produces = [&"piyade"]
 
 
 func _ready() -> void:
@@ -212,6 +220,11 @@ func _ready() -> void:
 	# khaneh.gd / mazraeh.gd / madan.gd headers). The base class doesn't
 	# currently read kind directly, but the symmetry guards future refactors.
 	kind = KIND_SARBAZ_KHANEH
+	# Dual-init mirror — scene defaults clobber _init writes between _init
+	# and _ready (kargar.gd header pattern). The .tscn doesn't override
+	# `produces`, so without this second setter the @export's [] default
+	# would wipe the _init [&"piyade"]. Same shape as `kind` above.
+	produces = [&"piyade"]
 	super._ready()
 
 

@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.31.0
+version: 0.32.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -19,7 +19,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
 last_updated: 2026-05-22
-# bumped to v0.31.0 — Phase 3 session 7 Wave 3A.5 close: fog-of-war VISION SOURCES + PER-TICK RECOMPUTE shipped. FogSystem.register_vision_source / deregister_vision_source / _on_fog_update_phase / is_visible_to are now REAL (not stubs). 7-building call-sites all read BalanceData.fog.sight_<kind>_cells (Khaneh added; sight=0 placeholder replaced everywhere). unit.gd registers on _ready / deregisters on _exit_tree. Memory features (Pass 2 death-freeze, get_last_seen real, get_scout_candidates real, new EventBus signals) explicitly deferred to a 3A.7 follow-up since 3A.0 stubs already unblock Wave 3B. 2 tracks shipped as two coordinated commits (a6e6752 Track 1 → 46ba408 Track 2). First cross-track diagnostic loop in the wild — gp-sys flagged Track 1 bug to world-builder before commit; both bugfixes landed in Track 1's ship.
+# bumped to v0.32.0 — Phase 3 session 7 Wave 3A.6 close: first PLAYABLE production loop. Click producer building → ProductionPanel → Train button → resources deducted atomically + pop check + unit spawns at rally-point offset after dwell ticks. 3 producer-unit pairs (Sarbaz-khaneh→Piyade, Sowari-khaneh→Savar, Tirandazi→Kamandar); AsbSavarKamandar + Kargar production explicitly deferred (locked by deferral test). 3 tracks shipped as 3 sequenced-on-same-branch commits (ac0416d Track 1 → cd33aef Track 3 → 67606ed Track 2). Wave produced unusual amount of empirical evidence for §9 retro: gp-sys cross-track diagnostic N=2 (caught Track 2's close_clears_rows + Track 1's surface), workspace-bleed N=2 (ui-developer's 3-file silent revert; root cause unknown), Task #199 dogfooded N=2 (ui-developer's commit attempt caught by pre-commit gate), 3 defensible §9.E1 paths in single wave (balance-engineer [blocked]+wait then stash-and-discard; ui-developer parallel-scaffold-then-rebase).
 ---
 
 # Architecture — Target Shape and Build State
@@ -286,6 +286,64 @@ game/
 - Spec said X; we built Y; reason: Z
 - Subsystem A took Phase N+1 (slipped one phase), reason: ...
 - Contract V was bumped from 1.x.0 to 1.y.0 during implementation; key change: ...
+
+### v0.32.0 — Phase 3 session 7 Wave 3A.6 close: first playable production loop + 4 substantive §9 retro candidates (2026-05-23)
+
+Phase 3 session 7 Wave 3A.6 — restores **playable feel** after 3A.0/3A.5's invisible plumbing waves. Click any of 3 producer buildings (Sarbaz-khaneh / Sowari-khaneh / Tirandazi) → ProductionPanel opens → Train button → resources deducted atomically + pop cap check + unit spawns at rally-point offset after dwell ticks. The first wave where the player can actually *build an army from their buildings*.
+
+**What shipped (3 sequenced commits — `ac0416d` Track 1 + `cd33aef` Track 3 + `67606ed` Track 2 — 20 files, 2429 insertions, hook OK):**
+
+- **`game/scripts/world/buildings/building.gd`** (+385 lines) — production state machine on base class. `produces: Array[StringName]` field. `request_train(unit_kind) -> bool` validates (a) `produces.has`, (b) idle state, (c) ResourceSystem can afford coin + grain, (d) pop cap room. Deducts atomically on success. Per-tick `_on_sim_phase &"movement"` dwell driver. On dwell-zero: `_spawn_trained_unit(kind, team, world_pos)` (inline `_UNIT_SCENE_PATHS` table; reuses `main.gd:_spawn_unit` pattern per kickoff §4 "simplest path" guidance — no autoload needed). `production_state_changed(building_id, state, unit_kind, progress_fraction)` signal for UI consumers. Rally-point offset: Iran +Z, Turan -Z (footprint-derived). Forward-compat for Wave 3B: Turan-mirror unit kinds in scene table so DummyAI can drive Turan production immediately.
+
+- **3 producer subclass overrides** (sarbaz_khaneh / sowari_khaneh / tirandazi, +31 lines combined) — `produces = [&"piyade"]` / `[&"savar"]` / `[&"kamandar"]`. Sowari-khaneh test explicitly LOCKS the AsbSavarKamandar deferral (Sowari-khaneh.produces.has(&"asb_savar_kamandar") == false) — defensive guard so a future "fix" doesn't silently expand scope.
+
+- **`game/data/sub_resources/building_stats.gd`** (+54 lines) — 9 new training schema fields per H3 first-exercise convention `train_<unit>_<field>`. Lead-locked naming at brief §3.4. **§9.L9 fallback semantics applied per-field with rationale** — cost_coin/grain default 0 (fail-visibly: free units scream config error); dwell_ticks default 30 (1s @ 30Hz; match-shipped-equivalent since 0 would silently instant-spawn). balance-engineer's call.
+
+- **`game/data/balance.tres`** — training values per producer-unit pair: Sarbaz-khaneh trains Piyade @ 50 Coin + 10 Grain + 90 ticks (3s); Sowari-khaneh trains Savar @ 75 Coin + 20 Grain + 150 ticks (5s); Tirandazi trains Kamandar @ 60 Coin + 15 Grain + 120 ticks (4s). **§9.L1 spec-wins applied** — balance-engineer used UnitStats values as canonical cost-source rather than lead's brief-table starting points. constants_version bumped.
+
+- **`game/scenes/ui/production_panel.tscn`** + **`game/scripts/ui/production_panel.gd`** (+639 lines NEW) — `class_name ProductionPanel`. Modal-ish center-top Control with MOUSE_FILTER_STOP click-shield (BUG-08 lesson). Joins `&"production_panel"` group for click_handler lookup. Subscribes to `building.production_state_changed`. Reads BalanceData via defensive cascade per §9.L7 + §9.L8. **§9.L7 affordability sweep mirrors build_menu BUG-B2 pattern** — button enabled iff coin + grain + pop-cap-room, EventBus.resource_changed re-sweeps on team match, click-time both-or-neither delegated to `request_train` for sim-side atomicity.
+
+- **`game/scripts/input/click_handler.gd`** (+110 lines) — `_find_owned_producer_ancestor` walks up scene tree from hit collider to find building with non-empty `produces` AND `team == player team`; routes to `_open_production_panel` via group lookup. Enemy buildings + non-producers + incomplete-producers all fall through to existing deselect behavior. **The original BUG flagged at live-test of 3A.5 ("can't click buildings to train units") is now wired.**
+
+- **`game/translations/strings.csv`** + binary regen — 11 new UI_PRODUCTION_* keys (PRODUCTION_PANEL_TITLE / TRAIN_*_LABEL / INSUFFICIENT_COIN / INSUFFICIENT_GRAIN / POP_CAP_FULL / TRAINING_IN_PROGRESS / etc.).
+
+- **`game/scenes/main.tscn`** — ProductionPanel instance + ext_resource (load_steps 13 → 14).
+
+- **Tests:** 21 new building base + 3 per-producer tests (gp-sys) + 1 integration test `test_phase_3_building_production.gd` + 6 BalanceData assertions (balance-engineer) + 14 ProductionPanel tests + 5 click_handler routing tests (ui-developer). **Full headless suite at HEAD: 1466 / 1462 passing / 0 failing / 4 pre-existing risky.** No regressions.
+
+**4 substantive retro candidates surfaced (session-7 close hopper):**
+
+1. **gp-sys cross-track diagnostic loop N=2** (Task #207). Same agent caught bugs in OTHER tracks before commit, two consecutive waves: 3A.5 (world-builder's `as Node3D` cast on freed Object) + 3A.6 (ui-developer's `test_close_clears_rows` cleanup-ordering). Worth codifying as expected discipline: one agent runs full suite at ship + broadcasts non-own-track failures sideways. Robust pattern with N=2 confirmation.
+
+2. **Workspace-bleed incident N=2** (Task #208). ui-developer scaffolded 4 files; 3 were reverted between scaffold-and-suite-run (main.tscn / strings.csv / click_handler.gd), 1 persisted (test_click_handler.gd). System-reminders flagged the 3 as "intentional change" but lead's tree confirmed no diff vs HEAD. ui-developer's §9.D7(b) broadcast-before-re-apply was textbook — they recovered cleanly via Option (b) re-apply. **N=2 across the project (session-5 was N=1).** Root cause unknown — possibilities: user-Godot-editor interaction, concurrent-agent file-write race, pre-commit hook normalization. Root-cause investigation warranted; may need guardrails (agent file-write atomicity discipline, eager-stage convention, shared-tree lockfile).
+
+3. **Task #199 dogfooded empirically N=2** — `await get_tree().process_frame` SimClock-pollution pitfall (originally surfaced at 3A.5 from world-builder's test_fog_update_stale_source_cleanup). ui-developer's first commit attempt at 3A.6 hit it AGAIN on their own production_panel tests. Pre-commit gate caught both instances. They replaced with direct `_process(0.0)` drive + synchronous Dict cache assertions. **Task #199 graduates from "candidate" to documented pitfall at session-7 retro with high confidence.**
+
+4. **3 defensible §9.E1 paths in single wave** (Task #195 + new evidence). On Wave 3A.6 alone: balance-engineer [blocked]+wait initially, then stash-and-discard when re-blocked; ui-developer parallel-scaffold-then-rebase. Combined with prior 3A.0 joint-commit + 3A.5 sequenced-same-branch: **5 distinct defensible §9.E1 paths empirically observed across 3 waves.** Session-7 retro can now codify ordering precedence for each context: when is "joint commit" preferred? "[blocked] and broadcast"? "Stash-and-discard"? "Parallel scaffolding"? Each has natural conditions.
+
+**Plus 1 process-system anomaly (Task #209):** TaskUpdate / TaskCreate calls by lead caused task_assignment records to re-emit into agent inboxes — once to gp-sys after Task #201 completion, once to ui-developer during Task #208 creation. Both agents flagged + held position per §9.D7(b). Worth investigating whether expected behavior or bug.
+
+**Strong wave outcome despite multiple ambiguous incidents:**
+
+Across the 3-file revert + inbox anomaly + SimClock leak + cross-track-test-coupling — every incident resolved without lead-escalation-cascade. The §9.D7(b) broadcast-on-observe discipline plus the §9.M3 retry-once + §9.E1 multi-path acceptance disciplines functioned exactly as designed. **Wave 3A.6 is empirical proof that the session-6 close retro's process additions are load-bearing in practice.**
+
+**Carry-forwards to next wave (Wave 3B — DummyAIController):**
+
+- Wave 3B is the immediate next per user prioritization (2B → 3A → 3B).
+- 3A.6 ships the production system that Wave 3B's DummyAI will drive (DummyAI calls `building.request_train(unit_kind)` to produce + `is_visible_to` to target).
+- Turan-mirror scene paths in building.gd's `_UNIT_SCENE_PATHS` table are forward-compat for Turan-side production.
+- Carry-forwards from prior waves (3A.0 + 3A.5): no memory features (3A.7 deferred); navmesh L25 flakes pre-existing.
+
+**Carry-forwards to session-7 close retro:**
+
+- Tasks #194/#195/#198/#199/#207/#208/#209 (all retro candidates accumulated).
+- §9.E1 ordering precedence synthesis from 5 empirical paths.
+- §9.D7(b) discipline empirical validation across 3 ambiguous events in one wave.
+- §9.L7 affordability-sweep template promotion (codified through repetition: Wave 2B fix-wave BUG-B2 → Wave 3A.6 production panel).
+
+**`02n_PHASE_3_SESSION_7_WAVE_3A_6_KICKOFF.md` is ephemeral per §9.C3** — defer deletion to session-7 close hygiene.
+
+---
 
 ### v0.31.0 — Phase 3 session 7 Wave 3A.5 close: fog-of-war vision sources + per-tick recompute + first cross-track diagnostic loop (2026-05-22)
 
