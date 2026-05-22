@@ -844,3 +844,69 @@ func test_request_train_denies_when_pop_cap_full() -> void:
 	SimClock._is_ticking = false
 	assert_false(ok,
 		"request_train must deny when population >= population_cap")
+
+
+# ===========================================================================
+# Wave 3A.6 BUG-C1 fix-wave — canonical BalanceData lookup
+# ===========================================================================
+#
+# Regression tests for BUG-C1: initial Track 1 ship at ac0416d used the wrong
+# `bldg_<kind>` top-level-field pattern per the kickoff brief §3.4 prose,
+# which did NOT match the canonical Dictionary lookup `BalanceData.buildings
+# [<kind>]`. Result: every _resolve_train_cost / _resolve_train_dwell_ticks
+# call silently returned 0 / 90-fallback. Cost=0 made the affordability
+# check pass trivially (0 >= 0) and `if cost_coin > 0` skipped the
+# deduction — training spawned units for free.
+#
+# These tests would have caught the bug at initial ship if my Track 1
+# tests had asserted actual BalanceData lookups (rather than using
+# kind=&"" + the 0-fallback path, which masked the bug).
+
+func test_bug_c1_resolve_train_cost_reads_from_balance_data_dictionary() -> void:
+	# REGRESSION: Sarbaz-khaneh's train_piyade_cost_coin = 50 in balance.tres
+	# (line 365). The fixed _read_bldg_stats_int must return 50 via the
+	# canonical `BalanceData.buildings[&"sarbaz_khaneh"].train_piyade_cost_coin`
+	# lookup. Pre-fix this returned 0 (silent fallback).
+	_building = _spawn_producer_building()
+	_building.kind = &"sarbaz_khaneh"
+	var coin_cost: int = _building._resolve_train_cost(&"piyade", &"coin")
+	assert_eq(coin_cost, 50,
+		"BUG-C1 regression: Sarbaz-khaneh train_piyade_cost_coin must read "
+		+ "50 from BalanceData.buildings[sarbaz_khaneh]. If this returns 0, "
+		+ "_read_bldg_stats_int is using the old wrong `bldg_<kind>` "
+		+ "top-level-field pattern from the broken kickoff brief §3.4. "
+		+ "Got: %d" % coin_cost)
+	var grain_cost: int = _building._resolve_train_cost(&"piyade", &"grain")
+	assert_eq(grain_cost, 10,
+		"BUG-C1 regression: train_piyade_cost_grain must read 10 from "
+		+ "BalanceData.buildings[sarbaz_khaneh]. Got: %d" % grain_cost)
+	var dwell: int = _building._resolve_train_dwell_ticks(&"piyade")
+	assert_eq(dwell, 90,
+		"BUG-C1 regression: train_piyade_dwell_ticks must read 90 from "
+		+ "BalanceData.buildings[sarbaz_khaneh]. Got: %d" % dwell)
+
+
+func test_bug_c1_sowari_khaneh_savar_costs_read_correctly() -> void:
+	# Cross-producer regression — exercise the same canonical lookup path
+	# on a different producer to confirm the dictionary pattern works for
+	# all 3 producers, not just one. balance.tres line 439-441.
+	_building = _spawn_producer_building()
+	_building.kind = &"sowari_khaneh"
+	assert_eq(_building._resolve_train_cost(&"savar", &"coin"), 75,
+		"BUG-C1 regression: Sowari-khaneh train_savar_cost_coin = 75 (line 439)")
+	assert_eq(_building._resolve_train_cost(&"savar", &"grain"), 20,
+		"BUG-C1 regression: Sowari-khaneh train_savar_cost_grain = 20 (line 440)")
+	assert_eq(_building._resolve_train_dwell_ticks(&"savar"), 150,
+		"BUG-C1 regression: Sowari-khaneh train_savar_dwell_ticks = 150 (line 441)")
+
+
+func test_bug_c1_tirandazi_kamandar_costs_read_correctly() -> void:
+	# Third-producer regression. balance.tres line 477-479.
+	_building = _spawn_producer_building()
+	_building.kind = &"tirandazi"
+	assert_eq(_building._resolve_train_cost(&"kamandar", &"coin"), 60,
+		"BUG-C1 regression: Tirandazi train_kamandar_cost_coin = 60 (line 477)")
+	assert_eq(_building._resolve_train_cost(&"kamandar", &"grain"), 15,
+		"BUG-C1 regression: Tirandazi train_kamandar_cost_grain = 15 (line 478)")
+	assert_eq(_building._resolve_train_dwell_ticks(&"kamandar"), 120,
+		"BUG-C1 regression: Tirandazi train_kamandar_dwell_ticks = 120 (line 479)")

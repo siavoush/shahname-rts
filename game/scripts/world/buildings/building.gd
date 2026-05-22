@@ -640,7 +640,7 @@ func get_footprint_aabb() -> AABB:
 ## two deductions happen inside one sim_phase tick, so they are atomic from
 ## the consumer's perspective even though they go through change_resource
 ## twice). Sets _production_state=&"training", _production_unit=unit_kind,
-## reads dwell from BalanceData.bldg_<self.kind>.train_<unit>_dwell_ticks,
+## reads dwell from BalanceData.buildings[<self.kind>].train_<unit>_dwell_ticks,
 ## emits production_state_changed.
 ##
 ## On failure: returns false WITHOUT mutating any state. No signal emit;
@@ -670,8 +670,10 @@ func request_train(unit_kind: StringName) -> bool:
 			% unit_kind
 			+ "(not in _UNIT_SCENE_PATHS) — denied")
 		return false
-	# 3 + 4. Affordability check — read costs from BalanceData per the
-	# §3.4 naming convention: BalanceData.bldg_<self.kind>.train_<unit>_cost_*
+	# 3 + 4. Affordability check — read costs from BalanceData via
+	# canonical Dictionary lookup: BalanceData.buildings[<self.kind>].train_<unit>_cost_*
+	# (BUG-C1 fix-wave: kickoff brief §3.4 incorrectly described a
+	# `bldg_<kind>` top-level-field pattern that does not exist).
 	var cost_coin: int = _resolve_train_cost(unit_kind, &"coin")
 	var cost_grain: int = _resolve_train_cost(unit_kind, &"grain")
 	if ResourceSystem.coin_x100_for(team) < cost_coin * 100:
@@ -806,8 +808,8 @@ func _rally_point() -> Vector3:
 	return global_position + Vector3(0.0, 0.0, z_offset)
 
 
-# Read train cost from BalanceData per the §3.4 naming convention:
-#   BalanceData.bldg_<self.kind>.train_<unit_kind>_cost_<resource>
+# Read train cost from BalanceData (canonical Dictionary lookup):
+#   BalanceData.buildings[<self.kind>].train_<unit_kind>_cost_<resource>
 #
 # resource is &"coin" or &"grain". Returns 0 if any step fails — the
 # affordability check above will then succeed at zero cost (visibly-wrong
@@ -823,8 +825,8 @@ func _resolve_train_cost(unit_kind: StringName, resource: StringName) -> int:
 	return _read_bldg_stats_int(field_name)
 
 
-# Read dwell ticks from BalanceData per the §3.4 naming convention:
-#   BalanceData.bldg_<self.kind>.train_<unit_kind>_dwell_ticks
+# Read dwell ticks from BalanceData (canonical Dictionary lookup):
+#   BalanceData.buildings[<self.kind>].train_<unit_kind>_dwell_ticks
 #
 # Fallback to 90 (3s @ 30Hz, matches Khaneh construction_ticks fallback)
 # when BalanceData / the entry / the field is missing. Per §9.L9: free
@@ -840,9 +842,23 @@ func _resolve_train_dwell_ticks(unit_kind: StringName) -> int:
 
 
 # Generic helper to read an int field from
-# BalanceData.bldg_<self.kind>. Returns 0 on any defensive failure (file
-# missing, BD null, sub-resource null, field missing, type mismatch).
-# Mirrors the defensive pattern in unit.gd:_register_fog_vision_source.
+# BalanceData.buildings[<self.kind>]. Returns 0 on any defensive failure
+# (file missing, BD null, dict missing/wrong-type, entry missing, field
+# missing, type mismatch).
+#
+# Schema: BalanceData.buildings is a Dictionary keyed by kind StringName
+# (NOT top-level `bldg_<kind>` fields). Matches the canonical pattern at
+# unit_state_constructing.gd:519 _resolve_construction_ticks and
+# production_panel.gd:_read_balance_int.
+#
+# BUG-C1 fix-wave history: initial Track 1 ship (ac0416d) used the
+# wrong `bldg_<kind>` top-level-field pattern per the kickoff brief
+# §3.4 prose — that field never existed on BalanceData, so every
+# _resolve_train_cost / _resolve_train_dwell_ticks call silently fell
+# through to 0 / 90-fallback. The user live-test caught it: training
+# spawned units without deducting resources because cost=0 affordability
+# checks (0 >= 0) passed trivially and `if cost_coin > 0` skipped the
+# deduction. Fixed here to use the canonical Dictionary lookup.
 func _read_bldg_stats_int(field_name: StringName) -> int:
 	if kind == &"":
 		return 0
@@ -852,8 +868,10 @@ func _read_bldg_stats_int(field_name: StringName) -> int:
 	var bd: Resource = load(path)
 	if bd == null:
 		return 0
-	var bldg_field: StringName = StringName("bldg_" + String(kind))
-	var stats: Variant = bd.get(bldg_field)
+	var bldgs: Variant = bd.get(&"buildings")
+	if typeof(bldgs) != TYPE_DICTIONARY:
+		return 0
+	var stats: Variant = (bldgs as Dictionary).get(kind, null)
 	if stats == null or not (stats is Resource):
 		return 0
 	var v: Variant = (stats as Resource).get(field_name)

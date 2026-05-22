@@ -171,3 +171,73 @@ func test_request_train_denied_when_pop_cap_full_does_not_spawn() -> void:
 		var unit_type_v: Variant = child.get(&"unit_type")
 		assert_ne(unit_type_v, &"piyade",
 			"no Piyade must spawn when request_train was denied")
+
+
+# ---------------------------------------------------------------------------
+# BUG-C1 fix-wave — actual ResourceSystem deduction on successful train
+# ---------------------------------------------------------------------------
+#
+# Regression for BUG-C1: pre-fix the wrong `bldg_<kind>` schema lookup caused
+# costs to silently return 0, the deduction branch (`if cost_coin > 0:`) to
+# skip, and training to spawn for free. This test asserts the actual
+# ResourceSystem coin + grain balances DECREASE by the correct amounts
+# after a successful Sarbaz-khaneh.request_train(&"piyade") — exactly the
+# behavior the user live-test caught as broken.
+
+func test_bug_c1_request_train_deducts_50_coin_10_grain() -> void:
+	# balance.tres line 365-366: train_piyade_cost_coin = 50,
+	# train_piyade_cost_grain = 10. Expected ResourceSystem deltas:
+	#   coin_x100: -5000 (50 coin * 100 fixed-point scale)
+	#   grain_x100: -1000 (10 grain * 100)
+	_sarbaz_khaneh = _spawn_sarbaz_khaneh_complete(Constants.TEAM_IRAN)
+	SimClock._is_ticking = true
+	# Ensure plenty of resources + pop room.
+	ResourceSystem.change_population_cap(
+		Constants.TEAM_IRAN, 10, &"test_setup", null)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_COIN, 100000, &"t", null)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN, 100000, &"t", null)
+	var coin_before_x100: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	var grain_before_x100: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	var ok: bool = _sarbaz_khaneh.request_train(&"piyade")
+	SimClock._is_ticking = false
+	assert_true(ok, "sanity: preconditions met → request_train succeeds")
+	var coin_after_x100: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	var grain_after_x100: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	var coin_delta: int = coin_before_x100 - coin_after_x100
+	var grain_delta: int = grain_before_x100 - grain_after_x100
+	assert_eq(coin_delta, 5000,
+		"BUG-C1 regression: Sarbaz-khaneh.request_train(piyade) must deduct "
+		+ "5000 coin_x100 (= 50 coin per balance.tres train_piyade_cost_coin). "
+		+ "If delta is 0, the canonical Dictionary lookup has regressed. "
+		+ "Got delta_x100: %d" % coin_delta)
+	assert_eq(grain_delta, 1000,
+		"BUG-C1 regression: Sarbaz-khaneh.request_train(piyade) must deduct "
+		+ "1000 grain_x100 (= 10 grain per balance.tres train_piyade_cost_grain). "
+		+ "Got delta_x100: %d" % grain_delta)
+
+
+func test_bug_c1_insufficient_coin_denies_request() -> void:
+	# Pre-fix this test would have passed trivially with 0 coin because
+	# costs fell back to 0. Post-fix: actual cost is 50; insufficient coin
+	# correctly denies. Validates the affordability branch is now load-bearing.
+	_sarbaz_khaneh = _spawn_sarbaz_khaneh_complete(Constants.TEAM_IRAN)
+	SimClock._is_ticking = true
+	# Drain coin to below cost (49 < 50).
+	var coin_now: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	if coin_now > 0:
+		ResourceSystem.change_resource(
+			Constants.TEAM_IRAN, Constants.KIND_COIN, -coin_now,
+			&"test_drain", null)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_COIN, 4900, &"t", null)  # 49 coin
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN, 100000, &"t", null)
+	ResourceSystem.change_population_cap(Constants.TEAM_IRAN, 10, &"t", null)
+	var ok: bool = _sarbaz_khaneh.request_train(&"piyade")
+	SimClock._is_ticking = false
+	assert_false(ok,
+		"BUG-C1 regression: insufficient coin (49 < 50 required) must deny "
+		+ "request_train. Pre-fix this returned true because cost lookup "
+		+ "fell back to 0 (49 >= 0 trivially).")
