@@ -12,12 +12,60 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-22 (Phase 3 session 7 Wave 3A.0 close — fog data layer + first §9.E1 real-time application)
+last_updated: 2026-05-22 (Phase 3 session 7 Wave 3A.5 close — fog vision sources + per-tick recompute + first cross-track diagnostic loop)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-05-22 — Phase 3 session 7 Wave 3A.5 close: fog vision sources + per-tick recompute (cross-track diagnostic loop)
+
+**Branch:** `feat/wave-3a-5-fog-vision-sources` **Commits:** `a6e6752` (Track 1) + `46ba408` (Track 2)
+
+**What shipped (2-commit sequenced ship; same branch):**
+
+1. `game/scripts/autoload/fog_system.gd` — Real `register_vision_source` / `deregister_vision_source` / `_on_fog_update_phase` Pass 1 handler / `is_visible_to` (no longer stubs). Integer-circle visibility computation (`dx*dx + dy*dy <= r*r`) per FOG_DATA_CONTRACT §3.1. Static sources cache footprint cells at registration via `Building.get_footprint_aabb()`; dynamic sources recompute per tick. `is_instance_valid` lazy cleanup for stale source records. SimClock `fog_update` phase connection in `_ready`.
+
+2. `game/scripts/units/unit.gd` — `_fog_handle: int = 0` field. `_register_fog_vision_source()` in `_ready` reads `BalanceData.fog.sight_<kind>_cells` defensively, stores handle. `_exit_tree` deregisters + resets. **First runtime read of `BalanceData.fog.sight_<kind>_cells`** — §9.H3 dogfood test confirms per-kind composition correct.
+
+3. **7-building call-site sweep** (atashkadeh, khaneh [ADDED — was the missing 7th], madan, mazraeh, sarbaz_khaneh, sowari_khaneh, tirandazi): all read `BalanceData.fog.sight_<kind>_cells` via `_resolve_fog_sight_cells()` helper. Khaneh / Mazra'eh / Ma'dan ship with `sight=0` per §9.L9 footprint-only-placeholder intent — balance-engineer may raise these post-live-test if needed.
+
+4. **Tests:** `test_fog_system.gd` (+14 real-path tests), `test_unit.gd` (+5 tests including H3 dogfood for all 5 unit kinds), `test_khaneh.gd` (+1 FogSystem-register assertion). Full headless suite at `46ba408`: **1413 passing / 0 failing / 3 risky-pending (pre-existing)**.
+
+**First cross-track diagnostic loop in the wild — gp-sys → world-builder bugfix:**
+
+gp-sys staged Track 2, ran tests against world-builder's staged Track 1, found `test_fog_update_stale_source_cleanup` failing. Diagnosed: `as Node3D` cast on freed `Object` crashes before reaching `is_instance_valid()`. Broadcast fix to world-builder via SendMessage sideways — world-builder patched before commit. **`a6e6752` ships with the fix integrated; no fix-wave required.** §9.D7(b) broadcast-on-observe-cross-track-WIP working as designed.
+
+**Subtle additional bugfix found during same staging cycle:** world-builder's stale-source test used `queue_free()` + `await get_tree().process_frame`. The `await` leaked 4 physics ticks into SimClock, breaking `test_match_harness` pre-conditions downstream. Fixed by switching to `free()` (synchronous). N=1 instance of a test-discipline pitfall worth promoting to §9.M at session-7 close.
+
+**§9.E1 ordering refinement (codified into brief, validated empirically):**
+
+Wave 3A.5 kickoff brief §3.1 codified world-builder's Wave 3A.0 retro framing — *"joint-commit first, [blocked]-broadcast second"* — as default expectation. Empirical outcome: world-builder shipped Track 1 standalone first (with the gp-sys-flagged bugfix integrated); gp-sys committed Track 2 on top of `a6e6752`. Two coordinated commits, single branch, no fix-wave. **Defensible alternative interpretation of "joint commit"** that the brief explicitly permitted — tracks landed *as a coordinated unit*, just not in a single SHA. Worth codifying: "joint commit" allows sequenced commits on the same branch when one track's ship is the gate for the other's test path.
+
+**Memory features explicitly DEFERRED (to a possible 3A.7):**
+
+- FogSystem `cleanup` phase Pass 2 death-freeze.
+- `get_last_seen` real impl + `_last_seen_by_team` population.
+- `get_scout_candidates` real impl + `_unexplored_cells` sparse set.
+- New EventBus signals (`fog_visibility_changed`, `fog_cell_first_seen`).
+- Entity-tracking source decision (group-iteration fallback vs `building_placed` signal extension).
+
+**Not blocking Wave 3B (DummyAI)** — Wave 3B needs `is_visible_to` real, which 3A.5 ships. Phase 5 Kaveh + Phase 6 AI scout consumers will need the deferred features; schedule when those phases open.
+
+**Open questions added to `QUESTIONS_FOR_DESIGN.md`:** None. Two implementation choices made independently per CLAUDE.md escalation rule #1:
+- Static-source footprint cells cached at registration (not per-tick recompute) — keeps `fog_update` hot path tight at MVP scale.
+- Building deregister hook lives in `_exit_tree` (not in a building-destroyed signal) — same trigger as ResourceSystem registry deregister.
+
+**State for next session:**
+- **Wave 3B (DummyAIController)** is the next wave per user prioritization (2B → 3A → 3B). 3A.5's `is_visible_to` real impl is the gate that Wave 3B needs.
+- **Session-7 close retro material:** ≥9 substantive candidates accumulated. New ones from 3A.5 add to the hopper: §9.E1 sequenced-commit refinement, §9.D7(b) cross-track diagnostic empirical data, `as Node3D` cast pitfall, `await get_tree().process_frame` SimClock-leak pitfall, §9.H3 dogfood-passes-cleanly empirical confirmation.
+
+**Cross-agent coordination:** 2 implementer tracks (world-builder Track 1 + gp-sys Track 2) + 2 standby (balance-engineer + engine-architect). One round of cross-track diagnostic (gp-sys → world-builder) before commit; both bugfixes in Track 1's ship. Standby agents unused this wave (no balance retune triggered, no SimClock/phase changes needed).
+
+**`02m_PHASE_3_SESSION_7_WAVE_3A_5_KICKOFF.md` is ephemeral per §9.C3** — defer deletion to session-7 close hygiene (along with `02l_*` already on disk).
 
 ## Format for new entries
 

@@ -172,6 +172,9 @@ class_name SowariKhaneh
 ## inaugural dogfood).
 const KIND_SOWARI_KHANEH: StringName = &"sowari_khaneh"
 
+## Opaque FogSystem handle. -1 = not registered.
+var _fog_handle: int = -1
+
 
 # === Defensive fallback constants ===========================================
 #
@@ -276,7 +279,8 @@ func _on_placement_complete(placer_unit_id: int) -> void:
 	# Mazra'eh / Ma'dan / Sarbaz-khaneh / Atashkadeh).
 	var _fog_node: Node = _autoload_or_null(&"FogSystem")
 	if _fog_node != null and _fog_node.has_method(&"register_vision_source"):
-		_fog_node.call(&"register_vision_source", self, team, 0, true)
+		var sight: int = _resolve_fog_sight_cells()
+		_fog_handle = _fog_node.call(&"register_vision_source", self, team, sight, true)
 	EventBus.building_placed.emit(placer_unit_id, kind, team, global_position)
 
 
@@ -331,3 +335,27 @@ static func cost_coin() -> int:
 	if typeof(coin_v) != TYPE_INT and typeof(coin_v) != TYPE_FLOAT:
 		return _FALLBACK_COIN_COST
 	return int(coin_v)
+
+
+func _resolve_fog_sight_cells() -> int:
+	var path: String = Constants.PATH_BALANCE_DATA
+	if not FileAccess.file_exists(path):
+		return 0
+	var bd: Resource = load(path)
+	if bd == null:
+		return 0
+	var fog_cfg: Variant = bd.get(&"fog")
+	if fog_cfg == null:
+		return 0
+	var v: Variant = fog_cfg.get(&"sight_sowari_khaneh_cells")
+	if typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT:
+		return int(v)
+	return 0
+
+
+func _exit_tree() -> void:
+	if _fog_handle >= 0:
+		var fog: Node = _autoload_or_null(&"FogSystem")
+		if fog != null and fog.has_method(&"deregister_vision_source"):
+			fog.call(&"deregister_vision_source", _fog_handle)
+		_fog_handle = -1

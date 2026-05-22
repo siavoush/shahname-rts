@@ -16,12 +16,12 @@ extends Node
 ##     guards begin executing rather than no-oping. The stubs no-op silently.
 ##   - _sources: Dictionary empty structure (§9.H3 dormant-schema).
 ##
-## Wave 3A.5 scope (NOT this file at 3A.0):
+## Wave 3A.5 scope (this file):
 ##   - register_vision_source / deregister_vision_source full implementation.
 ##   - fog_update phase handler (per-tick clear + rebuild from _sources).
-##   - cleanup death-freeze pass.
-##   - Replace 7-building sight=0 forward-compat call-sites with BalanceData reads.
-##   - Unit-side registration in unit._ready + death path.
+##   - is_visible_to real impl (reads _currently_visible).
+##   - SimClock.fog_update phase connection in _ready.
+##   - Unit-side registration in unit._ready + death path (Track 2, separate).
 ##
 ## §9.H3 dormant-schema call-out (from 02l_PHASE_3_SESSION_7_KICKOFF.md §3.1):
 ##   Three dormant-schema surfaces ship at 3A.0, consumed at 3A.5:
@@ -140,6 +140,13 @@ func _ready() -> void:
 
 	_init_grid(bounds, cell_size)
 
+	# Connect fog_update SimClock phase (wave 3A.5). SimClock is an autoload;
+	# same SceneTree pattern as farr_system.gd / resource_system.gd.
+	# The phase was added in wave 3A.0 Track 3 (engine-architect).
+	var sc: Node = _autoload_or_null(&"SimClock")
+	if sc != null and sc.has_signal(&"fog_update"):
+		sc.fog_update.connect(_on_fog_update_phase)
+
 
 ## Public grid initializer (used by tests to bypass _ready's autoload reads).
 ## Tests call this directly with known bounds + cell size to verify grid math.
@@ -204,14 +211,16 @@ func _cell_index(cell: Vector2i) -> int:
 # ---------------------------------------------------------------------------
 
 ## Returns true if world_pos is currently visible to team_id.
-## 3A.0 stub: always false (no vision sources registered; _currently_visible
-##   is all-zero; no per-tick recompute runs until 3A.5).
-## Wave 3A.5 supersedes with: _currently_visible[team_id][cell_index] == 1.
+## FOG_DATA_CONTRACT §5.1.
+## Wave 3A.5: reads _currently_visible[team_id][cell_index].
 func is_visible_to(team_id: int, world_pos: Vector3) -> bool:
-	# Suppress unused-parameter warnings at 3A.0. 3A.5 uses both.
-	var _team: int = team_id
-	var _pos: Vector3 = world_pos
-	return false
+	if team_id < 0 or team_id >= NUM_TEAMS:
+		return false
+	if _currently_visible.is_empty():
+		return false
+	var cell: Vector2i = world_to_cell(world_pos)
+	var idx: int = _cell_index(cell)
+	return _currently_visible[team_id][idx] != 0
 
 
 ## Returns the last known position + tick for a tracked entity.
@@ -251,33 +260,175 @@ func get_scout_candidates(team_id: int, max_results: int) -> Array[Vector3]:
 # Vision source registration — §2.1 (stubs at 3A.0; 3A.5 implements)
 # ---------------------------------------------------------------------------
 
-## Register a node as a vision source.
-## 3A.0 stub: callable so has_method returns true (unblocks 7 building seams);
-##   no-ops silently. Returns -1 (sentinel handle for "stub, not registered").
-## Wave 3A.5 supersedes with: _sources population + static-source caching.
-## §9.L6: the 7 building forward-compat guards start executing at 3A.0 ship.
-##   All call register_vision_source(self, team, 0, true) — stub accepts all
-##   arguments, returns -1, no observable effect.
+## Register a node as a vision source. Returns an opaque integer handle.
+## The handle is stored by the caller (building or unit) and passed to
+## deregister_vision_source when the entity is destroyed.
+## FOG_DATA_CONTRACT §2.1.
+##
+## node: the Node3D emitting vision (must have global_position).
+## team_id: Constants.TEAM_IRAN or TEAM_TURAN.
+## sight_radius_cells: integer cell count from BalanceData.fog.sight_<kind>_cells.
+## is_static: true for buildings (position never changes; footprint cells cached
+##   once at registration). false for units (position recomputed each fog_update).
+##
+## Wave 3A.5: populates _sources + caches footprint cells for static sources.
+## Returns a positive handle (>= 1). Safe to call with null node (returns -1).
 func register_vision_source(
-		_node: Node3D,
-		_team_id: int,
-		_sight_radius_cells: int,
-		_is_static: bool = false) -> int:
-	# 3A.0 no-op stub. Wave 3A.5: populate _sources, cache static cell sets.
-	return -1
+		node: Node3D,
+		team_id: int,
+		sight_radius_cells: int,
+		is_static: bool = false) -> int:
+	if node == null or not is_instance_valid(node):
+		return -1
+	var handle: int = _next_handle
+	_next_handle += 1
+	var cached: Array[int] = []
+	if is_static:
+		# Buildings: cache footprint cells + circle cells now; never recomputed.
+		# FOG_DATA_CONTRACT §3.2: use Building.get_footprint_aabb() for footprint.
+		if node.has_method(&"get_footprint_aabb"):
+			var aabb: AABB = node.call(&"get_footprint_aabb") as AABB
+			cached = _footprint_cells(aabb)
+		else:
+			# Non-building static source (unusual): use its position as a single cell.
+			var c: Vector2i = world_to_cell(node.global_position)
+			cached.append(_cell_index(c))
+		if sight_radius_cells > 0:
+			# Merge integer-circle cells into the static cache.
+			var center: Vector2i = world_to_cell(node.global_position)
+			_merge_circle_cells(center, sight_radius_cells, cached)
+	_sources[handle] = {
+		&"node": node,
+		&"team": team_id,
+		&"radius_cells": sight_radius_cells,
+		&"is_static": is_static,
+		&"cached_cells": cached,
+	}
+	return handle
 
 
 ## Remove a vision source by handle.
-## 3A.0 stub: idempotent no-op. Safe to call with -1 or any unknown handle.
-## Wave 3A.5 supersedes with: _sources.erase(handle).
-func deregister_vision_source(_handle: int) -> void:
-	# 3A.0 no-op stub. Wave 3A.5: _sources.erase(handle).
-	pass
+## Idempotent: safe to call with -1, unknown handles, or handles already erased.
+## FOG_DATA_CONTRACT §2.1.
+func deregister_vision_source(handle: int) -> void:
+	if _sources.has(handle):
+		_sources.erase(handle)
+
+
+# ---------------------------------------------------------------------------
+# Per-tick fog recompute — connected to SimClock.fog_update in _ready
+# ---------------------------------------------------------------------------
+
+## Per-tick handler. Clears _currently_visible for all teams, then rebuilds
+## it from all registered vision sources. Lazily cleans up stale records
+## (is_instance_valid check). Updates _ever_seen monotonically.
+## FOG_DATA_CONTRACT §3.1.
+func _on_fog_update_phase() -> void:
+	# Clear current visibility for all teams.
+	for team_idx in range(NUM_TEAMS):
+		_currently_visible[team_idx].fill(0)
+
+	# Stale handle keys collected for cleanup (avoids mutating dict while iterating).
+	var stale: Array[int] = []
+
+	for handle in _sources:
+		var rec: Dictionary = _sources[handle]
+		var node_variant: Variant = rec[&"node"]
+
+		# Lazy cleanup: node was freed without deregistering.
+		# Check is_instance_valid on the raw Variant BEFORE casting — casting a
+		# freed object triggers a fatal script error even with a null result.
+		if not is_instance_valid(node_variant):
+			stale.append(handle)
+			continue
+		var node: Node3D = node_variant as Node3D
+
+		var team_idx: int = rec[&"team"]
+		if team_idx < 0 or team_idx >= NUM_TEAMS:
+			continue
+
+		var vis: PackedByteArray = _currently_visible[team_idx]
+		var seen: PackedByteArray = _ever_seen[team_idx]
+
+		if rec[&"is_static"]:
+			# Static source: use pre-cached cells.
+			for idx in rec[&"cached_cells"]:
+				vis[idx] = 1
+				seen[idx] = 1
+		else:
+			# Dynamic source (unit): recompute integer-circle each tick.
+			var radius: int = rec[&"radius_cells"]
+			var center: Vector2i = world_to_cell(node.global_position)
+			if radius <= 0:
+				var single_idx: int = _cell_index(center)
+				vis[single_idx] = 1
+				seen[single_idx] = 1
+			else:
+				for dy in range(-radius, radius + 1):
+					var cy: int = center.y + dy
+					if cy < 0 or cy >= grid_h:
+						continue
+					for dx in range(-radius, radius + 1):
+						if dx * dx + dy * dy > radius * radius:
+							continue
+						var cx: int = center.x + dx
+						if cx < 0 or cx >= grid_w:
+							continue
+						var idx: int = cy * grid_w + cx
+						vis[idx] = 1
+						seen[idx] = 1
+
+	for handle in stale:
+		_sources.erase(handle)
+
+
+# ---------------------------------------------------------------------------
+# Footprint helper — §3.2
+# ---------------------------------------------------------------------------
+
+## Convert a building footprint AABB to a flat list of cell indices.
+## FOG_DATA_CONTRACT §3.2: XZ-only, Y ignored.
+func _footprint_cells(aabb: AABB) -> Array[int]:
+	var result: Array[int] = []
+	# Min and max corners in XZ, clamped to grid.
+	var min_cell: Vector2i = world_to_cell(aabb.position)
+	var max_cell: Vector2i = world_to_cell(aabb.position + aabb.size)
+	for cy in range(min_cell.y, max_cell.y + 1):
+		for cx in range(min_cell.x, max_cell.x + 1):
+			result.append(cy * grid_w + cx)
+	return result
+
+
+## Merge integer-circle cells centered on `center` into `out_cells`.
+## Uses dx*dx + dy*dy <= r*r per FOG_DATA_CONTRACT §3.1.
+## Only appends cells not already present (avoids duplicates but order
+## does not matter — duplicates would just set vis=1 twice, harmless).
+func _merge_circle_cells(center: Vector2i, radius: int, out_cells: Array[int]) -> void:
+	for dy in range(-radius, radius + 1):
+		var cy: int = center.y + dy
+		if cy < 0 or cy >= grid_h:
+			continue
+		for dx in range(-radius, radius + 1):
+			if dx * dx + dy * dy > radius * radius:
+				continue
+			var cx: int = center.x + dx
+			if cx < 0 or cx >= grid_w:
+				continue
+			var idx: int = cy * grid_w + cx
+			if idx not in out_cells:
+				out_cells.append(idx)
 
 
 # ---------------------------------------------------------------------------
 # Private helpers — autoload + BalanceData reads
 # ---------------------------------------------------------------------------
+
+func _autoload_or_null(autoload_name: StringName) -> Node:
+	var tree: SceneTree = Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return null
+	return tree.root.get_node_or_null(NodePath(autoload_name))
+
 
 func _resolve_map_bounds() -> Rect2:
 	# WorldGrid does not exist at Wave 3A.0. Fallback is the expected normal path.

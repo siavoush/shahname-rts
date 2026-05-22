@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.30.0
+version: 0.31.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -19,7 +19,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
 last_updated: 2026-05-22
-# bumped to v0.30.0 — Phase 3 session 7 Wave 3A.0 close: fog-of-war DATA LAYER shipped (FogConfig + FogSystem autoload + grid + consumer API stub + sim_clock.gd fog_update phase + SIM_CONTRACT v1.5.0). Wave 3A SPLIT (3A.0 data layer this wave; 3A.5 vision sources + per-tick recompute next). 3 tracks (world-builder + balance-engineer + engine-architect) shipped as JOINT COMMIT (`da3dc75`, 18 files, 1045 insertions) — first real-time application of session-6 §9.E1 + §9.M3 + §9.D7(b) coupled-test-gate disciplines.
+# bumped to v0.31.0 — Phase 3 session 7 Wave 3A.5 close: fog-of-war VISION SOURCES + PER-TICK RECOMPUTE shipped. FogSystem.register_vision_source / deregister_vision_source / _on_fog_update_phase / is_visible_to are now REAL (not stubs). 7-building call-sites all read BalanceData.fog.sight_<kind>_cells (Khaneh added; sight=0 placeholder replaced everywhere). unit.gd registers on _ready / deregisters on _exit_tree. Memory features (Pass 2 death-freeze, get_last_seen real, get_scout_candidates real, new EventBus signals) explicitly deferred to a 3A.7 follow-up since 3A.0 stubs already unblock Wave 3B. 2 tracks shipped as two coordinated commits (a6e6752 Track 1 → 46ba408 Track 2). First cross-track diagnostic loop in the wild — gp-sys flagged Track 1 bug to world-builder before commit; both bugfixes landed in Track 1's ship.
 ---
 
 # Architecture — Target Shape and Build State
@@ -286,6 +286,60 @@ game/
 - Spec said X; we built Y; reason: Z
 - Subsystem A took Phase N+1 (slipped one phase), reason: ...
 - Contract V was bumped from 1.x.0 to 1.y.0 during implementation; key change: ...
+
+### v0.31.0 — Phase 3 session 7 Wave 3A.5 close: fog-of-war vision sources + per-tick recompute + first cross-track diagnostic loop (2026-05-22)
+
+Phase 3 session 7 Wave 3A.5 — the consumer half of the Wave 3A SPLIT — ships the producer side that Wave 3A.0's stubs left dangling. FogSystem registration / per-tick recompute / real `is_visible_to` are all live; the 7-building + unit call-site sweep is complete; memory features (`get_last_seen` real, cleanup death-freeze, `get_scout_candidates` real, new EventBus signals) explicitly deferred to a possible 3A.7 since 3A.0 stubs already unblock Wave 3B.
+
+**What shipped (2 commits — `a6e6752` Track 1 + `46ba408` Track 2 — 12 files, 906 insertions, 93 deletions, hook OK):**
+
+- **`game/scripts/autoload/fog_system.gd`** (+209 lines, -? lines) — Real `register_vision_source(node, team, sight_radius_cells, is_static) -> int` populates `_sources[handle]` with team/radius/is_static/(static-only)`cached_cells` (footprint via `Building.get_footprint_aabb()` at registration time). `deregister_vision_source(handle)` idempotent removal. `_on_fog_update_phase` Pass 1 handler — clear `_currently_visible[team]`, iterate `_sources`, integer-circle visibility computation (`dx*dx + dy*dy <= r*r`) per FOG_DATA_CONTRACT §3.1, write `_currently_visible` + `_ever_seen`. For static sources, write cached footprint cells (no per-tick footprint recompute). `is_instance_valid` lazy cleanup for stale source records. `is_visible_to(team, world_pos)` returns real `_currently_visible[team][_cell_index(world_to_cell(world_pos))]`. SimClock `fog_update` phase connection in `_ready`.
+
+- **`game/scripts/units/unit.gd`** (+112 lines) — `_fog_handle: int = 0` field. `_register_fog_vision_source()` called from `_ready` after `_apply_balance_data_defaults` reads `BalanceData.fog.sight_<kind>_cells` defensively, stores handle. `_exit_tree` calls `FogSystem.deregister_vision_source(_fog_handle)` + resets to 0. All paths idempotent. **First runtime read of `BalanceData.fog.sight_<kind>_cells`** — §9.H3 first-exercise-of-dormant-schema dogfood test confirms per-kind lookup correct (kargar=3, piyade=3, kamandar=4, savar=4, rostam=5).
+
+- **7-building call-site sweep** (`{atashkadeh,khaneh,madan,mazraeh,sarbaz_khaneh,sowari_khaneh,tirandazi}.gd`, +153 insertions across 7 files):
+  - 6 existing call-sites: `register_vision_source(self, team, 0, true)` → `BalanceData.fog.sight_<kind>_cells` read via `_resolve_fog_sight_cells()` helper.
+  - **Khaneh call-site ADDED** (was the missing 7th — `git grep` revealed gap during pre-flight). Mirrors the other 6's pattern; reads `BalanceData.fog.sight_khaneh_cells` (currently 0, §9.L9 intentional footprint-only placeholder).
+  - All 7 buildings have `_fog_handle: int = 0` field; store returned handle; `_exit_tree()` deregister.
+
+- **Tests:** `test_fog_system.gd` (+~14 real-path tests for register/deregister/fog_update/is_visible_to/stale-source-cleanup). `test_unit.gd` (+156 lines, 5 new tests — register-on-spawn + deregister-on-exit + per-kind H3 dogfood). `test_khaneh.gd` (+19 lines, FogSystem-register assertion). Full headless suite: **1413 passing / 0 failing / 3 risky-pending (pre-existing)** at `46ba408`.
+
+**First cross-track diagnostic loop in the wild — gp-sys → world-builder bugfix:**
+
+Wave 3A.5 dispatched as 2 parallel tracks (world-builder Track 1 / gp-sys Track 2). Both reached [ready] within a 10-minute window. gp-sys staged + tested Track 2 locally, found `test_fog_update_stale_source_cleanup` failing — diagnosed the root cause (the `as Node3D` cast on a freed `Object` instance crashes even with the nominal-safe `as` operator, before reaching the `is_instance_valid()` check) and broadcast the diagnosis + suggested fix sideways to world-builder via SendMessage. world-builder patched their staged change before commit (`a6e6752` ships with the fix). **This is §9.D7(b) broadcast-on-observe-cross-track-WIP working as designed** — cross-track diagnostic before lead-escalation, and the bugfix landed in the original track's first commit (no fix-wave).
+
+**Bonus subtle bugfix from the same staging cycle:** world-builder's `test_fog_update_stale_source_cleanup` originally used `queue_free()` + `await get_tree().process_frame`. The `await` leaked 4 physics ticks into SimClock, causing `test_match_harness` pre-condition failures downstream. Fixed by switching to `free()` (synchronous deletion) — no engine tick consumed. **N=1 instance of a test-discipline pitfall** worth promoting to a §9.M rule at session-7 close retro: `await get_tree().process_frame` leaks engine physics ticks into SimClock; tests that need controlled tick state must avoid it.
+
+**Two retro candidates surfaced (session-7 close hopper):**
+
+1. **Pitfall candidate — `as Node3D` cast crashes on freed `Object`** (Task #198): nominal-safe `as` is NOT safe on freed objects. Variable-read-then-cast is the safe pattern. Belongs in project's Known Godot Pitfalls list — N=1 instance shipped today.
+2. **Test-discipline pitfall — `await get_tree().process_frame` leaks SimClock ticks** (Task #199): for assertion-immediate-after-spawn cases, use `free()` not `queue_free()` + await. §9.M cluster addition candidate.
+
+**§9.E1 ordering refinement — codified into Wave 3A.5 brief, validated empirically:**
+
+Wave 3A.0's retro carry-forward (Task #195 — world-builder's framing *"joint-commit first, [blocked]-broadcast second"*) was codified into Wave 3A.5's kickoff brief §3.1 as the default expectation. Empirical outcome: world-builder shipped Track 1 standalone first (with the gp-sys-flagged bugfix integrated), gp-sys committed Track 2 on top of `a6e6752`. **Two coordinated commits, single branch, no fix-wave** — defensible alternative interpretation of "joint commit" that the brief explicitly permitted. The §3.1 framing held: tracks landed *as a coordinated unit*, just not in a single SHA. Worth codifying at retro: "joint commit" allows sequenced commits on the same branch when one track's ship is the gate for the other's test path.
+
+**Carry-forwards to Wave 3A.7 (deferred-memory-features, NOT scheduled yet):**
+
+- FogSystem `cleanup` phase Pass 2 — death-freeze (subscribe `unit_health_zero` + `building_destroyed`, freeze final position).
+- FogSystem `get_last_seen` real impl + `_last_seen_by_team` population during `fog_update`.
+- FogSystem `get_scout_candidates` real impl + `_unexplored_cells` sparse set maintenance.
+- New EventBus signals — `fog_visibility_changed`, `fog_cell_first_seen`.
+- Entity-tracking source decision (per FOG_DATA_CONTRACT §6 LATER-fog-3): group-iteration fallback vs `building_placed` signal extension.
+
+Phase 5 Kaveh Event will need these; Phase 6 AI scouting will need `get_scout_candidates` real. Schedule when Phase 5 prep opens. **Not blocking Wave 3B (DummyAI)** — Wave 3B uses `is_visible_to` only, which now returns real data.
+
+**Carry-forwards to session-7 close retro:**
+
+- §9.E1 sequenced-commit refinement (clarify "joint commit" includes 2-commit-on-same-branch when one track's ship gates the other).
+- §9.D7(b) cross-track diagnostic loop empirical data (N=1 successful application — gp-sys → world-builder).
+- Pitfall candidate #1: `as Node3D` cast crashes on freed `Object` (Task #198).
+- Pitfall candidate #2: `await get_tree().process_frame` leaks SimClock ticks (Task #199).
+- §9.H3 dogfood — first-exercise of `BalanceData.fog.sight_<kind>_cells` passed cleanly. Confirms H3 trigger-and-test discipline works in practice.
+
+**`02m_PHASE_3_SESSION_7_WAVE_3A_5_KICKOFF.md` is ephemeral per §9.C3** — to be deleted at next-wave-open or session-7 close (whichever first). `02l_PHASE_3_SESSION_7_KICKOFF.md` (Wave 3A.0 brief) also still on disk; both deferred to session-7 close hygiene.
+
+---
 
 ### v0.30.0 — Phase 3 session 7 Wave 3A.0 close: fog-of-war data layer + first real-time §9.E1 application (2026-05-22)
 
