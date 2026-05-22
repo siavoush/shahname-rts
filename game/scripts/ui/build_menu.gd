@@ -252,7 +252,18 @@ func _refresh_button_labels() -> void:
 	# triad framing).
 	var khaneh_cost: int = _KhanehScript.call(&"cost_coin")
 	_khaneh_button.text = tr("UI_BUILDING_KHANEH_COST") % [khaneh_cost]
-	_khaneh_button.tooltip_text = tr("UI_BUILDING_KHANEH_TOOLTIP")
+	# Drift-proof tooltip — substitute live population_capacity from
+	# BalanceData rather than hardcoding the number. Matches the
+	# Atashkadeh dual-cost dynamic-substitution pattern (Wave 2A.5) and
+	# the cost-label %d pattern across all 7 buildings. §9.L6 read-from-
+	# canonical-source applied at the UI surface: if balance-engineer
+	# tunes bldg_khaneh.population_capacity, the tooltip updates
+	# automatically without strings.csv or test edits.
+	# Surfaced as fix-wave BUG-B1.5 after L1 spec-wins caught a spec-vs-
+	# shipped divergence (spec said +5, shipped +10) at BUG-B1 time —
+	# lesson is that hardcoded UI numbers are themselves a drift-vector.
+	var khaneh_pop_cap: int = _KhanehScript.call(&"population_capacity")
+	_khaneh_button.tooltip_text = tr("UI_BUILDING_KHANEH_TOOLTIP") % [khaneh_pop_cap]
 	var mazraeh_cost: int = _MazraehScript.call(&"cost_coin")
 	_mazraeh_button.text = tr("UI_BUILDING_MAZRAEH_COST") % [mazraeh_cost]
 	_mazraeh_button.tooltip_text = tr("UI_BUILDING_MAZRAEH_TOOLTIP")

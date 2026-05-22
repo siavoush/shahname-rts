@@ -25,6 +25,9 @@ const BuildMenuScene: PackedScene = preload(
 const KargarScene: PackedScene = preload("res://scenes/units/kargar.tscn")
 const PiyadeScene: PackedScene = preload("res://scenes/units/piyade.tscn")
 const UnitScript: Script = preload("res://scripts/units/unit.gd")
+# BUG-B1.5: Khaneh static helper preload for drift-proof tooltip test.
+const KhanehScript: Script = preload(
+	"res://scripts/world/buildings/khaneh.gd")
 
 
 var _menu: Variant
@@ -645,6 +648,32 @@ func test_khaneh_button_tooltip_carries_j3_literal_first_framing() -> void:
 		"KhanehButton tooltip_text must be non-empty (BUG-B1 fix)")
 	assert_true(btn.tooltip_text.contains("khaneh"),
 		"KhanehButton tooltip must carry the literal Persian 'khaneh' per J3 — got '%s'" % btn.tooltip_text)
+
+
+func test_khaneh_button_tooltip_substitutes_population_capacity_from_balance_data() -> void:
+	# BUG-B1.5 drift-proof guard: the tooltip uses %d substitution from
+	# Khaneh.population_capacity() rather than hardcoding the number. If
+	# BalanceData.bldg_khaneh.population_capacity is ever tuned and the
+	# tooltip surface is wired incorrectly (or the strings.csv reverts to
+	# a hardcoded literal), this test fails.
+	#
+	# §9.L6 read-from-canonical-source applied at the UI test layer:
+	# the test reads the canonical value (Khaneh.population_capacity())
+	# and asserts the tooltip displays that exact number. The test does
+	# NOT hardcode "10" — if the SSOT changes, the test follows
+	# automatically.
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/KhanehButton")
+	var canonical_pop_cap: int = KhanehScript.call(&"population_capacity")
+	# Format guard: confirm we're not asserting on a "0" or empty number
+	# (which would silently pass an empty contains() check).
+	assert_gt(canonical_pop_cap, 0,
+		"BalanceData.bldg_khaneh.population_capacity must be > 0 for the drift-proof test to be meaningful")
+	var expected_substring: String = "+%d population cap" % canonical_pop_cap
+	assert_true(btn.tooltip_text.contains(expected_substring),
+		"KhanehButton tooltip must display '%s' (from BalanceData), got '%s'" % [expected_substring, btn.tooltip_text])
 
 
 func test_mazraeh_button_tooltip_carries_j3_literal_first_framing() -> void:
