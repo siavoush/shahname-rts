@@ -2,7 +2,7 @@
 title: Studio Process — How the Virtual Studio Operates
 type: process
 status: living
-version: 2.1.2
+version: 2.2.0
 owner: team
 summary: Operating contract for multi-agent collaboration — currently-binding active rules + facilitation patterns + mode separation. Chronological archaeology in STUDIO_PROCESS_HISTORY.md; sync log in STUDIO_PROCESS_SYNC_LOG.md.
 audience: all
@@ -21,7 +21,7 @@ ssot_for:
 references: [MANIFESTO.md, ARCHITECTURE.md, STUDIO_PROCESS_HISTORY.md, STUDIO_PROCESS_SYNC_LOG.md]
 tags: [process, syncs, retros, ssot, modes, semver, frontmatter]
 created: 2026-04-30
-last_updated: 2026-05-21
+last_updated: 2026-05-22
 ---
 
 # Studio Process — How the Virtual Studio Operates
@@ -277,11 +277,11 @@ This section is the **currently-binding form** of every accumulated process rule
 | §9.I | Engine-Feature Verification | 3 |
 | §9.J | Cultural / Loremaster Discipline | 4 |
 | §9.K | Retro Practice | 3 |
-| §9.L | Implementation Patterns | 7 |
+| §9.L | Implementation Patterns | 10 |
 | §9.M | Test Discipline | 5 |
 | §9.N | Investigation Reports | 1 |
 
-**Total: 54 active rules across 14 clusters.** Down from 81 dated entries in v1.8.0 — same load-bearing content, restructured to currently-binding form. (L4 split into L4a/L4b at validation-test fix-up; D9 pre-commit self-review checklist added at PR C; H3 first-exercise-of-dormant-schema + L6 forward-compat-guard-sweep + J4 claim→mechanism→reviewer-triples refinement + D9 lens-walk N/A shorthand added at session-5 close retro — all with provenance notes in their respective entries.)
+**Total: 57 active rules across 14 clusters.** Down from 81 dated entries in v1.8.0 — same load-bearing content, restructured to currently-binding form. (L4 split into L4a/L4b at validation-test fix-up; D9 pre-commit self-review checklist added at PR C; H3 first-exercise-of-dormant-schema + L6 forward-compat-guard-sweep + J4 claim→mechanism→reviewer-triples refinement + D9 lens-walk N/A shorthand added at session-5 close retro; L7 affordability-sweep + L8 drift-proof-UI-numeric-defaults + L9 fallback-by-failure-visibility-shape + D7 split (D7a + D7b workspace-observation) + M3 error-specificity-disclaimer + E1 parallel-WIP-addendum + F4 value-choice-footnote + G1 idle-availability-heartbeat-addendum + L1 multi-agent codification added at session-6 close retro — all with provenance notes in their respective entries.)
 
 ---
 
@@ -586,7 +586,11 @@ Cites Manifesto Principle 6 (Partnership — coordinate explicitly across the te
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2 + 2026-05-17 session-3]
 
-#### D7. Broadcast-before-stash — any stash touching another agent's WIP requires explicit notification
+#### D7. No-silent-coexistence with cross-track WIP — two complementary triggers
+
+*Parent rule: "no silent coexistence with cross-track WIP in your working tree." Two trigger conditions, both require SendMessage broadcast to lead BEFORE acting.*
+
+##### D7(a). Broadcast-before-stash — any stash touching another agent's WIP requires explicit notification
 
 **Rule.** Before ANY `git stash push -u` (or scoped `git stash push -- <files>` that touches files modified by another agent in the current wave), the stashing agent MUST broadcast `[stashing: <files>]` to lead via SendMessage so affected parallel agents know their working-tree state is parked, not lost. Non-optional even when the stash feels local and you intend to restore immediately.
 
@@ -594,9 +598,33 @@ Cites Manifesto Principle 6 (Partnership — coordinate explicitly across the te
 
 **Canonical incident.** Wave-1C workspace incident (2026-05-17 ~10:35-10:38) — world-builder-p3s2 stashed parallel agents' WIP without broadcast as part of `90d39bd` prep. From ui-developer-p3s3's view, their working-tree state vanished unexpectedly; they correctly stopped-and-reported but lost ~30 minutes to diagnostic confusion. The system-reminder telling them the change was "intentional" was actively misleading. Lead's forensic-narrative initially misread `reset: moving to HEAD` reflog entry as a destructive `git reset --hard` when it was `git stash push`'s internal mechanism — apologized + withdrew accusation.
 
-Cites Manifesto Principle 6 (Partnership — coordinate explicitly) + Principle 1 (Truth-Seeking — verify your own forensic narrative).
-
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-3]
+
+##### D7(b). Broadcast-on-observe-cross-track-WIP — observing without acting still requires explicit notification (NEW session-6)
+
+**Rule.** When you observe modified-unstaged files in your working tree that are NOT in your own track scope, broadcast the observation to lead via SendMessage **BEFORE proceeding with any action that interacts with shared infrastructure** (commit attempt, test run, stash). Surface what you see; let lead route. Do NOT:
+- Stash the cross-track files (would destroy their owner's WIP — D7(a) covers this from the action side).
+- Revert them.
+- Message the file's owner directly (cross-agent coordination routes through lead per §9.G2).
+- Silently assume the coexistence is intentional or by design.
+
+**Refinement — descriptive not interpretive (world-builder-p3s2 contribution).** The broadcast should state **WHAT YOU OBSERVE**, NOT YOUR DIAGNOSIS:
+- ✅ *"I see `build_menu.gd` modified-unstaged in my working tree by another agent; nodes referenced in @onready not yet staged."*
+- ❌ *"I think ui-developer's Track 4 isn't landed yet."*
+
+The agent may not know which track owns which file. Broadcast-what-you-observe keeps the broadcast accurate under uncertainty; broadcast-your-diagnosis compounds one misattribution with another.
+
+**Canonical incidents (N=2 in Wave 2B alone):**
+- **Wave 2B Track 2** — world-builder-p3s2 observed ui-developer's pre-commit @onready refs in working tree before Track 4 staged the matched .tscn nodes. Misattributed initial diagnosis as a build_menu.gd parse error; recovered via lead's correction at retro framing.
+- **Wave 2B BUG-B1 fix-wave** — ui-developer-p3s3 observed gp-sys's modified-unstaged test (expecting new 3-arg signal signature) in working tree while gp-sys's BUG-B2 was still in flight. Applied D7(a) discipline (no stash, no revert) + correctly held until gp-sys's commit landed.
+
+ui-developer-p3s3's framing at session-6 retro: *"The cost of a 30-second routing broadcast is much lower than the cost of acting on a wrong assumption about another agent's WIP."*
+
+**Cost ROI observation.** Recovery after blocker resolution (gp-sys's BUG-B2 ship) was literally `git pull && retry commit` — 30 seconds. The discipline cost was wall-clock wait, not work-redo. Sequential coordination expensive in latency; not expensive in actual work.
+
+Cites Manifesto Principle 1 (Truth-Seeking — observe, don't diagnose) + Principle 6 (Partnership — coordinate explicitly).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-3 (D7a) + 2026-05-22 session-6 close (D7b)]
 
 #### D8. Verify git tree at session close — not just lint + tests
 
@@ -674,6 +702,8 @@ Cites Manifesto Principle 1 (Truth-Seeking — verify your own work before other
 10. Fast-forward race at push time: shared branch means each worktree pushes commits to the same `feat/<branch>`. Git's local `.git` lock serializes writes; the remote push is a normal `git push`.
 
 **⚠️ Runtime-verification status:** the `Agent` tool's `isolation: "worktree"` parameter is documented-but-unimplemented in the runtime layer. Lead must manually pre-create `git worktree add` and pass the path in the brief, OR fall back to sequential dispatch. Current default: **sequential single-agent dispatch for any write-active wave; parallel only for read-only review agents.**
+
+**Addendum — parallel WIP visible in working tree (session-6 close).** §9.E1's `sequential-shared-tree` mode prevents file-level commit-race contamination (via pathspec discipline + git index.lock) but does NOT prevent **pre-commit-suite-gate-coupling** races: the pre-commit hook runs the full GUT test suite, including against working-tree files modified by parallel agents but not yet staged. If Agent-A's pre-commit-WIP `.gd` references node names Agent-B hasn't yet staged in the matched `.tscn`, Agent-B's pre-commit hook fails on a file Agent-B never touched. **In parallel-dispatch waves, the working tree may contain unstaged WIP from other agents. If a pre-commit hook failure references a file you did not touch, treat it as a candidate transient. Retry once before broadcasting (mirrors M3 error-specificity refinement).** N=2 instances in Wave 2B alone (Track 2 vs Track 4; BUG-B1 vs BUG-B2). Discipline-side fix; tooling-side fix (Agent isolation: "worktree" runtime ratification OR scoped pre-commit hook) deferred to future infrastructure work.
 
 Cites Manifesto Principle 4 (Lean Iteration — worktrees buy back parallel-agent throughput without giving up isolation) + Principle 8 (Separation of Concerns — the race lives at the working-tree level; the mitigation lives at the working-tree level).
 
@@ -775,6 +805,8 @@ Cites Manifesto Principle 1 (Truth-Seeking — verify the effect, not just the s
 
 **Defense-layer ruling (engine-architect-p3s2, persistent voice).** A narrow L7 lint rule was proposed at session-4 retro and **rejected** as wrong-layer — `tools/lint_simulation.sh` patterns are L1-L6 over `.gd` source; extending to `.tscn` would shift the lint script's responsibility class. Final defense: regression-test pattern at first occurrence + ARCHITECTURE.md §3.1 documentation breadcrumb (deferred to next §3.1-touching wave). NO L7 lint.
 
+**Footnote — value-choice for the regression test (session-6 close, world-builder refinement).** When choosing the override value for the test assertion, **prefer values that diverge from the base in the direction that makes silent-fallback-to-base detectable in BOTH wrong-syntax failure modes** ("override not applied" → falls back to base; "wrong override applied" → wrong value). Example: if base mesh y=1.2, choose override y=1.0 (less than base — so silent-fallback to 1.2 fails the assert `y == 1.0`, AND wrong-override to anything other than 1.0 also fails). When the override value is greater-than base, silent-fallback also fails the assert; the in-either-direction discipline catches both failure modes regardless. Not always feasible (sometimes values are constrained); when feasible, strictly better. Canonical refinement at Tirandazi `2ebe95d` Y=1.0 guard.
+
 Cites Manifesto Principle 1 (Truth-Seeking — test the effect, not the syntax) and Principle 9 (Automated Enforcement — regression-lock at first incidence).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-4]
@@ -795,6 +827,8 @@ Cites Manifesto Principle 1 (Truth-Seeking — test the effect, not the syntax) 
 **Cross-session persistence (§12.5.1):** Tier-1 and Tier-2 persistent instances survive across session boundaries by default. Reboot is exception, not procedure.
 
 **Addressable-name registry (added 2026-05-21 Wave 2B Track 1 routing-failure canonical incident).** Persistent-instance SendMessage `to:` field is a free-form string with no validation — sending to an agent-def file name (e.g., `gameplay-systems-pNsM`) instead of the actual addressable name (e.g., `gp-sys-p3s3`) produces `success: true` but lands in a phantom inbox. **`docs/AGENT_REGISTRY.md` is the canonical SSOT for live addressable names.** Pre-dispatch verification protocol: (a) check the registry, (b) cross-check against the most recent `<teammate-message teammate_id="X">` block from that instance — teammate_id is the runtime-authoritative addressable name, (c) if registry and teammate_id disagree, update the registry. **Never invent a name from the agent-def file name.** Lead owns registry maintenance; any agent can flag routing-mismatch incidents via SendMessage.
+
+**Agent-side idle-availability heartbeat (session-6 close, gp-sys proposal).** When an agent has been idle-available for **>2 hours of wall-clock time without any directed message**, send a one-line `[heartbeat-ack: idle-available, no dispatch since <last-timestamp>]` to lead via SendMessage. Lead inspects whether routing is intact OR confirms genuine inter-wave gap. **The heartbeat MUST include the agent's live addressable name in the message body** (e.g., *"from gp-sys-p3s3, my addressable name is gp-sys-p3s3"*) — if lead's reply also routes to a phantom inbox, the heartbeat repeats at the next 2-hour interval, eventually surfacing the failure without requiring user intervention. Catches the AGENT_REGISTRY phantom-inbox scenario from the agent side; channel-internal recovery vs user-bridge friction. The 2-hour threshold balances (a) catching routing failures faster than the ~30min user-bridge surfaced in Wave 2B Track 1, and (b) not adding channel noise during active waves where 30-90 min between dispatches is normal.
 
 **Canonical text + operational details live in §12.5 and §12.5.1.** §9 carries the dispatch-side operational disciplines (G2, G3) that flow FROM the persistence model.
 
@@ -954,6 +988,8 @@ Cites Manifesto Principle 4 (Lean Iteration) and Principle 10 (Feedback Cycle �
 
 ### §9.J — Cultural / Loremaster Discipline
 
+> **Organizing claim for this cluster (added 2026-05-22 session-6 close, loremaster-p3s5 framing):** *"A loremaster cultural-claim that asserts X about the shipped mechanic is a load-bearing contract on X's implementation. Verify-at-HEAD before dispatch close, not at live-test."* Three waves of empirical validation (2A.5 Atashkadeh / 2B Sowari + Tirandazi / 2B Track 5 taxonomy doc) confirm the pattern: cultural-truth-claim → implicit mechanical assertion → either verified at HEAD pre-dispatch OR surfaces at live-test. The pre-verification path is meaningfully cheaper than the live-test path. The H3 (cluster H) + J4-refined-triples (this cluster) disciplines exist precisely to make pre-verification the default routing.
+
 #### J1. Brief-time review formalization — when fires vs when doesn't
 
 **Rule (decision):**
@@ -1088,22 +1124,35 @@ Cites Manifesto Principle 1 (Truth-Seeking — observe the system-level outcome,
 
 ### §9.L — Implementation Patterns
 
-#### L1. Spec-wins-over-lead's-casual-reading, with citation-density corollary
+#### L1. Spec-wins-over-lead's-casual-reading, with citation-density corollary (multi-agent — active + passive triggers)
 
 **Rule.** When a lead's brief or message contradicts the project's source-of-truth (CLAUDE.md, MANIFESTO.md, 01_CORE_MECHANICS.md, ARCHITECTURE.md, ratified contracts, DECISIONS.md, 00_SHAHNAMEH_RESEARCH.md), the persistent specialist applies the source-of-truth value AND flags the deviation explicitly with cited evidence. Source material wins per Manifesto Principle 7 (Single Source of Truth).
 
 **Citation-density corollary.** The corrector must cite the source by file + section + line numbers (or passage equivalent) AND, where possible, quote one load-bearing sentence from the source. Citation-density matters more than confidence — the correction has to overcome lead-incumbency; reasoning without citation is just another voice.
 
-**Canonical incidents:**
-- Wave-1B balance-engineer's `coin_cost = 40` catch (cited 01_CORE_MECHANICS.md §5; lead's casual brief said 75).
-- Wave-1B loremaster's Jamshid-Pishdadian-triad catch (cited 00_SHAHNAMEH_RESEARCH.md §1 lines 86-88; lead's brief said Jamshid was "tangential").
-- Wave-2A balance-engineer's Atashkadeh-vs-Qal'eh §8 timing-citation catch (lead's pre-seeded "Atashkadeh 90s" was actually Qal'eh per §8).
+**Multi-agent codification (session-6 close, N=5 instances across 2+ agents — pattern lifted from balance-engineer-particular to project-wide).** L1 has two trigger surfaces:
 
-All three corrections landed because of citation density; none would have landed on confidence alone.
+- **Active trigger (D9 Step 2 verification before commit, balance-engineer canonical shape):** specialist verifies spec/SSOT before consuming the brief, catches divergence at the agent's own deliverable surface, applies L1.
+- **Passive trigger (spec-facing-text-writing, ui-developer canonical shape):** specialist surfaces divergence incidentally during their own work — e.g., writing a tooltip string against a spec citation reveals the spec/BalanceData number-mismatch.
+
+**Scope (deliberately bounded).** L1 fires on each agent's *own active-verification surface* (D9 Step 2) + *passive catch in own work* (spec-facing writing). **NOT proactive cross-agent sweeping** — that's a scope violation that produces noise. Brief-time recommendations are starting points; each agent applies L1 to their own commits + flags divergences with citation. Lead synthesizes catches across agents at retro time.
+
+**Canonical incidents (5 instances across Wave 2A.5 + Wave 2B):**
+- Wave-1B balance-engineer's `coin_cost = 40` catch (cited 01_CORE_MECHANICS.md §5; lead's brief said 75).
+- Wave-1B loremaster's Jamshid-Pishdadian-triad catch (00_SHAHNAMEH_RESEARCH.md §1 lines 86-88).
+- Wave-2A balance-engineer's Atashkadeh-vs-Qal'eh §8 timing-citation catch.
+- Wave-2A.5 balance-engineer's max_hp=600 retention (lead's brief mis-suggested 400).
+- Wave-2B balance-engineer's construction_ticks=1080 ladder-defense (lead's brief said ~900).
+- Wave-2B ui-developer's UI_BUILDING_* key-shape preservation (lead's brief suggested BUILDING_LABEL_*).
+- Wave-2B ui-developer's Khaneh +5 spec-vs-BalanceData=10 divergence catch (surfaced 3-month-invisible spec/code divergence; closed at session-6 close retro by reverting BalanceData to spec value).
+
+All applied citation-density discipline; lead accepted each override.
+
+**Brief-time framing (lead's responsibility going forward).** Brief language SHOULD make L1 expectation explicit: *"Brief numbers / key shapes / conventions are starting points. Domain expert overrides with citation are expected; the brief recommendation is not a constraint."* Eliminates agent hesitation about whether to push back.
 
 Cites Manifesto Principle 1 (Truth-Seeking — evidence wins over incumbency) and Principle 7 (SSOT).
 
-[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2]
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2; multi-agent codification + bounded-scope + brief-time-framing-recommendation added 2026-05-22 session-6 close retro]
 
 #### L2. Distribution-discipline — ownership beats warmth (with mid-wave rebalance discipline)
 
@@ -1215,6 +1264,77 @@ Cites Manifesto Principle 9 (Automated Enforcement — `git grep` sweep is a che
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-21 session-5 close]
 
+#### L7. Affordability-sweep — sim-side chokepoint gain triggers input-handler pre-screen audit
+
+*Sibling to L6 (forward-compat-guard-sweep). Same "sweep at moment-of-change" shape; different layer — L6 is same-surface (schema-field readers); L7 is cross-layer (sim-side chokepoint → input-handler pre-screen).*
+
+**Actor.** Agent shipping a sim-side chokepoint addition or modification.
+
+**Trigger.** When `_perform_placement`, a state-machine state's `_sim_tick`, or any sim-side chokepoint adds OR modifies a `change_resource(team, KIND_X, amount, ...)` call AND there is a corresponding input-handler pre-screen that reads `<X>_x100_for(team)` to gate user input, **both must be swept in the SAME commit.**
+
+**Action.** `grep -rn 'KIND_X\|<resource>_x100_for\|change_resource.*KIND_X' game/scripts/input/ game/scripts/ui/` to enumerate input-layer readers; verify each handles the new affordability dimension. If a pre-screen layer reads the resource but doesn't handle the new dimension, add the parallel check in the same commit.
+
+**Generalizes across resources.** Not specifically grain-coin both-or-neither — when Farr-cost, population-cost, or future resource-costs gain a chokepoint, the same sweep fires. Each new pre-screen consumer extends the L7 audit surface (Phase-4 production-queue UI; Phase-5 tech-research UI; etc.).
+
+**Why this is distinct from L6.** L6 fires when a schema-field's reader pattern changes (same-agent, same-surface — BalanceData schema → guard removal). L7 fires when affordability dimensions cross layers (sim-side adds; input-handler pre-screen must mirror). Different agents may own each layer; that asymmetry is exactly why BUG-B2.5 slipped through D9 in the BUG-A fix-wave.
+
+**Canonical incidents (N=2):**
+- **Wave 2A.5 BUG-A (`dfa9a33`)** — first instance of "affordability-check incomplete." `UnitState_Constructing` gained grain deduction at first non-zero `grain_cost`; missed the BuildPlacementHandler pre-screen layer. Bug surfaced at lead live-test.
+- **Wave 2B BUG-B2.5 (`5082f21`)** — second instance, same shape. Click-time affordability check at `BuildPlacementHandler._on_confirm_click` line 321 was coin-only despite BUG-A's both-or-neither pattern shipping at `UnitState_Constructing`. Surfaced at user live-test. gp-sys-p3s3's meta-finding at fix-close: *"This is the SECOND INSTANCE of the affordability-check incomplete failure mode... had this rule existed at dfa9a33, BuildPlacementHandler would have been swept in the BUG-A fix-wave, and BUG-B2.5 wouldn't have surfaced separately."*
+
+Cites Manifesto Principle 1 (Truth-Seeking — verify cross-layer symmetry when one layer changes) + Principle 9 (Automated Enforcement — `git grep` sweep cheaper than per-layer-author memory).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-22 session-6 close]
+
+#### L8. Drift-proof UI numeric defaults — `%d` + canonical-helper read becomes default; hardcoded literal requires justification
+
+*Inverts the prior implicit default. Hardcoded UI numbers were the norm; drift-proof reads were the exception. After N=3 instances of the drift-proof pattern (cost-label across 7 buildings + Atashkadeh dual-cost + Khaneh pop-cap) the default flips.*
+
+**Rule (code-side default).** Any UI surface (tooltip, label, button text, panel readout) that displays a number sourced from BalanceData (cost, capacity, range, damage, duration, multiplier) uses:
+- Format string with `%d` (or `%s` for non-int) substitution at refresh-time.
+- Static class helper on the owning Building/Unit script that reads BalanceData with defensive fall-through.
+- `tr() % [Script.canonical_helper()]` substitution at the consumer-side (build menu, HUD).
+
+**Exception (requires justification in code comment).** Hardcoded literal acceptable only when:
+- (a) The number is genuinely structural and not balance-tunable (e.g., "0 to 100%" — bounds of a percentage display).
+- (b) The canonical SSOT is not BalanceData (e.g., `Constants.SIM_TICK_HZ`, engine constants).
+
+**Test-discipline pair (codified as part of L8).** The test asserts the rendered UI contains the substituted value READ from the canonical helper, NOT a hardcoded literal in the test fixture. Pattern: `assert tooltip_text.contains(str(Script.canonical_helper()))`. The test becomes a divergence-detector, not a value-snapshot.
+
+**Canonical incidents (N=3 → rule codifies):**
+- Cost-label `%d Coin` across all 7 buildings (since Wave 1C — implicit pattern; first authored without rule).
+- Atashkadeh dual-cost `%d Coin / %d Grain` (Wave 2A.5 `87320bf`).
+- Khaneh tooltip `+%d population cap` (Wave 2B BUG-B1.5 `29bd24e` — first explicit-with-rationale instance; surfaced the 3-month spec/BalanceData divergence at L1 catch).
+
+**Generalizes beyond UI** — applies wherever a defensive default surfaces to the player (HUD-displayed HP fallbacks, AI-state fallbacks, attack-range readouts).
+
+**Why this matters now.** The Khaneh +5/+10 divergence was invisible for 3+ months because the tooltip was hardcoded. The drift-proof pattern auto-surfaces such divergences at write-time, AND auto-syncs them at runtime once corrected. Pattern composition observation (ui-developer at BUG-B1.5 close): *"Hardcoded literal becomes the exception requiring justification, not the default."*
+
+Cites Manifesto Principle 7 (SSOT — UI reads canonical value at runtime, doesn't snapshot it at write-time) + Principle 1 (Truth-Seeking — divergence-detector tests catch the bug class, not the instance).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-22 session-6 close]
+
+#### L9. Fallback-by-failure-visibility-shape — choose defensive fallback constants by what the player sees when fallback fires
+
+**Rule.** Fallback constants in defensive code paths (typically `_FALLBACK_*` consts in static readers like `cost_coin()` / `population_capacity()` / similar) must either **FAIL-VISIBLY** or **MATCH-SHIPPED**. The choice depends on what the player sees when the fallback fires:
+
+- **FAIL-VISIBLY (zero/empty/sentinel):** when zero/empty as rendered makes the bug self-evident. *Example:* `cost_coin()` fallback = 0 → tooltip shows "0 Coin" which screams "free building, config bug." Lead notices immediately.
+- **MATCH-SHIPPED (current canonical value):** when zero/empty as rendered would render a plausible-but-false claim. *Example:* `population_capacity()` fallback = 5 (matching BalanceData) → tooltip shows "+5 population cap" which is true; fallback to 0 would show "+0 population cap" — false-but-plausible "this building doesn't grant cap" reading.
+
+**Silent-plausible defaults are a misinformation hazard.** When the fallback fires (degraded config state), the UI should EITHER scream OR be honest — never lie plausibly.
+
+**Operational form.** Document the choice in a code comment on the fallback constant. Example: *"Why a non-zero fallback (vs cost_coin's 0): cost = 0 visually-screams 'config error'; population capacity = 0 is a SILENT bug. Better to fall through to the current shipped value so a missing BalanceData doesn't silently lie."*
+
+**Generalizes beyond UI** — applies wherever a defensive default surfaces to the player (HP fallbacks, attack-range fallbacks, AI-state fallbacks).
+
+**Pairs with L8.** L8 says "use a dynamic default"; L9 says "when the dynamic helper falls back, choose the fallback by visibility-shape." Together: drift-proof at runtime + honest at degraded-state.
+
+**Canonical incident.** Wave 2B BUG-B1.5 (`29bd24e`) — ui-developer-p3s3 authored `_FALLBACK_POPULATION_CAPACITY = 10` with explicit rationale: *"cost_coin's 0 fallback works because 'free building' is a visually-screaming config error. population_capacity = 0 would be SILENT (tooltip just shows '+0' and the player reads it as 'doesn't grant any cap'), so the fallback semantics need to be different."* (Subsequently reduced to 5 at session-6 close retro per Khaneh +5 revert; the rationale persists.)
+
+Cites Manifesto Principle 1 (Truth-Seeking — when uncertain, surface the uncertainty visibly rather than lie plausibly) + Principle 6 (Honest-tools-not-magic-tricks — degraded state should be legible, not invisible).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-22 session-6 close]
+
 ---
 
 ### §9.M — Test Discipline
@@ -1250,6 +1370,8 @@ Cites Manifesto Principle 4 (Lean Iteration — fail fast, in live-test, not in 
 **Trigger condition.** Defer to the hook when you have evidence (via `git log`) that the hook passed on a contemporaneous state of the same file set. If you want to pre-check before commit, run the hook directly (`bash tools/run_tests.sh` or equivalent), NOT `godot --headless --test` raw.
 
 **Operational form.** Before broadcasting `[blocked]` on a presumed test failure, run `git log --oneline -3` and check if other agents' recent commits passed the hook on the same suite state. If they did, the gate is likely clear; attempt the commit directly. Out-of-hook runs have different env (cache state, load order) that can produce false positives. Speculative pre-blocking on out-of-hook output is the wrong gate.
+
+**Refinement — error-specificity is NOT a reliable signal (session-6 close).** Error specificity (named identifier, named file, named line) is NOT a reliable signal that a hook failure is real vs transient. **Retry once before broadcasting regardless of how concrete the error message looks.** The GUT startup race surfaces through the first plausible-looking parse failure it can find — it borrows the error shape of whatever it collides with. The specificity is a property of the collision surface, not of the underlying failure cause. The session-4 canonical incident (Wave 2A PR #19 "33/34 farr_gauge") was a numerically-specific failure; the Wave 2B world-builder Track 2 incident was a syntactically-specific failure (named identifier at named line). Both turned out to be transient gut_loader races in disguise. **Simple rule: retry once, always, before broadcasting.**
 
 **Canonical incident.** Wave 2A PR #19 — world-builder-p3s2 reported `[blocked]` on a claimed "33/34 farr_gauge test failure" before attempting the commit. Lead's `0f986ff` + gp-sys's `128af9f` had both passed the same pre-commit hook minutes earlier. After unblock, world-builder's commit `07c6ca8` passed the hook cleanly. The standalone run picked up an environment difference; the hook's controlled subset was clean.
 

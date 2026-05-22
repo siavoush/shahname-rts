@@ -173,3 +173,56 @@ static func cost_coin() -> int:
 	if typeof(coin_v) != TYPE_INT and typeof(coin_v) != TYPE_FLOAT:
 		return 0
 	return int(coin_v)
+
+
+## Read the Khaneh's population_capacity from BalanceData. Static parallel
+## of the instance method `_resolve_population_capacity()` — same defensive
+## fall-through pattern, but exposed at class scope so the build menu can
+## read the value without instantiating a Khaneh scene.
+##
+## Used by build_menu.gd to substitute the live BalanceData value into the
+## UI_BUILDING_KHANEH_TOOLTIP string at refresh-time. Drift-proof against
+## balance-engineer tuning — if BalanceData.bldg_khaneh.population_capacity
+## changes from 10, the tooltip updates automatically without a strings.csv
+## or test edit. Mirrors the cost_coin() static pattern that already drift-
+## proofs the cost-label surface.
+##
+## Returns the _FALLBACK_POPULATION_CAPACITY (5) when BalanceData / the
+## entry / the field is missing — same "config error shows a sensible
+## default in the UI" semantics as cost_coin(). The fallback value matches
+## the shipped balance.tres bldg_khaneh.population_capacity so a missing-
+## BalanceData boot shows "+5" (the same number a healthy boot shows),
+## eliminating a class of "tooltip says +N but actually +0" surprises in
+## degraded-config states.
+##
+## Why a non-zero fallback (vs cost_coin's 0): cost = 0 visually-screams
+## "config error" (free building) which lead immediately notices. Population
+## capacity = 0 is a SILENT bug (the tooltip just shows "+0" and the player
+## reads it as "doesn't grant any cap"). Better to fall through to the
+## current shipped value so a missing BalanceData doesn't silently lie.
+## Codified at session-6 close retro as §9.L9 (fallback-by-failure-
+## visibility-shape — ui-developer's contribution).
+##
+## Session-6 retro reverted from session-1 wave-1C placeholder (10) back
+## to spec value (5). Balance fine-tuning will happen later via AI-vs-AI
+## playtest; defer to spec until empirical signal arrives.
+const _FALLBACK_POPULATION_CAPACITY: int = 5
+
+
+static func population_capacity() -> int:
+	var path: String = Constants.PATH_BALANCE_DATA
+	if not FileAccess.file_exists(path):
+		return _FALLBACK_POPULATION_CAPACITY
+	var bd: Resource = load(path)
+	if bd == null:
+		return _FALLBACK_POPULATION_CAPACITY
+	var bldgs: Variant = bd.get(&"buildings")
+	if typeof(bldgs) != TYPE_DICTIONARY:
+		return _FALLBACK_POPULATION_CAPACITY
+	var stats: Variant = (bldgs as Dictionary).get(KIND_KHANEH, null)
+	if stats == null:
+		return _FALLBACK_POPULATION_CAPACITY
+	var cap_v: Variant = stats.get(&"population_capacity")
+	if typeof(cap_v) != TYPE_INT and typeof(cap_v) != TYPE_FLOAT:
+		return _FALLBACK_POPULATION_CAPACITY
+	return int(cap_v)

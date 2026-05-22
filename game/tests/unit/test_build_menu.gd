@@ -25,6 +25,9 @@ const BuildMenuScene: PackedScene = preload(
 const KargarScene: PackedScene = preload("res://scenes/units/kargar.tscn")
 const PiyadeScene: PackedScene = preload("res://scenes/units/piyade.tscn")
 const UnitScript: Script = preload("res://scripts/units/unit.gd")
+# BUG-B1.5: Khaneh static helper preload for drift-proof tooltip test.
+const KhanehScript: Script = preload(
+	"res://scripts/world/buildings/khaneh.gd")
 
 
 var _menu: Variant
@@ -624,3 +627,79 @@ func test_tirandazi_button_press_emits_build_placement_started_with_kind() -> vo
 		"Signal carries building_kind = &\"tirandazi\"")
 	assert_eq(ev[&"cost"], 17500,
 		"Signal carries cost_coin_x100 = 17500 (175 Coin × 100)")
+
+
+# ---------------------------------------------------------------------------
+# Tooltips for older buildings (Wave 2B fix-wave BUG-B1)
+# ---------------------------------------------------------------------------
+# Khaneh / Mazra'eh / Ma'dan were grandfathered without tooltips at the
+# tooltip-pattern introduction in Wave 2A. Live-test surfaced the asymmetry.
+# Each test asserts tooltip_text is non-empty AND contains the literal-first
+# Persian-romanized term — proves both the binary regen worked (tr() lookup
+# hits the string, not the literal key) AND the J3 framing landed (the
+# Persian compound is in the visible prose, not just in a code comment).
+
+func test_khaneh_button_tooltip_carries_j3_literal_first_framing() -> void:
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/KhanehButton")
+	assert_ne(btn.tooltip_text, "",
+		"KhanehButton tooltip_text must be non-empty (BUG-B1 fix)")
+	assert_true(btn.tooltip_text.contains("khaneh"),
+		"KhanehButton tooltip must carry the literal Persian 'khaneh' per J3 — got '%s'" % btn.tooltip_text)
+
+
+func test_khaneh_button_tooltip_substitutes_population_capacity_from_balance_data() -> void:
+	# BUG-B1.5 drift-proof guard: the tooltip uses %d substitution from
+	# Khaneh.population_capacity() rather than hardcoding the number. If
+	# BalanceData.bldg_khaneh.population_capacity is ever tuned and the
+	# tooltip surface is wired incorrectly (or the strings.csv reverts to
+	# a hardcoded literal), this test fails.
+	#
+	# §9.L6 read-from-canonical-source applied at the UI test layer:
+	# the test reads the canonical value (Khaneh.population_capacity())
+	# and asserts the tooltip displays that exact number. The test does
+	# NOT hardcode "10" — if the SSOT changes, the test follows
+	# automatically.
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/KhanehButton")
+	var canonical_pop_cap: int = KhanehScript.call(&"population_capacity")
+	# Format guard: confirm we're not asserting on a "0" or empty number
+	# (which would silently pass an empty contains() check).
+	assert_gt(canonical_pop_cap, 0,
+		"BalanceData.bldg_khaneh.population_capacity must be > 0 for the drift-proof test to be meaningful")
+	var expected_substring: String = "+%d population cap" % canonical_pop_cap
+	assert_true(btn.tooltip_text.contains(expected_substring),
+		"KhanehButton tooltip must display '%s' (from BalanceData), got '%s'" % [expected_substring, btn.tooltip_text])
+
+
+func test_mazraeh_button_tooltip_carries_j3_literal_first_framing() -> void:
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/MazraehButton")
+	assert_ne(btn.tooltip_text, "",
+		"MazraehButton tooltip_text must be non-empty (BUG-B1 fix)")
+	assert_true(btn.tooltip_text.contains("mazra'eh"),
+		"MazraehButton tooltip must carry the literal Persian 'mazra'eh' per J3 — got '%s'" % btn.tooltip_text)
+
+
+func test_madan_button_tooltip_carries_j3_literal_first_framing() -> void:
+	# Ma'dan's J3 framing is the highest-baggage of the three — the gloss
+	# 'mine' carries industrial-revolution register baggage that distorts
+	# the Pishdadian civilizational-invention framing (per madan.gd
+	# header lines ~25-32). Tooltip MUST carry the 'ore-source' / literal
+	# 'ma'dan' framing to honor the loremaster discipline.
+	_menu = _spawn_menu()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	var btn: Button = _menu.get_node(^"Root/Margin/VBox/MadanButton")
+	assert_ne(btn.tooltip_text, "",
+		"MadanButton tooltip_text must be non-empty (BUG-B1 fix)")
+	assert_true(btn.tooltip_text.contains("ma'dan"),
+		"MadanButton tooltip must carry the literal Persian 'ma'dan' per J3 — got '%s'" % btn.tooltip_text)
+	assert_true(btn.tooltip_text.contains("Ore-source"),
+		"MadanButton tooltip must lead with 'Ore-source' (NOT 'Mine') per J3 industrial-revolution baggage rule — got '%s'" % btn.tooltip_text)

@@ -114,15 +114,19 @@ func test_khaneh_static_cost_coin_matches_balance_data() -> void:
 
 
 func test_khaneh_resolves_population_capacity_from_balance_data() -> void:
-	# balance.tres declares bldg_khaneh.population_capacity = 10.
+	# balance.tres declares bldg_khaneh.population_capacity = 5 (per spec
+	# 01_CORE_MECHANICS.md §5; reverted from session-1 placeholder 10 at
+	# session-6 close retro pending AI-vs-AI playtest balance signal).
 	# Verified indirectly via the placement side-effect; the
 	# _resolve_population_capacity helper is exercised by the placement
 	# test below. Here we sanity-check it returns the expected value.
+	# TODO: drift-proof per §9.L8 — read canonical from Khaneh.population_capacity()
+	# instead of hardcoding 5. Future drift-proof-test sweep candidate.
 	_khaneh = _spawn_khaneh()
 	# Call the helper directly — it's instance-bound (reads self.kind).
 	var cap: int = _khaneh._resolve_population_capacity()
-	assert_eq(cap, 10,
-		"Khaneh._resolve_population_capacity() must return 10 "
+	assert_eq(cap, 5,
+		"Khaneh._resolve_population_capacity() must return 5 "
 		+ "(from balance.tres bldg_khaneh.population_capacity)")
 
 
@@ -160,8 +164,8 @@ func test_khaneh_material_is_tan_not_neutral_grey() -> void:
 
 func test_placement_bumps_population_cap_via_resource_system() -> void:
 	# When a Khaneh is placed (place_at fires), the team's
-	# population_cap should increase by population_capacity (10 from
-	# BalanceData). The chokepoint is ResourceSystem.change_population_cap.
+	# population_cap should increase by population_capacity (5 from
+	# BalanceData, per spec). The chokepoint is ResourceSystem.change_population_cap.
 	_khaneh = _spawn_khaneh(Constants.TEAM_IRAN)
 	var cap_before: int = ResourceSystem.population_cap_for(Constants.TEAM_IRAN)
 	# place_at is sanctioned on-tick context (it's called from
@@ -171,9 +175,9 @@ func test_placement_bumps_population_cap_via_resource_system() -> void:
 	_khaneh.place_at(Vector3.ZERO, Constants.TEAM_IRAN, 1)
 	SimClock._is_ticking = false
 	var cap_after: int = ResourceSystem.population_cap_for(Constants.TEAM_IRAN)
-	assert_eq(cap_after - cap_before, 10,
-		"Khaneh placement must bump population_cap by 10 "
-		+ "(BalanceData.buildings.khaneh.population_capacity)")
+	assert_eq(cap_after - cap_before, 5,
+		"Khaneh placement must bump population_cap by 5 "
+		+ "(BalanceData.buildings.khaneh.population_capacity, per spec)")
 
 
 func test_placement_bumps_only_owning_team_cap() -> void:

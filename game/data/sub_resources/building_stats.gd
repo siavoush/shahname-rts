@@ -43,9 +43,12 @@ class_name BuildingStats extends Resource
 ## Mazra'eh, Throne, etc.).
 ##
 ## Spec reference: 01_CORE_MECHANICS.md §5 — "Khaneh (house) — Population
-## cap +5 per building. 50 coin." Phase 3 session 1 wave 1C kickoff
-## (02f_PHASE_3_KICKOFF.md §3) opted for +10 as the placeholder starting
-## point pending playtest; balance-engineer tunes via balance.tres.
+## cap +5 per building. 50 coin." Session-6 close retro (2026-05-22):
+## reverted from session-1 wave-1C placeholder (+10) back to spec value
+## (+5). The +10 placeholder ("give workers more headroom while production
+## queues pending") was a workaround that's no longer needed; defer to
+## spec until AI-vs-AI playtest surfaces real balance signal.
+## balance-engineer tunes via balance.tres going forward.
 @export var population_capacity: int = 0
 
 ## Building's tier in the tech progression (1 = Tier 1 baseline, 2 = Tier 2,

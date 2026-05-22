@@ -523,3 +523,177 @@ func test_ghost_not_in_buildings_group() -> void:
 	assert_false(ghost.is_in_group(&"buildings"),
 		"Ghost MUST NOT be in the &\"buildings\" group — otherwise the "
 		+ "validity-overlap check would self-flag every position as invalid")
+
+
+# ===========================================================================
+# Wave 2B BUG-B2 + BUG-B2.5 fix-wave (2026-05-22) — affordability is part of
+# placement validity (ghost-color reflects it); confirm-click both-or-neither
+# ===========================================================================
+#
+# Live-test surfaced (2026-05-22): user couldn't afford a building but the
+# ghost stayed GREEN and clicking silently cancelled. Root cause: ghost
+# color was driven by geometric validity ONLY; affordability was a
+# silent-cancel gate at confirm-click. Fix: affordability is now part of
+# _is_placement_valid_at (composite) so the ghost goes RED when player
+# can't afford.
+#
+# Secondary fix (BUG-B2.5): the confirm-click affordability check was
+# coin-only; it now mirrors the BUG-A fix at UnitState_Constructing
+# (`dfa9a33`) with both-or-neither (coin AND grain). This is the SECOND
+# INSTANCE of the affordability-check-incomplete failure mode; the first
+# was BUG-A at the sim-side, second at this input-handler pre-screen.
+
+# --- Ghost-color affordability tests --------------------------------------
+
+func test_ghost_red_when_insufficient_coin() -> void:
+	# BEHAVIORAL BUG-B2: drain coin, enter placement mode for Khaneh
+	# (50 coin requirement). Ghost should report invalid (red).
+	_handler = _spawn_handler()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	# Drain coin to zero.
+	SimClock._is_ticking = true
+	var have: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_COIN, -have,
+		&"test_drain", null)
+	SimClock._is_ticking = false
+	# Enter placement (Khaneh, 5000 x100 coin).
+	EventBus.build_placement_started.emit(&"khaneh", 5000)
+	# Validity check at an empty terrain position — geometric VALID, but
+	# affordability INVALID → composite invalid.
+	var pos: Vector3 = Vector3(10.0, 0.0, 5.0)
+	assert_false(_handler._is_placement_valid_at(pos),
+		"BUG-B2: ghost-validity must be FALSE when coin insufficient. "
+		+ "Pre-fix-wave returned true here (geometric only) and the user "
+		+ "experienced silent click-cancel.")
+	# Sanity: geometric alone is true (we drained coin, not space).
+	assert_true(_handler._is_geometric_placement_valid_at(pos),
+		"sanity: geometric placement is valid (drain was coin, not space)")
+
+
+func test_ghost_red_when_insufficient_grain_atashkadeh() -> void:
+	# BEHAVIORAL BUG-B2: Atashkadeh costs 150 coin + 50 grain. Drain
+	# grain below 50; leave coin sufficient. Ghost should report invalid
+	# even though coin alone is fine. This is the Atashkadeh-class
+	# scenario that motivated both BUG-A (sim-side) and BUG-B2.5 (input
+	# pre-screen): the wave's dual-cost building exposed the gap.
+	_handler = _spawn_handler()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	# Drain grain to below 50 (Atashkadeh requirement).
+	SimClock._is_ticking = true
+	var have_grain: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN, -(have_grain - 4000),
+		&"test_drain", null)
+	SimClock._is_ticking = false
+	assert_eq(ResourceSystem.grain_x100_for(Constants.TEAM_IRAN), 4000,
+		"sanity: Iran grain drained to 4000 x100 (40 grain — below 50 "
+		+ "Atashkadeh requirement)")
+	# Enter placement (Atashkadeh, 15000 x100 coin).
+	EventBus.build_placement_started.emit(&"atashkadeh", 15000)
+	var pos: Vector3 = Vector3(10.0, 0.0, 5.0)
+	assert_false(_handler._is_placement_valid_at(pos),
+		"BUG-B2 + BUG-B2.5: ghost-validity must be FALSE when grain "
+		+ "insufficient (even though coin is sufficient). The handler "
+		+ "must read grain_cost from BalanceData since the EventBus "
+		+ "signal carries coin only.")
+	assert_true(_handler._is_geometric_placement_valid_at(pos),
+		"sanity: geometric placement is valid (drain was grain, not space)")
+
+
+func test_ghost_green_when_resources_sufficient_and_geometric_valid() -> void:
+	# BEHAVIORAL positive: with sufficient resources + geometric-valid
+	# position, the composite is_placement_valid_at returns true (ghost
+	# goes green). Confirms the fix doesn't false-positive when player
+	# CAN afford.
+	_handler = _spawn_handler()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	# Default: Iran starts with full coin + grain — sufficient for Khaneh.
+	EventBus.build_placement_started.emit(&"khaneh", 5000)
+	var pos: Vector3 = Vector3(10.0, 0.0, 5.0)
+	assert_true(_handler._is_placement_valid_at(pos),
+		"Composite validity is TRUE when geometry + affordability both pass")
+
+
+func test_ghost_red_when_geometric_invalid_regardless_of_affordability() -> void:
+	# BEHAVIORAL: geometric invalidity wins over affordability — even if
+	# the player can afford, placing over a building stays invalid.
+	# Confirms the AND (not OR) composition of the two checks.
+	_handler = _spawn_handler()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	# Place an existing Khaneh so the position is geometrically invalid.
+	var existing: Variant = preload(
+		"res://scenes/world/buildings/khaneh.tscn").instantiate()
+	add_child_autofree(existing)
+	existing.global_position = Vector3(10.0, 0.0, 5.0)
+	# Sufficient resources, but the position is overlap-invalid.
+	EventBus.build_placement_started.emit(&"khaneh", 5000)
+	assert_false(_handler._is_placement_valid_at(Vector3(10.0, 0.0, 5.0)),
+		"Composite validity is FALSE on geometric overlap even when "
+		+ "resources are sufficient — geometric AND affordability both "
+		+ "must pass.")
+
+
+# --- Confirm-click both-or-neither BUG-B2.5 tests --------------------------
+
+func test_confirm_click_with_insufficient_grain_cancels_placement() -> void:
+	# BEHAVIORAL BUG-B2.5: Atashkadeh placement with sufficient coin but
+	# insufficient grain → confirm-click cancels placement. Pre-fix-wave
+	# the coin check passed and the click was accepted; UnitState_Constructing
+	# downstream would then refuse construction (BUG-A both-or-neither),
+	# producing a silent failure. Now the BuildPlacementHandler pre-screen
+	# catches it immediately.
+	_handler = _spawn_handler()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	# Drain grain below 50.
+	SimClock._is_ticking = true
+	var have_grain: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN, -(have_grain - 4000),
+		&"test_drain", null)
+	SimClock._is_ticking = false
+	# Confirm Atashkadeh placement.
+	EventBus.build_placement_started.emit(&"atashkadeh", 15000)
+	_handler.process_confirm_click_hit(_terrain_hit(Vector3(10.0, 0.0, 5.0)))
+	assert_false(_handler.is_placement_active(),
+		"BUG-B2.5: Insufficient Grain at confirm cancels placement "
+		+ "(both-or-neither affordability — first instance was BUG-A at "
+		+ "UnitState_Constructing.dfa9a33; second is this BuildPlacementHandler "
+		+ "fix). Kargar stays Idle.")
+	assert_eq(_kargar.fsm.current.id, &"idle",
+		"Kargar stays Idle when placement is cancelled for insufficient grain")
+
+
+func test_atashkadeh_confirm_click_dispatches_when_both_resources_sufficient() -> void:
+	# BEHAVIORAL positive: with default Iran starting resources (sufficient
+	# coin + grain), Atashkadeh placement dispatches the construct command.
+	# Regression-locks that the BUG-B2.5 fix doesn't false-reject affordable
+	# Atashkadeh placements.
+	_handler = _spawn_handler()
+	_kargar = _spawn_kargar()
+	SelectionManager.select_only(_kargar)
+	# Default Iran starting resources cover 150 coin + 50 grain.
+	assert_true(
+		ResourceSystem.coin_x100_for(Constants.TEAM_IRAN) >= 15000,
+		"sanity: Iran starts with >= 150 Coin")
+	assert_true(
+		ResourceSystem.grain_x100_for(Constants.TEAM_IRAN) >= 5000,
+		"sanity: Iran starts with >= 50 Grain")
+	EventBus.build_placement_started.emit(&"atashkadeh", 15000)
+	_handler.process_confirm_click_hit(_terrain_hit(Vector3(10.0, 0.0, 5.0)))
+	# Placement consumed (mode exited) + worker dispatched.
+	assert_false(_handler.is_placement_active(),
+		"Placement mode exits when dispatch fires")
+	# Unit.replace_command queues the transition via _pending_id; actual
+	# swap happens on the next fsm.tick. Drain it (same pattern as
+	# test_confirm_click_dispatches_command_construct_to_kargar).
+	SimClock._is_ticking = true
+	_kargar.fsm.tick(SimClock.SIM_DT)
+	SimClock._is_ticking = false
+	assert_eq(_kargar.fsm.current.id, &"constructing",
+		"Kargar transitions to Constructing on successful Atashkadeh dispatch")
