@@ -54,11 +54,31 @@ func test_sim_hz_and_dt_are_30hz() -> void:
 
 
 func test_phase_order_matches_contract() -> void:
+	# Wave 3A.0 (2026-05-22): &"fog_update" inserted between &"input" and &"ai"
+	# per FOG_DATA_CONTRACT §4 + SIM_CONTRACT §2 v1.5.0 addendum. At Wave 3A.0
+	# the phase fires but no handler is connected (FogSystem stub).
 	var expected: Array[StringName] = [
-		&"input", &"ai", &"movement", &"spatial_rebuild",
+		&"input", &"fog_update", &"ai", &"movement", &"spatial_rebuild",
 		&"combat", &"farr", &"cleanup",
 	]
 	assert_eq(SimClock.PHASES, expected, "Phase order locked by Sim Contract §1.2/§2")
+
+
+func test_fog_update_phase_between_input_and_ai() -> void:
+	# Positional assertion per Wave 3A.0 Track 3 brief: fog_update MUST sit
+	# between input and ai so vision recomputes before AI sees the world.
+	# Per FOG_DATA_CONTRACT §4 phase-ordering: AI reads visibility AFTER
+	# FogSystem updates _currently_visible.
+	var input_idx: int = SimClock.PHASES.find(&"input")
+	var fog_idx: int = SimClock.PHASES.find(&"fog_update")
+	var ai_idx: int = SimClock.PHASES.find(&"ai")
+	assert_ne(input_idx, -1, "input phase must be present in SimClock.PHASES")
+	assert_ne(fog_idx, -1, "fog_update phase must be present in SimClock.PHASES (Wave 3A.0)")
+	assert_ne(ai_idx, -1, "ai phase must be present in SimClock.PHASES")
+	assert_eq(fog_idx, input_idx + 1,
+		"fog_update must immediately follow input — vision recomputes pre-AI")
+	assert_eq(fog_idx, ai_idx - 1,
+		"fog_update must immediately precede ai — AI reads fresh visibility")
 
 
 # -- is_ticking semantics -----------------------------------------------------

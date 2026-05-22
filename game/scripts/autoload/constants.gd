@@ -28,6 +28,7 @@ extends Node
 # consumers don't typo phase strings — type-checked at the call site.
 
 const PHASE_INPUT: StringName = &"input"
+const PHASE_FOG_UPDATE: StringName = &"fog_update"
 const PHASE_AI: StringName = &"ai"
 const PHASE_MOVEMENT: StringName = &"movement"
 const PHASE_SPATIAL_REBUILD: StringName = &"spatial_rebuild"
@@ -38,8 +39,11 @@ const PHASE_CLEANUP: StringName = &"cleanup"
 # Convenience array in canonical order. SimClock.PHASES is the SSOT; this
 # constant exists for consumers that want to iterate without taking a
 # dependency on SimClock at parse time.
+# Wave 3A.0 (2026-05-22): PHASE_FOG_UPDATE inserted between PHASE_INPUT and
+# PHASE_AI per FOG_DATA_CONTRACT §4 + SIM_CONTRACT §2 v1.5.0 addendum.
+# test_constants.gd:24 asserts this array equals SimClock.PHASES verbatim.
 const PHASES: Array[StringName] = [
-	PHASE_INPUT, PHASE_AI, PHASE_MOVEMENT, PHASE_SPATIAL_REBUILD,
+	PHASE_INPUT, PHASE_FOG_UPDATE, PHASE_AI, PHASE_MOVEMENT, PHASE_SPATIAL_REBUILD,
 	PHASE_COMBAT, PHASE_FARR, PHASE_CLEANUP,
 ]
 

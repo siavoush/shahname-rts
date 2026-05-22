@@ -151,12 +151,12 @@ func test_advance_ticks_uses_sim_phase_signals() -> void:
 	EventBus.sim_phase.connect(capture)
 	_h.advance_ticks(1)
 	EventBus.sim_phase.disconnect(capture)
-	# Seven phases per tick.
-	assert_eq(phases_seen.size(), 7,
-		"advance_ticks(1) must emit 7 sim_phase signals (one per pipeline phase)")
+	# Phase count must match SimClock.PHASES — dynamic so adding phases doesn't break this.
+	assert_eq(phases_seen.size(), SimClock.PHASES.size(),
+		"advance_ticks(1) must emit one sim_phase signal per pipeline phase")
 	# First and last phases.
 	assert_eq(phases_seen[0], &"input", "First phase must be 'input'")
-	assert_eq(phases_seen[6], &"cleanup", "Last phase must be 'cleanup'")
+	assert_eq(phases_seen[-1], &"cleanup", "Last phase must be 'cleanup'")
 
 
 # ---------------------------------------------------------------------------

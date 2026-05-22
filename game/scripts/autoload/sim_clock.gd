@@ -21,8 +21,12 @@ const SIM_HZ: int = 30
 const SIM_DT: float = 1.0 / 30.0
 
 # Canonical phase order, locked by Sim Contract §2.
+# Wave 3A.0 (2026-05-22): &"fog_update" inserted between &"input" and &"ai"
+# per FOG_DATA_CONTRACT.md §4. At Wave 3A.0 the phase fires but no handler
+# is connected (FogSystem stub) — no observable behavior change. At Wave 3A.5
+# FogSystem connects + recomputes _currently_visible per tick before AI reads.
 const PHASES: Array[StringName] = [
-	&"input", &"ai", &"movement", &"spatial_rebuild",
+	&"input", &"fog_update", &"ai", &"movement", &"spatial_rebuild",
 	&"combat", &"farr", &"cleanup",
 ]
 

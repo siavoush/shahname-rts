@@ -27,6 +27,7 @@ func test_phases_array_matches_sim_clock() -> void:
 
 func test_individual_phase_constants_are_correct() -> void:
 	assert_eq(Constants.PHASE_INPUT, &"input")
+	assert_eq(Constants.PHASE_FOG_UPDATE, &"fog_update")
 	assert_eq(Constants.PHASE_AI, &"ai")
 	assert_eq(Constants.PHASE_MOVEMENT, &"movement")
 	assert_eq(Constants.PHASE_SPATIAL_REBUILD, &"spatial_rebuild")
