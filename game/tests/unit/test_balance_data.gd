@@ -808,3 +808,104 @@ func test_fog_atashkadeh_and_sarbaz_sight_match_spec() -> void:
 		"fog.sight_atashkadeh_cells must be 2 per FOG_DATA_CONTRACT §2.2")
 	assert_eq(sarbaz, 3,
 		"fog.sight_sarbazkhane_cells must be 3 per FOG_DATA_CONTRACT §2.2")
+
+
+# ---------------------------------------------------------------------------
+# Wave 3A.6 — training schema sanity assertions (H3 first-exercise dogfood)
+# ---------------------------------------------------------------------------
+# §9.H3: first-exercise discipline — tests validate the 9 new BuildingStats
+# fields (3 producer × 3 fields). Typo-bait surface: train_savar_cost_coin vs
+# train_savar_coin_cost. Cross-composition: Sarbaz-khaneh has piyade fields
+# populated, savar+kamandar fields zero; similarly for the other producers.
+
+func test_training_schema_sarbaz_khaneh_piyade_fields_populated() -> void:
+	# Sarbaz-khaneh trains Piyade; costs must be non-zero, dwell must be non-zero.
+	# Values locked per balance-engineer Wave 3A.6: coin=50, grain=10, dwell=90.
+	# (aligned with UnitStats.coin_cost / grain_cost; brief dwell retained)
+	assert_not_null(_balance)
+	var bldgs: Dictionary = _balance.get(&"buildings") as Dictionary
+	assert_true(bldgs.has(&"sarbaz_khaneh"), "buildings dict must have sarbaz_khaneh")
+	var bldg: Resource = bldgs.get(&"sarbaz_khaneh") as Resource
+	assert_not_null(bldg)
+	var coin: int = int(bldg.get(&"train_piyade_cost_coin"))
+	var grain: int = int(bldg.get(&"train_piyade_cost_grain"))
+	var dwell: int = int(bldg.get(&"train_piyade_dwell_ticks"))
+	assert_gt(coin, 0, "bldg_sarbaz_khaneh.train_piyade_cost_coin must be > 0")
+	assert_gt(grain, 0, "bldg_sarbaz_khaneh.train_piyade_cost_grain must be > 0")
+	assert_gt(dwell, 0, "bldg_sarbaz_khaneh.train_piyade_dwell_ticks must be > 0")
+	assert_eq(coin, 50, "bldg_sarbaz_khaneh.train_piyade_cost_coin must be 50")
+	assert_eq(grain, 10, "bldg_sarbaz_khaneh.train_piyade_cost_grain must be 10")
+	assert_eq(dwell, 90, "bldg_sarbaz_khaneh.train_piyade_dwell_ticks must be 90 (3s @ 30Hz)")
+
+
+func test_training_schema_sowari_khaneh_savar_fields_populated() -> void:
+	# Sowari-khaneh trains Savar; coin=75, grain=20, dwell=150 (5s @ 30Hz).
+	assert_not_null(_balance)
+	var bldgs: Dictionary = _balance.get(&"buildings") as Dictionary
+	assert_true(bldgs.has(&"sowari_khaneh"), "buildings dict must have sowari_khaneh")
+	var bldg: Resource = bldgs.get(&"sowari_khaneh") as Resource
+	assert_not_null(bldg)
+	var coin: int = int(bldg.get(&"train_savar_cost_coin"))
+	var grain: int = int(bldg.get(&"train_savar_cost_grain"))
+	var dwell: int = int(bldg.get(&"train_savar_dwell_ticks"))
+	assert_gt(coin, 0, "bldg_sowari_khaneh.train_savar_cost_coin must be > 0")
+	assert_gt(grain, 0, "bldg_sowari_khaneh.train_savar_cost_grain must be > 0")
+	assert_gt(dwell, 0, "bldg_sowari_khaneh.train_savar_dwell_ticks must be > 0")
+	assert_eq(coin, 75, "bldg_sowari_khaneh.train_savar_cost_coin must be 75")
+	assert_eq(grain, 20, "bldg_sowari_khaneh.train_savar_cost_grain must be 20")
+	assert_eq(dwell, 150, "bldg_sowari_khaneh.train_savar_dwell_ticks must be 150 (5s @ 30Hz)")
+
+
+func test_training_schema_tirandazi_kamandar_fields_populated() -> void:
+	# Tirandazi trains Kamandar; coin=60, grain=15, dwell=120 (4s @ 30Hz).
+	assert_not_null(_balance)
+	var bldgs: Dictionary = _balance.get(&"buildings") as Dictionary
+	assert_true(bldgs.has(&"tirandazi"), "buildings dict must have tirandazi")
+	var bldg: Resource = bldgs.get(&"tirandazi") as Resource
+	assert_not_null(bldg)
+	var coin: int = int(bldg.get(&"train_kamandar_cost_coin"))
+	var grain: int = int(bldg.get(&"train_kamandar_cost_grain"))
+	var dwell: int = int(bldg.get(&"train_kamandar_dwell_ticks"))
+	assert_gt(coin, 0, "bldg_tirandazi.train_kamandar_cost_coin must be > 0")
+	assert_gt(grain, 0, "bldg_tirandazi.train_kamandar_cost_grain must be > 0")
+	assert_gt(dwell, 0, "bldg_tirandazi.train_kamandar_dwell_ticks must be > 0")
+	assert_eq(coin, 60, "bldg_tirandazi.train_kamandar_cost_coin must be 60")
+	assert_eq(grain, 15, "bldg_tirandazi.train_kamandar_cost_grain must be 15")
+	assert_eq(dwell, 120, "bldg_tirandazi.train_kamandar_dwell_ticks must be 120 (4s @ 30Hz)")
+
+
+func test_training_schema_cross_composition_sarbaz_has_no_savar_fields() -> void:
+	# H3 typo-bait guard: Sarbaz-khaneh must have ZERO savar/kamandar train values.
+	# If someone accidentally populated cross-unit fields, this catches it.
+	assert_not_null(_balance)
+	var bldgs: Dictionary = _balance.get(&"buildings") as Dictionary
+	var bldg: Resource = bldgs.get(&"sarbaz_khaneh") as Resource
+	assert_not_null(bldg)
+	assert_eq(int(bldg.get(&"train_savar_cost_coin")), 0,
+		"bldg_sarbaz_khaneh.train_savar_cost_coin must be 0 (cross-composition guard)")
+	assert_eq(int(bldg.get(&"train_kamandar_cost_coin")), 0,
+		"bldg_sarbaz_khaneh.train_kamandar_cost_coin must be 0 (cross-composition guard)")
+
+
+func test_training_schema_cross_composition_sowari_has_no_piyade_fields() -> void:
+	# Sowari-khaneh must have ZERO piyade/kamandar train values.
+	assert_not_null(_balance)
+	var bldgs: Dictionary = _balance.get(&"buildings") as Dictionary
+	var bldg: Resource = bldgs.get(&"sowari_khaneh") as Resource
+	assert_not_null(bldg)
+	assert_eq(int(bldg.get(&"train_piyade_cost_coin")), 0,
+		"bldg_sowari_khaneh.train_piyade_cost_coin must be 0 (cross-composition guard)")
+	assert_eq(int(bldg.get(&"train_kamandar_cost_coin")), 0,
+		"bldg_sowari_khaneh.train_kamandar_cost_coin must be 0 (cross-composition guard)")
+
+
+func test_training_schema_cross_composition_tirandazi_has_no_savar_fields() -> void:
+	# Tirandazi must have ZERO piyade/savar train values.
+	assert_not_null(_balance)
+	var bldgs: Dictionary = _balance.get(&"buildings") as Dictionary
+	var bldg: Resource = bldgs.get(&"tirandazi") as Resource
+	assert_not_null(bldg)
+	assert_eq(int(bldg.get(&"train_piyade_cost_coin")), 0,
+		"bldg_tirandazi.train_piyade_cost_coin must be 0 (cross-composition guard)")
+	assert_eq(int(bldg.get(&"train_savar_cost_coin")), 0,
+		"bldg_tirandazi.train_savar_cost_coin must be 0 (cross-composition guard)")
