@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.28.0
+version: 0.29.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -19,7 +19,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
 last_updated: 2026-05-22
-# bumped to v0.28.0 — Phase 3 session 6 Wave 2B close: Iran Tier-2 entry shipped (Sowari-khaneh + Tirandazi as cavalry + archery sub-slots under identity-bearing institutional anchor-category). 8 commits across 6 implementation tracks + agent-registry v1.0.0 + §9.J2 SSOT refactor. First dogfood of session-5 H3 + L6 + D9-extension + J4-refined rules — all four applied cleanly. 5 L1 spec-wins instances across wave (now multi-agent pattern). 0 Pitfall #7 incidents through 8-commit multi-agent sequence. Lead-side SendMessage routing-failure canonical incident → docs/AGENT_REGISTRY.md v1.0.0.
+# bumped to v0.29.0 — Phase 3 session 6 close retro: 5-agent SendMessage synthesis from Wave 2B + fix-wave. 9 active §9 rule changes (L7 affordability-sweep + L8 drift-proof UI numeric defaults + L9 fallback-by-failure-visibility-shape + D7(b) workspace-observation + M3 error-specificity refinement + E1 parallel-WIP addendum + F4 value-choice footnote + G1 idle-availability heartbeat + L1 multi-agent codification). §9.J cluster opening claim (loremaster project-level discipline). Khaneh +5 revert (spec-aligned; balance fine-tuning later via AI-vs-AI playtest). Fix-wave commits recovered post-merge after PR #30 routing failure (unpushed local branch).
 ---
 
 # Architecture — Target Shape and Build State
@@ -286,6 +286,57 @@ game/
 - Spec said X; we built Y; reason: Z
 - Subsystem A took Phase N+1 (slipped one phase), reason: ...
 - Contract V was bumped from 1.x.0 to 1.y.0 during implementation; key change: ...
+
+### v0.29.0 — Phase 3 session 6 close retro: 4 new §9 rules + 4 refinements + L1 multi-agent codification + Khaneh +5 revert + fix-wave recovery (2026-05-22)
+
+Phase 3 session 6 close retro ships as a coherent process PR consolidating 5 persistent-agent SendMessage reflections on Wave 2B + fix-wave learnings. Five substantive reflections from `gp-sys-p3s3`, `world-builder-p3s2`, `balance-engineer-p3s3`, `ui-developer-p3s3`, `shahnameh-loremaster-p3s5` — all routed via SendMessage to persistent instances (zero `-retro` fresh-spawn drift; lesson from session-4 internalized + session-5 validated empirically). **Second empirical validation of facts-not-diagnosis retro discipline** — agents independently produced detailed concrete rule proposals; lead synthesized without pre-framing.
+
+**What shipped (process artifacts):**
+
+- **STUDIO_PROCESS.md v2.1.2 → v2.2.0 (MINOR — additive).** 9 active §9 changes (4 new rules + 4 refinements + L1 recodification) + §9.J cluster opening claim + cluster TOC update (§9.L cluster 7 → 10; total 54 → 57 rules). All changes with canonical-incident citations + per-agent attribution + provenance notes.
+- **Khaneh +5 revert** (`026ad47` + `594a9e1`). spec/BalanceData/code/test/ARCH §2 row all reconciled to spec value (+5). Reverted from session-1 wave-1C placeholder (+10) per user direction at session-6 close: *"balancing will get a real test once we put a touran and iran AI to build and fight together; let's change it to 5 for now, keeping in mind that balance fine tuning will be later."* Drift-proof tooltip (BUG-B1.5 `29bd24e`) auto-syncs against new value — first real-tuning validation of the drift-proof discipline.
+- **Fix-wave recovery** (`520f83c`). Wave 2B PR #30 was merged against remote branch state (`261e5bc`) but 4 fix-wave commits (`5082f21` BUG-B2 + `8b3ca69` BUG-B1 + `dc4f87d` spec-reconciliation + `29bd24e` BUG-B1.5) existed only on local branch — never pushed. User live-tested local state + approved merge; merge took remote state, stranding fix-wave commits. Merged forward into session-6 retro branch to recover; lesson captured: lead routing failure on git-push side (not SendMessage side this time).
+- **ARCHITECTURE.md v0.28.0 → v0.29.0** — this §6 entry + frontmatter.
+- **STUDIO_PROCESS_HISTORY.md** — chronological archaeology cluster for session-6 close added.
+- **STUDIO_PROCESS_SYNC_LOG.md** — Phase 3 session 6 entry covering Wave 2B + fix-wave + close retro.
+
+**Key process learnings captured (load-bearing):**
+
+1. **L1 spec-wins is now empirically multi-agent (N=5 across 2 domains).** Balance-engineer's 3 instances + ui-developer's 2 instances. Pattern lifted from balance-engineer-particular signature to project-wide discipline with bounded scope (D9 Step 2 active + spec-facing-text passive; NOT proactive cross-agent sweeping). Brief-time framing should make L1 expectation explicit going forward.
+
+2. **Drift-proof default pattern N=3 inverts the prior default.** Cost-label across 7 buildings + Atashkadeh dual-cost + Khaneh pop-cap. After N=3 the default flips: `%d` + canonical-helper read becomes default; hardcoded literal requires justification. Test-discipline pair codified: tests assert rendered UI contains substituted-value-read-from-canonical-helper, NOT hardcoded literal in test fixture.
+
+3. **Cross-track WIP-on-disk is a real race surface in shared-tree mode.** N=2 instances in Wave 2B alone (Track 2 vs Track 4 @onready refs; BUG-B1 vs BUG-B2 signal-signature test). Discipline-side fix codified (D7(b) + E1 addendum + M3 retry-anyway). Tooling-side fix (Agent isolation: worktree runtime ratification OR scoped pre-commit hook) deferred to future infrastructure work.
+
+4. **The discipline cost is wall-clock wait, not work-redo.** ui-developer's observation at the BUG-B1 [blocked] period: held 5 staged files in working tree across the wait window; recovery after gp-sys's BUG-B2 ship was literally `git pull && retry commit` — 30 seconds. **Sequential coordination is expensive in latency, cheap in actual work** — opposite of what surface impatience suggests.
+
+5. **L9 fallback-by-failure-visibility-shape refines the defensive-fallback pattern.** Not "always zero" — choose by what player sees when fallback fires. Silent-plausible defaults are misinformation hazards. Document the choice in code comment on the fallback constant.
+
+6. **Affordability-sweep at sim-side chokepoint = cross-layer audit obligation (N=2 → codify).** BUG-A (Wave 2A.5) + BUG-B2.5 (Wave 2B) are the same shape: sim-side chokepoint gains affordability dimension; input-handler pre-screen layer remains coin-only; silent-fail at user click. gp-sys's meta-finding: *"had this rule existed at dfa9a33, BuildPlacementHandler would have been swept in the BUG-A fix-wave, and BUG-B2.5 wouldn't have surfaced separately."*
+
+7. **3-month invisible spec/BalanceData divergence detected via L1 tooltip-writing.** Khaneh +5 in spec / +10 in BalanceData since session-1 wave-1C. The L1 discipline incidentally functions as a divergence-discovery tool when applied at spec-facing-text-writing time. Recommendation captured: phased plan (one-off audit at Phase-3 close OR Phase-4 startup → linter tooling-task session-7+).
+
+8. **§9.J cluster opening claim (loremaster project-level discipline):** *"A loremaster cultural-claim that asserts X about the shipped mechanic is a load-bearing contract on X's implementation. Verify-at-HEAD before dispatch close, not at live-test."* Three waves of empirical validation (Atashkadeh / Sowari + Tirandazi / taxonomy doc).
+
+**Watchlist tracking (N=2 each, await N=3 graduation):**
+- §9.J2 trichotomy (clone-check / slot-fit-verify / taxonomy-growth-required) — Phase-4 Dadgah expected N=3 trigger.
+- §9.J3 baggage-intensity annotation (sowari low-medium + tir-andazi medium-high) — Phase-4 Dadgah parallel trigger.
+- §9.L5 N=5 base-virtual-hoist watchlist — defer with 2 explicit signals (semantic divergence + polymorphic-consumer pressure).
+
+**Carry-forwards routed to session 7:**
+
+- **Wave 3A (fog-of-war data layer — world-builder)** is the immediate next wave per session-6 kickoff prioritization (2B → 3A → 3B).
+- **Wave 3B (DummyAIController — ai-engineer, Task #71)** after 3A scaffolded.
+- **Loremaster economic-resources research** (5 central resources, phase-by-phase expansion proposal) — routed to `QUESTIONS_FOR_DESIGN.md` for design-chat ratification.
+- **Spec↔BalanceData divergence audit pass** (one-off) candidate for Phase-3-close OR Phase-4-startup hygiene. Linter as session-7+ tooling task.
+- **AGENT_REGISTRY.md naming-convention codification** + agent-def mirrors of new §9 rules deferred from this PR — small follow-up commits.
+- **load_steps counter investigation** (balance-engineer's busywork flag) — verify whether Godot 4.6 recalculates on load.
+- **Drift-proof test-refactor sweep candidate** — 3 test files hardcode population_capacity for Khaneh tests; same drift-prone pattern §9.L8 codified for UI. Future-work.
+- **Arash-the-Archer / Arash Kamangir treatment** — deferred to potential Phase-5 hero wave or Yadgar mechanic per user decision after chronology refresher.
+
+**Meta-observation: protocol-on-protocol discipline.** Session 5 retro codified H3 + L6 + J4-refined + D9-extension. Session 6 dogfooded all 4 cleanly + surfaced new gaps (L7 affordability-sweep, D7(b) workspace-observation, M3 error-specificity, etc.). The process IS learning to improve itself — each session's process output becomes the next session's substrate. Phase 3 ships through session 6 with the discipline-followability hypothesis (Test 2 from session-5 audit) holding under multi-agent commit-race + fix-wave pressure.
+
+---
 
 ### v0.28.0 — Phase 3 session 6 Wave 2B close: Iran Tier-2 entry — Sowari-khaneh + Tirandazi (cavalry + archery sub-slots) (2026-05-22)
 

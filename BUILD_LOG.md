@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-22 (Phase 3 session 6 Wave 2B close — Iran Tier-2 entry)
+last_updated: 2026-05-22 (Phase 3 session 6 close retro — 9 §9 changes + Khaneh +5)
 ---
 
 # Build Log
@@ -33,6 +33,60 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 ```
 
 ## Entries
+
+## 2026-05-22 — Phase 3 session 6 close retro: 9 §9 changes + Khaneh +5 revert + fix-wave recovery
+
+**Branch:** `feat/session-6-close-retro` (this PR).
+
+**Driver:** lead synthesizing 5 persistent-instance SendMessage retro reflections (gp-sys-p3s3 + world-builder-p3s2 + balance-engineer-p3s3 + ui-developer-p3s3 + shahnameh-loremaster-p3s5). Facts-not-diagnosis discipline applied; **2nd empirical validation** of the discipline (memory `feedback_retro_facts_not_diagnosis.md`). Agents independently produced concrete rule shapes; lead synthesized without pre-framing.
+
+**Shipped:**
+
+- **STUDIO_PROCESS.md v2.1.2 → v2.2.0 (MINOR additive).** 9 active §9 changes (4 NEW rules + 4 refinements + L1 recodification) + §9.J cluster opening claim. Cluster TOC §9.L 7 → 10, total 54 → 57 rules.
+- **Khaneh +5 revert** (`026ad47` + `594a9e1`) — spec/BalanceData/code/test/ARCH §2 row reconciled. Defer to spec until AI-vs-AI playtest surfaces real balance signal.
+- **Fix-wave recovery merge** (`520f83c`) — Wave 2B PR #30 merged remote-state without 4 unpushed local fix-wave commits. Recovered + flagged for retro.
+- **ARCHITECTURE.md v0.28.0 → v0.29.0** — §6 entry with full retro narrative + carry-forwards.
+- **STUDIO_PROCESS_HISTORY.md** — chronological archaeology cluster appended.
+- **STUDIO_PROCESS_SYNC_LOG.md** — Phase 3 session 6 entry.
+
+**Key §9 changes (see ARCHITECTURE.md §6 v0.29.0 for full retro narrative):**
+
+- §9.L7 Affordability-sweep — sim-side chokepoint addition triggers input-handler pre-screen audit (gp-sys; N=2 canonical incidents BUG-A + BUG-B2.5).
+- §9.L8 Drift-proof UI numeric defaults — `%d` + canonical-helper read becomes default; hardcoded literal requires justification (ui-developer; N=3 instances).
+- §9.L9 Fallback-by-failure-visibility-shape — fallback constants must FAIL-VISIBLY or MATCH-SHIPPED; silent-plausible defaults are misinformation hazards (ui-developer; pairs with L8).
+- §9.D7 split (D7a broadcast-before-stash + D7b broadcast-on-observe-cross-track-WIP) — no silent coexistence with cross-track WIP (ui-developer + world-builder; N=2 instances).
+- §9.M3 refinement — error-specificity is NOT a reliable real-vs-transient signal; retry once before broadcasting (world-builder).
+- §9.E1 addendum — parallel WIP visible in working tree; cross-track failure refs treated as candidate transients (N=2).
+- §9.F4 footnote — Pitfall #15 regression test value-choice (world-builder Tirandazi Y=1.0 guard refinement).
+- §9.G1 addendum — agent-side idle-availability heartbeat (>2h wall-clock); catches phantom-inbox without user-bridge friction (gp-sys).
+- §9.L1 multi-agent codification — N=5 instances across 2 domains; lifted from balance-engineer-particular to project-wide with bounded scope (active D9 Step 2 + passive spec-facing-text; NOT proactive cross-agent sweeping).
+- §9.J cluster opening — "cultural-claim asserts X about shipped mechanic = load-bearing contract on X's implementation; verify-at-HEAD before dispatch close" (loremaster).
+
+**Did not ship:**
+- AGENT_REGISTRY.md naming-convention codification (small follow-up).
+- Agent-def mirrors of new §9 rules (small follow-up).
+- Spec↔BalanceData one-off audit (Phase-3-close OR Phase-4-startup hygiene candidate).
+- load_steps counter investigation (balance-engineer flag).
+- Drift-proof test-refactor sweep (per L8 — 3 test files hardcode Khaneh pop cap).
+
+**State for next session (session 7):**
+
+- **Phase 3 process arc closes clean.** 6 session-close retros (sessions 1-6); accumulating discipline holds at multi-agent commit-race scale.
+- **Carry-forward queue:** Wave 3A (fog-of-war — world-builder) is immediate next per user prioritization; Wave 3B (DummyAIController) follows; Wave 2C (Qal'eh + Tier-2 gateway logic) at lead's call.
+- **Loremaster economic-resources research** queued for `QUESTIONS_FOR_DESIGN.md` design-chat consideration.
+- **Memory files updated:** none new this session (prior `feedback_retro_facts_not_diagnosis.md` + `feedback_lead_sendmessage_routing.md` both validated empirically).
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** loremaster's 5-resource economic research routes here as forward-research for design-chat ratification (Phase 4 horses / Phase 5 Turan asymmetric / Phase 6 lapis-prestige phased proposal).
+
+**Decisions made independently (per CLAUDE.md Escalation rule #1):**
+- Khaneh population_capacity 10 → 5 reconciliation (per user explicit direction).
+- §9.L7 numbering for affordability-sweep (gp-sys proposed L7 OR L6-extension; lead chose L7 standalone).
+- §9.L8 / L9 paired naming (drift-proof + fallback-visibility; ui-developer's proposed pair).
+- §9.D7 split syntax (D7(a) + D7(b)).
+- L1 multi-agent codification scope-bounding (active + passive triggers; NOT proactive sweeping).
+- Loremaster project-level discipline placement at §9.J cluster opening (vs MANIFESTO.md or ANCHOR_CATEGORY_TAXONOMY.md).
+
+---
 
 ## 2026-05-22 — Phase 3 session 6 Wave 2B close: Iran Tier-2 entry (Sowari-khaneh + Tirandazi)
 
