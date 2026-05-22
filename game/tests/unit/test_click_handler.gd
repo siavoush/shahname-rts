@@ -644,3 +644,81 @@ func test_right_click_on_mine_with_multi_kargar_dispatches_to_all() -> void:
 			"each Kargar in the selection gets exactly one gather command")
 		assert_eq(k._last_replace_kind, Constants.COMMAND_GATHER)
 		assert_eq(k._last_replace_payload[&"target_node"], mine)
+
+
+# ===========================================================================
+# Wave 3A.6 Track 2 — owned-producer-building click → ProductionPanel
+# ===========================================================================
+
+# Minimal producer-building fake. Mirrors the Building base schema fields
+# the click_handler ancestor lookup inspects.
+class FakeProducerBuilding extends Node3D:
+	var kind: StringName = &"sarbaz_khaneh"
+	var team: int = 1  # Constants.TEAM_IRAN
+	var produces: Array = [&"piyade"]
+	var is_complete: bool = true
+
+
+# Helper — build a producer with a StaticBody3D child (the click-target
+# collider shape, matching the Building.tscn composition per BUG-07 lesson).
+func _make_producer_with_collider() -> Array:
+	var building: FakeProducerBuilding = FakeProducerBuilding.new()
+	add_child_autofree(building)
+	var sb: StaticBody3D = StaticBody3D.new()
+	building.add_child(sb)
+	return [building, sb]
+
+
+func test_left_click_on_owned_producer_does_not_deselect() -> void:
+	var u: FakeUnit = _make_unit(7)
+	SelectionManager.select_only(u)
+	var pair: Array = _make_producer_with_collider()
+	var sb: StaticBody3D = pair[1]
+	handler.process_left_click_hit(_hit(sb, Vector3(5, 0, 5)))
+	assert_true(SelectionManager.is_selected(u),
+		"left-click on owned producer building must NOT deselect prior selection")
+
+
+func test_left_click_on_enemy_producer_still_deselects() -> void:
+	var u: FakeUnit = _make_unit(7)
+	SelectionManager.select_only(u)
+	var pair: Array = _make_producer_with_collider()
+	var building: FakeProducerBuilding = pair[0]
+	building.team = Constants.TEAM_TURAN
+	var sb: StaticBody3D = pair[1]
+	handler.process_left_click_hit(_hit(sb, Vector3(5, 0, 5)))
+	assert_false(SelectionManager.is_selected(u),
+		"left-click on ENEMY producer must fall through to deselect")
+
+
+func test_left_click_on_non_producer_building_deselects() -> void:
+	var u: FakeUnit = _make_unit(7)
+	SelectionManager.select_only(u)
+	var pair: Array = _make_producer_with_collider()
+	var building: FakeProducerBuilding = pair[0]
+	building.kind = &"khaneh"
+	building.produces = []
+	var sb: StaticBody3D = pair[1]
+	handler.process_left_click_hit(_hit(sb, Vector3(5, 0, 5)))
+	assert_false(SelectionManager.is_selected(u),
+		"left-click on non-producer building (empty `produces`) falls through to deselect")
+
+
+func test_left_click_on_incomplete_producer_deselects() -> void:
+	var u: FakeUnit = _make_unit(7)
+	SelectionManager.select_only(u)
+	var pair: Array = _make_producer_with_collider()
+	var building: FakeProducerBuilding = pair[0]
+	building.is_complete = false
+	var sb: StaticBody3D = pair[1]
+	handler.process_left_click_hit(_hit(sb, Vector3(5, 0, 5)))
+	assert_false(SelectionManager.is_selected(u),
+		"left-click on under-construction producer falls through to deselect")
+
+
+func test_terrain_click_still_deselects_when_no_producer_in_chain() -> void:
+	var u: FakeUnit = _make_unit(7)
+	SelectionManager.select_only(u)
+	handler.process_left_click_hit(_terrain_hit(Vector3(5, 0, 5)))
+	assert_false(SelectionManager.is_selected(u),
+		"plain terrain click still deselects (Wave 3A.6 regression guard)")

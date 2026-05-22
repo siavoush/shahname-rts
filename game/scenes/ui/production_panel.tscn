@@ -1,0 +1,113 @@
+[gd_scene load_steps=2 format=3 uid="uid://shahnameh_production_panel"]
+
+; production_panel.tscn — Wave 3A.6 Track 2 (ui-developer).
+;
+; Modal-ish floating Control. Opens when the player left-clicks an owned
+; producer building (Sarbaz-khaneh, Sowari-khaneh, Tirandazi). Shows:
+;   - Producer's name as header (e.g., "Sarbaz-khaneh")
+;   - One row per `produces` entry (one unit kind per row at MVP)
+;   - Each row: unit name + cost (coin + grain) + dwell time + Train button
+;   - When training in progress: row replaced with progress bar + label
+;     "Training Piyade — N.Ns remaining"
+;
+; Closes on: Escape, click outside the panel rect, building destroyed.
+;
+; Layout choice — center-top (NOT bottom-right like build_menu): the panel
+; is modal-ish (player's attention focused) and bottom-right is reserved
+; for the build menu when a Kargar is selected. Two distinct UI affordances
+; in two distinct screen regions per the §11 information-hierarchy
+; principle.
+;
+; Pitfall #1 mitigation + BUG-08 lesson (build_menu's wave-1C bug):
+;   - Root: MOUSE_FILTER_STOP. Same click-shield discipline as build_menu —
+;     clicks inside the panel rect never fall through to ClickHandler /
+;     BPH. Without this, a click on a Train button's PRESS edge could
+;     trigger ClickHandler's deselect path.
+;   - Background/Margin/VBox: PASS — decorative.
+;   - Train buttons: STOP (Button default, not overridden).
+;
+; Internationalization: every visible string flows through tr() in the
+; script. The .tscn placeholder text is dev-time fallback; runtime wins.
+
+[ext_resource type="Script" path="res://scripts/ui/production_panel.gd" id="1_productionpanel"]
+
+
+[node name="ProductionPanel" type="CanvasLayer"]
+script = ExtResource("1_productionpanel")
+
+[node name="Root" type="Control" parent="."]
+; Anchored center-top. 280 wide, 200 tall — enough for header + 3 rows of
+; train options (Sarbaz-khaneh ships 1 row, Sowari-khaneh 1 row,
+; Tirandazi 1 row; layout sized for future multi-row Sowari-khaneh
+; (savar + asb-savar-kamandar) without scene-edit).
+visible = false
+anchors_preset = 7 ; PRESET_CENTER_TOP
+anchor_left = 0.5
+anchor_top = 0.0
+anchor_right = 0.5
+anchor_bottom = 0.0
+offset_left = -140.0
+offset_top = 80.0
+offset_right = 140.0
+offset_bottom = 280.0
+mouse_filter = 0 ; MOUSE_FILTER_STOP — click-shield (BUG-08 lesson from build_menu).
+grow_horizontal = 2
+grow_vertical = 1
+
+[node name="Background" type="ColorRect" parent="Root"]
+anchors_preset = 15 ; PRESET_FULL_RECT
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 1 ; PASS — decorative.
+color = Color(0.1, 0.1, 0.12, 0.85)
+
+[node name="Margin" type="MarginContainer" parent="Root"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 1 ; PASS — decorative container.
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="Root/Margin"]
+layout_mode = 2
+mouse_filter = 1 ; PASS — decorative container.
+theme_override_constants/separation = 8
+
+[node name="HeaderLabel" type="Label" parent="Root/Margin/VBox"]
+; Producer building name — set at open() time. tr-keyed off
+; UI_BUILDING_<KIND> matching existing build_menu convention.
+layout_mode = 2
+mouse_filter = 1 ; PASS — decorative label.
+text = "Production"
+horizontal_alignment = 1 ; HORIZONTAL_ALIGNMENT_CENTER
+
+[node name="HeaderSeparator" type="HSeparator" parent="Root/Margin/VBox"]
+layout_mode = 2
+mouse_filter = 1
+
+[node name="UnitRows" type="VBoxContainer" parent="Root/Margin/VBox"]
+; Container for dynamic train-button rows. Children added/removed by
+; production_panel.gd::_rebuild_unit_rows when open() fires. Per-row
+; structure (HBox with label + button OR ProgressBar) is created
+; programmatically.
+layout_mode = 2
+mouse_filter = 1 ; PASS — decorative container.
+theme_override_constants/separation = 6
+
+[node name="Spacer" type="Control" parent="Root/Margin/VBox"]
+; Pushes the close hint to the bottom of the panel.
+layout_mode = 2
+size_flags_vertical = 3 ; SIZE_EXPAND_FILL
+mouse_filter = 1
+
+[node name="CloseHint" type="Label" parent="Root/Margin/VBox"]
+; Discoverability — players need to know how to dismiss the panel.
+; tr-keyed off UI_PRODUCTION_PANEL_CLOSE_HINT.
+layout_mode = 2
+mouse_filter = 1
+text = "Press Esc or click outside to close"
+horizontal_alignment = 1 ; HORIZONTAL_ALIGNMENT_CENTER
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1.0)

@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3 uid="uid://b0g3dxshahmain"]
+[gd_scene load_steps=14 format=3 uid="uid://b0g3dxshahmain"]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 [ext_resource type="PackedScene" uid="uid://terrain256x256" path="res://scenes/world/terrain.tscn" id="2_terrain"]
@@ -14,6 +14,7 @@
 [ext_resource type="PackedScene" uid="uid://shahnameh_build_menu" path="res://scenes/ui/build_menu.tscn" id="12_buildmenu"]
 [ext_resource type="Script" path="res://scripts/input/build_placement_handler.gd" id="13_buildplacement"]
 [ext_resource type="PackedScene" uid="uid://shahconstructprogoverlay" path="res://scenes/ui/construction_progress_overlay.tscn" id="14_constructprog"]
+[ext_resource type="PackedScene" uid="uid://shahnameh_production_panel" path="res://scenes/ui/production_panel.tscn" id="15_productionpanel"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -105,3 +106,5 @@ script = ExtResource("11_attackmove")
 [node name="ConstructionProgressOverlay" parent="." instance=ExtResource("14_constructprog")]
 
 [node name="BuildMenu" parent="." instance=ExtResource("12_buildmenu")]
+
+[node name="ProductionPanel" parent="." instance=ExtResource("15_productionpanel")]
