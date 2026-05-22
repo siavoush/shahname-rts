@@ -16,7 +16,7 @@
 ; constants_version: manual stamp for this session. qa-engineer will wire
 ; file-hash auto-derivation in wave 2 (MatchHarness). See TESTING_CONTRACT.md §2.3.
 
-[gd_resource type="Resource" script_class="BalanceData" load_steps=31 format=3 uid="uid://balance_data_main"]
+[gd_resource type="Resource" script_class="BalanceData" load_steps=32 format=3 uid="uid://balance_data_main"]
 
 [ext_resource type="Script" path="res://data/balance_data.gd" id="1_balancedata"]
 [ext_resource type="Script" path="res://data/sub_resources/unit_stats.gd" id="2_unitstats"]
@@ -26,6 +26,7 @@
 [ext_resource type="Script" path="res://data/sub_resources/economy_config.gd" id="6_economyconfig"]
 [ext_resource type="Script" path="res://data/sub_resources/resource_node_config.gd" id="7_resnodeconfig"]
 [ext_resource type="Script" path="res://data/sub_resources/ai_config.gd" id="8_aiconfig"]
+[ext_resource type="Script" path="res://data/sub_resources/fog_config.gd" id="9_fogconfig"]
 
 ; =========================================================================
 ; Unit stats sub-resources
@@ -610,12 +611,57 @@ hard_techup_ticks = 7200
 hard_attack_army_threshold = 16
 
 ; =========================================================================
+; FogConfig sub-resource
+; =========================================================================
+; Values from FOG_DATA_CONTRACT.md §2.2 sight-radius table.
+; All sight radii are integer cell counts at 4m/cell.
+;
+; §9.L1 spec-wins: Brief suggested Kargar=4, Piyade=5, Kamandar=6, Savar=6,
+; mounted=7. FOG_DATA_CONTRACT §2.2 canonical table specifies Kargar=3,
+; Piyade=3, Kamandar=4, Savar=4, Rostam=5, Throne=4. Spec overrides brief.
+;
+; Sowari-khaneh=2, Tirandazi=2: NOT in §2.2 table (table lists only named
+; buildings). Set to 2 cells (parity with Atashkadeh's compact sacral footprint)
+; — additive, non-overriding. Balance-engineer discretion per brief §4.
+;
+; Khaneh=0, Mazra'eh=0, Ma'dan=0: footprint-only per brief §4 (non-military
+; buildings reveal only their built footprint, no surrounding radius at 3A.0).
+;
+; cell_size_meters=4.0 per FOG_DATA_CONTRACT §1.1 (2× WorldGrid.CELL_SIZE).
+;
+; H3 dormant-schema first-exercise: field ships dormant at Wave 3A.0.
+; Wave 3A.5 consumers (7 building _on_placement_complete hooks) read these
+; values for register_vision_source calls.
+;
+; §9.L6 forward-compat-guard-sweep result (at Wave 3A.0 ship time):
+;   git grep -n 'fog_config\|BalanceData\.fog' game/scripts/ → ZERO readers.
+;   Only consumer-side readers confirmed absent: all 3A.5 call-sites deferred.
+;   L8/L9 apply at 3A.5 debug-overlay time — no UI surface at 3A.0.
+
+[sub_resource type="Resource" id="fog_cfg"]
+script = ExtResource("9_fogconfig")
+cell_size_meters = 4.0
+sight_kargar_cells = 3
+sight_piyade_cells = 3
+sight_kamandar_cells = 4
+sight_savar_cells = 4
+sight_rostam_cells = 5
+sight_throne_cells = 4
+sight_sarbazkhane_cells = 3
+sight_atashkadeh_cells = 2
+sight_sowari_khaneh_cells = 2
+sight_tirandazi_cells = 2
+sight_khaneh_cells = 0
+sight_mazraeh_cells = 0
+sight_madan_cells = 0
+
+; =========================================================================
 ; Top-level BalanceData resource
 ; =========================================================================
 
 [resource]
 script = ExtResource("1_balancedata")
-constants_version = "2026-05-21-phase-3-session-6-wave-2b-tier2-entry"
+constants_version = "2026-05-22-phase-3-session-7-wave-3a0-fog-config-entry"
 units = {
 &"kargar": SubResource("unit_kargar"),
 &"piyade": SubResource("unit_piyade"),
@@ -641,3 +687,4 @@ farr = SubResource("farr_cfg")
 combat = SubResource("combat_mtx")
 economy = SubResource("economy_cfg")
 ai = SubResource("ai_cfg")
+fog = SubResource("fog_cfg")

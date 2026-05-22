@@ -27,6 +27,10 @@
 ##   Until then: load once at match start, edit and re-run.
 class_name BalanceData extends Resource
 
+# Force FogConfig class_name registration before the @export field below references it.
+# Same class_name registry race workaround as test_balance_data.gd. See §9.L9 retro note.
+const _FogConfigScript = preload("res://data/sub_resources/fog_config.gd")
+
 ## Manual version stamp. Format: "YYYY-MM-DD-label" or git hash substring.
 ## qa-engineer will replace this with a file-hash auto-derivation in wave 2
 ## when MatchHarness ships. Per TESTING_CONTRACT.md §2.3.
@@ -59,6 +63,27 @@ class_name BalanceData extends Resource
 ## Turan AI difficulty parameters (flat fields × 3 difficulties).
 ## Consumed by: TuranAIController (Phase 6).
 @export var ai: AIConfig = AIConfig.new()
+
+## Fog-of-war sight radii + grid cell size (all tunable integer cell counts).
+## Wave 3A.0 ships this sub-resource with PLACEHOLDER sight radii per
+## FOG_DATA_CONTRACT §2.2 spec table.
+##
+## H3 dormant-schema first-exercise (per §9.H3, Wave 3A.0 Track 2):
+## The field ships dormant at Wave 3A.0 — FogSystem stub no-ops register calls.
+## First-populated by Wave 3A.5 consumers: register_vision_source call-sites in
+## 7 buildings (Khaneh/Mazra'eh/Ma'dan/Sarbaz-khaneh/Atashkadeh/Sowari-khaneh/Tirandazi)
+## read BalanceData.fog.sight_<kind>_cells to populate vision-source registrations.
+## Named cross-track verifier: lead synthesizes Wave 3A.5 kickoff brief against
+## this field as one of three 3A.0 dormant surfaces.
+##
+## L8 drift-proof note: any UI displaying fog values must read BalanceData.fog,
+## never hardcode — L8 applies at 3A.5 / debug-overlay time.
+##
+## NOTE: typed as Resource (not FogConfig) to avoid class_name registry race at
+## autoload boot time. FogConfig is a newly added file; Godot's project scanner
+## may not have indexed it before farr_system._ready() triggers load(balance.tres).
+## The field still holds a FogConfig instance — read via .fog.sight_<kind>_cells.
+@export var fog: Resource = _FogConfigScript.new()
 
 
 # ---------------------------------------------------------------------------

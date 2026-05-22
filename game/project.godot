@@ -35,6 +35,7 @@ ResourceSystem="*res://scripts/autoload/resource_system.gd"
 FarrDrainDispatcher="*res://scripts/autoload/farr_drain_dispatcher.gd"
 SelectionManager="*res://scripts/autoload/selection_manager.gd"
 ControlGroups="*res://scripts/input/control_groups.gd"
+FogSystem="*res://scripts/autoload/fog_system.gd"
 
 [debug]
 

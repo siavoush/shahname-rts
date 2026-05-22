@@ -2,7 +2,7 @@
 title: Simulation Architecture Contract
 type: contract
 status: ratified
-version: 1.4.0
+version: 1.5.0
 owner: engine-architect
 summary: When gameplay state mutates and how systems observe changes. The engine layer everything else sits on.
 audience: all
@@ -11,17 +11,17 @@ prerequisites: [MANIFESTO.md, CLAUDE.md]
 ssot_for:
   - SimClock 30Hz fixed tick discipline
   - SimNode base class and _set_sim assertion
-  - tick pipeline phase order (input → ai → movement → spatial_rebuild → combat → farr → cleanup)
+  - tick pipeline phase order (input → fog_update → ai → movement → spatial_rebuild → combat → farr → cleanup)
   - SpatialIndex API (uniform 8m grid, three query shapes)
   - GameRNG domain-keyed seeding
   - IPathScheduler interface (real + mock)
   - Numeric Representation principle (integer arithmetic for accumulating state)
   - CI lint rules (5 ripgrep patterns)
-references: [STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md]
+references: [STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md, FOG_DATA_CONTRACT.md]
 tags: [tick, sim, determinism, spatial, rng, lint, foundation]
 created: 2026-04-30
-last_updated: 2026-05-13
-provenance: Outcome of Sync 1 (engine-architect, ai-engineer, qa-engineer). Convergence Review revision pass 2026-05-01. PATCH 1.2.1 (2026-05-01) clarifies §1.3, §6.1, §7 to match Phase 0 session 1 implementation; no behavior change. MINOR 1.4.0 (2026-05-13) adds two addenda from Open Space sync between Phase 2 close and Phase 3 kickoff: §1.3 init-time carve-out (parent `_ready` writes to child fields exempt pre-first-tick) and §1.5 UI-local tween carve-out (tweens to fields no sim consumer reads exempt from queue-then-drain).
+last_updated: 2026-05-22
+provenance: Outcome of Sync 1 (engine-architect, ai-engineer, qa-engineer). Convergence Review revision pass 2026-05-01. PATCH 1.2.1 (2026-05-01) clarifies §1.3, §6.1, §7 to match Phase 0 session 1 implementation; no behavior change. MINOR 1.4.0 (2026-05-13) adds two addenda from Open Space sync between Phase 2 close and Phase 3 kickoff: §1.3 init-time carve-out (parent `_ready` writes to child fields exempt pre-first-tick) and §1.5 UI-local tween carve-out (tweens to fields no sim consumer reads exempt from queue-then-drain). MINOR 1.5.0 (2026-05-22, Wave 3A.0 Track 3) adds `fog_update` phase between `input` and `ai` in the SimClock.PHASES array — see §2.2 addendum. Vision must recompute before AI sees the world per `FOG_DATA_CONTRACT.md` §4. At Wave 3A.0 the phase fires per tick but no handler is connected (FogSystem stub). At Wave 3A.5 FogSystem connects and recomputes `_currently_visible` before AI reads.
 ---
 
 # Simulation Architecture Contract
@@ -185,19 +185,40 @@ State that accumulates over the course of a match — Farr first, Zur and Shar l
 
 ## 2. Tick Order
 
-The seven-stage pipeline runs in this order every tick:
+The eight-stage pipeline runs in this order every tick:
 
 | # | Phase | Purpose | One-line rationale |
 |---|---|---|---|
 | 1 | `input` | Drain queued player commands into intents | Player input is the source of truth for the tick. Latest first. |
-| 2 | `ai` | AI controllers run `tick()`, may emit commands and target updates | AI sees post-input world; one-tick stale spatial data is fine for targeting heuristics. |
-| 3 | `movement` | Resolve velocity, apply position deltas, handle path completion | Position changes happen here and only here. |
-| 4 | `spatial_rebuild` | `SpatialIndex` rebuilds from scratch | Combat must see post-movement positions. AI saw pre-movement (acceptable). |
-| 5 | `combat` | Range checks, damage application, death events | Reads fresh `SpatialIndex`; emits `unit_died` for cleanup. |
-| 6 | `farr` | Apply Farr deltas accumulated this tick (drains, generators, snowball checks) | Farr depends on combat outcomes (kills, snowball ratio). Must run after combat. |
-| 7 | `cleanup` | Reap dead nodes, advance timers, emit `tick_ended` | Single deferred-free point — no `queue_free` mid-tick. |
+| 2 | `fog_update` | `FogSystem` recomputes `_currently_visible` from registered vision sources | Vision must be current BEFORE AI reads the world (FOG §4). |
+| 3 | `ai` | AI controllers run `tick()`, may emit commands and target updates | AI sees post-input world + fresh visibility; one-tick stale spatial data is fine for targeting heuristics. |
+| 4 | `movement` | Resolve velocity, apply position deltas, handle path completion | Position changes happen here and only here. |
+| 5 | `spatial_rebuild` | `SpatialIndex` rebuilds from scratch | Combat must see post-movement positions. AI saw pre-movement (acceptable). |
+| 6 | `combat` | Range checks, damage application, death events | Reads fresh `SpatialIndex`; emits `unit_died` for cleanup. |
+| 7 | `farr` | Apply Farr deltas accumulated this tick (drains, generators, snowball checks) | Farr depends on combat outcomes (kills, snowball ratio). Must run after combat. |
+| 8 | `cleanup` | Reap dead nodes, advance timers, emit `tick_ended` | Single deferred-free point — no `queue_free` mid-tick. |
 
 Components must not bypass this order. If component A's tick depends on component B's tick output, B is in an earlier phase or A reads stale data. Out-of-phase reads crash via `SimNode` asserts on the mutated property.
+
+### 2.2 `fog_update` phase (v1.5.0 addendum — Wave 3A.0, 2026-05-22)
+
+**Position.** Between `input` and `ai`. Phase index 2 in the eight-stage pipeline.
+
+**Purpose.** Recompute team-visibility grids (`_currently_visible[team]`) from registered vision sources so the AI phase queries `FogSystem.is_visible_to(...)` on fresh data. Vision-of-the-world is a read-input to AI targeting, like player commands are; both must be current before AI runs. Per `FOG_DATA_CONTRACT.md` §4 the canonical pre-AI ordering is load-bearing for Phase 3+ DummyAI and Phase 6+ real AI.
+
+**Same-staleness contract as SpatialIndex.** `fog_update` runs BEFORE `movement`, so on tick N the recompute reads positions finalized by tick N-1's `movement` phase. AI then queries fog reflecting tick N-1 positions — the same one-tick-stale contract that `SpatialIndex` enforces (rebuilt AFTER movement, so AI's tick-N read sees pre-movement positions per row 3 in the table above). Consistency across the two spatial-style data layers is a feature; fog should not be "fresher" than the spatial index that AI also reads from.
+
+**Wave 3A.0 status.** Phase fires per tick (signal emitted by `SimClock._run_tick` over the 8-phase array), but no handler is connected — `FogSystem` is a stub at Wave 3A.0. Net effect: no observable behavior change relative to the pre-1.5.0 7-phase pipeline. The phase is reserved in the signal stream so Wave 3A.5's `FogSystem` connection is purely additive.
+
+**Wave 3A.5 activation.** `FogSystem` subscribes to `EventBus.sim_phase`, branches on `&"fog_update"`, clears `_currently_visible` to zero, then iterates registered vision sources to recompute per-team visibility. See `FOG_DATA_CONTRACT.md` §4 for the recompute algorithm + the two-pass design (Pass 1 in `fog_update`, Pass 2 death-freeze in `cleanup`).
+
+**Read-discipline.** Any future system that reads visibility (Phase 5 Kaveh, Phase 6 AI) reads from a phase AT OR AFTER `fog_update`. Phases `ai`, `movement`, `spatial_rebuild`, `combat`, `farr`, `cleanup` all see fresh fog. Reading visibility from `input` (which runs before fog_update) would return stale data and is forbidden.
+
+**Cross-references.**
+- `FOG_DATA_CONTRACT.md` §4 — canonical phase-ordering rationale + the two-pass design.
+- `game/scripts/autoload/sim_clock.gd:24-29` — the canonical 8-phase PHASES array.
+- `game/scripts/autoload/constants.gd:30-48` — Constants.PHASE_FOG_UPDATE + Constants.PHASES mirror (asserted equal to SimClock.PHASES by `test_constants.gd:24`).
+- `game/tests/unit/test_sim_clock.gd::test_phase_order_matches_contract` + `::test_fog_update_phase_between_input_and_ai` — regression coverage of phase position.
 
 ### 2.1 Phase coordinators (the only path that calls `_sim_tick`)
 

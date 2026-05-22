@@ -769,3 +769,42 @@ func test_validate_hard_catches_drain_at_or_above_kaveh_threshold() -> void:
 			break
 	assert_true(found,
 		"validate_hard must flag a drain magnitude >= kaveh_trigger_threshold")
+
+
+# ---------------------------------------------------------------------------
+# Wave 3A.0 — FogConfig sub-resource sanity assertions
+# ---------------------------------------------------------------------------
+
+func test_fog_sub_resource_is_present() -> void:
+	# Wave 3A.0: BalanceData.fog must be populated with a FogConfig sub-resource.
+	# H3 dormant-schema: field ships dormant (FogSystem stub no-ops register calls);
+	# Wave 3A.5 consumers read sight_<kind>_cells at register_vision_source call-sites.
+	assert_not_null(_balance)
+	var fog: Variant = _balance.get(&"fog")
+	assert_not_null(fog, "fog sub-resource must be populated (Wave 3A.0 data layer)")
+	assert_true(fog is Resource, "fog must be a Resource")
+
+
+func test_fog_cell_size_meters_is_positive() -> void:
+	# FOG_DATA_CONTRACT §1.1: 4m per cell. grid init in fog_system.gd divides by this.
+	assert_not_null(_balance)
+	var fog: Variant = _balance.get(&"fog")
+	assert_not_null(fog)
+	var cell_size: float = float((fog as Resource).get(&"cell_size_meters"))
+	assert_gt(cell_size, 0.0,
+		"fog.cell_size_meters must be > 0 — grid init divides by it (FOG_DATA_CONTRACT §1.1)")
+
+
+func test_fog_atashkadeh_and_sarbaz_sight_match_spec() -> void:
+	# FOG_DATA_CONTRACT §2.2 canonical sight-radius table:
+	#   Atashkadeh = 2 cells (8m), Sarbaz-khaneh = 3 cells (12m).
+	# §9.L1 spec-wins: brief suggestions were higher; spec §2.2 overrides.
+	assert_not_null(_balance)
+	var fog: Variant = _balance.get(&"fog")
+	assert_not_null(fog)
+	var atashkadeh: int = int((fog as Resource).get(&"sight_atashkadeh_cells"))
+	var sarbaz: int = int((fog as Resource).get(&"sight_sarbazkhane_cells"))
+	assert_eq(atashkadeh, 2,
+		"fog.sight_atashkadeh_cells must be 2 per FOG_DATA_CONTRACT §2.2")
+	assert_eq(sarbaz, 3,
+		"fog.sight_sarbazkhane_cells must be 3 per FOG_DATA_CONTRACT §2.2")
