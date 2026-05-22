@@ -236,6 +236,25 @@ func test_place_at_marks_is_complete_true() -> void:
 		+ "session 1 wave 1C")
 
 
+func test_placement_registers_with_fog_system_if_present() -> void:
+	# Wave 3A.5: after place_at, _fog_handle must be >= 0 when FogSystem
+	# is registered as an autoload. In test context FogSystem is a GUT
+	# autoload and available via the SceneTree; we verify the handle is
+	# stored (not -1). Behavioural correctness of the fog reveal is
+	# exercised in test_fog_system.gd.
+	_khaneh = _spawn_khaneh(Constants.TEAM_IRAN)
+	SimClock._is_ticking = true
+	_khaneh.place_at(Vector3(4.0, 0.0, 4.0), Constants.TEAM_IRAN, 1)
+	SimClock._is_ticking = false
+	# _fog_handle is -1 when FogSystem is absent (permissive guard).
+	# In the full test suite FogSystem IS registered, so we assert > -1.
+	# If the autoload is absent (headless context), skip this assertion.
+	var tree: SceneTree = Engine.get_main_loop() as SceneTree
+	if tree != null and tree.root.get_node_or_null(NodePath(&"FogSystem")) != null:
+		assert_gt(_khaneh._fog_handle, -1,
+			"Khaneh._fog_handle must be >= 0 after placement when FogSystem is present")
+
+
 # ---------------------------------------------------------------------------
 # Construction-without-scene — the script alone is a valid Building subclass
 # ---------------------------------------------------------------------------

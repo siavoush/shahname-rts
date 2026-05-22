@@ -63,6 +63,9 @@ class_name Khaneh
 ## BalanceData lookup key (`buildings.khaneh` in balance.tres).
 const KIND_KHANEH: StringName = &"khaneh"
 
+## Opaque FogSystem handle. -1 = not registered.
+var _fog_handle: int = -1
+
 
 func _init() -> void:
 	kind = KIND_KHANEH
@@ -114,6 +117,14 @@ func _on_placement_complete(placer_unit_id: int) -> void:
 	if pop_cap_delta > 0:
 		ResourceSystem.change_population_cap(
 			team, pop_cap_delta, &"khaneh_placed", self)
+	# Register with FogSystem. Khaneh.sight = 0 (footprint-only placeholder;
+	# non-military building per FOG_DATA_CONTRACT §2.2 / FogConfig §9.L9).
+	# Balance-engineer tunes the value in balance.tres; we always read from
+	# BalanceData so a future non-zero value activates without a code change.
+	var _fog_node: Node = _autoload_or_null(&"FogSystem")
+	if _fog_node != null and _fog_node.has_method(&"register_vision_source"):
+		var sight: int = _resolve_fog_sight_cells()
+		_fog_handle = _fog_node.call(&"register_vision_source", self, team, sight, true)
 	# Emit the placement signal regardless of cap delta — a Khaneh with
 	# population_capacity=0 in BalanceData would be a config bug, not a
 	# reason to suppress telemetry.
@@ -207,6 +218,37 @@ static func cost_coin() -> int:
 ## to spec value (5). Balance fine-tuning will happen later via AI-vs-AI
 ## playtest; defer to spec until empirical signal arrives.
 const _FALLBACK_POPULATION_CAPACITY: int = 5
+
+
+func _autoload_or_null(autoload_name: StringName) -> Node:
+	var tree: SceneTree = Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return null
+	return tree.root.get_node_or_null(NodePath(autoload_name))
+
+
+func _resolve_fog_sight_cells() -> int:
+	var path: String = Constants.PATH_BALANCE_DATA
+	if not FileAccess.file_exists(path):
+		return 0
+	var bd: Resource = load(path)
+	if bd == null:
+		return 0
+	var fog_cfg: Variant = bd.get(&"fog")
+	if fog_cfg == null:
+		return 0
+	var v: Variant = fog_cfg.get(&"sight_khaneh_cells")
+	if typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT:
+		return int(v)
+	return 0
+
+
+func _exit_tree() -> void:
+	if _fog_handle >= 0:
+		var fog: Node = _autoload_or_null(&"FogSystem")
+		if fog != null and fog.has_method(&"deregister_vision_source"):
+			fog.call(&"deregister_vision_source", _fog_handle)
+		_fog_handle = -1
 
 
 static func population_capacity() -> int:
