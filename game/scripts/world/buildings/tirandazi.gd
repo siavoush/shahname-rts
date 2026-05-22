@@ -222,6 +222,12 @@ var is_ready_to_produce: bool = false
 
 func _init() -> void:
 	kind = KIND_TIRANDAZI
+	# Wave 3A.6 Track 1 — Tirandazi produces Kamandar (the Parthian-shot
+	# archer tradition, 00_SHAHNAMEH_RESEARCH.md §4 line 189). Tirandazi
+	# is *practice/discipline* — the building name reflects training, not
+	# barracks. Per kickoff §1: only Kamandar this wave; the
+	# AsbSavarKamandar (mounted archer) production locus is deferred.
+	produces = [&"kamandar"]
 
 
 func _ready() -> void:
@@ -230,6 +236,9 @@ func _ready() -> void:
 	# sowari_khaneh.gd headers). The base class doesn't currently read kind
 	# directly, but the symmetry guards future refactors.
 	kind = KIND_TIRANDAZI
+	# Dual-init mirror — scene defaults clobber _init writes between _init
+	# and _ready (kargar.gd header pattern). Same shape as `kind` above.
+	produces = [&"kamandar"]
 	super._ready()
 
 

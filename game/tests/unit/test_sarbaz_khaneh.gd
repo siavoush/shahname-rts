@@ -265,3 +265,58 @@ func test_sarbaz_khaneh_cost_coin_returns_balance_data_value_or_fallback() -> vo
 	assert_true(cost > 0,
 		"SarbazKhaneh.cost_coin() must return a positive value (either "
 		+ "BalanceData entry or the 100-coin fallback). Got: %d" % cost)
+
+
+# ---------------------------------------------------------------------------
+# Wave 3A.6 Track 1 — produces field + production state machine
+# ---------------------------------------------------------------------------
+#
+# Per 02n_PHASE_3_SESSION_7_WAVE_3A_6_KICKOFF.md §4 Track 1.
+
+func test_sarbaz_khaneh_produces_piyade() -> void:
+	# Wave 3A.6 — Sarbaz-khaneh trains Piyade. Per kickoff §1: NOT Kamandar
+	# (that's Tirandazi). Verified at both _init (script-only construction)
+	# and _ready (scene-instantiation) — the dual-init pattern preserves the
+	# array across scene-default clobber.
+	_sarbaz_khaneh = _spawn_sarbaz_khaneh()
+	assert_eq(_sarbaz_khaneh.produces.size(), 1,
+		"Sarbaz-khaneh.produces must contain exactly one entry (Piyade)")
+	assert_true(_sarbaz_khaneh.produces.has(&"piyade"),
+		"Sarbaz-khaneh.produces must include &\"piyade\"")
+	assert_false(_sarbaz_khaneh.produces.has(&"kamandar"),
+		"Sarbaz-khaneh must NOT produce Kamandar — that's Tirandazi's role")
+	assert_false(_sarbaz_khaneh.produces.has(&"savar"),
+		"Sarbaz-khaneh must NOT produce Savar — that's Sowari-khaneh's role")
+
+
+func test_sarbaz_khaneh_request_train_piyade_succeeds_when_complete() -> void:
+	# Behavioral: a fully-constructed Sarbaz-khaneh accepts a Piyade
+	# training request given resources + pop cap. Mirrors the base-class
+	# production test but verifies the subclass surface specifically.
+	_sarbaz_khaneh = _spawn_sarbaz_khaneh()
+	_sarbaz_khaneh.is_complete = true
+	SimClock._is_ticking = true
+	ResourceSystem.change_population_cap(
+		Constants.TEAM_IRAN, 10, &"test", null)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_COIN, 100000, &"t", null)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN, 100000, &"t", null)
+	var ok: bool = _sarbaz_khaneh.request_train(&"piyade")
+	SimClock._is_ticking = false
+	assert_true(ok,
+		"Sarbaz-khaneh must accept Piyade training when is_complete + "
+		+ "resources + pop room are all present")
+	assert_eq(_sarbaz_khaneh._production_state, &"training")
+	assert_eq(_sarbaz_khaneh._production_unit, &"piyade")
+
+
+func test_sarbaz_khaneh_request_train_savar_denied() -> void:
+	# Sarbaz-khaneh does not produce Savar; the request must be denied.
+	_sarbaz_khaneh = _spawn_sarbaz_khaneh()
+	_sarbaz_khaneh.is_complete = true
+	SimClock._is_ticking = true
+	var ok: bool = _sarbaz_khaneh.request_train(&"savar")
+	SimClock._is_ticking = false
+	assert_false(ok,
+		"Sarbaz-khaneh must deny Savar training (savar ∉ produces)")

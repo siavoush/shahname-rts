@@ -293,3 +293,58 @@ func test_sowari_khaneh_cost_coin_returns_balance_data_value_or_fallback() -> vo
 	assert_eq(cost, 200,
 		"SowariKhaneh.cost_coin() must return 200 (BalanceData or fallback "
 		+ "both ship 200 per 01_CORE_MECHANICS.md §5 line 194). Got: %d" % cost)
+
+
+# ---------------------------------------------------------------------------
+# Wave 3A.6 Track 1 — produces field + production state machine
+# ---------------------------------------------------------------------------
+#
+# Per 02n_PHASE_3_SESSION_7_WAVE_3A_6_KICKOFF.md §4 Track 1.
+
+func test_sowari_khaneh_produces_savar_only() -> void:
+	# Wave 3A.6 — Sowari-khaneh trains Savar ONLY. Per kickoff §1 the
+	# AsbSavarKamandar production locus question is deferred to Phase 4;
+	# Sowari-khaneh stays single-kind at 3A.6.
+	_sowari_khaneh = _spawn_sowari_khaneh()
+	assert_eq(_sowari_khaneh.produces.size(), 1,
+		"Sowari-khaneh.produces must contain exactly one entry (Savar) — "
+		+ "NOT [savar, asb_savar_kamandar] per kickoff §1 deferral")
+	assert_true(_sowari_khaneh.produces.has(&"savar"),
+		"Sowari-khaneh.produces must include &\"savar\"")
+	assert_false(_sowari_khaneh.produces.has(&"asb_savar_kamandar"),
+		"Sowari-khaneh must NOT produce AsbSavarKamandar at 3A.6 (deferred per kickoff §1)")
+	assert_false(_sowari_khaneh.produces.has(&"piyade"),
+		"Sowari-khaneh must NOT produce Piyade — that's Sarbaz-khaneh's role")
+
+
+func test_sowari_khaneh_request_train_savar_succeeds_when_complete() -> void:
+	_sowari_khaneh = _spawn_sowari_khaneh()
+	_sowari_khaneh.is_complete = true
+	SimClock._is_ticking = true
+	ResourceSystem.change_population_cap(
+		Constants.TEAM_IRAN, 10, &"test", null)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_COIN, 100000, &"t", null)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN, 100000, &"t", null)
+	var ok: bool = _sowari_khaneh.request_train(&"savar")
+	SimClock._is_ticking = false
+	assert_true(ok,
+		"Sowari-khaneh must accept Savar training given resources + pop room")
+	assert_eq(_sowari_khaneh._production_state, &"training")
+	assert_eq(_sowari_khaneh._production_unit, &"savar")
+
+
+func test_sowari_khaneh_request_train_asb_savar_kamandar_denied() -> void:
+	# Per kickoff §1: AsbSavarKamandar production deferred to Phase 4.
+	# Sowari-khaneh must explicitly deny the request — this test locks
+	# the deferral in at the test layer.
+	_sowari_khaneh = _spawn_sowari_khaneh()
+	_sowari_khaneh.is_complete = true
+	SimClock._is_ticking = true
+	var ok: bool = _sowari_khaneh.request_train(&"asb_savar_kamandar")
+	SimClock._is_ticking = false
+	assert_false(ok,
+		"Sowari-khaneh must deny AsbSavarKamandar training at 3A.6 "
+		+ "(deferred per kickoff §1). If this passes, the explicit-single-"
+		+ "produces-array contract has drifted.")
