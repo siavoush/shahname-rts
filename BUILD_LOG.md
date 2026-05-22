@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-22 (Phase 3 session 6 close retro — 9 §9 changes + Khaneh +5)
+last_updated: 2026-05-22 (Phase 3 session 7 Wave 3A.0 close — fog data layer + first §9.E1 real-time application)
 ---
 
 # Build Log
@@ -33,6 +33,65 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 ```
 
 ## Entries
+
+## 2026-05-22 — Phase 3 session 7 Wave 3A.0 close: fog data layer (FogConfig + FogSystem + consumer API stub + sim_clock fog_update phase)
+
+**Branch:** `feat/wave-3a-fog-of-war` (this PR).
+
+**Driver:** lead orchestrating 3 parallel tracks (world-builder Track 1 / balance-engineer Track 2 / engine-architect Track 3) on fog-of-war DATA LAYER. Wave 3A SPLIT per world-builder pre-flight: 3A.0 ships data layer + consumer API stub (this wave); 3A.5 ships vision sources + per-tick recompute (next wave). Blast-radius hedge — 3A.0 unblocks Phase-5 Kaveh (gp-sys) + Phase-6 scout (ai-engineer Wave 3B) consumer development against static-data API.
+
+**Shipped (joint commit `da3dc75` — 18 files, 1045 insertions, hook OK):**
+
+- **FogSystem autoload** (`fog_system.gd` 313 lines) — grid init + per-team storage + helpers + consumer API stubs + `_sources` empty registry + stub register/deregister.
+- **FogConfig Resource** (`fog_config.gd` 104 lines) — schema per FOG_DATA_CONTRACT §2.2; §9.L9 non-zero match-shipped fallbacks.
+- **BalanceData.fog field** — preload-based + Resource-typed (Pitfall #13 class_name registry race defeat).
+- **balance.tres fog_config sub-resource** — §2.2 spec values; §9.L1 spec-wins instance #6 (balance-engineer override of brief's inflated defaults).
+- **sim_clock.gd PHASES + constants.gd PHASE_FOG_UPDATE** — 8-phase array; `fog_update` between `input` and `ai`.
+- **SIMULATION_CONTRACT.md v1.4.0 → v1.5.0** — §2 table 8 phases + §2.2 addendum.
+- **project.godot** — FogSystem autoload registration.
+- **6 test files** — fog_system + fog_config + balance_data fog assertions + sim_clock phase + constants PHASE_FOG_UPDATE + match_harness hardcoded-7 → SimClock.PHASES.size() fix.
+
+**First real-time §9.E1 + §9.M3 + §9.D7(b) application — 3 distinct agent responses:**
+
+1. **engine-architect-p3s2: [blocked] broadcast + held** (textbook discipline — no bypass, no destructive stash, broadcast with diagnostic).
+2. **balance-engineer-p3s3: joint-commit resolution** (novel — first non-lead §9.B2-style cross-domain intervention; staged + bundled 3 tracks; fixed cross-track sweep miss on test_match_harness.gd).
+3. **world-builder-p3s2: State 3 git-mechanics blocker** (work green; resolved naturally when `.git/index.lock` cleared).
+
+All 3 paths defensible per the discipline. Joint-commit path landed first by wall-clock; engine-architect's [blocked] + world-builder's State-3 broadcasts were in flight simultaneously with balance-engineer's joint-commit ship.
+
+**Retro candidates routed to session-7 close:**
+
+- **§9.E1 refinement candidate** — balance-engineer's framing: *"tracks that share a coupled test gate must ship as a joint commit, not independently."*
+- **§9.B2 extension candidate** — non-lead cross-domain intervention codification.
+- **Pitfall #13 prose extension** — class_name-race-fix-at-referencing-file pattern (world-builder's preload defeat).
+- **§9.L1 multi-domain cadence** — balance-engineer 4th L1 instance in 4 waves (1B / 2A.5 / 2B / 3A.0).
+- **3-distinct-responses empirical data** — when-preferred decision for each path.
+
+**Did not ship:**
+
+- Vision-source registration implementation (Wave 3A.5 scope).
+- `fog_update` phase handler in FogSystem (Wave 3A.5 scope).
+- 7-building `sight=0` → `BalanceData.fog.sight_<kind>_cells` reads (Wave 3A.5 scope).
+- unit.gd FogSystem registration (Wave 3A.5; gp-sys's domain).
+- Visual fog overlay (Phase 5+ scope).
+
+**State for next session (session 7 continuation OR session 8 start):**
+
+- **Wave 3A.0 ships clean.** Consumer-visible API surface live; downstream consumers (gp-sys Kaveh / ai-engineer Wave 3B DummyAI) can write against `FogSystem.is_visible_to` / `get_last_seen` / `get_scout_candidates` returning static data.
+- **Wave 3A.5 is immediate next.** world-builder owns most of it; gp-sys involvement at unit.gd registration seam.
+- **Wave 3B (DummyAIController)** follows 3A.5 per user prioritization (2B → 3A → 3B).
+- **Session-7 close retro** has rich material accumulating already (5 retro candidates from this wave alone).
+- **Memory files unchanged this session** — no new memory entries; prior `feedback_lead_sendmessage_routing.md` + `feedback_retro_facts_not_diagnosis.md` validations continue to hold.
+
+**Open questions added to QUESTIONS_FOR_DESIGN.md:** None this wave.
+
+**Decisions made independently (per CLAUDE.md Escalation rule #1):**
+- Wave 3A SPLIT into 3A.0 + 3A.5 per world-builder pre-flight (lead accepted recommendation).
+- FogConfig field naming + type annotation pattern (world-builder's Pitfall #13 defeat — preload + Resource type vs FogConfig type).
+- balance-engineer's joint-commit resolution path (novel cross-domain intervention — lead acknowledged + accepted; codification candidate at retro).
+- FOG_DATA_CONTRACT §2.2 sight-radius values (balance-engineer L1 override of brief's inflated defaults; spec values applied).
+
+---
 
 ## 2026-05-22 — Phase 3 session 6 close retro: 9 §9 changes + Khaneh +5 revert + fix-wave recovery
 

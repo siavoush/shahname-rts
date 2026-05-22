@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.29.0
+version: 0.30.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -19,7 +19,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
 last_updated: 2026-05-22
-# bumped to v0.29.0 — Phase 3 session 6 close retro: 5-agent SendMessage synthesis from Wave 2B + fix-wave. 9 active §9 rule changes (L7 affordability-sweep + L8 drift-proof UI numeric defaults + L9 fallback-by-failure-visibility-shape + D7(b) workspace-observation + M3 error-specificity refinement + E1 parallel-WIP addendum + F4 value-choice footnote + G1 idle-availability heartbeat + L1 multi-agent codification). §9.J cluster opening claim (loremaster project-level discipline). Khaneh +5 revert (spec-aligned; balance fine-tuning later via AI-vs-AI playtest). Fix-wave commits recovered post-merge after PR #30 routing failure (unpushed local branch).
+# bumped to v0.30.0 — Phase 3 session 7 Wave 3A.0 close: fog-of-war DATA LAYER shipped (FogConfig + FogSystem autoload + grid + consumer API stub + sim_clock.gd fog_update phase + SIM_CONTRACT v1.5.0). Wave 3A SPLIT (3A.0 data layer this wave; 3A.5 vision sources + per-tick recompute next). 3 tracks (world-builder + balance-engineer + engine-architect) shipped as JOINT COMMIT (`da3dc75`, 18 files, 1045 insertions) — first real-time application of session-6 §9.E1 + §9.M3 + §9.D7(b) coupled-test-gate disciplines.
 ---
 
 # Architecture — Target Shape and Build State
@@ -286,6 +286,74 @@ game/
 - Spec said X; we built Y; reason: Z
 - Subsystem A took Phase N+1 (slipped one phase), reason: ...
 - Contract V was bumped from 1.x.0 to 1.y.0 during implementation; key change: ...
+
+### v0.30.0 — Phase 3 session 7 Wave 3A.0 close: fog-of-war data layer + first real-time §9.E1 application (2026-05-22)
+
+Phase 3 session 7 opens with Wave 3A.0 — fog-of-war DATA LAYER per `docs/FOG_DATA_CONTRACT.md` v1.3.1 (ratified Phase 3 session 2; pre-flight verdict at session-7 startup confirmed clean at HEAD). Wave 3A SPLIT into 3A.0 (this wave) + 3A.5 (vision sources + per-tick recompute, next wave) per world-builder-p3s2's pre-flight recommendation.
+
+**What shipped (`da3dc75` joint commit — 18 files, 1045 insertions, hook OK):**
+
+- **`game/scripts/autoload/fog_system.gd`** (NEW, 313 lines) — FogSystem singleton. Grid init with WorldGrid fallback constant `Rect2(Vector2.ZERO, Vector2(256, 256))`. Per-team storage (`_currently_visible` + `_ever_seen` PackedByteArrays). Helpers: `world_to_cell` / `cell_to_world_center` / `_cell_index` with boundary clamping. **Consumer API stubs returning static data** — `is_visible_to` returns false; `get_last_seen` returns `{}`; `get_scout_candidates` returns unexplored slice. `register_vision_source` / `deregister_vision_source` exist as no-op callable stubs (so `has_method` returns true; 7 existing building forward-compat call-sites now hit stubs silently — no visible behavior change at 3A.0). `_sources: Dictionary` empty structure ready for 3A.5 population.
+
+- **`game/data/sub_resources/fog_config.gd`** (NEW, 104 lines) — FogConfig Resource class. Schema per FOG_DATA_CONTRACT §2.2. **§9.L9 non-zero fallbacks match shipped** — Sarbaz-khaneh 3, Atashkadeh 2, Tier-2 buildings per spec.
+
+- **`game/data/balance.tres`** + **`game/data/balance_data.gd`** — `@export var fog: Resource = _FogConfigScript.new()` field (preload-based + Resource-typed to defeat Pitfall #13 class_name registry race). `fog_config` sub-resource entry per FOG_DATA_CONTRACT §2.2 table. **§9.L1 spec-wins instance #6** — balance-engineer-p3s3 overrode brief's inflated defaults (Kargar 3 not 4, Piyade 3 not 5, Kamandar 4 not 6, Savar 4 not 6) citing §2.2 spec table.
+
+- **`game/scripts/autoload/sim_clock.gd`** — PHASES array gains `&"fog_update"` at index 1 (between `input` and `ai`) per FOG_DATA_CONTRACT §4.4. At 3A.0: phase fires per tick but no handler is connected (FogSystem stub). **`game/scripts/autoload/constants.gd`** — `PHASE_FOG_UPDATE` const + PHASES mirror.
+
+- **`docs/SIMULATION_CONTRACT.md`** v1.4.0 → v1.5.0 (MINOR additive) — §2 table updated to 8 phases + §2.2 addendum documenting `fog_update` position and rationale (vision recomputed BEFORE AI sees the world).
+
+- **`game/project.godot`** — FogSystem autoload registration (`FogSystem="*res://scripts/autoload/fog_system.gd"`).
+
+- **Tests:** `test_fog_system.gd` (340 lines, 34 tests) + `test_fog_config.gd` (101 lines, 11 tests) + `test_balance_data.gd` (+3 fog assertions) + `test_sim_clock.gd` (phase-position assertion) + `test_constants.gd` (+PHASE_FOG_UPDATE) + `test_match_harness.gd` (hardcoded `7` phase count → `SimClock.PHASES.size()` per balance-engineer's cross-track sweep catch).
+
+**3 implementation tracks, 1 joint commit — first §9.E1 + §9.M3 + §9.D7(b) real-time application + resolution:**
+
+Wave 3A.0 was dispatched as 3 parallel tracks (world-builder Track 1 / balance-engineer Track 2 / engine-architect Track 3). All three landed via a JOINT COMMIT (`da3dc75`) authored by balance-engineer-p3s3 — staged Tracks 1+2+3 together, hook passed after one cross-track sweep fix (test_match_harness.gd hardcoded phase count). The 3 agents' responses to the cross-track race were structurally distinct:
+
+1. **engine-architect-p3s2: [blocked] broadcast + held** (textbook §9.E1 + §9.M3 + §9.D7 discipline). Did clean isolated Track 3 work, verified the failures were cross-track via targeted GUT runs, did NOT --no-verify bypass, did NOT stash to destroy others' WIP, broadcast with full diagnostic.
+2. **balance-engineer-p3s3: joint-commit resolution** (novel — first instance of a non-lead agent doing §9.B2-style cross-domain intervention). Staged all 3 tracks together; bundled the commit. Domain crossover into Track 1 + Track 3 file scope; bundled attribution in commit body.
+3. **world-builder-p3s2: State 3 (git-mechanics blocker)** — Track 1 work complete + green; blocked on `.git/index.lock` from a failed `git stash pop`. Resolved naturally when lock cleared.
+
+**Three different responses, all defensible per the discipline.** The §9.E1 addendum + §9.M3 refinement + §9.D7(b) workspace-observation cluster permits multiple valid paths. Worth retro discussion at session-7 close: when is each path preferred?
+
+**Other key learnings captured (load-bearing):**
+
+1. **balance-engineer's joint-commit framing as §9.E1 refinement candidate** — *"tracks that share a coupled test gate must ship as a joint commit, not independently."* Codification candidate at session-7 close retro. Likely lands as §9.E1 sub-rule or new §9.D cluster addition.
+
+2. **First non-lead cross-domain intervention** — §9.B2 currently codifies lead-takes-work-when-specialist-unresponsive carve-out. balance-engineer's joint commit is a non-lead-takes-work-to-resolve-coupling carve-out. Should §9.B2 extend? Or is this carve-out lead-only territory by design? Worth retro discussion.
+
+3. **Pitfall #13 class_name registry race defeated via preload pattern at the referencing file** — world-builder-p3s2's `const _FogConfigScript = preload(...)` + `@export var fog: Resource = _FogConfigScript.new()` (Resource type annotation NOT FogConfig) on `balance_data.gd`. Pattern: race-fix sits at the file that DOES the reference, not the file referenced. Worth documenting at PROCESS_EXPERIMENTS.md Pitfall #13 prose extension.
+
+4. **§9.L1 multi-domain N=6 (4 from balance-engineer)** — balance-engineer overrode brief's inflated fog sight-radius defaults citing FOG_DATA_CONTRACT §2.2 spec table. Their 4th L1 instance in 4 waves (1B coin_cost / 2A.5 max_hp / 2B construction_ticks / 3A.0 fog sight radii). Pattern continues to validate the multi-domain L1 codification.
+
+5. **§9.L6 forward-compat-guard-sweep clean at 3A.0** — zero BalanceData.fog readers at ship time; 7 building register_vision_source call-sites deferred to Wave 3A.5. Per L6 design — sweep documents the dormancy chain.
+
+6. **§9.H3 dormant-schema first-exercise documented** — 3 dormant surfaces shipped at 3A.0 (BalanceData.fog + FogSystem._sources + fog_update phase). Wave 3A.5 will first-populate the consumer side; H3 trigger fires at that moment.
+
+**Wave 3A.0 ships consumer-visible API surface NOW** so gp-sys (Phase-5 Kaveh consumer) + ai-engineer (Phase-6 scout / Wave 3B DummyAI consumer) can write against `FogSystem.is_visible_to` / `get_last_seen` / `get_scout_candidates` in parallel with Wave 3A.5's source-side implementation. Static data return is API-shape-honest; consumers can scaffold integration before 3A.5 fills in real computation. **Blast-radius hedge confirmed working** — Wave 3A.0 is mergeable independently of 3A.5.
+
+**Carry-forwards to Wave 3A.5 (next wave):**
+
+- FogSystem.register_vision_source / deregister_vision_source implementation (replace no-op stubs).
+- FogSystem.fog_update phase handler (per-tick clear + rebuild from sources).
+- FogSystem.cleanup phase handler (death-freeze pass).
+- Replace 7-building `sight=0` forward-compat call-sites with `BalanceData.fog.sight_<kind>_cells` reads.
+- unit.gd registration in `_ready` + deregister in death path (gp-sys's domain).
+- EventBus subscriptions for `unit_spawned` / `building_placed` / `unit_died` / `building_destroyed` (or group-iteration fallback per FOG_DATA_CONTRACT §6).
+- Tests: registration/deregistration symmetry + per-tick recompute determinism + static-source caching + death-freeze cleanup.
+
+**Carry-forwards to session-7 close retro:**
+
+- §9.E1 refinement candidate (joint-commit-when-coupled-test-gate rule).
+- §9.B2 extension candidate (non-lead cross-domain intervention).
+- Pitfall #13 prose extension (class_name-race-fix-at-referencing-file pattern).
+- balance-engineer's 4th L1 instance + multi-domain L1 cadence observation.
+- 3 distinct agent responses to coupled-test-gate race — empirical data on which path is when-preferred.
+
+**`02l_PHASE_3_SESSION_7_KICKOFF.md` is ephemeral per §9.C3** — to be deleted at wave-2C close OR when session 7 closes (whichever first). Current pattern: lead deletes prior session's kickoff at next session's open.
+
+---
 
 ### v0.29.0 — Phase 3 session 6 close retro: 4 new §9 rules + 4 refinements + L1 multi-agent codification + Khaneh +5 revert + fix-wave recovery (2026-05-22)
 
