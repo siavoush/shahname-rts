@@ -115,6 +115,19 @@ var _placement_kind: StringName = &""
 # check without re-reading BalanceData.
 var _placement_cost_x100: int = 0
 
+# Grain cost (in grain_x100) of the building being placed. Wave 2B BUG-B2
+# fix-wave (2026-05-22): the EventBus.build_placement_started signal
+# carries ONLY coin (signature locked at session-1; see build_menu.gd:272-
+# 277 comment which contracts grain handling to the sim-side). For the
+# placement-handler's affordability check + ghost-color discipline, we
+# read grain_cost from BalanceData via the same defensive-fall-through
+# pattern as UnitState_Constructing._resolve_cost_grain (Wave 2A.5 BUG-A
+# fix `dfa9a33`). Resolved at _on_build_placement_started; defaults to 0
+# for buildings without grain cost (Khaneh / Mazra'eh / Ma'dan / Sarbaz-
+# khaneh / Sowari-khaneh / Tirandazi all have grain_cost=0). Non-zero
+# only for Atashkadeh (50 grain) at MVP scope.
+var _placement_grain_cost_x100: int = 0
+
 # The ghost preview Node3D instance. Spawned on entering placement
 # mode, freed on exit / confirm.
 var _ghost: Node3D = null
@@ -211,11 +224,21 @@ func _on_build_placement_started(building_kind: StringName, cost_coin_x100: int)
 		_destroy_ghost()
 	_placement_kind = building_kind
 	_placement_cost_x100 = cost_coin_x100
+	# Wave 2B BUG-B2 fix-wave: resolve grain cost from BalanceData by kind.
+	# The EventBus signal carries coin only (contract locked); grain is
+	# discovered handler-side via the same BalanceData read pattern that
+	# UnitState_Constructing uses. Returns 0 for buildings with grain_cost=0
+	# (every building except Atashkadeh at MVP scope), in which case the
+	# affordability check's grain branch is a no-op and the original
+	# Khaneh / Mazra'eh / Ma'dan / Sarbaz-khaneh / Sowari-khaneh /
+	# Tirandazi behavior is preserved unchanged.
+	_placement_grain_cost_x100 = _resolve_grain_cost_x100(building_kind)
 	_placement_is_valid = false
 	_spawn_ghost()
 	if DEBUG_LOG_CLICKS:
 		print("[build-placement] entered placement mode for kind=",
-			building_kind, " cost_x100=", cost_coin_x100)
+			building_kind, " coin_x100=", cost_coin_x100,
+			" grain_x100=", _placement_grain_cost_x100)
 
 
 # ============================================================================
@@ -288,15 +311,25 @@ func process_confirm_click_hit(hit: Dictionary) -> void:
 			print("[build-placement] confirm click — no raycast hit, "
 				+ "rejecting (ghost stays in placement mode)")
 		return
-	# Validate. Refresh _placement_is_valid against the click point
-	# (more authoritative than the last _process update — the click
-	# point may differ from cursor by a frame).
+	# Validate. Refresh against the click point (more authoritative than
+	# the last _process update — the click point may differ from cursor
+	# by a frame). Wave 2B BUG-B2 fix-wave: GEOMETRIC validity and
+	# AFFORDABILITY validity were collapsed into a single composite
+	# _is_placement_valid_at for the ghost-color discipline, but at
+	# confirm-time we still differentiate them because the FAILURE SEMANTIC
+	# differs:
+	#   - Geometric invalid (over building / off-map): ghost stays, player
+	#     tries another location. NO _cancel_placement().
+	#   - Affordability invalid (insufficient coin/grain): can't fix by
+	#     re-clicking; cancel the entire placement. The downstream
+	#     selection / worker checks below also cancel — same semantic.
+	# Geometric check first; affordability falls through to the existing
+	# coin/grain blocks below (which both call _cancel_placement on failure).
 	var hit_pos: Vector3 = hit.get(&"position", Vector3.ZERO)
-	var valid: bool = _is_placement_valid_at(hit_pos)
-	if not valid:
+	if not _is_geometric_placement_valid_at(hit_pos):
 		if DEBUG_LOG_CLICKS:
-			print("[build-placement] confirm click on INVALID location ",
-				hit_pos, " — rejecting")
+			print("[build-placement] confirm click on geometrically INVALID "
+				+ "location ", hit_pos, " — rejecting (ghost stays for retry)")
 		return
 	# Affordability gate. Read ResourceSystem.coin_x100_for and reject
 	# if the player no longer has the coin (they may have spent it
@@ -318,11 +351,30 @@ func process_confirm_click_hit(hit: Dictionary) -> void:
 	var team: int = Constants.TEAM_NEUTRAL
 	if &"team" in worker:
 		team = int(worker.get(&"team"))
-	if ResourceSystem.coin_x100_for(team) < _placement_cost_x100:
+	# Wave 2B BUG-B2.5 fix-wave (2026-05-22): both-or-neither
+	# affordability at confirm-click. Mirrors UnitState_Constructing's
+	# BUG-A fix at `dfa9a33`. Pre-fix-wave this was coin-only and the
+	# grain check happened downstream in UnitState_Constructing — for
+	# Atashkadeh (150 coin + 50 grain), a player with coin but no grain
+	# would have their click accepted here, worker walked to the site,
+	# then UnitState_Constructing's both-or-neither would reject. Silent
+	# failure from the player's perspective. Now both checks fire here
+	# at confirm time, mirroring the ghost-color logic in
+	# _is_affordability_valid above.
+	if _placement_cost_x100 > 0 and ResourceSystem.coin_x100_for(team) < _placement_cost_x100:
 		if DEBUG_LOG_CLICKS:
 			print("[build-placement] confirm click but insufficient Coin"
 				+ " — rejecting (have=%d need=%d)"
 				% [ResourceSystem.coin_x100_for(team), _placement_cost_x100])
+		_cancel_placement()
+		return
+	if _placement_grain_cost_x100 > 0 and ResourceSystem.grain_x100_for(team) < _placement_grain_cost_x100:
+		if DEBUG_LOG_CLICKS:
+			print("[build-placement] confirm click but insufficient Grain"
+				+ " — rejecting (have=%d need=%d). BUG-B2.5 fix-wave: "
+				+ "second instance of affordability-check-incomplete "
+				+ "failure mode; first was BUG-A at UnitState_Constructing."
+				% [ResourceSystem.grain_x100_for(team), _placement_grain_cost_x100])
 		_cancel_placement()
 		return
 	# Dispatch! Build the COMMAND_CONSTRUCT payload + push to the worker.
@@ -341,6 +393,7 @@ func process_confirm_click_hit(hit: Dictionary) -> void:
 	_destroy_ghost()
 	_placement_kind = &""
 	_placement_cost_x100 = 0
+	_placement_grain_cost_x100 = 0
 
 
 # Update ghost transform from a screen-space cursor position. Public for
@@ -361,20 +414,40 @@ func _update_ghost_from_screen(screen_pos: Vector2) -> void:
 	_set_ghost_color(_placement_is_valid)
 
 
-# Validity check — currently:
+# Validity check — combines GEOMETRIC validity with AFFORDABILITY validity.
+# Wave 2B BUG-B2 fix-wave (2026-05-22): user live-test surfaced that the
+# ghost stayed GREEN when the player couldn't afford the building, then
+# the click silently cancelled at the affordability gate downstream. The
+# user experienced "click does nothing / deselects." Fix: collapse both
+# checks into _is_placement_valid_at so the ghost-color truthfully
+# reflects whether a click WILL succeed, not just whether the geometry
+# WOULD be valid IF resources were sufficient. Same pattern as the BUG-A
+# fix at UnitState_Constructing `dfa9a33` — both-or-neither affordability
+# discipline applied at the ghost-color layer too.
+#
+# Geometric validity (1-3 below) is unchanged from session-5 Task #143
+# state; affordability (4) is the new addition.
 #   1. Hit position is on the terrain plane (Y close to 0).
 #   2. Position does not overlap an existing building (&"buildings" group).
 #   3. Position does not overlap an existing resource node (&"resource_nodes"
 #      group — mines, future grain deposits). Task #143 fix: prior versions
 #      missed this, allowing a Ma'dan to be placed directly ON a mine
-#      cylinder (visually stacked, mechanically broken — the design intent
-#      is Ma'dan ADJACENT to a mine within modifier_radius_m to buff it).
-#      The check generalizes: any building placed over any resource node is
-#      now rejected (not just Ma'dan), since stacking a Khaneh / Mazra'eh
-#      on a mine is equally nonsensical visually and mechanically.
-# Future (Phase 4+): on-navmesh check, tech-radius constraint, resource
-# requirements.
+#      cylinder. The check generalizes: any building placed over any
+#      resource node is rejected.
+#   4. **NEW (BUG-B2 fix):** affordability — player's coin AND grain both
+#      meet the requirement. Both-or-neither pattern mirrors BUG-A fix at
+#      UnitState_Constructing `dfa9a33`.
+# Future (Phase 4+): on-navmesh check, tech-radius constraint.
 func _is_placement_valid_at(pos: Vector3) -> bool:
+	# Composite check: BOTH gates must pass. Either failure → red ghost.
+	return _is_geometric_placement_valid_at(pos) and _is_affordability_valid()
+
+
+# Geometric validity check — extracted from the original _is_placement_valid_at
+# at BUG-B2 fix-wave (2026-05-22) so the composite function above can
+# combine geometry with affordability cleanly. Behavior is unchanged from
+# the pre-fix-wave implementation (Task #143 + earlier).
+func _is_geometric_placement_valid_at(pos: Vector3) -> bool:
 	# Off-map / clearly out of range — terrain plane is Y=0, allow some
 	# tolerance for raycast slop.
 	if pos.y > 1.0 or pos.y < -1.0:
@@ -403,8 +476,7 @@ func _is_placement_valid_at(pos: Vector3) -> bool:
 	# Overlap check against placed resource nodes (mines today; future
 	# grain deposits / quarries). ResourceNode._ready joins
 	# &"resource_nodes" (resource_node.gd:133). Task #143 — live-test
-	# surfaced a Ma'dan placed directly on a mine deposit. The same
-	# check guards any building from being placed on any resource node.
+	# surfaced a Ma'dan placed directly on a mine deposit.
 	for r: Node in get_tree().get_nodes_in_group(&"resource_nodes"):
 		if not is_instance_valid(r):
 			continue
@@ -418,6 +490,84 @@ func _is_placement_valid_at(pos: Vector3) -> bool:
 	return true
 
 
+# Affordability validity check — Wave 2B BUG-B2 + BUG-B2.5 fix-wave
+# (2026-05-22). Returns true when the placing team can afford BOTH the
+# coin cost and the grain cost. Mirrors the both-or-neither affordability
+# pattern shipped at UnitState_Constructing `dfa9a33` (BUG-A fix); this
+# is the SECOND instance of the "affordability-check incomplete" failure
+# mode — Wave 2A.5 fix landed UnitState_Constructing's side but missed
+# the BuildPlacementHandler pre-screen. Now corrected.
+#
+# Team resolution: read from the first Kargar in the current selection.
+# When no Kargar is selected (selection lost mid-placement, or empty),
+# we conservatively return TRUE — the affordability check should not be
+# the cause of red-ghost when the actual blocker is "no worker to
+# dispatch to" (BUG-08 guard handles selection-loss separately). This
+# preserves the existing UX: cancel-on-empty-selection at confirm-click
+# is the dedicated path, not a ghost-color flip.
+func _is_affordability_valid() -> bool:
+	var team: int = _resolve_placement_team()
+	if team == Constants.TEAM_NEUTRAL:
+		# No worker / can't resolve team — affordability is conservatively
+		# TRUE; the empty-selection branch in confirm-click cancels via
+		# its own dedicated path.
+		return true
+	# Both-or-neither: coin AND grain must satisfy. Either failure → red.
+	# Each cost is "skip if 0" so buildings without grain cost (every
+	# Tier-1/2 building except Atashkadeh at MVP) have the grain branch
+	# pass trivially.
+	if _placement_cost_x100 > 0:
+		if ResourceSystem.coin_x100_for(team) < _placement_cost_x100:
+			return false
+	if _placement_grain_cost_x100 > 0:
+		if ResourceSystem.grain_x100_for(team) < _placement_grain_cost_x100:
+			return false
+	return true
+
+
+# Resolve the placing team from the current selection. Returns
+# Constants.TEAM_NEUTRAL when no Kargar is in the selection (caller
+# treats this as "skip the affordability check"). Same selection-lookup
+# pattern as confirm-click's worker resolution.
+func _resolve_placement_team() -> int:
+	var sel: Array = SelectionManager.selected_units
+	var worker: Object = _find_first_worker(sel)
+	if worker == null:
+		return Constants.TEAM_NEUTRAL
+	if &"team" in worker:
+		return int(worker.get(&"team"))
+	return Constants.TEAM_NEUTRAL
+
+
+# Read the building's grain_cost from BalanceData. Mirrors the defensive
+# fall-through pattern in UnitState_Constructing._resolve_cost_grain
+# (Wave 2A.5 BUG-A fix `dfa9a33`) — same SSOT, same fallback semantics.
+# Returns 0 on any failure path (missing file / missing entry / wrong
+# type), which preserves the no-grain-cost behavior for the Tier-1/2
+# Iran roster except Atashkadeh.
+#
+# Returns grain_cost in WHOLE units (not _x100). The handler stores the
+# x100 form to match _placement_cost_x100's scale, so the caller
+# multiplies the return by 100.
+func _resolve_grain_cost_x100(building_kind: StringName) -> int:
+	var path: String = Constants.PATH_BALANCE_DATA
+	if not FileAccess.file_exists(path):
+		return 0
+	var bd: Resource = load(path)
+	if bd == null:
+		return 0
+	var bldgs: Variant = bd.get(&"buildings")
+	if typeof(bldgs) != TYPE_DICTIONARY:
+		return 0
+	var stats: Variant = (bldgs as Dictionary).get(building_kind, null)
+	if stats == null:
+		return 0
+	var grain_v: Variant = stats.get(&"grain_cost")
+	if typeof(grain_v) != TYPE_INT and typeof(grain_v) != TYPE_FLOAT:
+		return 0
+	return int(grain_v) * 100
+
+
 # ============================================================================
 # Cancel / ghost management
 # ============================================================================
@@ -429,6 +579,7 @@ func _cancel_placement() -> void:
 	_destroy_ghost()
 	_placement_kind = &""
 	_placement_cost_x100 = 0
+	_placement_grain_cost_x100 = 0
 	_placement_is_valid = false
 
 

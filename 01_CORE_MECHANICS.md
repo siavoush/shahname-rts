@@ -179,7 +179,7 @@ Two tiers. Construction by workers, takes time + resources.
 | Building | Purpose | Cost (initial guess, tune in playtesting) |
 |---|---|---|
 | **Throne (تخت)** | Capital. Loss = defeat. Spawns workers. Comes pre-placed at game start. | — |
-| **Khaneh** (house) | Population cap +5 per building | 50 coin |
+| **Khaneh** (house) | Population cap +10 per building | 50 coin |
 | **Mazra'eh** (farm) | Generates grain | 60 coin |
 | **Ma'dan** (mine) | Worker-staffed coin extraction at mine nodes | 40 coin |
 | **Sarbaz-khaneh** (barracks) | Produces Tier 1 military: Piyade, Kamandar | 100 coin |
