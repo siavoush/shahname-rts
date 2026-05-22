@@ -157,10 +157,11 @@ func test_full_khaneh_placement_chain() -> void:
 	assert_eq(coin_before - coin_after, 5000,
 		"Khaneh placement deducted exactly 50 Coin (5000 x100)")
 
-	# Population cap bumped by 10.
+	# Population cap bumped by 5 (per spec; reverted from session-1
+	# placeholder 10 at session-6 close retro).
 	var cap_after: int = ResourceSystem.population_cap_for(Constants.TEAM_IRAN)
-	assert_eq(cap_after - cap_before, 10,
-		"Khaneh placement bumped population_cap by +10")
+	assert_eq(cap_after - cap_before, 5,
+		"Khaneh placement bumped population_cap by +5 (per spec)")
 
 	# Worker transitioned back to Idle after placement.
 	assert_eq(_kargar.fsm.current.id, &"idle",
@@ -238,18 +239,18 @@ func test_khaneh_placement_emits_resource_changed_for_coin_and_cap() -> void:
 	if EventBus.resource_changed.is_connected(_on_resource_changed):
 		EventBus.resource_changed.disconnect(_on_resource_changed)
 	# Two write-shaped emissions: one Coin deduction (KIND_COIN, delta -5000)
-	# and one cap bump (&"population_cap", delta +10).
+	# and one cap bump (&"population_cap", delta +5 per spec).
 	var saw_coin_deduct: bool = false
 	var saw_cap_bump: bool = false
 	for ev in _resource_changed_events:
 		if ev[&"kind"] == Constants.KIND_COIN and ev[&"delta_x100"] == -5000:
 			saw_coin_deduct = true
-		if ev[&"kind"] == &"population_cap" and ev[&"delta_x100"] == 10:
+		if ev[&"kind"] == &"population_cap" and ev[&"delta_x100"] == 5:
 			saw_cap_bump = true
 	assert_true(saw_coin_deduct,
 		"resource_changed fires with kind=KIND_COIN delta=-5000 (50 Coin spend)")
 	assert_true(saw_cap_bump,
-		"resource_changed fires with kind=&\"population_cap\" delta=+10")
+		"resource_changed fires with kind=&\"population_cap\" delta=+5")
 
 
 # ---------------------------------------------------------------------------

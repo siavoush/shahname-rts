@@ -405,8 +405,9 @@ func test_sim_tick_deducts_coin_at_placement() -> void:
 
 
 func test_sim_tick_bumps_population_cap_at_placement() -> void:
-	# Khaneh.population_capacity = 10 — the post-placement cap should
-	# be 10 higher than the pre-placement cap.
+	# Khaneh.population_capacity = 5 (per spec; reverted from session-1
+	# placeholder 10 at session-6 close retro). The post-placement cap
+	# should be 5 higher than the pre-placement cap.
 	var cap_before: int = ResourceSystem.population_cap_for(Constants.TEAM_IRAN)
 	_unit = _spawn_kargar(Vector3.ZERO)
 	_unit.current_command = {
@@ -422,8 +423,8 @@ func test_sim_tick_bumps_population_cap_at_placement() -> void:
 		if _unit.fsm.current.id == &"idle":
 			break
 	var cap_after: int = ResourceSystem.population_cap_for(Constants.TEAM_IRAN)
-	assert_eq(cap_after - cap_before, 10,
-		"Khaneh placement bumps population_cap by +10")
+	assert_eq(cap_after - cap_before, 5,
+		"Khaneh placement bumps population_cap by +5 (per spec)")
 
 
 func test_sim_tick_emits_building_placed_signal() -> void:

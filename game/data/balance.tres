@@ -234,7 +234,7 @@ coin_cost = 50
 grain_cost = 0
 construction_ticks = 90
 farr_per_tick = 0.0
-population_capacity = 10
+population_capacity = 5
 
 ; Mazra'eh (farm) — 01_CORE_MECHANICS.md §5
 ; Generates grain (via worker-gathered ResourceNode, per RESOURCE_NODE_CONTRACT.md).
