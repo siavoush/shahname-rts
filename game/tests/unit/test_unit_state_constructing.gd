@@ -270,6 +270,54 @@ func test_enter_accepts_atashkadeh_building_kind() -> void:
 		"enter must issue a path request to the build site for Atashkadeh")
 
 
+# Wave 2B (2026-05-21): Tier-2 entry. Sowari-khaneh + Tirandazi ship as
+# the sixth + seventh Iran buildings (first two Tier-2). Late-add
+# discipline pre-empted as always: the kind StringNames ship in
+# _BUILDING_SCENE_PATHS in the SAME Commit 1 as the classes per the
+# session-2 wave-1A lesson internalized at session-3 onward.
+func test_enter_accepts_sowari_khaneh_building_kind() -> void:
+	_unit = _spawn_kargar(Vector3.ZERO)
+	_unit.current_command = {
+		"kind": &"construct",
+		"payload": {
+			&"building_kind": &"sowari_khaneh",
+			&"target_position": Vector3(5.0, 0.0, 0.0),
+		},
+	}
+	_unit.fsm.transition_to(&"constructing")
+	_tick_fsm()
+	# State must NOT abort to idle — the kind is recognized in
+	# _BUILDING_SCENE_PATHS.
+	assert_ne(_unit.fsm.current.id, &"idle",
+		"Constructing must accept &\"sowari_khaneh\" building_kind — "
+		+ "present in _BUILDING_SCENE_PATHS at wave-2B Commit 1")
+	assert_gt(_mock.call_log.size(), 0,
+		"enter must issue a path request to the build site for Sowari-khaneh")
+
+
+func test_enter_accepts_tirandazi_building_kind() -> void:
+	_unit = _spawn_kargar(Vector3.ZERO)
+	_unit.current_command = {
+		"kind": &"construct",
+		"payload": {
+			&"building_kind": &"tirandazi",
+			&"target_position": Vector3(5.0, 0.0, 0.0),
+		},
+	}
+	_unit.fsm.transition_to(&"constructing")
+	_tick_fsm()
+	# State must NOT abort to idle — the kind is recognized in
+	# _BUILDING_SCENE_PATHS. The -dazi naming-shape divergence (vs
+	# Sarbaz/Sowari-khaneh's -khaneh) is surface-language only per
+	# loremaster Track 0; the mechanical kind-StringName lookup works
+	# identically.
+	assert_ne(_unit.fsm.current.id, &"idle",
+		"Constructing must accept &\"tirandazi\" building_kind — "
+		+ "present in _BUILDING_SCENE_PATHS at wave-2B Commit 1")
+	assert_gt(_mock.call_log.size(), 0,
+		"enter must issue a path request to the build site for Tirandazi")
+
+
 func test_enter_bails_to_idle_on_missing_target_position() -> void:
 	_unit = _spawn_kargar()
 	_unit.current_command = {

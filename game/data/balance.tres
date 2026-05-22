@@ -16,7 +16,7 @@
 ; constants_version: manual stamp for this session. qa-engineer will wire
 ; file-hash auto-derivation in wave 2 (MatchHarness). See TESTING_CONTRACT.md §2.3.
 
-[gd_resource type="Resource" script_class="BalanceData" load_steps=29 format=3 uid="uid://balance_data_main"]
+[gd_resource type="Resource" script_class="BalanceData" load_steps=31 format=3 uid="uid://balance_data_main"]
 
 [ext_resource type="Script" path="res://data/balance_data.gd" id="1_balancedata"]
 [ext_resource type="Script" path="res://data/sub_resources/unit_stats.gd" id="2_unitstats"]
@@ -384,6 +384,78 @@ construction_ticks = 900
 farr_per_tick = 0.000556
 farr_per_min_x100 = 100
 
+; Sowari-khaneh (سواری‌خانه, cavalry stable) — 01_CORE_MECHANICS.md §5
+; Produces Savar (cavalry). "200 coin" per §5 Tier-2 table (line 194).
+; grain_cost = 0: Tier-2 institutional buildings are coin-economy-framed;
+; only the Tier-2 upgrade itself (Qal'eh) and sacral buildings carry grain.
+;
+; construction_ticks = 1080 = 36s @ 30Hz. Timing-ladder anchoring:
+;   Khaneh(90=3s) < Mazra'eh(540=18s) < Ma'dan(660=22s)
+;   < Sarbaz-khaneh(780=26s) < Atashkadeh(900=30s)
+;   < Tirandazi(960=32s) < Sowari-khaneh(1080=36s) < Qal'eh(2700=90s per §8)
+; Sowari-khaneh > Tirandazi: cavalry stables require more complex construction
+; (stalls, equipment, training yard) than an archery training ground.
+; Both Tier-2 buildings placed above Atashkadeh — Tier-2 commitment must feel
+; heavier than the Tier-1 gateway, not equal to it.
+;
+; max_hp = 750: Tier-2 institutional with heavy equipment (warhorses). Above
+; Sarbaz-khaneh (400) and Atashkadeh (600); below Throne (2000). HP ladder
+; respects Tier-2 > Tier-1 without approaching the capital's durability.
+;
+; tier = 2: FIRST non-default value of BuildingStats.tier (H3 dormant-schema
+; first-exercise, Wave 2B Track 3). Consumers DEFERRED to Wave 2C / Phase 4
+; per §9.H3 documented chain: TechSystem / BuildPlacementHandler / BuildMenu /
+; Atashkadeh-built + Farr >= 40 prereq logic.
+;
+; Spec refs: 01_CORE_MECHANICS.md §5 (200 coin, Tier-2 table).
+; balance-engineer: Wave 2B Track 3 — H3 + L6 inaugural dogfood.
+[sub_resource type="Resource" id="bldg_sowari_khaneh"]
+script = ExtResource("3_bldgstats")
+max_hp = 750.0
+coin_cost = 200
+grain_cost = 0
+construction_ticks = 1080
+farr_per_tick = 0.0
+farr_per_min_x100 = 0
+population_capacity = 0
+modifier_value_x100 = 0
+modifier_radius_m = 0.0
+modifier_stacks = false
+tier = 2
+
+; Tirandazi (تیراندازی, archery range) — 01_CORE_MECHANICS.md §5
+; Produces advanced Kamandar variants (Asb-savar Kamandar / Parthian-shot).
+; "175 coin" per §5 Tier-2 table (line 195).
+; grain_cost = 0: same institutional coin-economy framing as Sowari-khaneh.
+;
+; construction_ticks = 960 = 32s @ 30Hz. Timing-ladder anchoring:
+;   < Tirandazi(960=32s) < Sowari-khaneh(1080=36s) — lighter structure than
+;   cavalry stable (training yard + range, not stalls + equipment). 2s above
+;   Atashkadeh (900=30s) maintains the Tier-2 > Tier-1 distinction.
+;
+; max_hp = 650: lighter structure than Sowari-khaneh (750) — archery range
+; is an open training ground, not a fortified stable. Still above Atashkadeh
+; (600) since Tier-2 buildings warrant more durability than Tier-1.
+;
+; tier = 2: second first-non-default value of BuildingStats.tier (H3 dogfood).
+; Same deferred-consumer chain as Sowari-khaneh above.
+;
+; Spec refs: 01_CORE_MECHANICS.md §5 (175 coin, Tier-2 table).
+; balance-engineer: Wave 2B Track 3 — H3 + L6 inaugural dogfood.
+[sub_resource type="Resource" id="bldg_tirandazi"]
+script = ExtResource("3_bldgstats")
+max_hp = 650.0
+coin_cost = 175
+grain_cost = 0
+construction_ticks = 960
+farr_per_tick = 0.0
+farr_per_min_x100 = 0
+population_capacity = 0
+modifier_value_x100 = 0
+modifier_radius_m = 0.0
+modifier_stacks = false
+tier = 2
+
 ; =========================================================================
 ; FarrConfig sub-resource
 ; =========================================================================
@@ -543,7 +615,7 @@ hard_attack_army_threshold = 16
 
 [resource]
 script = ExtResource("1_balancedata")
-constants_version = "2026-05-17-phase-3-session-5-wave-2a5-atashkadeh-farr-emit"
+constants_version = "2026-05-21-phase-3-session-6-wave-2b-tier2-entry"
 units = {
 &"kargar": SubResource("unit_kargar"),
 &"piyade": SubResource("unit_piyade"),
@@ -561,7 +633,9 @@ buildings = {
 &"mazraeh": SubResource("bldg_mazraeh"),
 &"madan": SubResource("bldg_madan"),
 &"sarbaz_khaneh": SubResource("bldg_sarbaz_khaneh"),
-&"atashkadeh": SubResource("bldg_atashkadeh")
+&"atashkadeh": SubResource("bldg_atashkadeh"),
+&"sowari_khaneh": SubResource("bldg_sowari_khaneh"),
+&"tirandazi": SubResource("bldg_tirandazi")
 }
 farr = SubResource("farr_cfg")
 combat = SubResource("combat_mtx")

@@ -22,11 +22,18 @@
 ;                 │   from Khaneh/Mazra'eh.
 ;                 ├── SarbazKhanehButton ("Sarbaz-khaneh (100 Coin)") —
 ;                 │   wave 2A. Martial-red tint — barracks / training.
-;                 └── AtashkadehButton ("Atashkadeh (150 Coin / 50 Grain)")
-;                     — wave 2A.5. Fire-amber tint — sacred-flame
-;                     container. Tier-1 closure and Tier-2 gateway.
+;                 ├── AtashkadehButton ("Atashkadeh (150 Coin / 50 Grain)")
+;                 │   — wave 2A.5. Fire-amber tint — sacred-flame
+;                 │   container. Tier-1 closure and Tier-2 gateway.
+;                 ├── SowariKhanehButton ("Sowari-khaneh (200 Coin)") —
+;                 │   wave 2B. Cavalry-blue-grey tint — cavalry stable,
+;                 │   Tier-2 first entry. Produces Savar.
+;                 └── TirandaziButton ("Tirandazi (175 Coin)") —
+;                     wave 2B. Arrow-fletch-brown tint — archery range,
+;                     Tier-2 first entry. Produces advanced Kamandar.
 ;                     Order is chronological: Khaneh → Mazra'eh → Ma'dan
-;                     → Sarbaz-khaneh → Atashkadeh.
+;                     → Sarbaz-khaneh → Atashkadeh → Sowari-khaneh →
+;                     Tirandazi.
 ;
 ; Pitfall #1 mitigation + BUG-08 fix — mouse_filter discipline:
 ;   - Root: MOUSE_FILTER_STOP (value 0). BUG-08 fix — the entire menu
@@ -73,7 +80,7 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = -216.0
-offset_top = -306.0
+offset_top = -386.0
 offset_right = -16.0
 offset_bottom = -66.0
 mouse_filter = 0 ; MOUSE_FILTER_STOP — BUG-08 fix; menu surface is a click shield.
@@ -174,9 +181,49 @@ self_modulate = Color(0.65, 0.30, 0.25, 1.0)
 ; placement time inside UnitState_Constructing — the UI surface
 ; shows both costs in the label, but the dispatch signal carries
 ; one. Same UI vs sim-side separation as the other buttons.
-;
-; Order in the VBox: Khaneh → Mazra'eh → Ma'dan → Sarbaz-khaneh →
-; Atashkadeh. Chronological per ship order.
 layout_mode = 2
 text = "Atashkadeh (150 Coin / 50 Grain)"
 self_modulate = Color(0.85, 0.65, 0.20, 1.0)
+
+[node name="SowariKhanehButton" type="Button" parent="Root/Margin/VBox"]
+; Wave 2B — the Sowari-khaneh (cavalry stable, lit. 'rider-house')
+; placement entry point. Iran Tier-2 first entry. Per
+; 01_CORE_MECHANICS.md §5 the cost is coin-only (200 coin, no grain),
+; so the label format mirrors the Sarbaz-khaneh single-cost shape
+; ("Sowari-khaneh (%d Coin)"). Same MOUSE_FILTER_STOP default as the
+; other buttons. Cavalry-blue-grey tint (0.35, 0.42, 0.55) — saddle-
+; leather + horse-hide hue distinct from Sarbaz-khaneh's martial-red
+; and Atashkadeh's fire-amber. The "blue-grey for cavalry" follows
+; the unit-mesh convention (Savar inherits Iran blue).
+;
+; Loremaster J3 tooltip framing — "Cavalry training stable
+; (lit. 'rider-house')." carries the literal-first compound gloss
+; per loremaster Track 0 J3 review of سواری‌خانه (sowari = riding,
+; -khaneh = house). The "rider-house" literal is the cultural
+; primary; "cavalry stable" is the disambiguating English context.
+layout_mode = 2
+text = "Sowari-khaneh (200 Coin)"
+self_modulate = Color(0.35, 0.42, 0.55, 1.0)
+
+[node name="TirandaziButton" type="Button" parent="Root/Margin/VBox"]
+; Wave 2B — the Tirandazi (archery range, lit. 'arrow-shooting
+; practice') placement entry point. Iran Tier-2 first entry. Per
+; 01_CORE_MECHANICS.md §5 the cost is coin-only (175 coin, no grain).
+; Same MOUSE_FILTER_STOP default. Arrow-fletch-brown tint
+; (0.55, 0.42, 0.28) — wood-shaft + leather-quiver hue, distinct
+; from Sowari-khaneh's cavalry-blue-grey.
+;
+; Loremaster J3 tooltip framing — "Archery training ground
+; (lit. 'arrow-shooting practice')." Honors loremaster Track 0 J3
+; verdict on تیراندازی: the verbal-noun "tir-andazi" (tir = arrow,
+; andazi = throwing/shooting) glosses literally to the action of
+; archery practice, NOT to a recreational "archery range" (the
+; tricky-gloss carries modern sport-shooting register baggage).
+;
+; Loremaster J4 (l) constraint: NO mention of Arash or other
+; hero-mythological archer figures here — conflating institutional-
+; ordinary archer-production with hero-mythological Arash-the-Archer
+; is the J4 named anti-pattern. Tooltip stays ordinary-institutional.
+layout_mode = 2
+text = "Tirandazi (175 Coin)"
+self_modulate = Color(0.55, 0.42, 0.28, 1.0)

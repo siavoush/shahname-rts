@@ -1,0 +1,112 @@
+[gd_scene load_steps=6 format=3 uid="uid://shahnameh_tirandazi_building"]
+
+; tirandazi.tscn — Tirandazi (تیراندازی) "arrow-shooting" / archery discipline scene.
+;
+; Source: 01_CORE_MECHANICS.md §5 line 195 — "Tirandazi — 175 coin Tier 2,
+; produces advanced Kamandar variants including Asb-savar Kamandar."
+;
+; Cultural framing: see tirandazi.gd header (Cultural note block + naming-shape
+; note) for the identity-bearing-institutional / archery-tradition anchor framing.
+; Lead with "arrow-throwing" / "archery discipline" (literal compound); the
+; -dazi suffix is surface-language carrying the trained-skill register vs the
+; -khaneh "house" form of its siblings.
+;
+; Second Tier-2 Iran military building. Identity-bearing institutional anchor,
+; archery-tradition sub-slot per docs/ANCHOR_CATEGORY_TAXONOMY.md v1.0.0.
+; Mechanical template-shape identical to Sarbaz-khaneh + Sowari-khaneh despite
+; naming divergence (per loremaster Track 0 brief-time verdict, 2026-05-21).
+;
+; Inheriting building.tscn per the khaneh.tscn / sarbaz_khaneh.tscn pattern:
+;   - Overrides mesh size + material (3.5 × 1.0 × 2.0 — longer and lower than
+;     all prior buildings; reads as "practice range" vs "barracks / stable").
+;   - Overrides CollisionShape3D to match the new footprint (click-target
+;     accuracy — BUG-07 lesson). Width (3.5 vs base 2.0) and height (1.0 vs
+;     base 1.2) differ from base; height is LOWER than base, which is the
+;     strongest Pitfall #15 guard. Regression test in test_tirandazi_scene.gd.
+;   - Overrides NavigationObstacle3D vertices to cover the 3.5 × 2.0 XZ
+;     footprint (±1.85 × ±1.1 per RNC §3.2 v1.4.0 sizing rule).
+;
+; Visual placeholder per CLAUDE.md "colored rectangles for buildings":
+;   - BoxMesh 3.5 × 1.0 × 2.0 — longest building in the Iran roster (3.5 wide),
+;     lowest height (1.0). The low-profile long shape reads as "practice yard
+;     stretching along its length" at default zoom.
+;   - Bow-wood dark brown Color(0.45, 0.32, 0.18) — darker, earthier than
+;     Sowari-khaneh's bronze. Distinct from all existing buildings:
+;       * Khaneh tan (0.78, 0.65, 0.45) — warm domestic (lighter)
+;       * Sowari-khaneh bronze (0.70, 0.50, 0.25) — cavalry bronze (lighter, more saturated)
+;       * Sarbaz-khaneh iron-red (0.55, 0.25, 0.20) — military iron (redder)
+;     The bow-wood dark brown reads "seasoned yew / mulberry bow timber" —
+;     the archery-tradition material register, distinct from cavalry bronze or
+;     infantry iron.
+;
+; NavigationObstacle3D — ACTIVE (not inert). The carve fires at placement
+; via the inherited _on_placement_complete → bake_navigation_mesh(false)
+; pipeline (building.gd Task #144 / 910bd9a). SOURCE_GEOMETRY_ROOT_NODE_CHILDREN
+; (terrain.gd Task #147 / be8c355) means the bake sees this obstacle even
+; though Tirandazi spawns under &World as a sibling of Terrain.
+; Both affect_navigation_mesh + carve_navigation_mesh inherited from base — NOT
+; overridden here (would clear them). See building.tscn for dual-flag rationale.
+;
+; Footprint polygon math (per RNC §3.2 v1.4.0 + building.tscn base precedent):
+;   Mesh XZ: 3.5 × 2.0.  Half-extents: 1.75 × 1.0.
+;   Polygon margin: +0.1m per axis (compensates NAV_AGENT_RADIUS=0.5 erosion).
+;   Result: ±1.85 × ±1.1.
+
+[ext_resource type="PackedScene" uid="uid://shahnameh_building_base" path="res://scenes/world/buildings/building.tscn" id="1_building_template"]
+[ext_resource type="Script" path="res://scripts/world/buildings/tirandazi.gd" id="2_tirandazi"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_tirandazi"]
+; Long low practice-range shape — 3.5 wide × 1.0 tall × 2.0 deep.
+; Longest building in the Iran roster, lowest height. The horizontal emphasis
+; reads as "range stretching along its length" at default zoom.
+size = Vector3(3.5, 1.0, 2.0)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_tirandazi"]
+; Bow-wood dark brown — archery-tradition material register (seasoned yew /
+; mulberry timber). Darker and earthier than Sowari-khaneh's cavalry bronze;
+; carries the "practiced craft / workshop" register of the -dazi tradition.
+albedo_color = Color(0.45, 0.32, 0.18, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — matches unit / mine / building pipeline.
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_tirandazi"]
+; Collision shape matches the visual mesh for click-target accuracy.
+; BUG-07 lesson: the inherited StaticBody3D provides the CollisionObject3D
+; ancestor; this shape must cover the full rendered silhouette.
+; Width X=3.5 (vs base 2.0) is the largest divergence; height Y=1.0 is LOWER
+; than the base (1.2) — the low-profile Pitfall #15 guard: if wrong syntax was
+; used, the base 1.2 survives and Y assertion fails louder than X.
+size = Vector3(3.5, 1.0, 2.0)
+
+
+; Inherit the Building scene template; override mesh, material, collision, obstacle.
+[node name="Tirandazi" instance=ExtResource("1_building_template")]
+script = ExtResource("2_tirandazi")
+
+[node name="MeshInstance3D" parent="." index="0"]
+; Override mesh + material. Y-offset = half-height (0.5) so the bottom
+; face sits flush on terrain at Y=0 — same convention as building.tscn.
+; Height 1.0 → half-height 0.5 (vs base 1.2 → 0.6; this sits lower).
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+mesh = SubResource("BoxMesh_tirandazi")
+material_override = SubResource("StandardMaterial3D_tirandazi")
+
+[node name="CollisionShape3D" parent="StaticBody3D"]
+; Override collision shape to match the 3.5×1.0×2.0 mesh footprint.
+; Y-offset 0.5 co-locates with the mesh centre (half-height of 1.0).
+; Pitfall #15: Godot inherited-scene nested-child override syntax requires
+; parent="StaticBody3D" (path in parent attr), NOT name="StaticBody3D/CollisionShape3D"
+; (slash in name is a literal char, not a path separator — causes "node vanished" warning).
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+shape = SubResource("BoxShape3D_tirandazi")
+
+[node name="NavigationObstacle3D" parent="." index="0"]
+; Override vertices for the 3.5×2.0 XZ footprint (base has 2.0×2.0).
+; Per RNC §3.2 v1.4.0: polygon at ±(half-extent + 0.1m margin):
+;   X: ±(1.75 + 0.1) = ±1.85.  Z: ±(1.0 + 0.1) = ±1.1.
+; Vertex order matches building.tscn: (-X,-Z), (+X,-Z), (+X,+Z), (-X,+Z).
+; affect_navigation_mesh + carve_navigation_mesh inherited from base — NOT
+; overridden here (would clear them). See building.tscn for dual-flag rationale.
+; radius updated to ~2.16 (≈ sqrt(1.85²+1.1²)) for editor visualization parity.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+vertices = PackedVector3Array(-1.85, 0, -1.1, 1.85, 0, -1.1, 1.85, 0, 1.1, -1.85, 0, 1.1)
+radius = 2.15
