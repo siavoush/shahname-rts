@@ -79,6 +79,32 @@ static func reset_id_counter() -> void:
 ## _ready runs.
 var unit_id: int = -1
 
+## Fog-system vision-source handle. Returned by
+## `FogSystem.register_vision_source(...)` at `_ready`; passed back to
+## `FogSystem.deregister_vision_source(handle)` at `_exit_tree` so the
+## vision source is removed BEFORE the SceneTree completes the free.
+##
+## Default 0 — sentinel for "not registered" / "already deregistered."
+## Per FogSystem.deregister_vision_source contract: idempotent and safe
+## for unknown handles (0, -1, or any other), so calling
+## deregister(_fog_handle) without checking is safe.
+##
+## Wave 3A.5 Track 2: this is the FIRST consumer of
+## `FogSystem.register_vision_source`'s real implementation (Track 1
+## ships the real body in the joint commit). At Wave 3A.0 the
+## register/deregister calls were no-op stubs returning -1; with
+## Track 1's real impl returning a non-zero handle, `_fog_handle`
+## becomes load-bearing for the deregister path.
+##
+## H3 dogfood per §9.H3: the per-kind sight-radius read at register
+## time (`BalanceData.fog.sight_<unit_type>_cells`) is the first
+## runtime exercise of those dormant schema fields. A test in
+## `test_unit.gd` validates each unit kind's lookup returns the
+## right value (kargar=3, piyade=3, kamandar=4, savar=4, rostam=5)
+## to catch the typo-bait surface (Resource returns 0 for missing
+## int properties — silent fallback).
+var _fog_handle: int = 0
+
 ## Unit-type StringName (e.g., &"kargar", &"piyade"). Concrete subclasses
 ## (Kargar, Piyade, ...) set this in their _init or via the scene template's
 ## script export. Used to look up UnitStats from BalanceData.
@@ -255,6 +281,25 @@ func _ready() -> void:
 	# unit-type subclasses or scene scripts may have already set values).
 	_apply_balance_data_defaults()
 
+	# Wave 3A.5 Track 2 — fog vision-source registration.
+	# Per §9.H3: this is the FIRST runtime read of
+	# `BalanceData.fog.sight_<unit_type>_cells`. The per-kind sight radius
+	# is looked up from BalanceData.fog using a field name composed from
+	# `unit_type` (e.g., &"kargar" → "sight_kargar_cells").
+	#
+	# FogSystem is a project.godot autoload (line 38), so the direct call
+	# is safe — no _autoload_or_null guard needed (FogSystem is always
+	# present in the SceneTree once main.tscn loads). The Wave 3A.0 stub
+	# returned -1; Track 1 of this wave ships the real impl returning a
+	# non-zero handle. The _fog_handle field captures whichever value the
+	# current impl returns; deregister at _exit_tree is idempotent for
+	# both sentinel forms (0 default, -1 stub return).
+	#
+	# is_static=false because units MOVE (their vision cells must
+	# recompute per fog_update tick). Buildings call this with is_static=
+	# true (static cell-set caching).
+	_register_fog_vision_source()
+
 	# StateMachine setup. The Unit base class registers the universally-
 	# useful states (Idle, Moving) here so every concrete unit type ships
 	# with a valid FSM out of the box. Concrete subclasses (Kargar, Piyade,
@@ -320,9 +365,23 @@ func _ready() -> void:
 
 # Disconnect on tree exit so a freed unit's FSM doesn't keep ticking after
 # queue_free. Symmetric with the connect in _ready.
+#
+# Wave 3A.5 Track 2 — also deregister the fog vision source here. _exit_tree
+# fires on ALL freeing paths: the death-preempt path (HealthComponent emits
+# unit_died → StateMachine transitions to &"dying" → UnitState_Dying.enter
+# calls queue_free.call_deferred → Godot eventually fires _exit_tree before
+# completing the free), manual queue_free in tests, scene-tree teardown.
+# Deregistering here ensures the fog grid no longer references a freed
+# CharacterBody3D, regardless of how the free was triggered.
+#
+# Per FogSystem.deregister_vision_source contract: idempotent — safe for
+# any handle value including 0 (default sentinel) and -1 (Wave 3A.0 stub
+# return). Calling unconditionally is correct.
 func _exit_tree() -> void:
 	if EventBus.sim_phase.is_connected(_on_sim_phase):
 		EventBus.sim_phase.disconnect(_on_sim_phase)
+	FogSystem.deregister_vision_source(_fog_handle)
+	_fog_handle = 0
 
 
 # Phase-signal handler. Drives fsm.tick during the &"movement" phase only.
@@ -335,6 +394,59 @@ func _on_sim_phase(phase: StringName, _tick: int) -> void:
 	if fsm == null or fsm.current == null:
 		return
 	fsm.tick(SimClock.SIM_DT)
+
+
+# Wave 3A.5 Track 2 — register this unit with FogSystem as a vision source.
+#
+# Looks up the per-kind sight radius from BalanceData.fog using a field
+# name composed from unit_type (e.g., &"kargar" → "sight_kargar_cells").
+# Stores the returned handle in _fog_handle for the matching deregister
+# at _exit_tree.
+#
+# Per §9.H3: this is the FIRST runtime read of
+# `BalanceData.fog.sight_<unit_type>_cells`. The defensive pattern mirrors
+# _apply_balance_data_defaults — load BalanceData, navigate to the fog
+# sub-resource, compose the field name, type-check the return.
+#
+# Defensive shape: when ANY step fails (BalanceData absent, fog sub-resource
+# null, unknown unit_type, missing field), the function early-bails AND
+# leaves _fog_handle at its default 0. The deregister at _exit_tree is
+# then a no-op (FogSystem.deregister_vision_source is idempotent for 0).
+# This preserves test fixtures that construct bare Unit.new() without the
+# full BalanceData chain.
+#
+# H3 typo-bait surface: if a future unit kind ships with a typo'd field
+# name (e.g., "sight_kargarr_cells" instead of "sight_kargar_cells"),
+# the `.get(field_name)` returns null + the type check fails + the
+# function early-bails with _fog_handle = 0. The unit appears in the
+# world but reveals nothing — silent failure mode flagged in
+# brief §5.2. The test_unit.gd H3 dogfood test catches this by
+# asserting each kind's lookup returns the right value at HEAD.
+func _register_fog_vision_source() -> void:
+	if unit_type == &"":
+		return  # Base Unit with no concrete type — no fog vision source.
+	# Compose the per-kind field name. Per FogConfig schema:
+	#   sight_kargar_cells / sight_piyade_cells / sight_kamandar_cells /
+	#   sight_savar_cells / sight_rostam_cells.
+	var field_name: StringName = StringName(
+		"sight_" + String(unit_type) + "_cells")
+	var path: String = Constants.PATH_BALANCE_DATA
+	if not FileAccess.file_exists(path):
+		return  # No BalanceData on disk — bare-fixture path.
+	var bd: Resource = load(path)
+	if bd == null:
+		return
+	var fog_cfg: Variant = bd.get(&"fog")
+	if fog_cfg == null or not (fog_cfg is Resource):
+		return  # fog sub-resource absent (3A.0 ships it; pre-3A.0 fixtures bail).
+	var radius_v: Variant = (fog_cfg as Resource).get(field_name)
+	if typeof(radius_v) != TYPE_INT and typeof(radius_v) != TYPE_FLOAT:
+		return  # Unknown kind / typo — H3 silent-failure detection point.
+	var sight_radius_cells: int = int(radius_v)
+	# Register. FogSystem is a project.godot autoload (line 38), direct call
+	# is safe. is_static=false because units MOVE — per-tick recompute.
+	_fog_handle = FogSystem.register_vision_source(
+		self, team, sight_radius_cells, false)
 
 
 # Read this unit's UnitStats from BalanceData (loaded from

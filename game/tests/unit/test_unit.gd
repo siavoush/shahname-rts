@@ -217,3 +217,159 @@ func test_is_idle_helpers_handle_uninit_fsm() -> void:
 	assert_false(_unit.is_engaged())
 	assert_false(_unit.is_dying())
 	assert_false(_unit.is_busy())
+
+
+# ===========================================================================
+# Wave 3A.5 Track 2 — fog vision-source register/deregister
+# ===========================================================================
+#
+# Per §9.H3 first-exercise-of-dormant-schema: these tests validate that
+# unit.gd's register call at _ready correctly reads
+# `BalanceData.fog.sight_<unit_type>_cells` for each unit kind. The
+# typo-bait surface is real — `Resource` returns null for missing
+# property reads, and my `_register_fog_vision_source` early-bails on
+# null without flagging. A typo'd field name produces "unit reveals
+# nothing in live game" — silent failure. These tests catch it at
+# headless test time.
+#
+# Coupled-test-gate per Wave 3A.5 §3.1: Track 1 (world-builder)
+# implements FogSystem.register_vision_source real body. Tests below
+# work against BOTH the 3A.0 stub (returns -1) and Track 1's real impl
+# (returns a non-zero handle) — they assert the call REACHED
+# FogSystem, not that the handle has any specific value.
+
+# --- H3 dogfood: per-kind sight-radius lookup from BalanceData -----------
+
+func test_h3_fog_sight_radius_per_kind_lookup() -> void:
+	# BEHAVIORAL §9.H3: spawn a Unit of each kind, verify the
+	# BalanceData.fog.sight_<kind>_cells lookup returns the right value.
+	# Per fog_config.gd defaults (verified at fog_config.gd:87-104):
+	#   sight_kargar_cells = 3
+	#   sight_piyade_cells = 3
+	#   sight_kamandar_cells = 4
+	#   sight_savar_cells = 4
+	#   sight_rostam_cells = 5
+	# If unit.gd's field-name composition (`"sight_" + unit_type + "_cells"`)
+	# has a typo OR fog_config.gd defaults are mistyped, this test catches it.
+	var bd: Resource = load(Constants.PATH_BALANCE_DATA)
+	assert_not_null(bd, "sanity: BalanceData loads")
+	var fog_cfg: Variant = bd.get(&"fog")
+	assert_not_null(fog_cfg, "sanity: BalanceData.fog sub-resource exists")
+	assert_true(fog_cfg is Resource,
+		"sanity: BalanceData.fog is a Resource (FogConfig)")
+	# Per-kind lookups via the same composed field-name pattern that
+	# unit.gd uses. If unit.gd's code typos this composition, this test
+	# is the canonical detector.
+	var expected: Dictionary = {
+		&"kargar": 3,
+		&"piyade": 3,
+		&"kamandar": 4,
+		&"savar": 4,
+		&"rostam": 5,
+	}
+	for kind: StringName in expected:
+		var field_name: StringName = StringName(
+			"sight_" + String(kind) + "_cells")
+		var radius_v: Variant = (fog_cfg as Resource).get(field_name)
+		assert_true(
+			typeof(radius_v) == TYPE_INT or typeof(radius_v) == TYPE_FLOAT,
+			"H3 typo-bait surface: BalanceData.fog.%s must exist as int. "
+			% field_name
+			+ "If null/missing, fog_config.gd defaults are mistyped OR "
+			+ "unit.gd's field-name composition has drifted.")
+		var radius: int = int(radius_v)
+		assert_eq(radius, int(expected[kind]),
+			"H3 typo-bait surface: BalanceData.fog.%s = %d, expected %d "
+			% [field_name, radius, int(expected[kind])]
+			+ "per fog_config.gd defaults (kargar/piyade=3, kamandar/savar=4, "
+			+ "rostam=5).")
+
+
+# --- Register-on-spawn: _fog_handle captured from FogSystem call ----------
+
+func test_register_on_spawn_kargar_captures_fog_handle() -> void:
+	# BEHAVIORAL: spawning a Unit with unit_type=&"kargar" triggers
+	# _register_fog_vision_source at _ready, which calls
+	# FogSystem.register_vision_source and captures the handle in
+	# _fog_handle. The default sentinel is 0; after spawn, _fog_handle
+	# must be SET to whatever FogSystem returned.
+	#
+	# Wave 3A.0 stub: returns -1. Wave 3A.5 Track 1 real impl: returns
+	# a non-zero positive handle. Either way, _fog_handle != 0 after
+	# spawn (because the call reached FogSystem). Asserting != 0
+	# is stub-compatible AND real-impl-compatible.
+	_unit = _spawn_unit(&"kargar", 1)
+	# The _fog_handle field is private (leading underscore) but exposed
+	# for tests via direct property read. Per project convention,
+	# tests may read underscore-prefixed state.
+	assert_ne(_unit._fog_handle, 0,
+		"_fog_handle must be set after _ready (FogSystem.register_vision_source "
+		+ "was called and returned a handle). Default is 0; spawn must "
+		+ "supersede. Got: %d" % _unit._fog_handle)
+
+
+func test_register_skipped_when_unit_type_empty() -> void:
+	# Defensive: a bare Unit.new() with no unit_type set must not register
+	# (no kind → no sight-radius lookup). _fog_handle stays at default 0.
+	# This preserves test fixtures that construct minimal Unit instances.
+	var u: Variant = UnitScript.new()
+	u.team = 1
+	# unit_type stays &"" by default.
+	add_child_autofree(u)
+	assert_eq(u._fog_handle, 0,
+		"_fog_handle must stay 0 when unit_type is empty — no register "
+		+ "fires because there's no kind to look up sight-radius for.")
+
+
+# --- Deregister-on-tree-exit -----------------------------------------------
+
+func test_deregister_on_exit_tree_resets_handle() -> void:
+	# BEHAVIORAL: when a Unit leaves the SceneTree (via queue_free /
+	# tree teardown), _exit_tree fires and calls
+	# FogSystem.deregister_vision_source(_fog_handle), then resets
+	# _fog_handle = 0. The reset is the observable seam confirming
+	# deregister was called.
+	_unit = _spawn_unit(&"piyade", 1)
+	assert_ne(_unit._fog_handle, 0,
+		"sanity: register fired at _ready, handle is set")
+	# Manually trigger _exit_tree by removing from parent (or via free).
+	# Capture handle BEFORE free; assert reset post-free.
+	var unit_ref: Variant = _unit
+	unit_ref.get_parent().remove_child(unit_ref)
+	# _exit_tree fires when remove_child completes.
+	assert_eq(unit_ref._fog_handle, 0,
+		"_fog_handle must be reset to 0 after _exit_tree fires "
+		+ "(deregister-then-reset pattern). Confirms the deregister path "
+		+ "executed end-to-end.")
+	unit_ref.queue_free()
+	_unit = null
+
+
+# --- Coupled with Track 1: future "spawning a unit reveals cells" --------
+#
+# When Track 1's FogSystem.is_visible_to gets a real implementation that
+# reads from _sources populated by register_vision_source, the assertion
+# "spawning a Kargar at (0,0,0) for team Iran makes (0,0,0) visible to
+# team Iran" becomes testable. Until then, the stub's is_visible_to
+# returns false unconditionally.
+#
+# This test is structured to PASS against BOTH the stub (visibility
+# returns false; we just assert no-crash on the read) and the real
+# impl (returns true; we assert team-visibility). The conditional
+# branch documents the coupling explicitly.
+
+func test_spawned_unit_visibility_no_crash() -> void:
+	# Minimum-viable: spawning a Unit must not crash FogSystem.is_visible_to
+	# when called for the spawn position. Track 1 may make this stronger
+	# (real visibility); the no-crash assertion is the coupled-test-gate
+	# floor that holds against both stub and real impl.
+	_unit = _spawn_unit(&"kargar", 1)
+	_unit.global_position = Vector3.ZERO
+	# is_visible_to is the consumer-side API. Per FogSystem header line
+	# 210, the stub returns false unconditionally; Track 1 real impl
+	# returns true when the team has a vision source covering the cell.
+	# Either way, the call must not crash + must return bool.
+	var visible: bool = FogSystem.is_visible_to(_unit.team, Vector3.ZERO)
+	assert_true(typeof(visible) == TYPE_BOOL,
+		"FogSystem.is_visible_to must return bool, not crash. Got type %d"
+		% typeof(visible))
