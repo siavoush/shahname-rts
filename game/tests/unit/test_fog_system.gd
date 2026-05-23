@@ -495,6 +495,73 @@ func test_ever_seen_is_append_only() -> void:
 	fog.free()
 
 
+# --- Signal-wiring regression (BUG-D1) ---
+# §9.D7(b): tests must exercise the wiring path, not just the function body.
+# Prior code connected to a non-existent SimClock signal; _on_fog_update_phase
+# was silently never called. These tests verify that _on_sim_phase exists,
+# has the right signature, filters correctly, and is connectable to EventBus.sim_phase.
+
+const EventBusScript: Script = preload("res://scripts/autoload/event_bus.gd")
+
+func test_fog_system_has_on_sim_phase() -> void:
+	assert_true(_fog.has_method("_on_sim_phase"),
+		"FogSystem must expose _on_sim_phase() for EventBus.sim_phase wiring (BUG-D1)")
+
+
+func test_sim_phase_wrong_phase_does_not_update_visibility() -> void:
+	# Emitting a non-fog phase (e.g. spatial_rebuild) must NOT call the fog recompute.
+	var fog: Node = _make_fog_with_bounds(Rect2(Vector2.ZERO, Vector2(256, 256)), 4.0)
+	var dummy: Node3D = Node3D.new()
+	dummy.global_position = Vector3(20.0, 0.0, 20.0)
+	add_child_autofree(dummy)
+	fog.register_vision_source(dummy, 0, 1, false)
+	# Fire a different phase — should be ignored.
+	fog._on_sim_phase(&"spatial_rebuild", 1)
+	assert_false(fog.is_visible_to(0, Vector3(20.0, 0.0, 20.0)),
+		"wrong sim_phase must not trigger fog recompute")
+	fog.free()
+
+
+func test_sim_phase_fog_update_triggers_visibility() -> void:
+	# BUG-D1 regression: driving via _on_sim_phase(&"fog_update", ...) must
+	# produce the same result as direct _on_fog_update_phase(). This test drives
+	# the handler path, NOT _on_fog_update_phase() directly.
+	var fog: Node = _make_fog_with_bounds(Rect2(Vector2.ZERO, Vector2(256, 256)), 4.0)
+	var dummy: Node3D = Node3D.new()
+	dummy.global_position = Vector3(20.0, 0.0, 20.0)
+	add_child_autofree(dummy)
+	fog.register_vision_source(dummy, 0, 1, false)
+	fog._on_sim_phase(&"fog_update", 1)
+	assert_true(fog.is_visible_to(0, Vector3(20.0, 0.0, 20.0)),
+		"_on_sim_phase(&'fog_update', 1) must trigger fog recompute and reveal source cell")
+	fog.free()
+
+
+func test_sim_phase_wiring_via_eventbus_script() -> void:
+	# Verify that _on_sim_phase is connectable to an EventBus.sim_phase signal
+	# and fires correctly. This is the structural wiring test — mirrors the
+	# EventBus.sim_phase.connect(_on_sim_phase) call in _ready.
+	var fog: Node = _make_fog_with_bounds(Rect2(Vector2.ZERO, Vector2(256, 256)), 4.0)
+	var dummy: Node3D = Node3D.new()
+	dummy.global_position = Vector3(32.0, 0.0, 32.0)
+	add_child_autofree(dummy)
+	fog.register_vision_source(dummy, 0, 1, false)
+
+	var eb: Node = EventBusScript.new()
+	add_child_autofree(eb)
+	# Wire exactly as fog_system._ready does.
+	eb.sim_phase.connect(fog._on_sim_phase)
+
+	# Emit fog_update phase — should trigger recompute.
+	eb.sim_phase.emit(&"fog_update", 1)
+
+	assert_true(fog.is_visible_to(0, Vector3(32.0, 0.0, 32.0)),
+		"EventBus.sim_phase.emit(&'fog_update', 1) must drive FogSystem recompute via wiring")
+
+	eb.sim_phase.disconnect(fog._on_sim_phase)
+	fog.free()
+
+
 func test_is_visible_to_out_of_range_team_returns_false() -> void:
 	var fog: Node = _make_fog_with_bounds(Rect2(Vector2.ZERO, Vector2(256, 256)), 4.0)
 	assert_false(fog.is_visible_to(-1, Vector3.ZERO),

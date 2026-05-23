@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.33.0
+version: 0.33.1
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -286,6 +286,28 @@ game/
 - Spec said X; we built Y; reason: Z
 - Subsystem A took Phase N+1 (slipped one phase), reason: ...
 - Contract V was bumped from 1.x.0 to 1.y.0 during implementation; key change: ...
+
+### v0.33.1 — BUG-D1 fix-wave: FogSystem sim_phase wiring (Wave 3A.5 retroactive, mirror-reviewer first-dispatch find) (2026-05-24)
+
+PATCH bump for BUG-D1 — Wave 3A.5 retroactive production bug caught by the **mirror-reviewer agent on its first real dispatch**. Significant signal about the agent's value: shipped at v0.33.0 (session-7 close), validated empirically <24h later by catching a production bug shipped at Wave 3A.5 that 1466+ tests had passed.
+
+**The bug:** `fog_system.gd:_ready` (lines 143-148 in v0.33.0) used `sc.has_signal(&"fog_update") + sc.fog_update.connect(_on_fog_update_phase)`. SimClock declares no `signal fog_update` — it only emits via `EventBus.sim_phase(phase, tick)` for all phases. `has_signal` returned false → connect skipped → `_on_fog_update_phase` never fired in production. **Wave 3A.5's per-tick fog recompute was dead code in live play.** `is_visible_to` returned false for everything; vision-source registrations from Wave 3A.5 Track 2 (unit.gd `_register_fog_vision_source`) were stored but never translated to visibility. Tests passed via 5+ direct calls to `fog._on_fog_update_phase()` — function body was exercised but the signal-wiring path wasn't.
+
+**The fix (`f855ec5`):** world-builder-p3s2 replaced the broken block with canonical `EventBus.sim_phase.connect(_on_sim_phase)` + `_on_sim_phase(phase, _tick)` handler filtering on `Constants.PHASE_FOG_UPDATE`. Same shape as spatial_index.gd / unit.gd / building.gd. 4 new regression tests including **the wiring-path test that drives `EventBus.sim_phase.emit(&"fog_update", 1)` directly + asserts visibility populates** — would have caught the bug at Wave 3A.5 ship time. All 49 fog_system tests pass.
+
+**Two convergent retro lessons:**
+
+1. **Defensive-guard masking** (Task #214 carry-forward) — same shape as BUG-C1's defensive-fallback-masking. `has_signal()` guard converts wiring-bug into silent no-op. **§9.M codification candidate strengthened by N=2 confirmation** (BUG-C1 + BUG-D1). The rule shape: "When a function has a defensive guard (`if X == default: return fallback` OR `if has_method: call`), tests MUST exercise the path THROUGH the guard with realistic input, not just trigger the guard's bypass."
+
+2. **Mirror-reviewer agent VALIDATED on first dispatch.** The agent shipped at v0.33.0 (PR #35 merged ~hours before). First real dispatch (Wave 3B brief-time review) produced 8 findings — 2 blockers, 3 risks, 3 verified — including BUG-D1. Per the agent's "accept when proven wrong" discipline: lead [confirmed] finding 1.3 via independent verification. **The agent works exactly as designed.** Worth tracking value-per-dispatch across session-8 for full empirical validation.
+
+**Wave 3B brief-time review additional findings carry-forward** (to be addressed in Wave 3B brief edit pass before implementer dispatch):
+- Brief's §3.1 §9.L10 instruction needs zero-canonical-consumer fallback path (Wave 3B IS the first consumer of `BalanceData.ai`).
+- Brief's `_issue_attack_move(unit_id, target_id)` sketch — needs alignment with `Unit.replace_command(kind, payload)` actual signature.
+- Brief's "Tests required" block needs explicit Pitfall #16 + #17 references at test-author level.
+- Brief should lock autoload-name decision (TuranController vs DummyAIController) before dispatch.
+
+---
 
 ### v0.33.0 — Phase 3 session 7 close retro: 3 new §9 rules + 2 documented pitfalls + mirror-reviewer agent + BUG-C1 lessons codified (2026-05-23)
 

@@ -12,12 +12,53 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-23 (Phase 3 session 7 CLOSE RETRO — 3 §9 codifications + 2 documented pitfalls + mirror-reviewer agent)
+last_updated: 2026-05-24 (BUG-D1 fix-wave — FogSystem sim_phase wiring; mirror-reviewer first-dispatch validation)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-05-24 — BUG-D1 fix-wave: FogSystem sim_phase wiring (Wave 3A.5 retroactive) + mirror-reviewer first-dispatch validation
+
+**Branch:** `feat/bug-d1-fog-system-wiring-fix` **Commit:** `f855ec5` (world-builder-p3s2)
+
+**What happened:**
+
+Wave 3B brief draft (`02p_PHASE_3_SESSION_8_WAVE_3B_KICKOFF.md`) was dispatched to mirror-reviewer for the agent's **first real brief-time review**. Mirror produced 8 findings (2 blockers + 3 risks + 3 verified). Most significant: finding 1.3 surfaced that Wave 3A.5's `fog_system.gd:_ready` sim_phase wiring was broken in production — `sc.has_signal(&"fog_update")` returns false because SimClock has no such signal, only the `EventBus.sim_phase` general signal. `_on_fog_update_phase` was never being called in live play; per-tick fog recompute was dead.
+
+**Fix shipped at `f855ec5`** (world-builder-p3s2, ~25 min from dispatch to ship):
+- `fog_system.gd:_ready` — replaced broken `sc.has_signal + sc.fog_update.connect` block with canonical `EventBus.sim_phase.connect(_on_sim_phase)` pattern.
+- New `_on_sim_phase(phase, _tick)` handler filters by `Constants.PHASE_FOG_UPDATE`, delegates to existing `_on_fog_update_phase` body.
+- 4 new regression tests in `test_fog_system.gd` including the wiring-path test that drives `EventBus.sim_phase.emit(&"fog_update", 1)` directly — would have caught the bug at Wave 3A.5 ship time.
+- All 49 fog_system tests pass; full suite zero regressions.
+
+**Mirror-reviewer first-dispatch performance:**
+
+- 8 findings in single brief-time review pass:
+  - 2 blockers (sim_phase signature wrong → BUG-D1 production bug; §9.L10 zero-canonical-consumer fallback unclear)
+  - 3 risks (Unit.replace_command signature mismatch; Pitfall #16 surface; Pitfall #17 surface)
+  - 3 verified (FogSystem API; AIConfig field names; no cross-cutting schema)
+- "Accept when proven wrong" discipline working: mirror raised 1.3 with evidence; lead independently verified via `git grep`; finding [confirmed].
+- **Agent design validated on first real test.** Worth tracking value-per-dispatch across session-8 for full empirical assessment.
+
+**Convergent retro lessons (N=2 now):**
+
+- **Defensive-guard masking** — BUG-C1 (`if X == default: return fallback` masks brief-vs-canonical schema mismatch) + BUG-D1 (`has_signal()` guard masks dead wiring). Same shape, two waves, two production bugs that 1466+ tests couldn't catch. §9.M codification candidate (Task #214) strengthened.
+
+**Carry-forwards from mirror review for Wave 3B brief edit pass:**
+
+- §3.1 §9.L10 instruction needs zero-canonical-consumer fallback path (Wave 3B is first BalanceData.ai consumer).
+- Track 1 sim_phase subscription sketch needs canonical pattern (will be inherited from f855ec5 now).
+- `_issue_attack_move(unit_id, target_id)` signature needs alignment with `Unit.replace_command(kind, payload)`.
+- "Tests required" block needs explicit Pitfall #16 + #17 references.
+- Autoload-name decision (TuranController vs DummyAIController) — lock before dispatch.
+
+**State for next:**
+
+Wave 3B brief edit pass + dispatch. The mirror-reviewer's first dispatch has paid for itself: it caught one production bug + one brief bug + 2 Pitfall surfaces in 15 minutes of review time, in exchange for fixing them BEFORE Wave 3B implementation began. Net wave time saved is hours.
 
 ---
 

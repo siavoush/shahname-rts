@@ -140,12 +140,14 @@ func _ready() -> void:
 
 	_init_grid(bounds, cell_size)
 
-	# Connect fog_update SimClock phase (wave 3A.5). SimClock is an autoload;
-	# same SceneTree pattern as farr_system.gd / resource_system.gd.
-	# The phase was added in wave 3A.0 Track 3 (engine-architect).
-	var sc: Node = _autoload_or_null(&"SimClock")
-	if sc != null and sc.has_signal(&"fog_update"):
-		sc.fog_update.connect(_on_fog_update_phase)
+	# Connect to the sim_phase EventBus signal; filter to PHASE_FOG_UPDATE in
+	# _on_sim_phase. SimClock does NOT declare per-phase signals — it emits
+	# EventBus.sim_phase(phase, tick) for all phases. Canonical pattern matches
+	# spatial_index.gd:43 and unit.gd:363.
+	# BUG-D1 fix (2026-05-22): prior code used sc.has_signal(&"fog_update") which
+	# always returned false because SimClock has no such signal — _on_fog_update_phase
+	# was never called in production. Fixed by using EventBus.sim_phase directly.
+	EventBus.sim_phase.connect(_on_sim_phase)
 
 
 ## Public grid initializer (used by tests to bypass _ready's autoload reads).
@@ -316,8 +318,16 @@ func deregister_vision_source(handle: int) -> void:
 
 
 # ---------------------------------------------------------------------------
-# Per-tick fog recompute — connected to SimClock.fog_update in _ready
+# Per-tick fog recompute — driven by EventBus.sim_phase (PHASE_FOG_UPDATE)
 # ---------------------------------------------------------------------------
+
+## EventBus.sim_phase handler. Filters to fog_update phase; delegates to
+## _on_fog_update_phase. Canonical pattern per spatial_index.gd:174.
+func _on_sim_phase(phase: StringName, _tick: int) -> void:
+	if phase != Constants.PHASE_FOG_UPDATE:
+		return
+	_on_fog_update_phase()
+
 
 ## Per-tick handler. Clears _currently_visible for all teams, then rebuilds
 ## it from all registered vision sources. Lazily cleans up stale records
