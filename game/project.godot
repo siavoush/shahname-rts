@@ -36,6 +36,7 @@ FarrDrainDispatcher="*res://scripts/autoload/farr_drain_dispatcher.gd"
 SelectionManager="*res://scripts/autoload/selection_manager.gd"
 ControlGroups="*res://scripts/input/control_groups.gd"
 FogSystem="*res://scripts/autoload/fog_system.gd"
+TuranController="*res://scripts/autoload/turan_controller.gd"
 
 [debug]
 
