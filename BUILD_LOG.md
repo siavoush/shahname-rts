@@ -12,12 +12,65 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-24 (BUG-D1 fix-wave — FogSystem sim_phase wiring; mirror-reviewer first-dispatch validation)
+last_updated: 2026-05-24 (BUG-D2 fix-wave — FogSystem team-id Cartesian-product; ai-engineer first-runtime find; defensive-fallback-masking N=3)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-05-24 — BUG-D2 fix-wave: FogSystem team-id Cartesian-product (Wave 3A.5 retroactive) + defensive-fallback-masking N=3
+
+**Branch:** `feat/bug-d2-fog-team-id-bounds` **Commit:** `447c5cb` (world-builder-p3s2)
+
+**What happened:**
+
+ai-engineer-p3s8 spawned for Wave 3B Track 1 (TuranController). During their first-runtime exercise of `FogSystem.is_visible_to(Constants.TEAM_TURAN, ...)`, the call silently returned false. Investigation surfaced a Cartesian-product bug:
+
+- `fog_system.gd:78` declared `NUM_TEAMS=2` with comment "Team 0=Iran, Team 1=Turan"
+- `Constants.TEAM_IRAN=1`, `Constants.TEAM_TURAN=2` (1-indexed)
+- Storage arrays sized for indices [0, 1] — Iran writes at index 1 worked by accident; Turan would IndexError if it weren't rejected first
+- Bounds check `team_id >= NUM_TEAMS` rejected TURAN (2 >= 2 = true) → silent false return
+- Per-team iteration missed TURAN entirely
+- **Turan-side fog has been silently broken since Wave 3A.5 ship**
+
+ai-engineer flagged via §9.D7(b) before shipping their TuranController; lead dispatched BUG-D2 fix-wave to world-builder-p3s2 (FogSystem domain).
+
+**Fix shipped at `447c5cb`** (world-builder-p3s2, ~30 min from dispatch to ship):
+- Option A applied — `_team_index(team_id) -> int` helper returns `team_id - 1`. TEAM_IRAN(1)→0, TEAM_TURAN(2)→1.
+- Bounds check uses `Constants.TEAM_IRAN` / `Constants.TEAM_TURAN` directly.
+- Storage stays sized `NUM_TEAMS=2`; comment corrected.
+- 4 new regression tests including `test_turan_visibility_is_not_silently_false` + cross-team independence driven via `EventBus.sim_phase.emit` (per §9.D7(b) wiring-path discipline).
+- 52/52 fog tests pass; zero suite regressions.
+
+**Defensive-fallback-masking N=3 (Task #214 promoted to high-priority for session-8 retro):**
+
+Three consecutive waves with the same root-cause shape:
+- BUG-C1 (3A.6): `if kind == &"":` defensive early-bail
+- BUG-D1 (3A.5): `if sc.has_signal(&"fog_update"):` defensive guard
+- BUG-D2 (3A.5): `if team_id >= NUM_TEAMS:` defensive bounds check
+
+Same pattern: *defensive guard masks upstream error → silent no-op → test fixture and bug converge on the same fallback path → all tests pass while bug ships*. §9.M codification with N=3 evidence is now overdue.
+
+**"First runtime consumer catches producer bug" N=3 (no longer coincidental):**
+
+Three consecutive instances across three different finder agents:
+- 3A.5 — gp-sys catches `as Node3D` cast bug (cross-track diagnostic)
+- 3A.6 — gp-sys catches `test_close_clears_rows` bug (cross-track diagnostic)
+- BUG-D1 — mirror-reviewer first-dispatch catches sim_phase wiring
+- BUG-D2 — ai-engineer-p3s8 first-runtime catches team-id Cartesian-product
+
+The pattern is empirically validated. Session-8 retro should formally codify cross-finder ↔ producer relationships.
+
+**Wave 3B status:** Track 1 shipped at `881b52f` (pushed). Branch was forked from main pre-BUG-D1 + had BUG-D2 issue at runtime → integration test documents the broken pipeline path. Post-BUG-D2 merge: rebase Wave 3B onto main; both fog bugs fixed; PR opens with natural pipeline activated.
+
+**State for next:**
+- Merge BUG-D2 PR #37 to main.
+- Rebase `feat/wave-3b-dummy-ai` onto current main (picks up BUG-D1 + BUG-D2).
+- Re-verify Wave 3B suite still green post-rebase.
+- Open Wave 3B PR.
 
 ---
 
