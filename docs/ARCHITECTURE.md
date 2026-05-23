@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.32.0
+version: 0.33.0
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -19,7 +19,7 @@ references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
 last_updated: 2026-05-22
-# bumped to v0.32.0 — Phase 3 session 7 Wave 3A.6 close: first PLAYABLE production loop. Click producer building → ProductionPanel → Train button → resources deducted atomically + pop check + unit spawns at rally-point offset after dwell ticks. 3 producer-unit pairs (Sarbaz-khaneh→Piyade, Sowari-khaneh→Savar, Tirandazi→Kamandar); AsbSavarKamandar + Kargar production explicitly deferred (locked by deferral test). 3 tracks shipped as 3 sequenced-on-same-branch commits (ac0416d Track 1 → cd33aef Track 3 → 67606ed Track 2). Wave produced unusual amount of empirical evidence for §9 retro: gp-sys cross-track diagnostic N=2 (caught Track 2's close_clears_rows + Track 1's surface), workspace-bleed N=2 (ui-developer's 3-file silent revert; root cause unknown), Task #199 dogfooded N=2 (ui-developer's commit attempt caught by pre-commit gate), 3 defensible §9.E1 paths in single wave (balance-engineer [blocked]+wait then stash-and-discard; ui-developer parallel-scaffold-then-rebase).
+# bumped to v0.33.0 — Phase 3 session 7 close retro. STUDIO_PROCESS v2.2.0 → v2.3.0 (3 new active §9 rules + addendums): §9.E1 tier-precedence ladder + tool-selection clarification + incidental-cross-track-review naming (synthesized from 5 empirical paths across 3A.0/3A.5/3A.6); §9.L10 canonical-pattern grep (gating-track / first-implementer's brief-validation discipline — directly prevents BUG-C1 class); §9.E1 incidental cross-track review naming codifies gp-sys's N=2 pattern. PROCESS_EXPERIMENTS Pitfalls #16 (`as Node3D` cast crashes on freed Object) + #17 (`await get_tree().process_frame` leaks SimClock ticks) — both graduated from candidate via N=2 confirmation rule. New `mirror-reviewer` agent definition shipped (user-originated adversarial brief-time review role with code + online research). Session ships 5 waves total (3A.0, 3A.5, 3A.6, 3A.6 BUG-C1 fix-wave, close retro PR) and 14+ retro candidates synthesized into rules + pitfalls + agent.
 ---
 
 # Architecture — Target Shape and Build State
@@ -286,6 +286,66 @@ game/
 - Spec said X; we built Y; reason: Z
 - Subsystem A took Phase N+1 (slipped one phase), reason: ...
 - Contract V was bumped from 1.x.0 to 1.y.0 during implementation; key change: ...
+
+### v0.33.0 — Phase 3 session 7 close retro: 3 new §9 rules + 2 documented pitfalls + mirror-reviewer agent + BUG-C1 lessons codified (2026-05-23)
+
+Phase 3 session 7 close retro consolidates 5 persistent-agent SendMessage reflections across 4 waves (3A.0 / 3A.5 / 3A.6 / 3A.6 BUG-C1 fix-wave) into structural process additions. The session shipped under unusual coordination conditions — 5 distinct defensible §9.E1 paths empirically observed, 2 cross-track diagnostic catches (gp-sys-p3s3), 1 schema-mismatch bug shipped to live-test (BUG-C1 — lead-brief mistake), 1 workspace-bleed incident N=2, 2 stale task-system replay events, and 14+ retro candidates accumulated. **Third empirical validation of facts-not-diagnosis retro discipline** — agents independently produced detailed concrete rule proposals; lead synthesized without pre-framing.
+
+**What shipped (process artifacts):**
+
+- **STUDIO_PROCESS.md v2.2.0 → v2.3.0 (MINOR — additive).** 3 active §9 changes (1 new rule + 2 substantial addendums) + cluster TOC update (§9.L cluster 10 → 11; total 57 → 60 rules counting the §9.E1 addendum as a substantive rule extension). All changes with canonical-incident citations + provenance notes.
+  - **§9.E1 tier-precedence ladder** — synthesized from world-builder-p3s2's "single branching question" framing + engine-architect-p3s2's 3-tier proposal + balance-engineer-p3s3's "canonical-holder" framing + gp-sys-p3s3's "gating track loses cross-track diagnostic vantage" insight. Tier 1 [blocked]+broadcast / sequenced-on-same-branch as default. Tier 2 joint-commit when cross-domain visible + small + unambiguous. Tier 3 lead resolution. Stash-and-pop on dirty index FORBIDDEN. Plus tool-selection clarification (`git restore --staged` for subset-commit-preserve-WIP vs `git stash` for shelve-with-uncertain-intent).
+  - **§9.E1 incidental cross-track review (naming)** — world-builder's session-7 framing: joint-commit-default produces incidental cross-track review by structural property; gp-sys's N=2 catches confirm. First runtime consumer of new producer surface is best-positioned. Pairs with §9.D7(b).
+  - **§9.L10 canonical-pattern grep (NEW rule)** — gating-track / first-implementer's brief-validation discipline. Before implementing any data/autoload/project-internal read in new code, `git grep` for existing canonical consumers + use their pattern. Brief prose loses to project-internal canonical access. Complement to §9.D7(b): D7(b) catches downstream-consumer bugs; L10 catches upstream-producer bugs when you ARE the gating track. **Would have prevented BUG-C1** — 30-second grep for `BalanceData.bldg_` would have shown zero hits and surfaced the brief mistake before implementation.
+
+- **PROCESS_EXPERIMENTS.md** — 2 new Known Godot Pitfalls (graduated via N=2 criterion per ui-developer's session-7 codification proposal):
+  - **Pitfall #16** — `as Node3D` cast crashes on freed Object. Variable-read-then-cast is the safe pattern (read Variant first, `is_instance_valid()`, then cast). N=1 incident at Wave 3A.5 caught by gp-sys cross-track diagnostic before commit.
+  - **Pitfall #17** — `await get_tree().process_frame` leaks physics ticks into SimClock. Use `free()` not `queue_free()` + await for assertion-immediate-after-spawn cases. N=2 incidents (Wave 3A.5 world-builder + Wave 3A.6 ui-developer) caught by pre-commit gate.
+
+- **`.claude/agents/mirror-reviewer.md` (NEW)** — adversarial brief-time reviewer agent (user-originated proposal post-BUG-C1). Adversarial role with `git grep` + `WebFetch`/`WebSearch` tools; must accept when proven wrong (epistemic, not political); brief-time gate before dispatch. 4 finding classes: (1) schema/access-pattern divergence, (2) Godot 4 / GDScript footgun, (3) cross-cutting schema introduction without verification, (4) project-history pattern conflict. Fills the structural gap that BUG-C1 surfaced: no existing discipline targeted brief-time schema verification against canonical existing patterns.
+
+- **`ARCHITECTURE.md` v0.32.0 → v0.33.0** — this §6 entry + frontmatter.
+
+**Wave-shipping summary (4 waves + close retro = 5 PRs in session-7):**
+
+| Wave | Commit / PR | Substance |
+|---|---|---|
+| 3A.0 | PR #32 / `fe01373` | Fog DATA LAYER (FogConfig + FogSystem stubs + sim_clock fog_update phase + SIM_CONTRACT v1.5.0). First real-time §9.E1 + §9.M3 + §9.D7(b) application — 3 distinct defensible paths empirically observed. |
+| 3A.5 | PR #33 / `1580918` | Fog VISION SOURCES + per-tick recompute. unit.gd + 7-building call-site sweep (Khaneh added; sight=0 placeholder replaced). First cross-track diagnostic loop in the wild (gp-sys → world-builder). |
+| 3A.6 | PR #34 / `3da7c8d` | First PLAYABLE production loop. Click producer → ProductionPanel → train. 3 producer-unit pairs. Plus BUG-C1 fix-wave at `0679630` (schema mismatch). |
+| Close retro | (this PR) | 3 §9 codifications + 2 pitfalls + mirror agent. |
+
+**Retro candidates synthesized in this PR (14+ accumulated → 3 codified rules + 2 documented pitfalls + 1 agent definition):**
+
+| Task | Disposition |
+|---|---|
+| #194 (3A.0): `git restore --staged` over stash for cross-track isolation | **Codified into §9.E1 tool-selection clarification.** |
+| #195 (3A.0): §9.E1 ordering refinement | **Codified into §9.E1 tier-precedence ladder.** |
+| #198 (3A.5): `as Node3D` cast crashes on freed Object | **Pitfall #16 documented.** |
+| #199 (3A.5+3A.6): `await get_tree().process_frame` leaks SimClock ticks | **Pitfall #17 documented (N=2).** |
+| #207 (3A.5+3A.6): gp-sys cross-track diagnostic N=2 pattern | **Codified into §9.E1 incidental-cross-track-review naming + pairs with §9.D7(b).** |
+| #208 (3A.6): workspace-bleed incident N=2 | **Investigation candidate documented** (root cause unknown across N=2; surfaced for session-8 investigation per ui-developer's 3-tier prevention shape proposal). |
+| #209 (3A.6): TaskUpdate/TaskCreate emit side-effects to agent inboxes | **Investigation candidate documented** (5 stale events observed in single session; behavior may be expected — investigation needed). |
+| #212 (BUG-C1): Lead brief-vs-actual-schema mismatch | **Codified into §9.L10 canonical-pattern grep + mirror-reviewer agent definition.** |
+| #213 (BUG-C1): Missed §9.D7(b) opportunity: brief-divergence finding | **Codified into §9.L10 explicitly mentions `[D7(b)] brief-vs-canonical-schema divergence` broadcast pattern.** |
+| #214 (BUG-C1): defensive-fallback-masking testing failure mode | **§9.M codification candidate carried forward to session-8** (gp-sys's audit of ~15 vulnerable helpers offered as concrete next step). |
+| Mirror agent proposal (user-originated) | **Shipped: `.claude/agents/mirror-reviewer.md` + role explained in ARCH retro entry.** |
+
+**Carry-forwards to session-8 (not codified this session):**
+
+- **engine-architect-p3s2's `SimClock._physics_process_enabled` guard** — engine-side complement to Pitfall #17's test-discipline fix. Engine guard scales O(1) vs O(test-author-vigilance). Should ship as dedicated engine-architect track in session-8 hygiene wave.
+- **gp-sys's defensive-cascade audit (~15 helpers)** — surveys every `if X == default: return fallback` cascade for test-coverage of NON-fallback path. §9.M codification candidate after audit completes.
+- **engine-architect's standing-checks proposal** — session-8 trial. Cross-wave drift sweep, §7 LATER aging, Sim Contract version-vs-code drift. ~10 min/session cost; prevents L25-class issues.
+- **balance-engineer's L1 brief-annotation suggestion** — one-line "starting point; balance-engineer overrides per §9.L1" annotation per brief table cell. Lead-process improvement; raise via QUESTIONS_FOR_DESIGN.md.
+- **ui-developer's §9.D7(b) format compression** — `[D7(b)] observation / status / ask` shape instead of 200-400 line prose. Lighten the prose, keep the ceremony.
+- **Workspace-bleed root-cause investigation** — dedicated 1-hour "instrument and reproduce" session before N=3 incident accumulates.
+- **Production phase migration** — `&"movement"` is wrong long-term home for production state machine; dedicated `&"production"` phase when 2nd consumer (Phase 6 real AI) surfaces.
+
+**The session's most load-bearing learning:** structural cross-track review by gating + non-gating tracks together (canonical-pattern grep + cross-track diagnostic) closes the brief-mistake-to-live-test gap that BUG-C1 demonstrated. Combined with the mirror-reviewer agent at brief-time, the project now has three complementary brief-defect-catching mechanisms positioned at three points in the wave lifecycle.
+
+**`02n_PHASE_3_SESSION_7_WAVE_3A_6_KICKOFF.md` is ephemeral per §9.C3** — to be deleted alongside `02l_*` + `02m_*` at next session start.
+
+---
 
 ### v0.32.0 — Phase 3 session 7 Wave 3A.6 close: first playable production loop + 4 substantive §9 retro candidates (2026-05-23)
 

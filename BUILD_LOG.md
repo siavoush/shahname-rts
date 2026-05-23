@@ -12,12 +12,62 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-23 (Phase 3 session 7 Wave 3A.6 close — first playable production loop + 4 substantive §9 retro candidates)
+last_updated: 2026-05-23 (Phase 3 session 7 CLOSE RETRO — 3 §9 codifications + 2 documented pitfalls + mirror-reviewer agent)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-05-23 — Phase 3 session 7 CLOSE RETRO: 3 §9 rules + 2 Known Godot Pitfalls + mirror-reviewer agent
+
+**Branch:** `feat/session-7-close-retro` **Commits:** (pending — this commit + push + PR #35)
+
+**What shipped (process artifacts only — no game code):**
+
+1. **`docs/STUDIO_PROCESS.md` v2.2.0 → v2.3.0 (MINOR):**
+   - **§9.E1 tier-precedence ladder + tool-selection clarification + incidental cross-track review naming.** Synthesized from 5 empirical §9.E1 paths observed across Waves 3A.0 / 3A.5 / 3A.6. Tier 1 [blocked]+broadcast / sequenced-on-same-branch (DEFAULT). Tier 2 joint-commit (when cross-domain visible). Tier 3 lead resolution. Stash-and-pop on dirty index FORBIDDEN. Plus `git restore --staged` for subset-commit-preserve-WIP vs `git stash` for shelve-with-uncertain-intent.
+   - **§9.L10 canonical-pattern grep (NEW rule).** Gating-track / first-implementer's brief-validation discipline. Before implementing any data/autoload/project-internal read in new code, grep for existing canonical consumers + use their pattern. Complement to §9.D7(b). Would have prevented BUG-C1.
+   - Cluster TOC: §9.L 10 → 11 entries. Total 57 → 60 active rules.
+
+2. **`docs/PROCESS_EXPERIMENTS.md`** — 2 new Known Godot Pitfalls graduated via N=2 criterion:
+   - **Pitfall #16:** `as Node3D` cast crashes on freed Object. Variable-read-then-cast is safe pattern.
+   - **Pitfall #17:** `await get_tree().process_frame` leaks physics ticks into SimClock. Use `free()` not `queue_free()` + await.
+
+3. **`.claude/agents/mirror-reviewer.md`** (NEW) — adversarial brief-time reviewer agent. User-originated proposal post-BUG-C1. Read-only (Read + Glob + Grep + Bash + WebFetch + WebSearch + SendMessage). 4 finding classes. "Accept when proven wrong" discipline.
+
+4. **`docs/ARCHITECTURE.md` v0.32.0 → v0.33.0** — close retro §6 entry + frontmatter.
+
+**5 persistent-agent reflections synthesized** (third empirical validation of facts-not-diagnosis discipline):
+
+- **gp-sys-p3s3:** "First runtime consumer of new producer surface is best-positioned to catch contract bugs." Two complementary disciplines: §9.D7(b) for non-gating tracks + canonical-pattern grep for gating tracks. Defensive-fallback-masking insight (~15 vulnerable helpers in codebase).
+- **world-builder-p3s2:** "§9.E1 reduces to one branching question: can both tracks commit to the same ref?" Restore-staged vs stash reconciliation. Pre-flight SPLIT discipline (stub-able seams test). "Incidental cross-track review" naming.
+- **balance-engineer-p3s3:** 3 distinct §9.E1 paths chosen in single wave. §9.L1 5 instances pattern (brief = starting points, expert overrides via spec). Joint-commit-intervention defended.
+- **ui-developer-p3s3:** L1 spec-wins has two flavors (a) private adjustment (b) brief-defect propagation. Path 2 (parallel scaffold) 4 preconditions. Workspace-bleed 3-tier prevention shape. §9.D7(b) format compression candidate.
+- **engine-architect-p3s2:** §9.E1 tier-precedence proposal (T1 [blocked] / T2 joint-commit / T3 lead). SimClock._physics_process_enabled guard proposal (engine-side complement). Production phase migration when 2nd consumer surfaces. Standing-checks for standby waves.
+
+**Wave count this session:** 4 implementation waves + 1 close retro = 5 PRs total (#32 / #33 / #34 / #34-fix-wave / #35 [this]).
+
+**Carry-forwards to session-8 (not codified this session):**
+
+- engine-architect's `SimClock._physics_process_enabled` engine-side guard for Pitfall #17 (engine wave)
+- gp-sys's defensive-cascade audit of ~15 helpers (§9.M codification candidate after audit)
+- engine-architect's standing-checks discipline (session-8 trial)
+- balance-engineer's L1 brief annotation discipline (lead-process; QUESTIONS_FOR_DESIGN.md)
+- ui-developer's §9.D7(b) format compression
+- Workspace-bleed root-cause investigation (1-hour dedicated session before N=3)
+- Production phase migration to dedicated `&"production"` phase when 2nd consumer arrives (Phase 6)
+
+**State for next session:**
+- **Wave 3B (DummyAIController)** is the immediate next per user prioritization. ai-engineer is currently inactive per AGENT_REGISTRY — spawn fresh `ai-engineer-p4s8` (or matching session-id) persistent instance. 3A.5's `is_visible_to` + 3A.6's `building.request_train` are both real now; 3B has full functional dependencies satisfied.
+- **First wave to use mirror-reviewer at brief-time.** Wave 3B brief should be the first test of the brief-time review pass. Lead dispatches mirror-reviewer immediately after brief draft + before implementer dispatch.
+- **02l/02m/02n kickoff briefs** — defer deletion to session-8 startup hygiene per §9.C3 ephemerality.
+
+**Open questions added to `QUESTIONS_FOR_DESIGN.md`:** None.
+
+**Cross-agent coordination:** 5 retro reflections via SendMessage (zero `-retro` fresh-spawn drift; lesson from session-4 internalized). Lead synthesis without pre-framing per facts-not-diagnosis discipline. Third empirical validation of the retro shape.
 
 ---
 
