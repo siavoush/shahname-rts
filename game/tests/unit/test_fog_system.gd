@@ -249,9 +249,9 @@ func test_ever_seen_init_all_zero() -> void:
 func test_is_visible_to_returns_false_when_no_sources() -> void:
 	# No sources registered → _currently_visible all-zero → always false.
 	var fog: Node = _make_fog_with_bounds(Rect2(Vector2.ZERO, Vector2(256, 256)), 4.0)
-	assert_false(fog.is_visible_to(0, Vector3(50.0, 0.0, 50.0)),
+	assert_false(fog.is_visible_to(Constants.TEAM_IRAN, Vector3(50.0, 0.0, 50.0)),
 		"is_visible_to must return false when no sources registered")
-	assert_false(fog.is_visible_to(1, Vector3(100.0, 0.0, 100.0)),
+	assert_false(fog.is_visible_to(Constants.TEAM_TURAN, Vector3(100.0, 0.0, 100.0)),
 		"is_visible_to must return false for any team when no sources")
 	fog.free()
 
@@ -309,7 +309,7 @@ func test_get_scout_candidates_zero_max_returns_empty() -> void:
 func test_register_null_node_returns_minus_one() -> void:
 	# Registering a null node is a no-op; returns -1 sentinel.
 	var fog: Node = _make_fog_with_bounds(Rect2(Vector2.ZERO, Vector2(256, 256)), 4.0)
-	var handle: int = fog.register_vision_source(null, 0, 3, true)
+	var handle: int = fog.register_vision_source(null, Constants.TEAM_IRAN, 3, true)
 	assert_eq(handle, -1, "register_vision_source(null, ...) must return -1 sentinel")
 	assert_true(fog._sources.is_empty(), "_sources must stay empty after null registration")
 	fog.free()
@@ -320,7 +320,7 @@ func test_register_valid_node_returns_positive_handle() -> void:
 	var fog: Node = _make_fog_with_bounds(Rect2(Vector2.ZERO, Vector2(256, 256)), 4.0)
 	var dummy: Node3D = Node3D.new()
 	add_child_autofree(dummy)
-	var handle: int = fog.register_vision_source(dummy, 0, 2, false)
+	var handle: int = fog.register_vision_source(dummy, Constants.TEAM_IRAN, 2, false)
 	assert_gt(handle, 0, "register_vision_source must return handle >= 1 for a valid node")
 	assert_true(fog._sources.has(handle), "_sources must contain the returned handle")
 	fog.free()
@@ -330,9 +330,9 @@ func test_register_populates_sources_record() -> void:
 	var fog: Node = _make_fog_with_bounds(Rect2(Vector2.ZERO, Vector2(256, 256)), 4.0)
 	var dummy: Node3D = Node3D.new()
 	add_child_autofree(dummy)
-	var handle: int = fog.register_vision_source(dummy, 1, 3, false)
+	var handle: int = fog.register_vision_source(dummy, Constants.TEAM_TURAN, 3, false)
 	var rec: Dictionary = fog._sources[handle]
-	assert_eq(rec[&"team"], 1, "source record must carry the registered team")
+	assert_eq(rec[&"team"], Constants.TEAM_TURAN, "source record must carry the registered team")
 	assert_eq(rec[&"radius_cells"], 3, "source record must carry the sight radius")
 	assert_false(rec[&"is_static"], "source record must carry is_static=false")
 	fog.free()
@@ -344,7 +344,7 @@ func test_register_static_source_caches_cells() -> void:
 	var dummy: Node3D = Node3D.new()
 	dummy.global_position = Vector3(10.0, 0.0, 10.0)
 	add_child_autofree(dummy)
-	var handle: int = fog.register_vision_source(dummy, 0, 2, true)
+	var handle: int = fog.register_vision_source(dummy, Constants.TEAM_IRAN, 2, true)
 	var rec: Dictionary = fog._sources[handle]
 	assert_true(rec[&"is_static"], "source record must carry is_static=true")
 	# With radius=2 the cached_cells array must be non-empty.
@@ -357,7 +357,7 @@ func test_deregister_removes_source() -> void:
 	var fog: Node = _make_fog_with_bounds(Rect2(Vector2.ZERO, Vector2(256, 256)), 4.0)
 	var dummy: Node3D = Node3D.new()
 	add_child_autofree(dummy)
-	var handle: int = fog.register_vision_source(dummy, 0, 1, false)
+	var handle: int = fog.register_vision_source(dummy, Constants.TEAM_IRAN, 1, false)
 	assert_true(fog._sources.has(handle))
 	fog.deregister_vision_source(handle)
 	assert_false(fog._sources.has(handle), "deregister must remove the source record")
@@ -396,9 +396,9 @@ func test_fog_update_makes_unit_position_visible() -> void:
 	dummy.global_position = Vector3(20.0, 0.0, 20.0)
 	add_child_autofree(dummy)
 	# sight=1 so the circle covers the center cell.
-	fog.register_vision_source(dummy, 0, 1, false)
+	fog.register_vision_source(dummy, Constants.TEAM_IRAN, 1, false)
 	fog._on_fog_update_phase()
-	assert_true(fog.is_visible_to(0, Vector3(20.0, 0.0, 20.0)),
+	assert_true(fog.is_visible_to(Constants.TEAM_IRAN, Vector3(20.0, 0.0, 20.0)),
 		"unit's own cell must be visible to its team after fog_update")
 	fog.free()
 
@@ -409,9 +409,9 @@ func test_fog_update_does_not_reveal_other_team() -> void:
 	var dummy: Node3D = Node3D.new()
 	dummy.global_position = Vector3(20.0, 0.0, 20.0)
 	add_child_autofree(dummy)
-	fog.register_vision_source(dummy, 0, 1, false)  # team 0 = Iran
+	fog.register_vision_source(dummy, Constants.TEAM_IRAN, 1, false)
 	fog._on_fog_update_phase()
-	assert_false(fog.is_visible_to(1, Vector3(20.0, 0.0, 20.0)),
+	assert_false(fog.is_visible_to(Constants.TEAM_TURAN, Vector3(20.0, 0.0, 20.0)),
 		"Iran unit vision must not reveal cells for Turan")
 	fog.free()
 
@@ -422,13 +422,13 @@ func test_fog_update_clears_previous_tick() -> void:
 	var dummy: Node3D = Node3D.new()
 	dummy.global_position = Vector3(8.0, 0.0, 8.0)
 	add_child_autofree(dummy)
-	fog.register_vision_source(dummy, 0, 0, false)  # radius=0 = single cell
+	fog.register_vision_source(dummy, Constants.TEAM_IRAN, 0, false)  # radius=0 = single cell
 	fog._on_fog_update_phase()
-	assert_true(fog.is_visible_to(0, Vector3(8.0, 0.0, 8.0)))
+	assert_true(fog.is_visible_to(Constants.TEAM_IRAN, Vector3(8.0, 0.0, 8.0)))
 	# Move unit far away.
 	dummy.global_position = Vector3(200.0, 0.0, 200.0)
 	fog._on_fog_update_phase()
-	assert_false(fog.is_visible_to(0, Vector3(8.0, 0.0, 8.0)),
+	assert_false(fog.is_visible_to(Constants.TEAM_IRAN, Vector3(8.0, 0.0, 8.0)),
 		"old position must not be visible after unit moves and fog_update fires")
 	fog.free()
 
@@ -441,16 +441,16 @@ func test_fog_update_integer_circle_radius_2() -> void:
 	# Place unit at cell (5,5) — world (22, 0, 22) (5*4+2 = 22 is centroid).
 	dummy.global_position = Vector3(22.0, 0.0, 22.0)
 	add_child_autofree(dummy)
-	fog.register_vision_source(dummy, 0, 2, false)
+	fog.register_vision_source(dummy, Constants.TEAM_IRAN, 2, false)
 	fog._on_fog_update_phase()
 	# Center cell (5,5) must be visible.
-	assert_true(fog.is_visible_to(0, fog.cell_to_world_center(Vector2i(5, 5))),
+	assert_true(fog.is_visible_to(Constants.TEAM_IRAN, fog.cell_to_world_center(Vector2i(5, 5))),
 		"center cell (5,5) must be visible at radius=2")
 	# Cell (5,7) is at dy=2, dx=0 → 0+4=4 <= 4 → visible (boundary).
-	assert_true(fog.is_visible_to(0, fog.cell_to_world_center(Vector2i(5, 7))),
+	assert_true(fog.is_visible_to(Constants.TEAM_IRAN, fog.cell_to_world_center(Vector2i(5, 7))),
 		"cell (5,7) at dy=2 must be visible (boundary of r=2 circle)")
 	# Cell (5,8) is at dy=3 → 9 > 4 → NOT visible.
-	assert_false(fog.is_visible_to(0, fog.cell_to_world_center(Vector2i(5, 8))),
+	assert_false(fog.is_visible_to(Constants.TEAM_IRAN, fog.cell_to_world_center(Vector2i(5, 8))),
 		"cell (5,8) at dy=3 must NOT be visible (outside r=2 circle)")
 	fog.free()
 
@@ -462,7 +462,7 @@ func test_fog_update_stale_source_cleanup() -> void:
 	# Do NOT add to scene tree — position irrelevant; stale path never reads it.
 	# Use free() (not queue_free) so is_instance_valid returns false immediately
 	# without requiring an await that could leak physics ticks into SimClock.
-	var handle: int = fog.register_vision_source(dummy, 0, 1, false)
+	var handle: int = fog.register_vision_source(dummy, Constants.TEAM_IRAN, 1, false)
 	assert_true(fog._sources.has(handle))
 	# Free the node without deregistering (simulates death without cleanup).
 	dummy.free()
@@ -479,10 +479,11 @@ func test_ever_seen_is_append_only() -> void:
 	var dummy: Node3D = Node3D.new()
 	dummy.global_position = Vector3(8.0, 0.0, 8.0)
 	add_child_autofree(dummy)
-	fog.register_vision_source(dummy, 0, 0, false)  # radius=0
+	fog.register_vision_source(dummy, Constants.TEAM_IRAN, 0, false)  # radius=0
 	fog._on_fog_update_phase()
 	var cell: Vector2i = fog.world_to_cell(Vector3(8.0, 0.0, 8.0))
 	var idx: int = fog._cell_index(cell)
+	# Storage index 0 = TEAM_IRAN (Constants.TEAM_IRAN=1 maps to _team_index=0).
 	assert_eq(fog._ever_seen[0][idx], 1, "_ever_seen must be 1 after first visibility")
 	# Move away and update.
 	dummy.global_position = Vector3(200.0, 0.0, 200.0)
@@ -514,10 +515,10 @@ func test_sim_phase_wrong_phase_does_not_update_visibility() -> void:
 	var dummy: Node3D = Node3D.new()
 	dummy.global_position = Vector3(20.0, 0.0, 20.0)
 	add_child_autofree(dummy)
-	fog.register_vision_source(dummy, 0, 1, false)
+	fog.register_vision_source(dummy, Constants.TEAM_IRAN, 1, false)
 	# Fire a different phase — should be ignored.
 	fog._on_sim_phase(&"spatial_rebuild", 1)
-	assert_false(fog.is_visible_to(0, Vector3(20.0, 0.0, 20.0)),
+	assert_false(fog.is_visible_to(Constants.TEAM_IRAN, Vector3(20.0, 0.0, 20.0)),
 		"wrong sim_phase must not trigger fog recompute")
 	fog.free()
 
@@ -530,9 +531,9 @@ func test_sim_phase_fog_update_triggers_visibility() -> void:
 	var dummy: Node3D = Node3D.new()
 	dummy.global_position = Vector3(20.0, 0.0, 20.0)
 	add_child_autofree(dummy)
-	fog.register_vision_source(dummy, 0, 1, false)
+	fog.register_vision_source(dummy, Constants.TEAM_IRAN, 1, false)
 	fog._on_sim_phase(&"fog_update", 1)
-	assert_true(fog.is_visible_to(0, Vector3(20.0, 0.0, 20.0)),
+	assert_true(fog.is_visible_to(Constants.TEAM_IRAN, Vector3(20.0, 0.0, 20.0)),
 		"_on_sim_phase(&'fog_update', 1) must trigger fog recompute and reveal source cell")
 	fog.free()
 
@@ -545,7 +546,7 @@ func test_sim_phase_wiring_via_eventbus_script() -> void:
 	var dummy: Node3D = Node3D.new()
 	dummy.global_position = Vector3(32.0, 0.0, 32.0)
 	add_child_autofree(dummy)
-	fog.register_vision_source(dummy, 0, 1, false)
+	fog.register_vision_source(dummy, Constants.TEAM_IRAN, 1, false)
 
 	var eb: Node = EventBusScript.new()
 	add_child_autofree(eb)
@@ -555,7 +556,7 @@ func test_sim_phase_wiring_via_eventbus_script() -> void:
 	# Emit fog_update phase — should trigger recompute.
 	eb.sim_phase.emit(&"fog_update", 1)
 
-	assert_true(fog.is_visible_to(0, Vector3(32.0, 0.0, 32.0)),
+	assert_true(fog.is_visible_to(Constants.TEAM_IRAN, Vector3(32.0, 0.0, 32.0)),
 		"EventBus.sim_phase.emit(&'fog_update', 1) must drive FogSystem recompute via wiring")
 
 	eb.sim_phase.disconnect(fog._on_sim_phase)
@@ -563,9 +564,77 @@ func test_sim_phase_wiring_via_eventbus_script() -> void:
 
 
 func test_is_visible_to_out_of_range_team_returns_false() -> void:
+	# BUG-D2: bounds check must reject ids outside [TEAM_IRAN, TEAM_TURAN].
+	# TEAM_NEUTRAL=0 is NOT a fog consumer and must be rejected.
 	var fog: Node = _make_fog_with_bounds(Rect2(Vector2.ZERO, Vector2(256, 256)), 4.0)
 	assert_false(fog.is_visible_to(-1, Vector3.ZERO),
 		"team_id=-1 must return false")
+	assert_false(fog.is_visible_to(Constants.TEAM_NEUTRAL, Vector3.ZERO),
+		"TEAM_NEUTRAL(0) must return false — not a fog consumer")
+	assert_false(fog.is_visible_to(3, Vector3.ZERO),
+		"team_id=3 (above TEAM_TURAN) must return false")
 	assert_false(fog.is_visible_to(99, Vector3.ZERO),
 		"team_id out of range must return false")
 	fog.free()
+
+
+# --- BUG-D2 regression: TEAM_TURAN (2) was rejected by bounds check ---
+# Prior: `team_id >= NUM_TEAMS(2)` rejected Constants.TEAM_TURAN=2 silently.
+# Fixed: bounds check uses Constants.TEAM_IRAN/TEAM_TURAN; access uses _team_index().
+
+func test_turan_visibility_is_not_silently_false() -> void:
+	# BUG-D2: is_visible_to(TEAM_TURAN, ...) must return true when a Turan source
+	# covers that cell. Prior code always returned false for TURAN — silent no-op.
+	var fog: Node = _make_fog_with_bounds(Rect2(Vector2.ZERO, Vector2(256, 256)), 4.0)
+	var dummy: Node3D = Node3D.new()
+	dummy.global_position = Vector3(20.0, 0.0, 20.0)
+	add_child_autofree(dummy)
+	fog.register_vision_source(dummy, Constants.TEAM_TURAN, 1, false)
+	fog._on_fog_update_phase()
+	assert_true(fog.is_visible_to(Constants.TEAM_TURAN, Vector3(20.0, 0.0, 20.0)),
+		"BUG-D2: TEAM_TURAN source must make its cell visible to TURAN — was silently false before fix")
+	fog.free()
+
+
+func test_both_teams_fog_update_independent() -> void:
+	# _on_sim_phase (fog_update) must populate _currently_visible for BOTH Iran AND
+	# Turan independently. BUG-D2: Turan was never populated because bounds check
+	# rejected TEAM_TURAN=2.
+	var fog: Node = _make_fog_with_bounds(Rect2(Vector2.ZERO, Vector2(256, 256)), 4.0)
+	var iran_unit: Node3D = Node3D.new()
+	iran_unit.global_position = Vector3(20.0, 0.0, 20.0)
+	add_child_autofree(iran_unit)
+	var turan_unit: Node3D = Node3D.new()
+	turan_unit.global_position = Vector3(100.0, 0.0, 100.0)
+	add_child_autofree(turan_unit)
+
+	fog.register_vision_source(iran_unit, Constants.TEAM_IRAN, 1, false)
+	fog.register_vision_source(turan_unit, Constants.TEAM_TURAN, 1, false)
+
+	# Drive via EventBus path per §9.D7(b) wiring-path discipline.
+	var eb: Node = EventBusScript.new()
+	add_child_autofree(eb)
+	eb.sim_phase.connect(fog._on_sim_phase)
+	eb.sim_phase.emit(&"fog_update", 1)
+
+	assert_true(fog.is_visible_to(Constants.TEAM_IRAN, Vector3(20.0, 0.0, 20.0)),
+		"Iran source cell must be visible to TEAM_IRAN after fog_update")
+	assert_true(fog.is_visible_to(Constants.TEAM_TURAN, Vector3(100.0, 0.0, 100.0)),
+		"BUG-D2: Turan source cell must be visible to TEAM_TURAN after fog_update")
+
+	# Cross-team isolation must hold: Iran position not visible to Turan.
+	assert_false(fog.is_visible_to(Constants.TEAM_TURAN, Vector3(20.0, 0.0, 20.0)),
+		"Iran source position must NOT be visible to TEAM_TURAN")
+	assert_false(fog.is_visible_to(Constants.TEAM_IRAN, Vector3(100.0, 0.0, 100.0)),
+		"Turan source position must NOT be visible to TEAM_IRAN")
+
+	eb.sim_phase.disconnect(fog._on_sim_phase)
+	fog.free()
+
+
+func test_team_index_helper_maps_constants_correctly() -> void:
+	# _team_index must map Constants.TEAM_IRAN=1→0, TEAM_TURAN=2→1 for storage.
+	assert_eq(_fog._team_index(Constants.TEAM_IRAN), 0,
+		"TEAM_IRAN(1) must map to storage index 0")
+	assert_eq(_fog._team_index(Constants.TEAM_TURAN), 1,
+		"TEAM_TURAN(2) must map to storage index 1")

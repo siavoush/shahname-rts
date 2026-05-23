@@ -74,7 +74,10 @@ const MAP_BOUNDS_FALLBACK: Rect2 = Rect2(Vector2.ZERO, Vector2(256.0, 256.0))
 ## Used when BalanceData.fog.cell_size_meters is unavailable.
 const _FALLBACK_CELL_SIZE: float = 4.0
 
-## Number of teams. Team 0 = Iran, Team 1 = Turan per Constants.TEAM_IRAN/TEAM_TURAN.
+## Number of teams tracked. Storage is 0-indexed; Constants.TEAM_IRAN=1 maps to
+## index 0, Constants.TEAM_TURAN=2 maps to index 1. Use _team_index() to convert.
+## BUG-D2 fix: prior comment falsely said "Team 0 = Iran, Team 1 = Turan" which
+## implied direct pass-through — but Constants.TEAM_* are 1-indexed.
 const NUM_TEAMS: int = 2
 
 
@@ -208,21 +211,30 @@ func _cell_index(cell: Vector2i) -> int:
 	return cell.y * grid_w + cell.x
 
 
+## Convert a Constants.TEAM_* id (1=Iran, 2=Turan) to a 0-based storage index.
+## BUG-D2 fix: Constants.TEAM_* are 1-indexed; storage arrays are 0-indexed.
+## Returns -1 for any id outside [TEAM_IRAN, TEAM_TURAN].
+func _team_index(team_id: int) -> int:
+	return team_id - 1
+
+
 # ---------------------------------------------------------------------------
 # Consumer API — §5 (stubs at 3A.0; 3A.5 implements real computation)
 # ---------------------------------------------------------------------------
 
 ## Returns true if world_pos is currently visible to team_id.
 ## FOG_DATA_CONTRACT §5.1.
-## Wave 3A.5: reads _currently_visible[team_id][cell_index].
+## Wave 3A.5: reads _currently_visible[_team_index(team_id)][cell_index].
+## BUG-D2 fix: team_id is a Constants.TEAM_* (1-indexed); bounds check uses
+## Constants.TEAM_IRAN/TEAM_TURAN; storage access uses _team_index().
 func is_visible_to(team_id: int, world_pos: Vector3) -> bool:
-	if team_id < 0 or team_id >= NUM_TEAMS:
+	if team_id < Constants.TEAM_IRAN or team_id > Constants.TEAM_TURAN:
 		return false
 	if _currently_visible.is_empty():
 		return false
 	var cell: Vector2i = world_to_cell(world_pos)
 	var idx: int = _cell_index(cell)
-	return _currently_visible[team_id][idx] != 0
+	return _currently_visible[_team_index(team_id)][idx] != 0
 
 
 ## Returns the last known position + tick for a tracked entity.
@@ -334,9 +346,9 @@ func _on_sim_phase(phase: StringName, _tick: int) -> void:
 ## (is_instance_valid check). Updates _ever_seen monotonically.
 ## FOG_DATA_CONTRACT §3.1.
 func _on_fog_update_phase() -> void:
-	# Clear current visibility for all teams.
-	for team_idx in range(NUM_TEAMS):
-		_currently_visible[team_idx].fill(0)
+	# Clear current visibility for all teams (storage indices 0..NUM_TEAMS-1).
+	for si in range(NUM_TEAMS):
+		_currently_visible[si].fill(0)
 
 	# Stale handle keys collected for cleanup (avoids mutating dict while iterating).
 	var stale: Array[int] = []
@@ -353,12 +365,14 @@ func _on_fog_update_phase() -> void:
 			continue
 		var node: Node3D = node_variant as Node3D
 
-		var team_idx: int = rec[&"team"]
-		if team_idx < 0 or team_idx >= NUM_TEAMS:
+		var team_id: int = rec[&"team"]
+		# BUG-D2 fix: team_id is a Constants.TEAM_* (1-indexed); convert to storage index.
+		if team_id < Constants.TEAM_IRAN or team_id > Constants.TEAM_TURAN:
 			continue
+		var si: int = _team_index(team_id)
 
-		var vis: PackedByteArray = _currently_visible[team_idx]
-		var seen: PackedByteArray = _ever_seen[team_idx]
+		var vis: PackedByteArray = _currently_visible[si]
+		var seen: PackedByteArray = _ever_seen[si]
 
 		if rec[&"is_static"]:
 			# Static source: use pre-cached cells.

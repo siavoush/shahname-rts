@@ -2,7 +2,7 @@
 title: Architecture — Target Shape and Build State
 type: architecture
 status: living
-version: 0.33.1
+version: 0.33.2
 owner: engine-architect
 summary: Orientation layer — system map, subsystem build state, tick pipeline summary, directory rationale, contract index. Read first in implementation mode after MANIFESTO and CLAUDE.md.
 audience: all
@@ -286,6 +286,45 @@ game/
 - Spec said X; we built Y; reason: Z
 - Subsystem A took Phase N+1 (slipped one phase), reason: ...
 - Contract V was bumped from 1.x.0 to 1.y.0 during implementation; key change: ...
+
+### v0.33.2 — BUG-D2 fix-wave: FogSystem team-id Cartesian-product (Wave 3A.5 retroactive, ai-engineer first-runtime find) (2026-05-24)
+
+PATCH bump for BUG-D2 — second Wave 3A.5 retroactive production bug, surfaced within ~hours of BUG-D1's fix. **Discovered by `ai-engineer-p3s8`** during Wave 3B Track 1 implementation (the first runtime consumer of FogSystem's Turan-side API surface). Same "first runtime consumer catches a producer bug" pattern as BUG-D1 (mirror-reviewer first-dispatch) and gp-sys's N=2 cross-track diagnostic — now N=3 consecutive instances across 3 different finder agents.
+
+**The bug:** `fog_system.gd:78` declared `NUM_TEAMS = 2` with comment "Team 0 = Iran, Team 1 = Turan", but `Constants.TEAM_IRAN = 1` and `Constants.TEAM_TURAN = 2` (1-indexed). Cartesian-product cascade:
+
+- Storage arrays sized `NUM_TEAMS = 2` (indices [0, 1]).
+- Iran writes at `_currently_visible[1]` work **by accident** (TEAM_IRAN=1 is a valid index).
+- Turan writes at `_currently_visible[2]` would IndexError — never reached because:
+- Bounds check at line 217 `team_id >= NUM_TEAMS` rejects TURAN (2 >= 2 = true) → `is_visible_to` returns `false` silently.
+- Per-team iteration `range(NUM_TEAMS)` iterates [0, 1] — misses TURAN entirely.
+- Result: **Turan-side `is_visible_to` has returned false for everything since Wave 3A.5 ship.**
+
+**The fix (`447c5cb`):** Option A (remap helper) — world-builder added `_team_index(team_id) -> int` that returns `team_id - 1` (TEAM_IRAN(1)→0, TEAM_TURAN(2)→1). Bounds check rewritten using `Constants.TEAM_IRAN` / `Constants.TEAM_TURAN` directly. All call-sites updated. 4 new regression tests including `test_turan_visibility_is_not_silently_false` (the exact bug) + cross-team independence test driven via `EventBus.sim_phase.emit` (per §9.D7(b) wiring-path discipline from BUG-D1). 52/52 fog tests pass.
+
+**Defensive-fallback-masking N=3 confirmation:**
+
+This is the THIRD wave to ship a production bug with the same root-cause shape:
+- **BUG-C1 (Wave 3A.6):** `if kind == &"":` defensive early-bail. Test fixture used `&""`. Both production code AND test converged on the same fallback path.
+- **BUG-D1 (Wave 3A.5):** `if sc.has_signal(&"fog_update"):` defensive guard. Signal didn't exist. Connect silently skipped; tests called the function directly.
+- **BUG-D2 (Wave 3A.5):** `if team_id >= NUM_TEAMS:` defensive bounds check. TEAM_TURAN(2) hit the rejection branch. Tests used TEAM_IRAN(1) which passed by accident.
+
+Same shape, three waves, three bugs: *defensive guard masks an upstream wiring/semantic error by converting it into a silent no-op*. Tests that exercise the function body without exercising the path THROUGH the guard miss this class entirely.
+
+**§9.M codification candidate (Task #214) — now N=3 evidence, promoted to high-priority for session-8 close retro.** The rule shape: *"When a function has a defensive guard, tests MUST exercise the path THROUGH the guard with realistic input (NOT the default/null/sentinel values that trigger the guard's bypass). A test exercising ONLY the fallback path is checking the wrong thing — test fixture and bug can converge on the same wrong-but-defensible success."*
+
+**Cross-finder pattern — "first runtime consumer catches a producer bug" N=3:**
+
+This wave's discovery completes the third consecutive instance of the pattern gp-sys-p3s3 codified at session-7 close retro:
+- 3A.5 — gp-sys (Track 2) catches `as Node3D` cast bug in world-builder's Track 1
+- 3A.6 — gp-sys (Track 1) catches `test_close_clears_rows` bug in ui-developer's Track 2
+- Wave 3B — ai-engineer-p3s8 (Track 1, fresh session) catches BUG-D2 in shipped FogSystem
+
+Three different finder agents (gp-sys × 2, mirror-reviewer × 1, ai-engineer × 1) catching producer bugs through three different mechanisms (cross-track diagnostic / brief-time review / first-runtime exercise). **The pattern is no longer coincidental — it's an empirically validated discipline.** Session-8 close retro should formally codify cross-finder ↔ producer relationships.
+
+**Wave 3B Track 1 status (`881b52f`, pushed):** ai-engineer-p3s8 shipped TuranController + 24 tests with zero regressions. The probe-attack natural pipeline was bypassed in their integration test due to BUG-D2's broken Turan visibility; documented in test comments + branch was forked pre-BUG-D1 anyway. Post-BUG-D2 merge: rebase Wave 3B onto main; both fog bugs fixed; natural pipeline activates; Wave 3B PR opens.
+
+---
 
 ### v0.33.1 — BUG-D1 fix-wave: FogSystem sim_phase wiring (Wave 3A.5 retroactive, mirror-reviewer first-dispatch find) (2026-05-24)
 
