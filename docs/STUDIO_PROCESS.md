@@ -2,7 +2,7 @@
 title: Studio Process — How the Virtual Studio Operates
 type: process
 status: living
-version: 2.2.0
+version: 2.3.0
 owner: team
 summary: Operating contract for multi-agent collaboration — currently-binding active rules + facilitation patterns + mode separation. Chronological archaeology in STUDIO_PROCESS_HISTORY.md; sync log in STUDIO_PROCESS_SYNC_LOG.md.
 audience: all
@@ -21,7 +21,7 @@ ssot_for:
 references: [MANIFESTO.md, ARCHITECTURE.md, STUDIO_PROCESS_HISTORY.md, STUDIO_PROCESS_SYNC_LOG.md]
 tags: [process, syncs, retros, ssot, modes, semver, frontmatter]
 created: 2026-04-30
-last_updated: 2026-05-22
+last_updated: 2026-05-23
 ---
 
 # Studio Process — How the Virtual Studio Operates
@@ -277,11 +277,11 @@ This section is the **currently-binding form** of every accumulated process rule
 | §9.I | Engine-Feature Verification | 3 |
 | §9.J | Cultural / Loremaster Discipline | 4 |
 | §9.K | Retro Practice | 3 |
-| §9.L | Implementation Patterns | 10 |
+| §9.L | Implementation Patterns | 11 |
 | §9.M | Test Discipline | 5 |
 | §9.N | Investigation Reports | 1 |
 
-**Total: 57 active rules across 14 clusters.** Down from 81 dated entries in v1.8.0 — same load-bearing content, restructured to currently-binding form. (L4 split into L4a/L4b at validation-test fix-up; D9 pre-commit self-review checklist added at PR C; H3 first-exercise-of-dormant-schema + L6 forward-compat-guard-sweep + J4 claim→mechanism→reviewer-triples refinement + D9 lens-walk N/A shorthand added at session-5 close retro; L7 affordability-sweep + L8 drift-proof-UI-numeric-defaults + L9 fallback-by-failure-visibility-shape + D7 split (D7a + D7b workspace-observation) + M3 error-specificity-disclaimer + E1 parallel-WIP-addendum + F4 value-choice-footnote + G1 idle-availability-heartbeat-addendum + L1 multi-agent codification added at session-6 close retro — all with provenance notes in their respective entries.)
+**Total: 60 active rules across 14 clusters.** Down from 81 dated entries in v1.8.0 — same load-bearing content, restructured to currently-binding form. (L4 split into L4a/L4b at validation-test fix-up; D9 pre-commit self-review checklist added at PR C; H3 first-exercise-of-dormant-schema + L6 forward-compat-guard-sweep + J4 claim→mechanism→reviewer-triples refinement + D9 lens-walk N/A shorthand added at session-5 close retro; L7 affordability-sweep + L8 drift-proof-UI-numeric-defaults + L9 fallback-by-failure-visibility-shape + D7 split (D7a + D7b workspace-observation) + M3 error-specificity-disclaimer + E1 parallel-WIP-addendum + F4 value-choice-footnote + G1 idle-availability-heartbeat-addendum + L1 multi-agent codification added at session-6 close retro — all with provenance notes in their respective entries.)
 
 ---
 
@@ -704,6 +704,24 @@ Cites Manifesto Principle 1 (Truth-Seeking — verify your own work before other
 **⚠️ Runtime-verification status:** the `Agent` tool's `isolation: "worktree"` parameter is documented-but-unimplemented in the runtime layer. Lead must manually pre-create `git worktree add` and pass the path in the brief, OR fall back to sequential dispatch. Current default: **sequential single-agent dispatch for any write-active wave; parallel only for read-only review agents.**
 
 **Addendum — parallel WIP visible in working tree (session-6 close).** §9.E1's `sequential-shared-tree` mode prevents file-level commit-race contamination (via pathspec discipline + git index.lock) but does NOT prevent **pre-commit-suite-gate-coupling** races: the pre-commit hook runs the full GUT test suite, including against working-tree files modified by parallel agents but not yet staged. If Agent-A's pre-commit-WIP `.gd` references node names Agent-B hasn't yet staged in the matched `.tscn`, Agent-B's pre-commit hook fails on a file Agent-B never touched. **In parallel-dispatch waves, the working tree may contain unstaged WIP from other agents. If a pre-commit hook failure references a file you did not touch, treat it as a candidate transient. Retry once before broadcasting (mirrors M3 error-specificity refinement).** N=2 instances in Wave 2B alone (Track 2 vs Track 4; BUG-B1 vs BUG-B2). Discipline-side fix; tooling-side fix (Agent isolation: "worktree" runtime ratification OR scoped pre-commit hook) deferred to future infrastructure work.
+
+**Addendum — tier-precedence ladder (session-7 close, synthesized from 5 empirical paths across Waves 3A.0 / 3A.5 / 3A.6).** When a coupled-test-gate or coupled-WIP situation surfaces in a parallel-dispatch wave, the agent's choice ladder is:
+
+- **Tier 1 (DEFAULT) — [blocked]+broadcast or sequenced-on-same-branch.** Conservative default when the agent cannot see other tracks' state with confidence. Broadcast surfaces the race to lead + non-gating tracks at zero risk to anyone's WIP. Resolution shape: Track 1 ships first → Track 2 commits on top. Single branching question per world-builder-p3s2: *"Can both tracks commit to the same ref?"* If yes, sequence. Sequenced-on-same-branch requires no deliberation; everything else requires an explicit reason to deviate.
+- **Tier 2 — joint-commit-intervention.** Permitted IFF the committing agent has staged-clean visibility into ALL coupled tracks AND can attest to their content AND the cross-track fix is small + unambiguous (no design judgment required). Wave 3A.0's `da3dc75` joint commit is the canonical example: balance-engineer-p3s3 had FogConfig + BalanceData + the cross-track sweep fix (test_match_harness.gd hardcoded `7`) all in scope simultaneously. The 3A.0 [blocked] resolution time at ~10 minutes wall-clock validated joint-commit's speed advantage when the coupled-test-gate is well-isolated. Cost: attribution bundling. Benefit: sub-minute resolution.
+- **Tier 3 — lead resolution via §9.B2 / §9.D5.** When Tiers 1+2 both stall. Lead commits on behalf with full provenance in commit body.
+- **FORBIDDEN — stash-and-pop on dirty index.** Destroys other tracks' WIP, no upside, the canonical 3A.0 `.git/index.lock` pitfall lives here.
+
+**Tool selection clarification — `git restore --staged` vs `git stash`.** Both can clear cross-track WIP from your working tree, but they're answers to different questions:
+- `git restore --staged <pathspec>` is the right tool when you want to commit a clean subset AND preserve the other track's WIP intact. Surgical — unstages exactly what you specify; working tree intact; no pop risk.
+- `git stash push -- <pathspec>` is the right tool when you want to temporarily shelve WIP you're uncertain about, with intent to either pop later (preserve) OR discard (drop). The 3A.6 Track 3 stash-and-discard escape hatch lives here: when the stashed WIP IS another track's work that they're independently re-shipping, stash-and-discard is safe.
+- **Use `restore --staged` for subset-commit-preserving-WIP.** Use `stash` only for shelve-with-uncertain-intent. The 3A.0 pitfall (stash pop on a dirty index → `.git/index.lock`) points specifically at using stash as a subset-commit mechanism — which is exactly what `restore --staged` is for. Don't conflate.
+
+**Incidental cross-track review — a non-obvious benefit of joint-commit-default (world-builder-p3s2, 3A.5 + 3A.6 retro).** The coupled-test-gate produces incidental cross-track review by structural property: the gating track's full-suite-run at ship time exercises consumer-side tests against the producer's surface. gp-sys-p3s3's N=2 cross-track diagnostic catches (3A.5 world-builder's `as Node3D` cast on freed Object + 3A.6 ui-developer-p3s3's `test_close_clears_rows` cleanup-ordering) both happened via this mechanism. The discipline pays dividends invisibly. **First runtime consumer of a new producer surface is best-positioned to catch contract bugs in that producer** — not domain-specific; any downstream consumer has the vantage. Pair with §9.D7(b).
+
+Cites Manifesto Principle 4 (Lean Iteration — picking the right tier minimizes coordination cost) + Principle 1 (Truth-Seeking — pre-shipped cross-track review is structural truth-finding, not luck).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-23 session-7 close]
 
 Cites Manifesto Principle 4 (Lean Iteration — worktrees buy back parallel-agent throughput without giving up isolation) + Principle 8 (Separation of Concerns — the race lives at the working-tree level; the mitigation lives at the working-tree level).
 
@@ -1334,6 +1352,24 @@ Cites Manifesto Principle 7 (SSOT — UI reads canonical value at runtime, doesn
 Cites Manifesto Principle 1 (Truth-Seeking — when uncertain, surface the uncertainty visibly rather than lie plausibly) + Principle 6 (Honest-tools-not-magic-tricks — degraded state should be legible, not invisible).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-22 session-6 close]
+
+#### L10. Canonical-pattern grep — gating-track / first-implementer's brief-validation discipline
+
+**Rule.** Before implementing any BalanceData read, autoload-API consumer call, project-internal schema lookup, or any other "read from a shared project structure" in NEW code, the implementing agent `git grep`s for existing consumers of the same data shape AND uses the canonical pattern they exhibit. The brief is the planning artifact; the existing code is the source of truth for project-internal consistency.
+
+**Why.** The brief may invent a pattern that doesn't match the canonical access shape. The wave-3A.6 BUG-C1 incident: lead's brief §3.4 specified `BalanceData.bldg_<kind>.train_<unit>_<field>` (top-level field on BalanceData). The actual canonical pattern, used by `unit_state_constructing.gd:_resolve_construction_ticks` since wave 1C, is `BalanceData.buildings[StringName(<kind>)].construction_ticks` (Dictionary lookup). gp-sys-p3s3 implemented the brief literally in `_read_bldg_stats_int`; the function returned 0 for all training costs; the affordability gate trivially passed; deduction was skipped. Bug shipped to live-test.
+
+**Complement to §9.D7(b).** §9.D7(b) cross-track diagnostic catches downstream-consumer bugs when you're NOT the gating track (you observe other tracks' WIP). §9.L10 canonical-pattern grep catches upstream-producer bugs when you ARE the gating track (you have no other-track WIP to observe yet). gp-sys-p3s3's session-7 framing: *"the gating track loses the cross-track-diagnostic vantage by definition — other tracks haven't materialized yet."* Both disciplines together close the gap.
+
+**Operational form.** Before writing the read code, `git grep "BalanceData\." -- game/scripts/` (or equivalent grep for the relevant shared structure). Identify ≥1 existing canonical consumer. Use their access pattern. If brief and canonical disagree, broadcast as `[D7(b)] brief-vs-canonical-schema divergence: <field>` (mirrors §9.L1's brief-defect flavor — see L1 footnote). Brief prose loses to project-internal canonical access.
+
+**Canonical incident.** Wave 3A.6 BUG-C1 (`0679630` fix). 30-second grep would have surfaced zero hits for `BalanceData.bldg_` and revealed `BalanceData.buildings[<kind>]` as canonical. Brief mistake never gets implemented + shipped + reaches live-test.
+
+**ui-developer-p3s3 parallel observation:** at the same wave, their `production_panel.gd:_read_balance_int` used the canonical pattern correctly — they grepped existing consumers + used their shape. The discipline as a private adjustment worked locally; the gap was that they didn't broadcast the brief-vs-canonical divergence as a multi-agent risk (Task #213 → §9.L1 brief-defect flavor).
+
+Cites Manifesto Principle 1 (Truth-Seeking — code is the truth; briefs are planning artifacts) + Principle 7 (SSOT — canonical existing patterns are the access SSOT for project-internal structures).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-23 session-7 close]
 
 ---
 

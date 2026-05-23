@@ -291,6 +291,74 @@ shape = SubResource("BoxShape3D_subclass_override")
 
 **Project-wide audit (godot-code-reviewer fresh-spawn at PR #19, 2026-05-17):** No other instances of this syntax bug exist in `game/scenes/`. Building subclass inheritance audited cleanly — Khaneh inherits building.tscn but doesn't override CollisionShape3D (keeps base 2.0×2.0); Mazra'eh + Ma'dan are standalone Node3D scenes (not inherited); UI scenes don't use inherited-scene composition with nested-child overrides. Sarbaz-khaneh's larger footprint was the first occasion for the syntax surface to be exercised, exposing the pitfall at first incidence.
 
+### #16 — `as Node3D` cast crashes on freed Object (nominal-safe operator is NOT safe on freed instances)
+
+**Mechanism.** Godot's `as <Type>` cast operator is documented as null-safe — applied to `null`, it returns `null` rather than throwing. **It is NOT safe on a freed `Object` instance.** When applied to a Variant that holds a reference to an Object that has been `free()`'d or `queue_free()`'d and reaped, the cast triggers a script error before reaching any subsequent expression. The error is *"Attempted to cast a previously freed Object."* The pattern that LOOKS safe by analogy with null-checks is the trap:
+
+```gdscript
+# WRONG — `as Node3D` crashes if `record.node` is a freed Object
+for record in _sources.values():
+    var node: Node3D = record.node as Node3D
+    if not is_instance_valid(node):  # ← never reached; cast already crashed
+        continue
+    # ... use node ...
+```
+
+The cast runs FIRST. If `record.node` is a freed Object, the cast crashes. `is_instance_valid()` never gets to fire.
+
+**Rule.** When iterating a registry whose values may include freed Objects, validate with `is_instance_valid()` BEFORE casting. The safe pattern reads the Variant first, validates, then casts:
+
+```gdscript
+# RIGHT — read Variant, validate, then cast
+for record in _sources.values():
+    var node_v: Variant = record.node  # untyped Variant — does not crash on freed
+    if not is_instance_valid(node_v):
+        continue
+    var node: Node3D = node_v as Node3D
+    # ... use node ...
+```
+
+**Canonical incident.** Phase 3 session 7 Wave 3A.5 — world-builder-p3s2's `fog_system.gd::_on_fog_update_phase` original implementation cast Variant to `Node3D` before the `is_instance_valid()` check. Cross-track diagnostic from gp-sys-p3s3 at staging-time caught the failure (`test_fog_update_stale_source_cleanup` in `test_fog_system.gd`). Fix landed in world-builder's Track 1 ship `a6e6752` before commit propagated. **No fix-wave required** — the §9.D7(b) discipline closed the gap.
+
+**Audit surface.** Defensive iteration over registry values (`_sources`, `_modifier_emitters`, `_last_seen_by_team`, future autoload-internal registries) is the high-risk pattern. Any `for record in <dict>.values()` followed by `as <Type>` cast without prior `is_instance_valid()` is suspect.
+
+**Why it bites.** Documentation describes `as` as null-safe; the freed-object crash is undocumented behavior at the language level (the engine's GDScript bytecode interpreter raises the script error rather than the cast operator returning a sentinel). The pattern looks safe by analogy with idiomatic null-checks elsewhere. Pitfall #12 / #13 / #14 / **#16** are the GDScript-safety-pattern foot-gun family — each looks idiomatic, each crashes silently or with a script error in a non-obvious way.
+
+**Regression coverage.** `test_fog_system.gd::test_fog_update_stale_source_cleanup` exercises the freed-node iteration path. Any future helper iterating possibly-freed registry values should include an equivalent regression test.
+
+### #17 — `await get_tree().process_frame` leaks physics ticks into SimClock
+
+**Mechanism.** When a GUT test calls `await get_tree().process_frame`, Godot's main loop advances one frame, which fires `_physics_process` on ALL autoloads including SimClock. SimClock's `_physics_process` accumulates `delta` into `_accumulator` and, when the accumulator crosses `1.0 / SIM_HZ` (33.33ms at 30 Hz), invokes `_run_tick` — advancing `SimClock.tick` and `SimClock.sim_time`. **The await leaks SimClock ticks into the test's surrounding state.** A test that asserts against `SimClock.tick` after the await observes mutated state, NOT the pre-await snapshot.
+
+The downstream cost: tests that follow this pattern silently advance SimClock, breaking `test_match_harness` pre-conditions (which assert specific SimClock state) AND breaking determinism guarantees of any downstream simulation test that expected the SimClock to be at a known value.
+
+**Rule.** For assertion-immediate-after-spawn cases (where the test does not require a fully rendered frame), use **synchronous `free()` instead of `queue_free()` + await**. The synchronous free does not consume an engine frame; SimClock does not advance. The valid form:
+
+```gdscript
+# WRONG — leaks 1+ SimClock ticks
+test_node.queue_free()
+await get_tree().process_frame
+assert_some_post_free_state(...)
+
+# RIGHT — no engine frame consumed
+test_node.free()
+assert_some_post_free_state(...)
+```
+
+When the test legitimately requires a rendered frame (visual smoke tests, multi-frame physics interactions), the pattern is permitted but **the test must opt-in explicitly** by snapshotting `SimClock.tick` at `before_each` and asserting in `after_each` that the test stayed within an expected delta. Pairs with the future engine-side guard (engine-architect's session-7 proposal: `SimClock._physics_process_enabled` flag flipped false in test fixtures).
+
+**Canonical incident #1.** Phase 3 session 7 Wave 3A.5 — world-builder-p3s2's `test_fog_update_stale_source_cleanup` originally used `queue_free()` + `await get_tree().process_frame`. Pre-commit gate caught a downstream `test_match_harness` failure because the await leaked 4 physics ticks into SimClock. Fix landed in Track 1 ship `a6e6752`.
+
+**Canonical incident #2.** Phase 3 session 7 Wave 3A.6 — ui-developer-p3s3 hit the SAME pattern on a different test (`test_panel_auto_closes_on_building_free` and `test_close_clears_rows` in `test_production_panel.gd`). Pre-commit gate caught it during their first commit attempt. They replaced with direct `_process(0.0)` drive + synchronous Dict cache assertions before re-commit. **N=2 confirmation in two consecutive waves.**
+
+**Audit surface.** Every GUT test that uses `queue_free()` + `await get_tree().process_frame` followed by SimClock-sensitive assertions. Use `free()` unless a rendered frame is genuinely needed.
+
+**Why it bites.** The await pattern is idiomatic Godot — common across the engine's own examples and community tests. The fact that it implicitly drives the project's deterministic-tick autoload is non-obvious; tests appear to work in isolation but fail when SimClock-coupled neighbors run in the same suite. The failure mode is downstream-only: the failing test is NOT the test that uses the await; it's some other test that asserts against SimClock state.
+
+**Engine-side fix (engine-architect-p3s2's session-7 proposal — DEFERRED to a future wave).** Add `SimClock._physics_process_enabled: bool = true` flag (default true for production). Test fixtures flip false in `before_each`, true in `after_each`. When false, `_physics_process` short-circuits to a no-op. Engine guard scales O(1) vs test-discipline O(test-author-vigilance). Pairs with the test-side regression-lock pattern (snapshot `SimClock.tick` + `sim_time` in `before_each`; assert no change in `after_each` unless test opts in).
+
+**Regression coverage.** Existing `test_fog_system.gd` + `test_production_panel.gd` use the fixed pattern. Project-wide audit candidate (gp-sys's session-7 retro offer): the ~15 defensive-cascade helpers + any other test using `queue_free()` + `await get_tree().process_frame` should be swept for the same shape.
+
 ### Candidate / deferred entries (not yet load-bearing)
 
 | Candidate | Status | Reason |
