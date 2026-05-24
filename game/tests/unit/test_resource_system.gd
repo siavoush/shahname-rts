@@ -463,3 +463,155 @@ func test_dropoff_for_team_neutral_returns_null() -> void:
 	# TEAM_NEUTRAL is not an economic actor; no neutral Throne exists.
 	var result: Node3D = ResourceSystem.dropoff_for_team(Constants.TEAM_NEUTRAL)
 	assert_null(result, "dropoff_for_team(TEAM_NEUTRAL) returns null")
+
+
+# ===========================================================================
+# Wave-3-LocalDropoffs (session 9) — dropoff_for_team_by_kind
+# ===========================================================================
+#
+# Per brief v1.0.1 §3.1 item 3 + RNC §5.2. The kind-aware lookup that
+# routes workers to the nearest kind-matching local depot, falling back
+# to the Throne when no kind-matching local depot exists.
+
+const _MazraehScene_RS: PackedScene = preload(
+	"res://scenes/world/buildings/mazraeh.tscn")
+const _MadanScene_RS: PackedScene = preload(
+	"res://scenes/world/buildings/madan.tscn")
+
+
+func _spawn_mazraeh_for_resource_system(team: int, pos: Vector3 = Vector3.ZERO) -> Variant:
+	var m: Variant = _MazraehScene_RS.instantiate()
+	m.set(&"team", team)
+	m.position = pos
+	add_child_autofree(m)
+	return m
+
+
+func _spawn_madan_for_resource_system(team: int, pos: Vector3 = Vector3.ZERO) -> Variant:
+	var m: Variant = _MadanScene_RS.instantiate()
+	m.set(&"team", team)
+	m.position = pos
+	add_child_autofree(m)
+	return m
+
+
+func _spawn_throne_for_rs_ld(team: int, pos: Vector3 = Vector3.ZERO) -> Variant:
+	# Local helper to avoid collision with the Throne-section's
+	# _spawn_throne_in_group helper above.
+	var t: Variant = _ThroneScene.instantiate()
+	t.set(&"team", team)
+	t.position = pos
+	add_child_autofree(t)
+	return t
+
+
+func test_dropoff_for_team_by_kind_grain_finds_mazraeh() -> void:
+	var mazraeh: Variant = _spawn_mazraeh_for_resource_system(Constants.TEAM_IRAN)
+	var result: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN)
+	assert_eq(result, mazraeh,
+		"dropoff_for_team_by_kind(IRAN, KIND_GRAIN) must return the Mazra'eh "
+		+ "from &\"grain_depots\" group")
+
+
+func test_dropoff_for_team_by_kind_coin_finds_madan() -> void:
+	var madan: Variant = _spawn_madan_for_resource_system(Constants.TEAM_IRAN)
+	var result: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_IRAN, Constants.KIND_COIN)
+	assert_eq(result, madan,
+		"dropoff_for_team_by_kind(IRAN, KIND_COIN) must return the Ma'dan "
+		+ "from &\"coin_depots\" group")
+
+
+func test_dropoff_for_team_by_kind_falls_back_to_throne() -> void:
+	# Tier 1 (kind-matching local depot) → null → Tier 2 (Throne) →
+	# returns Throne. Per brief §3.1 item 3: Throne is universal fallback.
+	var throne: Variant = _spawn_throne_for_rs_ld(Constants.TEAM_IRAN)
+	var result: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN)
+	assert_eq(result, throne,
+		"dropoff_for_team_by_kind must fall back to Throne when no "
+		+ "kind-matching local depot exists for the team")
+
+
+func test_dropoff_for_team_by_kind_returns_null_when_no_depot() -> void:
+	# Cold path: no local depot AND no Throne → null. Test fixture path.
+	var result: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_IRAN, Constants.KIND_COIN)
+	assert_null(result,
+		"dropoff_for_team_by_kind returns null when no kind-matching "
+		+ "local depot AND no Throne exists for the team")
+
+
+func test_dropoff_for_team_by_kind_filters_by_team() -> void:
+	# Cross-team safety: Iran Mazra'eh must NOT be returned for TURAN.
+	var iran_mazraeh: Variant = _spawn_mazraeh_for_resource_system(Constants.TEAM_IRAN)
+	var iran_result: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN)
+	var turan_result: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_TURAN, Constants.KIND_GRAIN)
+	assert_eq(iran_result, iran_mazraeh,
+		"Iran-team Mazra'eh returned for Iran grain query")
+	assert_null(turan_result,
+		"Turan grain query must return null (no Turan Mazra'eh, no Throne)")
+
+
+func test_dropoff_for_team_by_kind_picks_nearest() -> void:
+	# MVP reference point: map origin. Multi-depot path picks the nearer.
+	var _far: Variant = _spawn_mazraeh_for_resource_system(
+		Constants.TEAM_IRAN, Vector3(50.0, 0.0, 50.0))
+	var near: Variant = _spawn_mazraeh_for_resource_system(
+		Constants.TEAM_IRAN, Vector3(5.0, 0.0, 5.0))
+	var result: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN)
+	assert_eq(result, near,
+		"dropoff_for_team_by_kind must pick the NEAREST kind-matching depot "
+		+ "to map origin")
+
+
+func test_dropoff_for_team_by_kind_validates_is_instance_valid() -> void:
+	# Pitfall #16: freed Node ref in memo must NOT be returned.
+	var mazraeh: Variant = _spawn_mazraeh_for_resource_system(Constants.TEAM_IRAN)
+	var first: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN)
+	assert_eq(first, mazraeh, "sanity: first call returns Mazra'eh")
+	mazraeh.free()
+	var second: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN)
+	assert_null(second,
+		"Pitfall #16 regression: dropoff_for_team_by_kind must NOT return "
+		+ "a freed Object")
+
+
+func test_dropoff_for_team_by_kind_evicts_all_kinds_on_throne_destroyed() -> void:
+	# Per brief §3.1 item 3: throne_destroyed evicts ALL kinds for that
+	# team. Throne is universal fallback; destruction invalidates every
+	# kind's cache entry.
+	var throne: Variant = _spawn_throne_for_rs_ld(Constants.TEAM_IRAN)
+	var grain_first: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN)
+	var coin_first: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_IRAN, Constants.KIND_COIN)
+	assert_eq(grain_first, throne, "sanity: grain falls back to Throne")
+	assert_eq(coin_first, throne, "sanity: coin falls back to Throne")
+	EventBus.throne_destroyed.emit(Constants.TEAM_IRAN)
+	var grain_after: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN)
+	var coin_after: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_IRAN, Constants.KIND_COIN)
+	assert_eq(grain_after, throne,
+		"Post-eviction grain re-walk returns Throne (still in group)")
+	assert_eq(coin_after, throne,
+		"Post-eviction coin re-walk returns Throne — eviction was per-team "
+		+ "(all kinds invalidated together), not per-(team, kind)")
+
+
+func test_dropoff_for_team_legacy_wrapper_routes_through_by_kind() -> void:
+	# Per brief §3.1 item 3: existing dropoff_for_team(team) is a thin
+	# wrapper around dropoff_for_team_by_kind(team, &""). Empty kind
+	# falls through to the Throne tier directly.
+	var throne: Variant = _spawn_throne_for_rs_ld(Constants.TEAM_IRAN)
+	var result: Node3D = ResourceSystem.dropoff_for_team(Constants.TEAM_IRAN)
+	assert_eq(result, throne,
+		"dropoff_for_team(team) legacy wrapper routes to "
+		+ "dropoff_for_team_by_kind(team, &\"\") → Throne fallback tier")

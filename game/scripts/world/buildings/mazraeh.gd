@@ -101,8 +101,38 @@ class_name Mazraeh
 
 const KIND_MAZRAEH: StringName = &"mazraeh"
 
+## Wave-3-LocalDropoffs (session 9): the RESOURCE kind this Mazra'eh
+## accepts as an IDropoffTarget. Distinct from `kind = &"mazraeh"` (the
+## Building kind) per RNC §4.6's kind-vs-resource_kind distinction.
+##
+## The kind-filter behavior: `deposit()` rejects any non-grain deposit
+## with a loud log + worker carry zeroed (BUG-C1/D1/D2 defensive-fallback-
+## masking lesson: rejection without carry-zero is a silent-loss bug).
+## Per brief v1.0.1 §3.1 item 4 + architecture-reviewer C2.1 mitigation:
+## the lookup-side filter (ResourceSystem.dropoff_for_team_by_kind) is the
+## canonical gate — should NEVER pass a kind-mismatched depot through.
+## The building-side filter here is defense-in-depth + a bug-signal log
+## when the invariant is ever violated.
+const ACCEPTED_KIND: StringName = Constants.KIND_GRAIN
+
+## SceneTree group name for grain-depot lookup. ResourceSystem.dropoff_for_
+## team_by_kind iterates this group filtered by team + ACCEPTED_KIND to
+## find a worker's deposit target for grain. Mirrors Throne's &"thrones"
+## group pattern (Wave-3-Throne) + RNC §5.2 forward-compat-seams §3.3.
+const GRAIN_DEPOTS_GROUP: StringName = &"grain_depots"
+
 ## Opaque FogSystem handle. -1 = not registered.
 var _fog_handle: int = -1
+
+## Wave-3-LocalDropoffs forward-compat scaffold (brief v1.0.1 §2 + C4.3):
+## the per-Mazra'eh accumulation buffer for Trade & Transport Q2. Today
+## this field is unused — `deposit()` calls `ResourceSystem.change_resource`
+## directly (deposit-RELAY shape). Q2 will refactor `deposit()` to credit
+## `_local_stock_x100 += amount` + emit caravans on full (deposit-
+## ACCUMULATOR shape). Declaring the field now signals Q2 intent and
+## avoids a Property-Schema-Change-In-Phase-4 ripple. Fixed-point per
+## Sim Contract §1.6 (x100 scale; same as ResourceSystem._coin_x100 etc.).
+var _local_stock_x100: int = 0
 
 # Wave-1A hardcoded tunables. TODO(phase-3-wave-1B): read from BalanceData
 # once FogConfig + economy sub-resources ship.
@@ -138,6 +168,14 @@ func _init() -> void:
 func _ready() -> void:
 	kind = KIND_MAZRAEH
 	super._ready()
+	# Wave-3-LocalDropoffs (session 9) — join the &"grain_depots" group so
+	# ResourceSystem.dropoff_for_team_by_kind can find this instance for
+	# grain-carrying workers. Mirrors Throne's &"thrones" group join
+	# (throne.gd:_ready) + RNC §5.2 group-iteration anti-misuse warning
+	# (mirror C1.2: buildings use SceneTree groups, not SpatialIndex).
+	add_to_group(GRAIN_DEPOTS_GROUP)
+	print("[mazraeh] _ready team=%d position=%s unit_id=%d joined=%s" % [
+		team, str(global_position), unit_id, str(GRAIN_DEPOTS_GROUP)])
 
 
 # === Autoload helper =========================================================
@@ -327,3 +365,98 @@ func _exit_tree() -> void:
 		if fog != null and fog.has_method(&"deregister_vision_source"):
 			fog.call(&"deregister_vision_source", _fog_handle)
 		_fog_handle = -1
+
+
+# === IDropoffTarget protocol — RNC §5.2 (Wave-3-LocalDropoffs, session 9) ===
+#
+# Mazra'eh implements the duck-typed IDropoffTarget protocol for GRAIN-
+# carrying workers. The protocol is two methods + the canonical name
+# signatures per RNC §5.2 — mirrors Throne's implementation at
+# throne.gd:344-380 (only ONE difference: Throne accepts all kinds;
+# Mazra'eh kind-filters to ACCEPTED_KIND = Constants.KIND_GRAIN).
+#
+# Today's shape (deposit-RELAY): `deposit()` calls
+# `ResourceSystem.change_resource` directly. No local accumulation.
+# Tomorrow's shape (Q2 Trade & Transport deposit-ACCUMULATOR): refactor
+# to credit `_local_stock_x100 += amount` + emit caravans on full. The
+# protocol method signatures stay; bodies change. See brief v1.0.1 §2
+# "Non-throwaway property" for the platform-shape preserved/internals
+# refactored boundary.
+#
+# Mirror C1.4 — only-one-path-per-cycle: `deposit()` is the chokepoint
+# call site when Mazra'eh-routed; `UnitState_Returning._perform_deposit`
+# MUST NOT also call `change_resource` for the same gather cycle. The
+# brief v1.0.1 §3.1 item 5 (re-query in `_perform_deposit`) ensures the
+# routing decision is fresh — if a Mazra'eh was destroyed mid-walk, the
+# Returning state's re-query returns Throne (or null) and the deposit
+# goes there.
+
+
+## Implements IDropoffTarget — see RESOURCE_NODE_CONTRACT.md §5.
+##
+## Accepts grain deposits. Rejects coin (or any non-grain kind) with a
+## loud log + worker carry zeroed per architecture-reviewer C2.1
+## mitigation: rejection without carry-zero is a silent-loss bug shape
+## (BUG-C1/D1/D2 defensive-fallback-masking lesson).
+##
+## Per brief v1.0.1 §3.1 item 4: lookup-side filter
+## (ResourceSystem.dropoff_for_team_by_kind) is the canonical gate —
+## should NEVER pass a kind-mismatched depot through. Building-side
+## filter here is defense-in-depth + a bug-signal log if the invariant
+## is ever violated upstream.
+##
+## `amount` is already-x100 fixed-point (UnitState_Returning passes
+## `_carry_amount_x100` directly per the existing convention; see
+## throne.gd:deposit header for the canonical signature documentation).
+##
+## Pre-condition: caller is inside the unit's _sim_tick path — on-tick
+## by construction (Sim Contract §1.3 + Wave-3-Throne Throne.deposit
+## header rationale).
+func deposit(resource_kind: StringName, amount: int, worker: Unit) -> void:
+	if amount <= 0:
+		# Zero/negative deposit is a no-op (matches Throne/Returning's
+		# existing skip-empty-carry guard).
+		return
+	var worker_id: int = -1
+	if worker != null and is_instance_valid(worker):
+		worker_id = worker.unit_id
+	if resource_kind != ACCEPTED_KIND:
+		# Kind mismatch — REJECT. This branch should never fire if the
+		# lookup-side filter (dropoff_for_team_by_kind) is correct; the
+		# loud log enables diagnosis when it does fire.
+		print("[mazraeh] deposit_rejected kind_mismatch got=%s expected=%s worker=%d team=%d" % [
+			str(resource_kind), str(ACCEPTED_KIND), worker_id, team])
+		# Zero the worker's carry so the stale carry doesn't survive to
+		# next gather cycle. Per architecture-reviewer C2.1: rejection
+		# WITHOUT carry-zero is a silent-loss bug shape.
+		if worker != null and is_instance_valid(worker):
+			if &"_carry_kind" in worker:
+				worker.set(&"_carry_kind", &"")
+			if &"_carry_amount_x100" in worker:
+				worker.set(&"_carry_amount_x100", 0)
+		return
+	# Kind-match path. §9.M6 log BEFORE the chokepoint call so failures
+	# (off-tick assertion crash etc.) are still visible in the log scroll.
+	print("[mazraeh] deposit_received from=%d kind=%s amount_x100=%d team=%d" % [
+		worker_id, str(resource_kind), amount, team])
+	# Canonical chokepoint call. Mirror C1.4: Mazra'eh owns this call
+	# when this path fires; UnitState_Returning's inline change_resource
+	# at the fallback branch MUST NOT also fire for the same cycle.
+	#
+	# Future (Q2 Trade & Transport): replace this with
+	#   _local_stock_x100 += amount
+	# and emit caravans on full. The brief v1.0.1 §2 forward-compat seam.
+	ResourceSystem.change_resource(
+		team, resource_kind, amount, &"gather_deposit", worker)
+
+
+## Implements IDropoffTarget — see RESOURCE_NODE_CONTRACT.md §5.
+##
+## Returns the world position the worker should walk to BEFORE depositing.
+## Mirrors Throne.get_deposit_position(): a small Y nudge so the worker
+## visually arrives at the building's footprint center. Future refinement
+## (Phase 4 polish): a $DepositMarker child Node3D for the farm-edge
+## geometry. UnitState_Returning.enter() reads this to set the walk-back
+## target.
+func get_deposit_position() -> Vector3:
+	return global_position + Vector3(0.0, 0.5, 0.0)

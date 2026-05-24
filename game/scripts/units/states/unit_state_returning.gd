@@ -149,12 +149,24 @@ func enter(_prev: Object, ctx: Object) -> void:
 		var team_for_dropoff: int = Constants.TEAM_NEUTRAL
 		if &"team" in ctx:
 			team_for_dropoff = int(ctx.team)
-		var dropoff: Node3D = ResourceSystem.dropoff_for_team(team_for_dropoff)
+		# Wave-3-LocalDropoffs (session 9) — kind-aware lookup. Resolve
+		# the worker's carry kind at enter() time (`_carry_kind_at_enter`)
+		# so we walk to the nearest kind-matching local depot (Mazra'eh
+		# for grain, Ma'dan for coin), falling back to Throne when no
+		# kind-matching local depot exists. Per brief v1.0.1 §3.1 item 4
+		# (architecture-reviewer C1.1) + §6 canonical references.
+		var carry_kind_at_enter: StringName = &""
+		if &"_carry_kind" in ctx:
+			var ck: Variant = ctx.get(&"_carry_kind")
+			if typeof(ck) == TYPE_STRING_NAME:
+				carry_kind_at_enter = ck
+		var dropoff: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+			team_for_dropoff, carry_kind_at_enter)
 		if dropoff != null and is_instance_valid(dropoff) \
 				and dropoff.has_method(&"get_deposit_position"):
 			_deposit_target_pos = dropoff.call(&"get_deposit_position")
 		else:
-			# Zero-walk fallback (test fixtures, pre-Throne-spawn boot).
+			# Zero-walk fallback (test fixtures, pre-depot-spawn boot).
 			_deposit_target_pos = _get_self_position(ctx)
 
 	# Kick off the path. If the deposit target is the unit's own position,
@@ -266,20 +278,32 @@ func _perform_deposit(ctx: Object) -> void:
 		var team: int = Constants.TEAM_NEUTRAL
 		if &"team" in ctx:
 			team = int(ctx.team)
-		# Wave-3-Throne canonical RNC §5.2 routing.
-		# ResourceSystem.dropoff_for_team is Pitfall-#16-safe (validates
-		# is_instance_valid before return); the further has_method check
-		# here is belt-and-braces against a future non-Throne &"thrones"
-		# group member (impossible at MVP but cheap to guard).
-		var dropoff: Node3D = ResourceSystem.dropoff_for_team(team)
+		# Wave-3-LocalDropoffs (session 9) canonical RNC §5.2 routing —
+		# kind-aware lookup. Per brief v1.0.1 §3.1 item 4 +
+		# architecture-reviewer C1.1: this is call site #2 (the first
+		# is `enter()`'s walk-target resolution). Missing this site
+		# would produce the worker-walks-to-Mazra'eh-but-deposits-at-Throne
+		# bug — C1.4 silent violation.
+		#
+		# **Depot-destroyed-mid-walk handling (architecture-reviewer C2.6):**
+		# the second query may return a DIFFERENT depot than `enter()`
+		# cached if the original target was destroyed mid-walk. Log the
+		# divergence loudly and route through THIS query's target — the
+		# C1.4 only-one-path invariant still holds via the fresh query.
+		# The cached `_deposit_target_pos` is stale (worker walked to
+		# position A but depot B is now closer/the-only-one), but deposit
+		# credits go through correctly. Phase 4 polish: re-issue movement
+		# to position B; for now the deposit fires from wherever the
+		# worker landed.
+		var dropoff: Node3D = ResourceSystem.dropoff_for_team_by_kind(team, kind)
 		if dropoff != null and is_instance_valid(dropoff) \
 				and dropoff.has_method(&"deposit"):
-			# Throne-present path. Throne.deposit owns the chokepoint
-			# call internally; we do NOT call change_resource here.
-			# C1.4 only-one-path enforced.
+			# Depot-present path. Depot.deposit owns the chokepoint call
+			# internally; we do NOT call change_resource here. C1.4
+			# only-one-path enforced.
 			dropoff.call(&"deposit", kind, int(amount_x100), ctx)
 		else:
-			# Throne-absent fallback (test fixtures, pre-spawn). Preserve
+			# Depot-absent fallback (test fixtures, pre-spawn). Preserve
 			# the wave 1B inline call exactly as shipped.
 			ResourceSystem.change_resource(
 				team, kind, int(amount_x100), &"gather_deposit", ctx)

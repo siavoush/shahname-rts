@@ -78,6 +78,17 @@ var _population_cap: Dictionary = {}
 var _dropoff_memo: Dictionary = {}
 var _dropoff_memo_tick: Dictionary = {}
 
+# Wave-3-LocalDropoffs (session 9) — nested per-(team, kind) memo for
+# `dropoff_for_team_by_kind`. Per architecture-reviewer C2.3 brief-time
+# review: nested Dict (NOT flat composite-key) so per-(team, kind)
+# eviction works cleanly. Outer keys are team ints; inner keys are kind
+# StringNames; values are Node3D depot refs.
+#
+# Pitfall #18 N/A: nested Dict with Node3D values, NOT PackedByteArray
+# or Array — copy-on-write does not apply. Verified at brief-review.
+var _dropoff_memo_by_kind: Dictionary = {}       # int → Dict[StringName, Node3D]
+var _dropoff_memo_by_kind_tick: Dictionary = {}  # int → Dict[StringName, int]
+
 
 # === Lifecycle ==============================================================
 
@@ -459,6 +470,10 @@ func reset() -> void:
 	# a Throne ref from a prior match would be a freed Object in the next.
 	_dropoff_memo.clear()
 	_dropoff_memo_tick.clear()
+	# Wave-3-LocalDropoffs: clear the nested per-(team, kind) memos too.
+	_dropoff_memo_by_kind.clear()
+	_dropoff_memo_by_kind_tick.clear()
+	_dropoff_log_last_tick_by_kind.clear()
 	_load_starting_values_from_balance_data()
 
 
@@ -482,84 +497,196 @@ func reset() -> void:
 
 ## Look up the Throne instance serving as the deposit target for a team.
 ##
-## Returns the Throne Node3D or null. **The returned ref is validated
-## via is_instance_valid() before return**; callers MAY rely on a
-## non-null return being a live instance THIS tick. Callers walking
-## across multiple ticks SHOULD re-call this method each tick (cheap;
-## memoized).
+## **Wave-3-LocalDropoffs (session 9) — thin wrapper around
+## `dropoff_for_team_by_kind(team, &"")`.** Per brief v1.0.1 §3.1 item 3
+## (architecture-reviewer C1.2 REPLACE decision): `dropoff_for_team` is
+## REPLACED by `dropoff_for_team_by_kind`; this wrapper exists as a
+## defensive fallback for any legacy/test path that doesn't have a kind
+## in scope. The empty-string kind dispatches directly to the Throne
+## fallback (Throne accepts all kinds; no kind-matching local depot can
+## match empty kind).
 ##
-## team: Constants.TEAM_IRAN or TEAM_TURAN. TEAM_NEUTRAL returns null
-## (no neutral Throne).
+## Returns Node3D (the Throne instance) or null when no Throne exists for
+## this team. **The returned ref is validated via is_instance_valid()
+## before return** — Pitfall #16 mandatory.
+##
+## team: Constants.TEAM_IRAN or TEAM_TURAN. TEAM_NEUTRAL returns null.
 func dropoff_for_team(team: int) -> Node3D:
-	# Per-tick memo check. SimClock.tick is the canonical "now" — if the
-	# memo entry was set this same tick, return it (after Pitfall #16
-	# guard).
+	return dropoff_for_team_by_kind(team, &"")
+
+
+## Look up the nearest kind-matching local depot for a team, falling back
+## to the Throne when no kind-matching local depot exists. Wave-3-LocalDropoffs
+## (session 9) per brief v1.0.1 §3.1 item 3.
+##
+## Lookup order:
+##   1. **Nearest kind-matching local depot** — Mazra'eh for &"grain"
+##      (in `&"grain_depots"` group), Ma'dan for &"coin" (in `&"coin_depots"`
+##      group). Filter by team; pick nearest to a reference point. Current
+##      reference: map origin (matches `dropoff_for_team` MVP behavior;
+##      future refinement: per-worker reference point).
+##   2. **Throne fallback** — when no kind-matching local depot exists,
+##      return the team's Throne via the &"thrones" group. Throne accepts
+##      all kinds, so this is the safe universal fallback.
+##   3. **Null** — no kind-matching depot AND no Throne (test fixture path).
+##
+## **Memoization:** nested Dictionary `_dropoff_memo_by_kind[team][kind]`
+## per architecture-reviewer C2.3. Per-(team, kind) memo invalidation lets
+## a grain-lookup cache miss not invalidate a coin-lookup cache hit.
+## Per-tick effective via `_dropoff_memo_by_kind_tick[team][kind]`.
+##
+## **Pitfall #16 MANDATORY:** `is_instance_valid()` BEFORE returning the
+## memoized value. Eviction also runs on EventBus.throne_destroyed (evicts
+## ALL kinds for that team — Throne is the universal fallback).
+##
+## **Pitfall #18 N/A:** the memo is a nested Dictionary with Node3D values
+## (NOT PackedByteArray / Array). Copy-on-write does not apply per
+## architecture-reviewer C2.3 verification.
+##
+## **§9.M6 log:** `[resource] dropoff_for_team_by_kind(team, kind) → <depot>`
+## throttled per-(team, kind) so grain + coin lookups on same team don't
+## throttle each other.
+##
+## team: Constants.TEAM_IRAN or TEAM_TURAN. TEAM_NEUTRAL returns null.
+## kind: Constants.KIND_COIN, KIND_GRAIN, or &"" (defensive legacy path).
+func dropoff_for_team_by_kind(team: int, kind: StringName) -> Node3D:
+	# Per-tick memo check. SimClock.tick is canonical "now"; if the memo
+	# entry was set this same tick, return it (after Pitfall #16 guard).
 	var current_tick: int = SimClock.tick
-	if _dropoff_memo_tick.get(team, -1) == current_tick:
-		var cached: Variant = _dropoff_memo.get(team, null)
+	var team_memo: Dictionary = _dropoff_memo_by_kind.get(team, {})
+	var team_memo_tick: Dictionary = _dropoff_memo_by_kind_tick.get(team, {})
+	if team_memo_tick.get(kind, -1) == current_tick:
+		var cached: Variant = team_memo.get(kind, null)
 		if cached != null and is_instance_valid(cached):
 			return cached as Node3D
-		# Cached ref is dead (freed between memo-set and now). Fall
-		# through to re-walk.
-	# Walk the &"thrones" group, filter by team, take the FIRST match.
-	# MVP has exactly one Throne per faction, so first-match is the only
-	# match. Multi-Throne factions (out of MVP scope) would need a
-	# preference policy (nearest? lowest unit_id?). Today: first.
+		# Cached ref is dead. Fall through to re-walk.
 	var tree: SceneTree = get_tree()
 	if tree == null:
-		# Test fixture without scene tree — no Thrones to find.
-		_dropoff_memo[team] = null
-		_dropoff_memo_tick[team] = current_tick
-		# §9.M6 — throttled log (don't spam every gather cycle).
-		_log_dropoff_throttled(team, null)
+		# Test fixture without scene tree — no depots to find.
+		_store_dropoff_memo(team, kind, null, current_tick)
+		_log_dropoff_throttled(team, kind, null)
 		return null
+	# Tier 1: nearest kind-matching local depot.
+	var local_group: StringName = _local_depot_group_for_kind(kind)
 	var found: Node3D = null
-	for node in tree.get_nodes_in_group(&"thrones"):
+	if local_group != &"":
+		found = _find_nearest_in_group(tree, local_group, team)
+	# Tier 2: Throne fallback if no kind-matching local depot.
+	if found == null:
+		found = _find_nearest_in_group(tree, &"thrones", team)
+	_store_dropoff_memo(team, kind, found, current_tick)
+	_log_dropoff_throttled(team, kind, found)
+	return found
+
+
+# Map a resource kind to the SceneTree group containing its local depots.
+# Returns &"" for unknown kinds (defensive — legacy path; falls through
+# to Throne tier in dropoff_for_team_by_kind).
+func _local_depot_group_for_kind(kind: StringName) -> StringName:
+	if kind == Constants.KIND_GRAIN:
+		return &"grain_depots"
+	if kind == Constants.KIND_COIN:
+		return &"coin_depots"
+	return &""
+
+
+# Find the nearest team-matching Node3D in a SceneTree group.
+# Returns null if no team-matching node exists in the group.
+# **Pitfall #16:** every iteration step `is_instance_valid()`-guards the
+# Node before access.
+#
+# Reference point for "nearest": map origin (Vector3.ZERO). MVP simplification
+# — workers don't query per-position yet. Future refinement: pass a worker
+# position so each worker gets its actually-nearest depot.
+func _find_nearest_in_group(tree: SceneTree, group: StringName, team: int) -> Node3D:
+	var best: Node3D = null
+	var best_dist_sq: float = INF
+	var origin: Vector3 = Vector3.ZERO
+	for node in tree.get_nodes_in_group(group):
 		if not is_instance_valid(node):
 			continue
 		if not (node is Node3D):
 			continue
 		var node_team: Variant = node.get(&"team")
-		if typeof(node_team) == TYPE_INT and int(node_team) == team:
-			found = node as Node3D
-			break
-	_dropoff_memo[team] = found
-	_dropoff_memo_tick[team] = current_tick
-	# §9.M6 — throttled log (1 per few seconds; spammy gather cycles
-	# would otherwise drown the log).
-	_log_dropoff_throttled(team, found)
-	return found
+		if typeof(node_team) != TYPE_INT or int(node_team) != team:
+			continue
+		var pos: Vector3 = (node as Node3D).global_position
+		var dx: float = pos.x - origin.x
+		var dz: float = pos.z - origin.z
+		var d2: float = dx * dx + dz * dz
+		if d2 < best_dist_sq:
+			best_dist_sq = d2
+			best = node as Node3D
+	return best
 
 
-# Throttle map: team → last-logged tick. Logs at most once per ~3 seconds
-# (90 ticks @ 30Hz) per team. Keeps the live-test log readable without
-# losing the diagnostic signal entirely.
-var _dropoff_log_last_tick: Dictionary = {}
+# Store a memo entry in the nested Dictionary.
+# The nested Dict shape per architecture-reviewer C2.3: outer keys are
+# team ints, inner keys are kind StringNames. Allows per-(team, kind)
+# eviction without nuking sibling-kind entries.
+func _store_dropoff_memo(team: int, kind: StringName, found: Node3D, tick: int) -> void:
+	if not _dropoff_memo_by_kind.has(team):
+		_dropoff_memo_by_kind[team] = {}
+	if not _dropoff_memo_by_kind_tick.has(team):
+		_dropoff_memo_by_kind_tick[team] = {}
+	(_dropoff_memo_by_kind[team] as Dictionary)[kind] = found
+	(_dropoff_memo_by_kind_tick[team] as Dictionary)[kind] = tick
+	# Mirror old memo for backward compat (any code still reading
+	# _dropoff_memo[team] gets the kind=&"" value, which is the Throne).
+	if kind == &"":
+		_dropoff_memo[team] = found
+		_dropoff_memo_tick[team] = tick
+
+
+# Throttle map: (team, kind) → last-logged tick. Logs at most once per
+# ~3 seconds (90 ticks @ 30Hz) per (team, kind). Per architecture-reviewer
+# C2.3: separate throttle per kind so grain-lookups and coin-lookups on
+# the same team don't throttle each other.
+var _dropoff_log_last_tick_by_kind: Dictionary = {}  # team → Dict[kind, tick]
 const _DROPOFF_LOG_THROTTLE_TICKS: int = 90
 
 
-func _log_dropoff_throttled(team: int, found: Node3D) -> void:
-	var last: int = int(_dropoff_log_last_tick.get(team, -10000))
+func _log_dropoff_throttled(team: int, kind: StringName, found: Node3D) -> void:
+	var team_log: Dictionary = _dropoff_log_last_tick_by_kind.get(team, {})
+	var last: int = int(team_log.get(kind, -10000))
 	var now: int = SimClock.tick
 	if now - last < _DROPOFF_LOG_THROTTLE_TICKS:
 		return
-	_dropoff_log_last_tick[team] = now
+	if not _dropoff_log_last_tick_by_kind.has(team):
+		_dropoff_log_last_tick_by_kind[team] = {}
+	(_dropoff_log_last_tick_by_kind[team] as Dictionary)[kind] = now
 	var found_desc: String = "null"
 	if found != null and is_instance_valid(found):
-		found_desc = "<Throne unit_id=%d pos=%s>" % [
-			int(found.get(&"unit_id")), str(found.global_position)]
-	print("[resource] dropoff_for_team(team=%d) → %s" % [team, found_desc])
+		var found_kind: String = "?"
+		var fk: Variant = found.get(&"kind")
+		if typeof(fk) == TYPE_STRING_NAME:
+			found_kind = String(fk)
+		found_desc = "<%s unit_id=%d pos=%s>" % [
+			found_kind, int(found.get(&"unit_id")), str(found.global_position)]
+	print("[resource] dropoff_for_team_by_kind(team=%d, kind=%s) → %s" % [
+		team, str(kind), found_desc])
 
 
 func _on_throne_destroyed(team_id: int) -> void:
 	# Evict the memo for this team so the next consumer re-walks the
 	# group instead of returning a freed Node ref. Pitfall #16 belt-
-	# and-braces: the per-call `is_instance_valid` in dropoff_for_team
-	# would also catch the freed ref, but eager eviction is faster and
-	# avoids the rare case where validity-check returns true on a
-	# half-freed object during the same-frame destruction.
+	# and-braces: the per-call `is_instance_valid` in
+	# dropoff_for_team_by_kind would also catch the freed ref, but eager
+	# eviction is faster and avoids the rare case where validity-check
+	# returns true on a half-freed object during the same-frame
+	# destruction.
 	if _dropoff_memo.has(team_id):
 		_dropoff_memo.erase(team_id)
 	if _dropoff_memo_tick.has(team_id):
 		_dropoff_memo_tick.erase(team_id)
-	print("[resource] dropoff_memo evicted for team=%d (throne_destroyed)" % team_id)
+	# Wave-3-LocalDropoffs: Throne is the universal fallback for ALL kinds.
+	# When destroyed, every cached (team, kind) entry for that team may
+	# now return a different depot (or null) on next lookup. Evict ALL
+	# kinds for the team. Per architecture-reviewer C2.3 + brief v1.0.1
+	# §3.1 item 3 "EventBus.throne_destroyed eviction: evicts ALL kinds
+	# for that team (Throne is the universal fallback)."
+	if _dropoff_memo_by_kind.has(team_id):
+		_dropoff_memo_by_kind.erase(team_id)
+	if _dropoff_memo_by_kind_tick.has(team_id):
+		_dropoff_memo_by_kind_tick.erase(team_id)
+	print("[resource] dropoff_memo evicted for team=%d (throne_destroyed) — all kinds" % team_id)

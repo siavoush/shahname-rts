@@ -486,3 +486,88 @@ func test_mazraeh_material_is_green_not_neutral_grey() -> void:
 	assert_true(sm.albedo_color.g > sm.albedo_color.b,
 		"Mazra'eh albedo green must exceed blue, "
 		+ "got g=%.2f b=%.2f" % [sm.albedo_color.g, sm.albedo_color.b])
+
+
+# ===========================================================================
+# Wave-3-LocalDropoffs (session 9) — IDropoffTarget protocol conformance
+# ===========================================================================
+#
+# Per RNC §5.2 + brief v1.0.1 §3.1 item 4. Mazra'eh accepts grain deposits
+# (ACCEPTED_KIND = Constants.KIND_GRAIN), kind-filters non-grain with a
+# loud log + worker-carry-zero, and joins the &"grain_depots" SceneTree
+# group for ResourceSystem.dropoff_for_team_by_kind lookup.
+
+func test_mazraeh_joins_grain_depots_group() -> void:
+	_mazraeh = _spawn_mazraeh()
+	assert_true(_mazraeh.is_in_group(&"grain_depots"),
+		"Mazra'eh must join &\"grain_depots\" group at _ready — required "
+		+ "for dropoff_for_team_by_kind lookup (mirror C1.2: buildings "
+		+ "use SceneTree groups, NOT SpatialIndex)")
+
+
+func test_mazraeh_implements_idropofftarget_protocol() -> void:
+	# Per RNC §5.2: deposit + get_deposit_position canonical signatures.
+	_mazraeh = _spawn_mazraeh()
+	assert_true(_mazraeh.has_method(&"deposit"),
+		"Mazra'eh must implement deposit() per RNC §5.2 IDropoffTarget")
+	assert_true(_mazraeh.has_method(&"get_deposit_position"),
+		"Mazra'eh must implement get_deposit_position() per RNC §5.2")
+
+
+func test_mazraeh_accepted_kind_is_grain() -> void:
+	# ACCEPTED_KIND is the RESOURCE kind (KIND_GRAIN), distinct from
+	# Building.kind (&"mazraeh") per RNC §4.6.
+	_mazraeh = _spawn_mazraeh()
+	assert_eq(_mazraeh.ACCEPTED_KIND, Constants.KIND_GRAIN,
+		"Mazra'eh.ACCEPTED_KIND must equal Constants.KIND_GRAIN")
+
+
+func test_mazraeh_deposit_grain_calls_change_resource_chokepoint() -> void:
+	# Behavioral: 10 grain (amount_x100=1000) must increase team's
+	# grain_x100 by exactly 1000 via the ResourceSystem chokepoint.
+	_mazraeh = _spawn_mazraeh(Constants.TEAM_IRAN)
+	SimClock._is_ticking = true
+	var grain_before: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	_mazraeh.deposit(Constants.KIND_GRAIN, 1000, null)
+	SimClock._is_ticking = false
+	var grain_after: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	assert_eq(grain_after - grain_before, 1000,
+		"Mazra'eh.deposit(KIND_GRAIN, 1000, null) must increase grain_x100 "
+		+ "by exactly 1000 via change_resource chokepoint")
+
+
+func test_mazraeh_deposit_coin_kind_filter_rejects() -> void:
+	# REJECT non-grain. Per architecture-reviewer C2.1: rejection means
+	# no chokepoint call — the team's coin balance must NOT change.
+	_mazraeh = _spawn_mazraeh(Constants.TEAM_IRAN)
+	SimClock._is_ticking = true
+	var coin_before: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	_mazraeh.deposit(Constants.KIND_COIN, 5000, null)
+	SimClock._is_ticking = false
+	var coin_after: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	assert_eq(coin_after, coin_before,
+		"Mazra'eh must NOT credit coin on kind-mismatched deposit "
+		+ "(C2.1 invariant: rejection means no chokepoint call)")
+
+
+func test_mazraeh_deposit_zero_amount_is_noop() -> void:
+	_mazraeh = _spawn_mazraeh(Constants.TEAM_IRAN)
+	SimClock._is_ticking = true
+	var grain_before: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	_mazraeh.deposit(Constants.KIND_GRAIN, 0, null)
+	_mazraeh.deposit(Constants.KIND_GRAIN, -100, null)
+	SimClock._is_ticking = false
+	var grain_after: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	assert_eq(grain_after, grain_before,
+		"Mazra'eh.deposit with amount <= 0 must be a no-op")
+
+
+func test_mazraeh_local_stock_x100_forward_compat_field() -> void:
+	# Forward-compat scaffold per brief v1.0.1 §2 + C4.3: declared but
+	# unused at MVP; Q2 Trade & Transport refactors deposit() to
+	# accumulate into this field + emit caravans on full.
+	_mazraeh = _spawn_mazraeh()
+	var stock: Variant = _mazraeh.get(&"_local_stock_x100")
+	assert_eq(typeof(stock), TYPE_INT,
+		"Mazra'eh._local_stock_x100 must exist as int (Q2 forward-compat)")
+	assert_eq(int(stock), 0, "_local_stock_x100 default 0 (unused at MVP)")
