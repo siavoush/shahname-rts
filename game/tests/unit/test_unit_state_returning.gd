@@ -331,3 +331,104 @@ func test_gather_return_gather_loop_continues() -> void:
 		"loop reached Returning at least once")
 	assert_true(seen_second_gathering,
 		"loop re-entered Gathering after Returning (gather-deposit-gather cycle)")
+
+
+# ===========================================================================
+# Wave-3-Throne — canonical IDropoffTarget routing (RNC §5.2)
+# ===========================================================================
+#
+# Mirror C1.4: when a Throne exists for the worker's team, _perform_deposit
+# routes through `throne.deposit(...)` and the inline `change_resource`
+# call is SKIPPED. When no Throne exists (test fixtures, pre-spawn),
+# inline change_resource still fires.
+#
+# Net effect on coin balance is IDENTICAL in both paths (Throne.deposit
+# calls change_resource internally) — what matters is that ONLY ONE path
+# fires per deposit cycle (no double-credit).
+
+const _ThroneScene_T: PackedScene = preload(
+	"res://scenes/world/buildings/throne.tscn")
+
+
+func _spawn_throne_for_team(team: int) -> Variant:
+	var t: Variant = _ThroneScene_T.instantiate()
+	t.set(&"team", team)
+	add_child_autofree(t)
+	return t
+
+
+func test_deposit_with_throne_present_routes_through_throne() -> void:
+	# Throne-present path: worker deposits → Throne.deposit fires →
+	# change_resource fires INTERNALLY in Throne (not by Returning).
+	# Observable: coin increases by exactly 1000 x100 (not 2000 — only
+	# one path fires per cycle, mirror C1.4).
+	ResourceSystem.reset()
+	_spawn_throne_for_team(Constants.TEAM_IRAN)
+	var pre_x100: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	_spawn_unit()
+	_spawn_mine()
+	_enter_returning(_mine, Vector3(10.0, 0.0, 10.0))
+	SimClock._test_run_tick()
+	for i in range(60):
+		_tick_fsm()
+		if _unit.fsm.current.id != &"returning":
+			break
+	var post_x100: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	# Critical: 1000 x100, not 2000. If double-credit (both paths fire),
+	# this would be 2000. The C1.4 only-one-path enforcement is observable
+	# here via the exact delta.
+	assert_eq(post_x100 - pre_x100, 1000,
+		"Throne-present path: coin credited by EXACTLY 1000 x100 once "
+		+ "(via Throne.deposit's internal change_resource call). "
+		+ "If this is 2000, both paths fired — C1.4 only-one-path violated.")
+	ResourceSystem.reset()
+
+
+func test_deposit_without_throne_falls_back_to_inline_change_resource() -> void:
+	# Throne-absent path (no Throne in scene tree): inline change_resource
+	# fires. This is the existing wave-1B behavior; the Throne addition
+	# must NOT break it.
+	ResourceSystem.reset()
+	# No Throne spawned in this test.
+	var pre_x100: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	_spawn_unit()
+	_spawn_mine()
+	_enter_returning(_mine, Vector3(10.0, 0.0, 10.0))
+	SimClock._test_run_tick()
+	for i in range(60):
+		_tick_fsm()
+		if _unit.fsm.current.id != &"returning":
+			break
+	var post_x100: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	assert_eq(post_x100 - pre_x100, 1000,
+		"Throne-absent fallback: coin credited by 1000 x100 via inline "
+		+ "change_resource (wave-1B path preserved)")
+	ResourceSystem.reset()
+
+
+func test_deposit_throne_routing_per_team() -> void:
+	# A Turan Throne must NOT receive an Iran worker's deposit, and
+	# vice versa. dropoff_for_team filters by team; if filtering breaks,
+	# this test catches cross-team credit.
+	ResourceSystem.reset()
+	_spawn_throne_for_team(Constants.TEAM_TURAN)  # ONLY Turan Throne
+	var iran_pre: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	var turan_pre: int = ResourceSystem.coin_x100_for(Constants.TEAM_TURAN)
+	_spawn_unit()  # Iran worker by default
+	_spawn_mine()
+	_enter_returning(_mine, Vector3(10.0, 0.0, 10.0))
+	SimClock._test_run_tick()
+	for i in range(60):
+		_tick_fsm()
+		if _unit.fsm.current.id != &"returning":
+			break
+	var iran_post: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	var turan_post: int = ResourceSystem.coin_x100_for(Constants.TEAM_TURAN)
+	# Iran worker without an Iran Throne falls back to inline path,
+	# credits Iran. Turan Throne is unrelated to this deposit.
+	assert_eq(iran_post - iran_pre, 1000,
+		"Iran worker with NO Iran Throne credits Iran via inline fallback")
+	assert_eq(turan_post, turan_pre,
+		"Turan balance must NOT change when Iran worker deposits "
+		+ "(cross-team routing isolation)")
+	ResourceSystem.reset()

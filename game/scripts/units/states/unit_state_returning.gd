@@ -200,17 +200,32 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 	_request_idle(ctx)
 
 
-# Wave 1B deposit — routes the carry through ResourceSystem.change_resource
-# (the chokepoint). Replaces wave 1A's stub which only zeroed the carry.
+# Wave 1B deposit (Wave-3-Throne refactor) — routes the carry through the
+# canonical IDropoffTarget path when a Throne exists for the worker's team;
+# falls back to the inline `ResourceSystem.change_resource` chokepoint call
+# when no Throne is present (test fixtures, pre-Throne-spawn boot).
+#
+# Mirror C1.4 disambiguation (Wave-3-Throne brief v1.0.2): ONLY ONE path
+# calls `change_resource` per deposit cycle:
+#   - Throne-present path: `throne.deposit(kind, amount_x100, worker)` —
+#     the Throne owns the chokepoint call internally per RNC §5.2.
+#     Returning passes the worker as the source_unit for telemetry symmetry.
+#   - Throne-absent path: this state's inline `change_resource(...)` call
+#     (preserved exactly as wave 1B shipped — test fixtures that don't
+#     spawn a Throne continue to work).
+# The exclusion is mandatory: calling both paths would double-credit the
+# deposit. The if/else structure below enforces this by construction.
 #
 # Sim-tick mutation through chokepoint is allowed (Sim Contract §1.3): this
 # state's _sim_tick is driven by the unit's StateMachine which is itself
-# driven by EventBus.sim_phase. ResourceSystem.change_resource's on-tick
-# assert is satisfied by construction.
+# driven by EventBus.sim_phase. Whether the chokepoint call lives in this
+# function (Throne-absent fallback) or inside Throne.deposit (Throne-present
+# canonical path), the on-tick assert is satisfied by construction.
 #
-# Source reference: 01_CORE_MECHANICS.md §3 (Iran workers deliver resources
-# to the Throne; the Throne mints coin into the treasury) + Resource Node
-# Contract §5 (IDropoffTarget — deposit is what the Throne does for Coin).
+# Source reference: 01_CORE_MECHANICS.md §1 + §2 + §5 (Iran/Turan each starts
+# with one Throne; loss = defeat; workers deliver resources to the Throne);
+# docs/RESOURCE_NODE_CONTRACT.md §5 (IDropoffTarget protocol — deposit +
+# get_deposit_position canonical method signatures).
 func _perform_deposit(ctx: Object) -> void:
 	if ctx == null:
 		return
@@ -232,8 +247,23 @@ func _perform_deposit(ctx: Object) -> void:
 		var team: int = Constants.TEAM_NEUTRAL
 		if &"team" in ctx:
 			team = int(ctx.team)
-		ResourceSystem.change_resource(
-			team, kind, int(amount_x100), &"gather_deposit", ctx)
+		# Wave-3-Throne canonical RNC §5.2 routing.
+		# ResourceSystem.dropoff_for_team is Pitfall-#16-safe (validates
+		# is_instance_valid before return); the further has_method check
+		# here is belt-and-braces against a future non-Throne &"thrones"
+		# group member (impossible at MVP but cheap to guard).
+		var dropoff: Node3D = ResourceSystem.dropoff_for_team(team)
+		if dropoff != null and is_instance_valid(dropoff) \
+				and dropoff.has_method(&"deposit"):
+			# Throne-present path. Throne.deposit owns the chokepoint
+			# call internally; we do NOT call change_resource here.
+			# C1.4 only-one-path enforced.
+			dropoff.call(&"deposit", kind, int(amount_x100), ctx)
+		else:
+			# Throne-absent fallback (test fixtures, pre-spawn). Preserve
+			# the wave 1B inline call exactly as shipped.
+			ResourceSystem.change_resource(
+				team, kind, int(amount_x100), &"gather_deposit", ctx)
 	# Zero the carry via set(). Same rationale as Gathering's carry-write —
 	# we're inside the unit's _sim_tick path (the on-tick discipline applies
 	# by construction).

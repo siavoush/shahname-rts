@@ -1049,7 +1049,15 @@ func test_main_tscn_attack_move_handler_before_click_handler() -> void:
 
 
 func _collect_unit_shaped_nodes(node: Node, out: Array) -> void:
-	if (&"unit_id" in node) and (&"team" in node) and (node is Node3D):
+	# Wave-3-Throne: Buildings ALSO have unit_id + team + are Node3D (the
+	# Building base class). Filter via SceneTree group membership — Units
+	# don't auto-join &"buildings" / &"thrones"; only Buildings do.
+	# Without this filter, the Throne wave's match-start spawn would make
+	# this collector return 33 units + 2 Thrones = 35, breaking the
+	# "exactly 33 units" assertion downstream.
+	if (&"unit_id" in node) and (&"team" in node) and (node is Node3D) \
+			and not node.is_in_group(&"buildings") \
+			and not node.is_in_group(&"thrones"):
 		out.append(node)
 	for child in node.get_children():
 		_collect_unit_shaped_nodes(child, out)

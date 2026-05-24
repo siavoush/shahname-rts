@@ -322,6 +322,21 @@ func _pick_target() -> Variant:
 	if fog == null:
 		print("[turan-diag]   FogSystem autoload not found")  # DEBUG
 		return null
+	# Wave-3-Throne — prefer Iran Throne if visible. Per brief §4 Track 1
+	# + mirror C1.2 anti-misuse: buildings register via SceneTree group
+	# (&"thrones"), NOT via SpatialIndex (which tracks UNITS only via
+	# SpatialAgentComponent). Misuse would silently return zero Thrones —
+	# the BUG-D2 shape recapitulated, mirror-flagged at brief-time.
+	var iran_throne: Variant = _find_iran_throne_if_visible(fog)
+	if iran_throne != null:
+		# §9.M6 — log the target-priority transition. Only when we
+		# actually shift TO throne-target (not when we stay on
+		# throne-target across ticks); _current_probe_target tracks the
+		# previous target.
+		if _current_probe_target != iran_throne:
+			print("[turan] target_switch unit → throne (iran_throne unit_id=%d)" % [
+				int((iran_throne as Node3D).get(&"unit_id"))])
+		return iran_throne
 	var spatial: Node = _autoload_or_null(&"SpatialIndex")
 	if spatial == null:
 		print("[turan-diag]   SpatialIndex autoload not found")  # DEBUG
@@ -449,3 +464,40 @@ func _autoload_or_null(autoload_name: StringName) -> Node:
 	if root == null:
 		return null
 	return root.get_node_or_null(NodePath(String(autoload_name)))
+
+
+## Wave-3-Throne — look up Iran's Throne via the &"thrones" SceneTree group
+## and return it if visible to Turan via FogSystem. Returns null when no
+## Iran Throne exists OR Iran's Throne is not currently visible to Turan
+## (fog-of-war hides it).
+##
+## **Anti-misuse warning (mirror C1.2):** buildings do NOT register with
+## SpatialIndex (SpatialIndex tracks UNITS via SpatialAgentComponent only).
+## Querying SpatialIndex.query_radius_team for the Throne would silently
+## return zero matches — the BUG-D2 shape recapitulated. Group iteration
+## is the canonical lookup channel for buildings.
+##
+## **Pitfall #16 safety:** every Node ref returned by get_nodes_in_group
+## is validated via is_instance_valid before access. A Throne that was
+## destroyed between the group-iteration and now would be a freed Object
+## otherwise.
+func _find_iran_throne_if_visible(fog: Node) -> Variant:
+	var tree: SceneTree = get_tree()
+	if tree == null:
+		return null
+	for node in tree.get_nodes_in_group(&"thrones"):
+		if not is_instance_valid(node):
+			continue
+		if not (node is Node3D):
+			continue
+		var node_team: Variant = node.get(&"team")
+		if typeof(node_team) != TYPE_INT or int(node_team) != Constants.TEAM_IRAN:
+			continue
+		var pos: Vector3 = (node as Node3D).global_position
+		var vis: bool = fog.call(&"is_visible_to", Constants.TEAM_TURAN, pos)
+		if vis:
+			return node
+		# Throne exists but is hidden by fog — continue scan in case there
+		# are multiple (out of MVP scope but defensive); otherwise fall
+		# through to the unit-target fallback.
+	return null

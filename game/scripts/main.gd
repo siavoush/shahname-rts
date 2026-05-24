@@ -33,6 +33,9 @@ extends Node
 const _KargarScene: PackedScene = preload("res://scenes/units/kargar.tscn")
 const _MineNodeScene: PackedScene = preload(
 	"res://scenes/world/resource_nodes/mine_node.tscn")
+# Wave-3-Throne — scene shipped by world-builder Track 2 at 5ff7d26.
+const _ThroneScene: PackedScene = preload(
+	"res://scenes/world/buildings/throne.tscn")
 const _PiyadeScene: PackedScene = preload("res://scenes/units/piyade.tscn")
 const _TuranPiyadeScene: PackedScene = preload("res://scenes/units/turan_piyade.tscn")
 const _KamandarScene: PackedScene = preload("res://scenes/units/kamandar.tscn")
@@ -210,8 +213,44 @@ func _ready() -> void:
 		Engine.get_version_info().get("string", "unknown"),
 		SimClock.SIM_HZ,
 	])
+	# Wave-3-Throne — Thrones spawn BEFORE units so workers can deposit at
+	# them from tick 0 (no race where the first gather cycle completes
+	# before any Throne exists). Each Throne joins the &"thrones" SceneTree
+	# group on its _ready, so ResourceSystem.dropoff_for_team finds it
+	# immediately afterward.
+	_spawn_starting_buildings()
 	_spawn_starting_units()
 	_spawn_starting_resources()
+
+
+# Wave-3-Throne — spawn one Throne per faction at match start. Iran's
+# Throne sits south of the Kargar cluster (Z<<0); Turan's mirrors at
+# Z>>0. Spec stakes are terminal: destroying a Throne = end of realm
+# (forward-compat seam for Phase 8 win screen via
+# EventBus.throne_destroyed).
+#
+# Per brief §4 Track 1 + 01_CORE_MECHANICS.md §1+§2: "each player starts
+# with one Throne." MVP has exactly one per faction; multi-base + repair
+# + rebuilding are out-of-scope per kickoff §1 deferrals.
+#
+# Position picks: Z=-32 / Z=+32 keep the Thrones far from the central
+# wave-area (mines at Z≈0..15, RPS combat clusters at Z≈±8 to ±20) so
+# workers visibly walk back from gather-site → Throne for their deposit
+# loop. The map is 256m square per Constants.MAP_SIZE_WORLD; ±32 is
+# well inside the playable area without crowding the unit clusters.
+func _spawn_starting_buildings() -> void:
+	# Iran Throne — south side (Z<0), behind the Kargar/Piyade clusters.
+	var iran_throne: Node3D = _ThroneScene.instantiate() as Node3D
+	iran_throne.set(&"team", Constants.TEAM_IRAN)
+	iran_throne.position = Vector3(0.0, 0.0, -32.0)
+	_world.add_child(iran_throne)
+	# Turan Throne — north side (Z>0), behind the Turan unit clusters at
+	# Z≈20-25. Symmetric to Iran's position so faction-asymmetric
+	# gameplay can be analyzed against a symmetric geometry baseline.
+	var turan_throne: Node3D = _ThroneScene.instantiate() as Node3D
+	turan_throne.set(&"team", Constants.TEAM_TURAN)
+	turan_throne.position = Vector3(0.0, 0.0, 32.0)
+	_world.add_child(turan_throne)
 
 
 # Spawn the Phase-1 + Phase-2 starting roster: 5 Iran Kargar + 5 Iran Piyade
