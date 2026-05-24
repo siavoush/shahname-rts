@@ -12,12 +12,51 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-24 (BUG-D2 fix-wave — FogSystem team-id Cartesian-product; ai-engineer first-runtime find; defensive-fallback-masking N=3)
+last_updated: 2026-05-24 (Wave-3-Throne close — Iran/Turan HQ + sovereignty-bearing institution anchor-category + Iran Tier-1 6/6 complete)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-05-24 — Wave-3-Throne close: Iran/Turan HQ + sovereignty-bearing institution anchor-category + Tier-1 6/6 complete
+
+**Branch:** `feat/wave-3throne-iran-turan-hq`  **Commits:** `5ff7d26` (Track 2) → `d59b771` (Track 4) → `b7de9d1` (Track 1) → `544b81c` (Commit 1.5 cultural-note paste)
+
+**What shipped:**
+
+The Throne — the final Iran Tier-1 building. Closes Iran Tier-1 at 6/6 (Khaneh + Mazra'eh + Ma'dan + Sarbaz-khaneh + Atashkadeh + Throne). Establishes the **fifth anchor-category** (`sovereignty-bearing institution`) — singular per faction + terminal-stakes (destruction = loss) + IDropoffTarget (resources flow TO the seat) + tier-progression-by-conversion (Throne → Qal'eh → Royal Court, preserving singular-per-faction invariant across tiers). FIRST cross-faction-symmetric anchor — Iran and Turan ship structurally-identical Thrones (different team-id + visual accent + cultural register).
+
+**Implementation surfaces:**
+
+- `throne.gd` (NEW) — `class_name Throne extends "res://scripts/world/buildings/building.gd"`. RNC §5.2 IDropoffTarget protocol (`deposit` + `get_deposit_position`). `&"thrones"` SceneTree group join. FogSystem static vision-source register at sight_throne_cells=4 (FIRST runtime consumer of forward-compat schema). EventBus.throne_destroyed signal emit on fatal damage (Phase 8 win/lose-screen seam).
+- `throne.tscn` (NEW) — inherits `building.tscn`. BoxMesh 4.0×3.0×4.0, gold accent material `Color(0.85, 0.7, 0.3)` (contrasts both faction palettes). Pitfall #15 regression test 5/5 green.
+- `event_bus.gd` — `signal throne_destroyed(team_id: int)` with `@warning_ignore("unused_signal")`.
+- `resource_system.gd` — `dropoff_for_team(team) -> Node3D` autoload method with per-tick memoization + Pitfall #16 `is_instance_valid()` guard + EventBus.throne_destroyed eviction subscription.
+- `unit_state_returning.gd:_perform_deposit` — Throne canonical-path routing per RNC §5.2. Mirror C1.4 only-one-path-per-cycle (integration test asserts EXACTLY 1000 x100 deposit, NOT 2000 — observable behavior).
+- `main.gd:_spawn_starting_buildings` (NEW) — Iran Throne at Z=-32, Turan Throne at Z=+32; spawn BEFORE units so `&"thrones"` group populated from tick 0.
+- `turan_controller.gd:_pick_target` — `&"thrones"` group iteration filtered by TEAM_IRAN (NOT SpatialIndex per mirror C1.2 anti-misuse). Iran Throne preferred over scattered units when visible.
+- `docs/ANCHOR_CATEGORY_TAXONOMY.md` v1.0.0 → v1.1.0 — NEW §1.5 sovereignty-bearing institution formal definition + §5 Turan NEAR-SYMMETRY exception.
+- `throne.gd` header — loremaster verbatim 4-part cultural-note prose: takht (تخت) institutional center-of-gravity + Iran Farr-legitimized / Turan sworn-loyalty cultural register split + mechanic-is-theology 6-binding-point analysis + cross-faction NEAR-symmetry hypothesis.
+
+**Tests:**
+
+27 new assertions across `test_throne.gd` (12) + `test_resource_system.gd` ext (6) + `test_unit_state_returning.gd` ext (3) + `test_match_start_spawn.gd` ext (4) + `test_phase_3_throne_deposit.gd` NEW integration (2). All §9.F5 producer-stub-consumer-integration-test discipline (entry-point assertions). Full headless suite: **1532 passing / 0 failing / 3 risky-pending (pre-existing).**
+
+**Process highlights:**
+
+- **Mirror-reviewer second-dispatch validation N=2** — 4 brief-time blockers caught (IDropoffTarget naming, SpatialIndex vs SceneTree-group, max_hp=5000 lead-invention, civic-anchor pre-classification) + 5 risks. Brief v1.0.0 → v1.0.1 → v1.0.2 evolution before any code shipped.
+- **§9.L10 implementer-time grep N=1** — gp-sys caught brief v1.0.2's `class_name Throne extends Building` drift; project canonical is `extends "res://..."` + `class_name Throne` path-string; followed canonical not brief. Documented in throne.gd header §"Why extend by path-string". This catch became §9.L12 codification incident #2 (lead-side brief-time grep extension).
+- **Loremaster J2 trichotomy graduation outcome #3** — Throne was the third taxonomy-growth-required outcome (after Ma'dan and Atashkadeh) producing a 3-of-3 empirical trichotomy proof. J2 graduates from watchlist to active rule at session-8 retro PR.
+- **Continue-nudge pattern validated N=2** — when 4 of 6 persistent agents stalled on Claude Code rate-limits mid-session, "continue" SendMessage nudges recovered substantive deliveries from gp-sys + ui-developer + loremaster within minutes. New memory `feedback_rate_limit_stall_detection.md` codifies detection signals (mtime static vs ETA + idle-without-broadcast) + recovery action.
+
+**Open at wave-close:**
+
+- **Live-test gate (user-driven).** All headless tests green. Live-test will verify Iran/Turan Thrones spawn at correct positions + workers walk to Iran Throne for deposit + Turan probe-attack prioritizes Iran Throne over scattered units when both visible. Per `tools/run_game.sh`.
+- **Session-8 close retro PR** — separate branch `feat/session-8-close-retro`, 7 codifications committed (L11 / F5 / Pitfall #18 / M6.2 / J2 graduation / L12 / D10). Lands second after Throne wave PR merge.
+- **ai-engineer-p3s8 retro reflection never delivered** despite 2 nudges. Their BUG-D2 first-runtime-find context absorbed via gp-sys's §9.D10 codification.
 
 ---
 

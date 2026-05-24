@@ -18,8 +18,8 @@ ssot_for:
 references: [SIMULATION_CONTRACT.md, STATE_MACHINE_CONTRACT.md, TESTING_CONTRACT.md, RESOURCE_NODE_CONTRACT.md, AI_DIFFICULTY.md, ../02_IMPLEMENTATION_PLAN.md, STUDIO_PROCESS.md, WAVE_1C_NAVMESH_SPIKE.md]
 tags: [orientation, architecture, build-state, directory, system-map]
 created: 2026-05-01
-last_updated: 2026-05-22
-# bumped to v0.33.0 — Phase 3 session 7 close retro. STUDIO_PROCESS v2.2.0 → v2.3.0 (3 new active §9 rules + addendums): §9.E1 tier-precedence ladder + tool-selection clarification + incidental-cross-track-review naming (synthesized from 5 empirical paths across 3A.0/3A.5/3A.6); §9.L10 canonical-pattern grep (gating-track / first-implementer's brief-validation discipline — directly prevents BUG-C1 class); §9.E1 incidental cross-track review naming codifies gp-sys's N=2 pattern. PROCESS_EXPERIMENTS Pitfalls #16 (`as Node3D` cast crashes on freed Object) + #17 (`await get_tree().process_frame` leaks SimClock ticks) — both graduated from candidate via N=2 confirmation rule. New `mirror-reviewer` agent definition shipped (user-originated adversarial brief-time review role with code + online research). Session ships 5 waves total (3A.0, 3A.5, 3A.6, 3A.6 BUG-C1 fix-wave, close retro PR) and 14+ retro candidates synthesized into rules + pitfalls + agent.
+last_updated: 2026-05-24
+# bumped to v0.34.0 — Phase 3 session 8 Wave-3-Throne wave close: Iran/Turan HQ + sovereignty-bearing institution anchor-category (5th, NEW) + RNC §5.2 IDropoffTarget protocol shipped + match-start spawn of Thrones + EventBus.throne_destroyed signal seam + 6/6 Iran Tier-1 buildings complete. ANCHOR_CATEGORY_TAXONOMY.md v1.0.0 → v1.1.0 (sovereignty-bearing institution category + sub-slot tier-progression-by-conversion axis; Throne → Qal'eh → Royal Court). 27 new test assertions across 5 surfaces (test_throne + test_resource_system ext + test_unit_state_returning ext + test_match_start_spawn ext + test_phase_3_throne_deposit integration). Full headless suite 1532 passing / 0 failing / 3 risky-pending (pre-existing). Loremaster's 4-part cultural-note prose (takht as institutional center-of-gravity + dehqan-Throne reciprocity + cross-faction NEAR-symmetry exception) integrated into throne.gd header verbatim. Mirror-reviewer second-dispatch validation N=2 (caught 4 brief-time blockers + 5 risks).
 ---
 
 # Architecture — Target Shape and Build State
@@ -286,6 +286,64 @@ game/
 - Spec said X; we built Y; reason: Z
 - Subsystem A took Phase N+1 (slipped one phase), reason: ...
 - Contract V was bumped from 1.x.0 to 1.y.0 during implementation; key change: ...
+
+### v0.34.0 — Phase 3 session 8 Wave-3-Throne close: Iran/Turan HQ + sovereignty-bearing institution anchor + RNC §5.2 IDropoffTarget + Tier-1 6/6 complete (2026-05-24)
+
+MINOR bump for Wave-3-Throne — the final Iran Tier-1 building shipped, closing Iran's Tier-1 economy at 6/6 (Khaneh + Mazra'eh + Ma'dan + Sarbaz-khaneh + Atashkadeh + Throne). First building of the **fifth anchor-category** (`sovereignty-bearing institution`, NEW at this wave per loremaster's J2 trichotomy taxonomy-growth-required outcome #3; closes session-6 retro Q3 Gap 1 Qal'eh open question via tier-progression-by-conversion sub-slot axis).
+
+**What landed (`feat/wave-3throne-iran-turan-hq` branch, commits `5ff7d26` + `d59b771` + `b7de9d1` + `544b81c`):**
+
+- **Track 4 (loremaster, `d59b771`):** `docs/ANCHOR_CATEGORY_TAXONOMY.md` v1.0.0 → v1.1.0. NEW §1.5 sovereignty-bearing institution formal definition (singular per faction + terminal-stakes + IDropoffTarget + tier-progression-by-conversion). §4.1 Iran Tier-1 closes at 6/6. §4.2 Qal'eh placement RESOLVED (was open since session-6). §5 Turan NEAR-SYMMETRY exception (the ONE anchor-category that applies cross-faction symmetrically — Iran/Turan ship structurally-identical Thrones, different team-id + cultural register).
+
+- **Track 2 (world-builder, `5ff7d26`):** `game/scenes/world/buildings/throne.tscn` (NEW). Inherits `building.tscn`. Mesh BoxMesh 4.0×3.0×4.0 (visibly larger than Sarbaz-khaneh's 3.0×2.0×2.0); StandardMaterial3D gold accent `Color(0.85, 0.7, 0.3)` contrasting both Iran-blue + Turan-red faction palettes. CollisionShape3D + NavigationObstacle3D footprint match. Pitfall #15 mandatory regression test `test_throne_scene.gd` (5/5 assertions covering mesh size + collision + carve_navigation_mesh + gold-accent material; in-either-direction divergence discipline per §9.F4 footnote). `BLDG_THRONE_NAME` translation key shipped (English "Throne"; Persian "Takht" deferred to Phase 4 Persian-translation pass).
+
+- **Track 3 (balance-engineer, no-op):** `bldg_throne` entry held at `balance.tres:213` (max_hp = 2000.0, all costs = 0, construction_ticks = 0, farr_per_tick = 0.0). §9.L1 spec-wins applied — lead's brief v1.0.0 max_hp=5000 corrected to 2000 via mirror-reviewer C1.3 catch + balance-engineer wave-prior authoring deference.
+
+- **Track 1 (gp-sys, `b7de9d1`):** 13-file pathspec-explicit commit covering 7 surfaces.
+  - `throne.gd` (NEW) — `class_name Throne extends "res://scripts/world/buildings/building.gd"` (path-string per project canonical; §9.L10 grep caught brief v1.0.2's `extends Building` drift and overrode). Implements RNC §5.2 IDropoffTarget protocol (`deposit(resource_kind, amount, worker)` + `get_deposit_position()`). Joins `&"thrones"` SceneTree group on _ready. Registers FogSystem static vision source at sight_throne_cells=4 (FIRST runtime consumer of that forward-compat schema field). Subscribes to own HealthComponent.unit_health_zero with id-filter latch; emits `EventBus.throne_destroyed(team_id)` on fatal damage.
+  - `event_bus.gd` — NEW `throne_destroyed(team_id: int)` signal with `@warning_ignore("unused_signal")` per existing convention.
+  - `resource_system.gd` — NEW `dropoff_for_team(team) -> Node3D` autoload method. Per-team-per-tick memoization with Pitfall #16 `is_instance_valid()` guard before return. Memo invalidated on `EventBus.throne_destroyed` subscription. `[resource]` log throttled 1/3sec/team per §9.M6.
+  - `unit_state_returning.gd:_perform_deposit` — Throne path query via `ResourceSystem.dropoff_for_team(team)`; if Throne exists, route through `throne.deposit(carry_kind, carry_amount, ctx.unit)` ONLY; else fall back to inline `change_resource`. Mirror C1.4 only-one-path-per-cycle enforced (integration test asserts EXACTLY 1000 x100, not 2000 — observable behavior over assumed correctness).
+  - `main.gd:_spawn_starting_buildings` (NEW) — Iran Throne at Z=-32, Turan Throne at Z=+32. Spawn order: Thrones BEFORE units so `&"thrones"` group is populated from tick 0 (workers can deposit immediately).
+  - `turan_controller.gd:_pick_target` — refined to query `&"thrones"` group filtered by TEAM_IRAN (NOT SpatialIndex per mirror C1.2 anti-misuse). If Iran Throne visible via FogSystem.is_visible_to → prefer; else fall back to nearest visible Iran unit. `[turan]` log on target_switch transitions only (not every tick).
+  - 27 new test assertions across `test_throne.gd` (12) + `test_resource_system.gd` ext (6) + `test_unit_state_returning.gd` ext (3) + `test_match_start_spawn.gd` ext (4) + `test_phase_3_throne_deposit.gd` NEW integration (2). All §9.F5 producer-stub-consumer-integration-test discipline (entry-point assertions, not function-body assertions).
+  - Existing `test_phase_2_session_1_combat.gd` + `test_phase_2_session_2_rps_combat.gd` updated: building-via-group filter ensures Throne spawn doesn't inflate unit counts.
+
+- **Commit 1.5 (lead, `544b81c`):** loremaster's verbatim 4-part Throne cultural-note prose pasted into `throne.gd` header (+173/-33 lines). Replaces gp-sys's placeholder + reference-framing section at lines 42-67 with loremaster's full 4-part template:
+  1. Persian term + literal/tricky gloss (takht تخت; J3 marked N/A in-prose — English-Persian register-alignment unusually clean).
+  2. Cultural register split (Iran Farr-legitimized theological kingship vs Turan sworn-loyalty named-rulership).
+  3. Mechanical-to-cultural binding (mechanic-is-theology + 6 binding-points: singular / pre-placed / IDropoffTarget = dehqan-Throne reciprocity / high HP / spawns workers / tier-transition via conversion).
+  4. Cross-faction NEAR-symmetry note (first cross-faction-symmetric anchor-category — anchor-shape invariant, cultural register divergent; explicit guidance to NOT structurally differentiate Turan Throne at building-class level).
+  Preserves gp-sys's "What lives here vs Building base" + "Why extend by path-string" + "Why _init AND _ready set kind" implementation-rationale sections intact.
+
+**Mirror-reviewer validation N=2 (Wave-3-Throne brief v1.0.0 → v1.0.1 → v1.0.2):**
+
+Mirror-reviewer second-dispatch produced **4 brief-time blockers + 5 risks**:
+- **C1.1:** Brief invented `is_dropoff_target_for` / `get_dropoff_position` protocol names; canonical RNC §5.2 names are `deposit` + `get_deposit_position`. **Corrected v1.0.0 → v1.0.1.** §9.L12 codification incident #2.
+- **C1.2:** Brief specified TuranController querying via SpatialIndex; correct channel is `&"thrones"` SceneTree group (buildings use groups, units use SpatialIndex). **Corrected v1.0.0 → v1.0.1.**
+- **C1.3:** Brief invented max_hp=5000 lead-side numeric; `bldg_throne` ALREADY existed at balance.tres:213 with max_hp=2000 from balance-engineer wave-prior authoring. **Corrected v1.0.0 → v1.0.1.** §9.L11 codification incident #6.
+- **C1.4:** Brief was ambiguous on only-one-path-per-cycle (Throne deposit OR Returning fallback inline, NOT both). Clarified to "if Throne, Throne owns chokepoint call; else Returning falls back inline."
+- **C3.1:** Brief pre-classified Throne as civic-anchor anchor-category; loremaster routed to taxonomy-growth-required → sovereignty-bearing institution NEW category. **Corrected via Track 4 taxonomy doc v1.1.0.** J2 trichotomy graduation outcome #3 empirical exhibit.
+- 5 risks (singular-per-faction invariant enforcement, IDropoffTarget protocol forward-compat, FogSystem vision-source idempotency, EventBus.throne_destroyed forward-compat, build-menu absence rationale) all addressed in brief v1.0.1 + v1.0.2.
+
+This is mirror-reviewer's **second real dispatch** (first was Wave 3B brief at session-7/8 boundary, catching BUG-D1). Both dispatches caught production bugs at brief-time that 1466+ tests had not detected. **Agent-value validation: empirically positive N=2.**
+
+**Session-8 retro codifications staged separately on `feat/session-8-close-retro` branch:**
+
+7 codifications committed (separate PR, not part of this v0.34.0):
+- §9.L11 — Brief-drafting balance-audit (balance-engineer; N=6 incidents including Throne brief max_hp=5000)
+- §9.F5 — Producer-stub-consumer integration test (world-builder; N=2 BUG-D1/D2)
+- Pitfall #18 — PackedByteArray copy-on-write (engine-architect; BUG-D3 canonical)
+- §9.M6.2 — UI log instrumentation state-transitions-not-state (ui-developer; N=2 Wave 2B BUG-B1 + Wave 3A.6 Track 2)
+- §9.J2 graduation — Anchor-category trichotomy → active rule (loremaster; 3-of-3 outcomes empirically produced)
+- §9.L12 — Brief-time canonical-pattern grep / lead-side §9.L10 extension (gp-sys; N=3 incidents)
+- §9.D10 — Cross-track first-consumer diagnostic (gp-sys; N=4 successful + 1 missed-opportunity, promoted from prior D7(b) refinement)
+
+**Continue-nudge pattern validated** during retro synthesis: when 4 of 6 agents stalled on Claude Code rate-limits mid-session, "continue" SendMessage nudges recovered all 4 with substantive codification deliveries. New memory `feedback_rate_limit_stall_detection.md` codifies the detection signals + recovery action for future sessions.
+
+**Open at wave-close:**
+- Live-test gate (user-driven on next session start, per `tools/run_game.sh`). All headless tests green; live-test will verify Iran/Turan Thrones spawn at correct positions + workers walk to Iran Throne for deposit + Turan probe-attack prioritizes Iran Throne over scattered units when both visible.
+- ai-engineer-p3s8 retro reflection never landed (continue-nudge sent, no response after 3 dispatches). Retro PR ships 5/6 persistent-agent contribution; ai-engineer's BUG-D2 first-runtime-find context absorbed via gp-sys's §9.D10 codification.
 
 ### v0.33.2 — BUG-D2 fix-wave: FogSystem team-id Cartesian-product (Wave 3A.5 retroactive, ai-engineer first-runtime find) (2026-05-24)
 
