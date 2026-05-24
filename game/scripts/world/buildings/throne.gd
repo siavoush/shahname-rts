@@ -1,11 +1,179 @@
 extends "res://scripts/world/buildings/building.gd"
 ##
-## Throne (تخت) — singular sovereignty-bearing institution. One per faction;
-## the seat of kingship; the realm's terminal stake.
+## Throne (تخت, takht) — Iran/Turan royal-seat / civilizational HQ. The FIFTH
+## anchor-category Building variant: **sovereignty-bearing institution**.
+## Closes Iran Tier-1 (6/6 total: Khaneh + Mazra'eh + Ma'dan + Sarbaz-khaneh +
+## Atashkadeh + Throne) AND introduces the first cross-faction-symmetric
+## anchor-category — Turan ships an identical Throne instance with a different
+## cultural register (sworn-loyalty named-rulership) but the same anchor-shape.
 ##
-## Anchor-category: **sovereignty-bearing institution** (5th anchor-category,
-## NEW at this wave; loremaster brief-time classification 2026-05-24 +
-## docs/ANCHOR_CATEGORY_TAXONOMY.md v1.1.0 §1.5).
+## Source: 01_CORE_MECHANICS.md §5 line 181 (Tier-1 row — "Throne (تخت) —
+## Capital. Loss = defeat. Spawns workers. Comes pre-placed at game start."),
+## §1 line 61 (win condition — "eliminate enemy main building (the Throne)"),
+## §2 line 85 (match-start spawn), §10 line 332 (loss condition — "Your Throne
+## is destroyed").
+##
+## Anchor-category classification (per Wave-3-Throne Track 4 loremaster
+## brief-time review, 2026-05-22 — J2 watchlist trichotomy graduation
+## moment, taxonomy-growth-required outcome #3):
+##
+##   Outcome: **TAXONOMY-GROWTH-REQUIRED**. Throne demanded a NEW anchor-
+##   category beyond the four established Tier-1 anchors. Civic-anchor was
+##   pre-assigned by lead's original brief; mirror-reviewer C3.1 correctly
+##   flagged the mismatch (civic-anchor is replicable + productive-stewardship-
+##   shaped; Throne is singular + terminus-of-flow). Loremaster review at
+##   brief-time walked through each existing anchor-category and rejected
+##   each — see docs/ANCHOR_CATEGORY_TAXONOMY.md §1.5 for the full reasoning.
+##
+##   The fifth anchor-category: **sovereignty-bearing institution**.
+##   Mechanical shape: singular per faction + terminal-stakes (destruction =
+##   loss) + IDropoffTarget (resources flow TO the seat) + high HP + spawns
+##   workers + tier-transition convertible (→ Qal'eh fortified-royal-seat).
+##   Cultural shape: the institutional CENTER of the realm — not one
+##   institution among many but the condition-of-possibility for institutions.
+##
+##   Sub-slot taxonomy under sovereignty-bearing institution:
+##     - **base-royal-seat       → Throne (Tier 1, Wave-3-Throne)**
+##     - fortified-royal-seat     → Qal'eh (Tier 2, Wave 2C / Phase 4)
+##     - imperial-court-seat      → Royal Court (Tier 3, post-MVP)
+##
+##   Sub-slot axis is *tier-progression of the seat*. Unlike other anchor-
+##   categories where sub-slots are independent new-instance placeable
+##   buildings, sovereignty-bearing institution sub-slots progress through
+##   *conversion* of the existing seat (Throne → Qal'eh → Royal Court),
+##   preserving the singular-per-faction invariant across tier-transitions.
+##
+## Cultural note — takht (تخت), the seat where the king sits:
+##
+##   *Takht* (تخت) is the canonical Persian word for "throne," and the
+##   Shahnameh uses it ubiquitously across all three ages — the seat is what
+##   distinguishes a king from a wanderer, a realm from a domain. The English
+##   gloss "throne" is straightforward in this case — no high-baggage J3
+##   tricky-gloss correction needed; the English-Persian register-alignment
+##   is unusually clean. The cultural weight to surface is not in the WORD
+##   but in the INSTITUTIONAL ROLE: takht is not a chair; it is the
+##   civilization's center-of-gravity made architectural. Compound forms in
+##   Persian extend this: *takht-e-shahi* (royal throne), *takht-neshin*
+##   (one who sits on the throne, i.e., the reigning king as a role rather
+##   than a name), *bar-takht* (on the throne, i.e., in power). The takht
+##   persists; the *takht-neshin* changes.
+##
+##   The Shahnameh's load-bearing anchors (00_SHAHNAMEH_RESEARCH.md):
+##   - **Kay Khosrow renouncing the throne** (§1 line 103) — the ideal just
+##     king, having achieved final victory over Afrasiyab, *renounces the
+##     takht* and walks into the mountains. He renounces the SEAT, not just
+##     his personal rule; the institution persists; another *takht-neshin*
+##     succeeds. This is the load-bearing anchor for "the throne is distinct
+##     from any individual ruler."
+##   - **Kaveh's banner threatening Zahhak's throne** (§1 line 90) — the
+##     act that overthrows the tyrant is the threat-TO-THE-SEAT, not merely
+##     the killing of the man. Fereydun does not simply kill Zahhak; he
+##     chains him beneath Mount Damavand and INSTALLS himself on the seat
+##     (§1 line 91). The seat is the political artifact whose continuity IS
+##     the kingdom's continuity.
+##   - **Iraj's seat divided** (§1 line 91) — when Fereydun divides the
+##     world among Salm / Tur / Iraj, he is dividing the *seats*. The Iran-
+##     Turan war originates in the violation of seat-inheritance — Salm and
+##     Tur murder Iraj to seize his seat. The entire heroic-age conflict
+##     traces back to this primal seat-violation.
+##
+##   The MECHANIC IS THE THEOLOGY: the Throne's "destruction ends the
+##   kingdom" win-condition mechanically realizes the Shahnameh's political-
+##   theological claim that civilization is anchored in the seat. This is
+##   not a metaphor — it is the literal narrative shape of every Iran-Turan
+##   campaign in the epic. The wars do not end when armies are defeated;
+##   they end when *takht-e* Afrasiyab falls or *takht-e* Iran falls. The
+##   game's win-condition is the Shahnameh's own win-condition made
+##   playable.
+##
+##   How the mechanic surfaces the cultural truth:
+##   - **Singular per faction (one Throne)** — Iran has one seat; you cannot
+##     hedge across multiple capitals. Mirrors the Shahnameh's monarchic
+##     theology: there is one legitimate seat, not many.
+##   - **Pre-placed at match-start, not player-built** — the seat is the
+##     STARTING CONDITION of civilization. You cannot found a new kingdom
+##     mid-match by building a second throne. (Contrast: a player can build
+##     additional Khaneh, additional Sarbaz-khaneh, additional Atashkadeh.
+##     The throne is the *given*; everything else is *built upon* it.)
+##   - **IDropoffTarget — workers deposit AT the Throne** — Coin and Grain
+##     gathered by dehqan-class workers flow back to the seat. This is the
+##     literal mechanical realization of *baj* and tax-flow-to-the-king
+##     (the dehqan's stewardship culminates in delivery to the seat that
+##     legitimates it). The dehqan-Throne reciprocity is the Shahnameh's
+##     attested economic-political relationship made playable per-tick.
+##   - **High HP + sustained-military-defendable (2000 HP per balance.tres)**
+##     — destroying the seat must require committed military effort, NOT
+##     opportunistic raid. The Shahnameh's seat-falls (Zahhak's, Afrasiyab's)
+##     are climactic events at the END of campaigns, not incidental skirmish-
+##     outcomes. HP tuning reflects this.
+##   - **Spawns workers (kargar)** — the king's seat provisions the labor-
+##     base. Culturally: dehqan-class workers belong to the realm whose seat
+##     they serve; mechanically: the Throne is the labor-base origin point.
+##   - **Forward-compat: tier-transition to Qal'eh** — when the player
+##     achieves Tier-2 progression (per `01_CORE_MECHANICS.md §5 line 193`),
+##     the Throne CONVERTS to Qal'eh (fortified-royal-seat). The seat
+##     PERSISTS through tier-transition — the realm's identity does not
+##     change when its seat fortifies; the seat earns its fortification
+##     through progression. (Distinct from other anchor-categories where
+##     Tier-2 buildings are new instances; here, the singular-per-faction
+##     invariant is preserved by conversion-not-replacement.)
+##
+##   Cross-faction NEAR-symmetry (loremaster leading hypothesis, distinct
+##   from the structural-mismatch pattern of the prior four anchor-
+##   categories):
+##
+##   Turan ALSO ships a Throne. This is the ONLY anchor-category where
+##   Iran and Turan have a structurally-symmetric building. Per
+##   00_SHAHNAMEH_RESEARCH.md §3 line 115 + lore-corpus more broadly:
+##   Afrasiyab's seat (the takht of Turan) is canonically named and
+##   located; capture/destruction of the enemy throne is THE climactic
+##   act of the Iran-Turan wars. Kay Khosrow's victory over Afrasiyab
+##   (§1 line 103 + §1 line 121 indirectly via Siavoush's vengeance arc)
+##   is the seat-fall that closes the Kayanian heroic age.
+##
+##   Cultural register differs sharply:
+##   - Iran's takht is **Farr-legitimized** — kingship rests on the divine
+##     glory anchored in sacred-flame continuity (Atashkadeh-flowing-to-
+##     Throne); just rule sustains Farr, unjust rule loses it (Jamshid's
+##     fall per §1 line 88 is the canonical case).
+##   - Turan's takht is **sworn-loyalty-legitimized** — kingship rests on
+##     the personal-bond network between Afrasiyab/khan-lineage and named
+##     warriors (Piran-Viseh, etc.); legitimacy flows through allegiance,
+##     not through theological anchor.
+##
+##   Anchor-shape invariant across both: singular seat, terminal-stakes,
+##   IDropoffTarget, destruction = end-of-realm. **Do NOT structurally
+##   differentiate the Turan Throne from the Iran Throne at the building-
+##   class level — same `throne.gd` extends, same mechanic, different
+##   team-id and visual accent.** The structural-mismatch hypothesis
+##   governing the other four anchor-categories (Mazra'eh / Ma'dan /
+##   Sarbaz-khaneh / Atashkadeh — each requiring a fundamentally different
+##   Turan shape) does NOT apply here. Throne is the exception.
+##
+##   Forward-compat note — sovereignty-bearing institution sub-slot
+##   taxonomy:
+##
+##   Throne is the FIRST instance of the sovereignty-bearing institution
+##   anchor-category (taxonomy-growth-required outcome #3 in the J2
+##   trichotomy's empirical history, after Ma'dan's labor-organization
+##   and Atashkadeh's sacral-emitter / divine-source). Future tier-
+##   progression instances:
+##     - **Qal'eh** (قلعه, "fortress") — Tier-2 fortified-royal-seat.
+##       CONVERTS the Throne (does not replace it). Per `01_CORE_
+##       MECHANICS.md §5 line 193`, Qal'eh "converts your Throne to
+##       'Fortress mode,' unlocking Tier 2 buildings." The conversion-
+##       mechanic preserves seat-identity through tier-transition. Wave
+##       2C / Phase 4 scope.
+##     - **Royal Court** (predicted, post-MVP) — Tier-3 imperial-court-
+##       seat. Per `01_CORE_MECHANICS.md §8 line 284`, the Tier-3
+##       progression. Likely converts Qal'eh in similar shape.
+##   The sub-slot axis is *tier-progression of the seat*; the conversion-
+##   mechanic is structural to this anchor-category (distinguishing it
+##   from sacral-emitter / identity-bearing-institutional / civic-anchor /
+##   labor-organization, all of which use new-instance placement for sub-
+##   slot specialization). The Throne template-seed lays this distinction
+##   down; future tier-progression work inherits the conversion-not-
+##   replacement pattern.
 ##
 ## ## What lives here vs Building base
 ##
@@ -36,34 +204,6 @@ extends "res://scripts/world/buildings/building.gd"
 ## group join, get_footprint_aabb(), unit_id counter, two-stage lifecycle,
 ## sim_phase subscription (Wave 3A.6 production state machine — Throne does
 ## not yet `produces` anything; the field defaults []).
-##
-## ## Cultural note — Throne as the seat of kingship
-##
-## **Placeholder — to be replaced verbatim by loremaster's 4-part cultural-
-## note prose at Commit 1.5 per Wave 2A.5 / 2B established pattern.**
-##
-## Reference framing (loremaster delivered 2026-05-24 brief-time review):
-##   - Iran's Throne: Farr-legitimized theological kingship — the king's
-##     just rule is materially expressed in the realm's prosperity. The
-##     dehqan-Throne reciprocity (tribute flowing UP, prosperity flowing
-##     DOWN) is the Shahnameh-attested economic-political relationship
-##     the deposit-mechanic makes visible. Workers depositing at the
-##     Throne is not just bookkeeping — it's the moment the farr-bearing
-##     king's authority gains material expression.
-##   - Turan's Throne: sworn-loyalty named-rulership (Afrasiyab's seat,
-##     Piran's hospitality of Siavush). DIFFERENT cultural register
-##     (kingship by oath-to-named-ruler rather than by farr-legitimization),
-##     SAME anchor-shape (singular seat, terminal-stakes, deposit-target).
-##   - **First cross-faction-symmetric anchor-category** — opposite of the
-##     structural-mismatch pattern of the four prior anchor-categories
-##     (civic-anchor / resource-producing / labor-organization /
-##     sacral-emitter / identity-bearing-institutional). The Throne is
-##     where Iran and Turan share the institutional SHAPE while differing
-##     in cultural register.
-##
-## See `docs/ANCHOR_CATEGORY_TAXONOMY.md` v1.1.0 §1.5 for the formal
-## category definition + sub-slot tier-progression axis (Throne →
-## Qal'eh → Royal Court).
 ##
 ## ## Why extend by path-string (not class_name on the base)
 ##
