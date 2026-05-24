@@ -1050,22 +1050,49 @@ Cites Manifesto Principle 4 (Lean Iteration — compressing the wave-close fix l
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2]
 
-#### J2. Anchor-category enumeration for Building subclasses
+#### J2. Anchor-category trichotomy — canonical classifier for new Building subclasses
 
-**Rule.** Building subclasses fall into one of several cultural-anchor categories, each requiring a distinct template-shape in the cultural-note block. **Enumeration + sub-slot taxonomy + per-variant template-shape spec live in [`docs/ANCHOR_CATEGORY_TAXONOMY.md`](ANCHOR_CATEGORY_TAXONOMY.md) §1** (extracted to dedicated SSOT 2026-05-21 at Wave 2B Track 5 per §9.C1 — the enumeration cannot live in two places).
+**Rule.** When a new Building subclass enters brief-time review, the loremaster classifies the wave's anchor-category outcome as exactly one of three: **(a) clone-check** (same anchor-category + same sub-slot as an existing building; verify the clone is faithful to the established template), **(b) slot-fit-verify** (same anchor-category + fills a predicted-empty sub-slot; verify slot-fit per the prediction), or **(c) taxonomy-growth-required** (mechanical shape OR cultural register structurally distinct from all enumerated categories; demands a new anchor-category and routes via NEEDS-DESIGN-CHAT verdict). The classification is named at brief-time AND drives the rest of the review: each outcome routes to a different verification shape (faithful-clone audit / slot-fit-prediction audit / new-category proposal with template-shape sketch). Enumeration + sub-slot taxonomy + per-variant template-shape spec + decision-flow diagram live in [`docs/ANCHOR_CATEGORY_TAXONOMY.md`](ANCHOR_CATEGORY_TAXONOMY.md) §1 + §2 (SSOT per §9.C1; the enumeration cannot live in two places).
 
-**Brief-time review uses anchor-category classification as the first-pass question:** "which variant does this building belong to? Same-as-existing or new variant?" Variant misclassification at brief-time is the highest-value risk to catch (per Ma'dan's wave-1B brief-time exchange where lead initially framed Jamshid as "tangential" — a sign that loremaster needed to refine to "this is a labor-organization variant, not a civic-anchor clone").
+**Actor / trigger.**
+- **Lead at brief-drafting time** — pre-classifies the expected outcome in the kickoff brief (lead's working hypothesis; subject to loremaster validation). For clone-check candidates, the lead names the classification explicitly per §9.J1 (clone-check waves ship without brief-time loremaster review; the classification is the lead's call). For slot-fit-verify or taxonomy-growth-required candidates, lead dispatches the loremaster at brief-time.
+- **Loremaster at brief-time review** — validates or refines the lead's classification, then produces the verification shape appropriate to the locked outcome. If the loremaster reclassifies (lead pre-assigned (a) but loremaster lands (b) or (c)), the new classification is authoritative.
 
-**Brief-time review trichotomy (watchlist refinement, loremaster-p3s5 session-5 close, N=2 at Wave 2B Track 0 — codified shape in [`docs/ANCHOR_CATEGORY_TAXONOMY.md`](ANCHOR_CATEGORY_TAXONOMY.md) §2).** Three named outcomes:
-- (a) **clone-check** — same-as-existing slot; verify clone is faithful.
-- (b) **slot-fit-verify** — fills a predicted-empty slot; verify slot-fit per the prediction.
-- (c) **taxonomy-growth-required** — demands a new anchor-category or sub-slot; surfaces a taxonomy gap.
+**Why this matters.** Variant misclassification at brief-time is the highest-value cultural-drift risk to catch — it locks the wrong cultural-note template into the building's `.gd` header, which then propagates to every future clone of that building's sub-slot. The trichotomy forces the question to be answered *explicitly* rather than collapsing silently into "same as the prior building" or "this needs a new framing somehow." Each named outcome has a distinct verification shape; without the classifier, the loremaster's brief-time review has no canonical procedure.
 
-**Graduation status.** N=2 at Wave 2B Track 0 (Sowari-khaneh + Tirandazi both classified as slot-fit-verify under identity-bearing institutional sub-slot taxonomy — axis = military-arm). N=3 graduation expected at Phase-4 first sacral-emitter sub-variant (Dadgah) brief-time review. Until N=3 met: rule applies as watchlist-refinement (followable, not yet ratified). At N=3: graduates to active and the taxonomy doc moves from "currently a single agent's proposal" framing to "ratified."
+**Empirical exhibits across waves (3-of-3 outcomes empirically produced as of Throne wave, 2026-05-22).** Sub-slot citations point at `docs/ANCHOR_CATEGORY_TAXONOMY.md` v1.1.0 §4 building-assignment tables.
 
-**Open question.** Turan economy may surface fundamentally different anchor-categories (default-fire (c) taxonomy-growth-required at first Turan building brief-time per the structural-mismatch hypothesis articulated in [`docs/ANCHOR_CATEGORY_TAXONOMY.md`](ANCHOR_CATEGORY_TAXONOMY.md) §5).
+- **(a) clone-check — N=0 Iran-side as of v1.1.0.** No Iran building has yet shipped as a faithful clone of an existing anchor-category + sub-slot. Every Iran Tier-1 building so far has either filled a predicted-empty sub-slot or grown the taxonomy. First clone-check exhibit is expected post-MVP (Turan economy may surface clones within Turan-specific anchor-categories once those exist; Phase 4+ Iran buildings may clone existing sub-slots).
+- **(b) slot-fit-verify — N=2, both at Wave 2B Track 0 (2026-05-21).** **Sowari-khaneh** filled the predicted-empty *cavalry-tradition* sub-slot + **Tirandazi** filled the predicted-empty *archery-tradition* sub-slot, both under the identity-bearing institutional anchor-category established by Sarbaz-khaneh at Wave 2A. Sub-slot axis: military-arm. Naming-shape divergence (Tirandazi's *-dazi* "practice" vs *-khaneh* "house") was correctly classified as surface-language, NOT anchor-shape divergence — directly because the trichotomy forced the explicit question.
+- **(c) taxonomy-growth-required — N=3 across waves.** **Ma'dan** at Wave 1B (2026-05-15) established *labor-organization* as the second anchor-category (lead's brief initially framed civic-anchor; loremaster routed to taxonomy-growth-required with citation to Pishdadian triad). **Atashkadeh** at Wave 2A.5 (2026-05-18) established *sacral-emitter / divine-source* as the fourth anchor-category (passive-emit mechanical shape structurally distinct from prior three). **Throne** at Wave-3-Throne (2026-05-22) established *sovereignty-bearing institution* as the fifth anchor-category (singular per faction + terminal-stakes + IDropoffTarget + tier-progression via conversion-not-replacement — structurally distinct from all four prior categories; mirror-reviewer C3.1 correctly flagged lead's civic-anchor pre-assignment as mismatched). This is the third taxonomy-growth-required outcome and the empirical proof that the trichotomy is well-shaped — the (c) branch produces real category growth when fired, not just bookkeeping.
 
-[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2; watchlist refinement added 2026-05-21 session-5 close; enumeration extracted to dedicated SSOT doc + N=2 graduation status added 2026-05-21 Wave 2B Track 5 (`18e3f34`)]
+**Operational form (canonical decision flow).** From `docs/ANCHOR_CATEGORY_TAXONOMY.md` §2:
+
+```
+Brief introduces new Building subclass
+    │
+    ├─ Same anchor-category + same sub-slot as an existing building?  ──── YES ──► (a) clone-check
+    │                                                                              verify faithful clone
+    │                                                                              (no brief-time review fire per §9.J1)
+    │
+    ├─ Same anchor-category + predicted-empty sub-slot?                ──── YES ──► (b) slot-fit-verify
+    │                                                                              verify slot-fit per prediction
+    │                                                                              (loremaster brief-time review fires)
+    │
+    └─ Mechanical shape OR cultural register structurally distinct?    ──── YES ──► (c) taxonomy-growth-required
+                                                                                   NEEDS-DESIGN-CHAT verdict
+                                                                                   (loremaster proposes new category;
+                                                                                    routes via design-chat ratification
+                                                                                    before specialist tracks dispatch)
+```
+
+The decision is sequential: clone-check is checked first (cheapest verification), slot-fit-verify second (moderate), taxonomy-growth-required last (highest cost, routes via design-chat). If none of the three branches fire cleanly, the loremaster surfaces the ambiguity to lead before dispatch close — a brief-time review CANNOT exit without a locked classification.
+
+**Coordination with §9.J1.** Brief-time loremaster review fires per §9.J1 for slot-fit-verify and taxonomy-growth-required outcomes only. Clone-check outcomes ship without brief-time loremaster fire — the lead's kickoff brief explicitly names the (a) classification, and wave-close review verifies the clone-fidelity. This preserves §9.J1's "do not fire for clones" rule while closing the classifier-completeness gap that the watchlist version left open (clone-check is *named at lead's brief-drafting time* rather than implicit-by-omission).
+
+**Open question.** Turan economy will likely default-fire (c) taxonomy-growth-required at the first Turan building brief-time per the structural-mismatch hypothesis articulated in [`docs/ANCHOR_CATEGORY_TAXONOMY.md`](ANCHOR_CATEGORY_TAXONOMY.md) §5. Exception: sovereignty-bearing institution is the ONE anchor-category that applies cross-faction symmetrically — Turan's Throne ships as a slot-fit-verify clone of the Iran Throne template, not as taxonomy-growth (different team-id + visual accent + cultural-register prose, same `throne.gd` extends). This NEAR-SYMMETRY exception is the only known Turan slot-fit-verify candidate at the anchor-category-discovery moment.
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2 (J2 introduced as enumeration rule); 2026-05-21 session-5 close (trichotomy added as watchlist refinement, N=1); 2026-05-21 Wave 2B Track 5 `18e3f34` (enumeration extracted to ANCHOR_CATEGORY_TAXONOMY.md v1.0.0; N=2 at Wave 2B Track 0 with Sowari-khaneh + Tirandazi slot-fit-verify); 2026-05-22 Wave-3-Throne Track 4 `d59b771` (3-of-3 trichotomy outcome empirically produced via Throne's taxonomy-growth-required → sovereignty-bearing institution at ANCHOR_CATEGORY_TAXONOMY.md v1.1.0; J2 graduates from watchlist to active rule at session-8 close retro)]
 
 #### J3. Literal-then-tricky-gloss discipline (Persian-term Pattern)
 
