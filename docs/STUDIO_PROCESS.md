@@ -278,10 +278,10 @@ This section is the **currently-binding form** of every accumulated process rule
 | §9.J | Cultural / Loremaster Discipline | 4 |
 | §9.K | Retro Practice | 3 |
 | §9.L | Implementation Patterns | 11 |
-| §9.M | Test Discipline | 5 |
+| §9.M | Test Discipline | 6 |
 | §9.N | Investigation Reports | 1 |
 
-**Total: 60 active rules across 14 clusters.** Down from 81 dated entries in v1.8.0 — same load-bearing content, restructured to currently-binding form. (L4 split into L4a/L4b at validation-test fix-up; D9 pre-commit self-review checklist added at PR C; H3 first-exercise-of-dormant-schema + L6 forward-compat-guard-sweep + J4 claim→mechanism→reviewer-triples refinement + D9 lens-walk N/A shorthand added at session-5 close retro; L7 affordability-sweep + L8 drift-proof-UI-numeric-defaults + L9 fallback-by-failure-visibility-shape + D7 split (D7a + D7b workspace-observation) + M3 error-specificity-disclaimer + E1 parallel-WIP-addendum + F4 value-choice-footnote + G1 idle-availability-heartbeat-addendum + L1 multi-agent codification added at session-6 close retro — all with provenance notes in their respective entries.)
+**Total: 61 active rules across 14 clusters.** Down from 81 dated entries in v1.8.0 — same load-bearing content, restructured to currently-binding form. (L4 split into L4a/L4b at validation-test fix-up; D9 pre-commit self-review checklist added at PR C; H3 first-exercise-of-dormant-schema + L6 forward-compat-guard-sweep + J4 claim→mechanism→reviewer-triples refinement + D9 lens-walk N/A shorthand added at session-5 close retro; L7 affordability-sweep + L8 drift-proof-UI-numeric-defaults + L9 fallback-by-failure-visibility-shape + D7 split (D7a + D7b workspace-observation) + M3 error-specificity-disclaimer + E1 parallel-WIP-addendum + F4 value-choice-footnote + G1 idle-availability-heartbeat-addendum + L1 multi-agent codification added at session-6 close retro — all with provenance notes in their respective entries.)
 
 ---
 
@@ -1454,6 +1454,58 @@ Cites Manifesto Principle 8 (Separation of Concerns — scripts and scenes have 
 Cites Manifesto Principle 1 (Truth-Seeking — the test should catch the bug class, not the specific bug instance) and Principle 10 (Feedback Cycle — regression locks are the cheapest forward-investment in test infrastructure).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-3 consumer-side-integration cluster + Pitfall #14 promotion]
+
+#### M6. Log-instrumentation-from-day-1 — every new system emits greppable `[<system>]` log lines
+
+**Rule.** Every new autoload, system, state machine, or major feature shipped to the game **MUST include log instrumentation from day 1**. Not retro-fitted when something breaks; not "I'll add prints if there's a bug." The log lines are part of the deliverable, not a debugging afterthought.
+
+**Required shape:**
+
+```gdscript
+# At system initialization / autoload _ready:
+print("[<system>] _ready field1=", value1, " field2=", value2)
+
+# At major state transitions / events:
+print("[<system>] <event_name>: <key=value pairs>")
+
+# Periodic state snapshots for systems without discrete events (throttled, e.g. tick % 30 == 0):
+if SimClock.tick % 30 == 0:
+    print("[<system>] snapshot tick=", SimClock.tick, " <state vars>")
+```
+
+**Tag-prefix convention.** `[<short-system-name>]` so `grep`/`awk` filters trivially. Examples: `[turan]`, `[fog]`, `[production]`, `[farr]`, `[resource]`. Diagnostic-only prints (deeper debug paths, lifecycle traces) get a `[<system>-diag]` suffix and can be removed at retro if the noise-to-signal ratio is wrong.
+
+**Why.** N=4 defensive-fallback-masking production bugs (BUG-C1, BUG-D1, BUG-D2, BUG-D4) shipped to live-test in successive waves with all-passing test suites. Each was a silent no-op — a defensive guard converted an upstream error into "no observable behavior." **The user-driven live-test caught them only because someone retro-fitted `print()` lines to diagnose.** Cumulative debugging cost across the chain: tens of minutes of close-Godot/edit-code/relaunch cycles. Day-1 instrumentation would have surfaced each bug in 10 seconds of live-test.
+
+**Where reviewers enforce.**
+
+- **godot-code-reviewer + architecture-reviewer** check for `[<system>]` log presence on any new autoload, system, or major state machine. **Missing log instrumentation is a BLOCKER, not a nit.** Inline review prompt: *"Where are the `print('[<system>]', ...)` lines for this system's lifecycle and major state transitions?"*
+- **mirror-reviewer (brief-time)** flags missing log instrumentation as a finding (Class 5 — observability). Specifically: every wave brief that introduces a new system should explicitly require log instrumentation as a Track deliverable.
+
+**Where authors apply.**
+
+- **Wave brief authors (lead)** add to every Track deliverable that ships a new system: *"Log instrumentation: each major event/transition emits a `[<system>]` log line. Periodic state snapshots once per N ticks for systems with no discrete events. Greppable tag-prefix convention."*
+- **Implementer agents** treat log instrumentation as a mandatory part of the implementation, not a separate task.
+
+**Anti-patterns to flag at review:**
+
+- Shipping a new system with zero log lines, planning to "add prints if there's a bug." The bugs that need prints are the ones prints would have caught.
+- Removing log lines after a wave closes "to clean up." The log lines are not noise; they are the runtime trace.
+- Log lines that print only in error / exception paths. Successful paths are equally important — silent success is indistinguishable from silent failure.
+
+**Canonical incident chain (Wave 3B live-test, 2026-05-24):**
+
+- **BUG-C1** (Wave 3A.6, schema mismatch) — caught only because gp-sys instrumented `_resolve_train_cost` retroactively during diagnosis.
+- **BUG-D1** (Wave 3A.5, sim_phase wiring) — caught by mirror-reviewer brief-time review reading shipped code.
+- **BUG-D2** (Wave 3A.5, team-id bounds) — caught by ai-engineer first-runtime exercise of TURAN-side fog reads.
+- **BUG-D3** (Wave 3A.5, copy-on-write PackedByteArray writes) — caught by lead-added `[fog-diag]` prints during live-test.
+- **BUG-D4** (Wave 3A.5, `turan_` prefix not stripped in fog field lookup) — caught by lead-added `[fog-diag] sources_by_team` print showing `{ 1: 16 }` (zero Turan registrations).
+
+**4 of the 5 bugs above (D1/D2/D3/D4) lived in code that had ZERO log instrumentation.** Day-1 `[<system>]` prints on the shipped surfaces would have made each visible in the first live-test, not after retro-fitted prints.
+
+Cites Manifesto Principle 1 (Truth-Seeking — make runtime behavior legible) + Principle 6 (Honest-tools-not-magic-tricks — silent success indistinguishable from silent failure is dishonest) + Principle 9 (Automated Enforcement — reviewer-enforced log presence vs. hope-it-gets-added-someday).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 Wave 3B live-test bug chain (BUG-C1/D1/D2/D3/D4) → user-directive codification]
 
 ---
 
