@@ -128,15 +128,34 @@ func enter(_prev: Object, ctx: Object) -> void:
 	if raw_loop != null and is_instance_valid(raw_loop) and raw_loop is Node:
 		_loop_target_node = raw_loop
 
-	# Deposit target. Wave 1A: payload may carry an explicit Vector3 (when
-	# Throne is wired) or omit it (fall back to own position, zero-walk).
+	# Deposit target. Three-tier resolution:
+	#   1. Explicit payload Vector3 (test fixtures / scripted scenarios).
+	#   2. Wave-3-Throne canonical: ResourceSystem.dropoff_for_team(team)
+	#      → throne.get_deposit_position(). Workers VISIBLY walk to the
+	#      Throne to complete the gather-deposit-loop cycle. This is the
+	#      production path on `feat/wave-3throne-iran-turan-hq`.
+	#   3. Zero-walk fallback to own position (no Throne spawned — test
+	#      fixtures + pre-Throne-spawn boot).
+	# BUG-E1 fix-wave (2026-05-24): tier 2 was missing in the original
+	# Wave-3-Throne ship. `_perform_deposit()` correctly routed the credit
+	# through `throne.deposit()`, but `enter()` left `_deposit_target_pos`
+	# at the worker's own position, so the worker never visibly walked
+	# to the Throne. The fix wires `get_deposit_position()` here so the
+	# walk-step and the deposit-step both point at the Throne.
 	var raw_deposit: Variant = payload.get(&"deposit_target", null)
 	if raw_deposit != null and typeof(raw_deposit) == TYPE_VECTOR3:
 		_deposit_target_pos = raw_deposit
 	else:
-		# Wave 1A fallback: zero-walk deposit at own position. Wave 1B
-		# wires a real Throne / ResourceSystem lookup here.
-		_deposit_target_pos = _get_self_position(ctx)
+		var team_for_dropoff: int = Constants.TEAM_NEUTRAL
+		if &"team" in ctx:
+			team_for_dropoff = int(ctx.team)
+		var dropoff: Node3D = ResourceSystem.dropoff_for_team(team_for_dropoff)
+		if dropoff != null and is_instance_valid(dropoff) \
+				and dropoff.has_method(&"get_deposit_position"):
+			_deposit_target_pos = dropoff.call(&"get_deposit_position")
+		else:
+			# Zero-walk fallback (test fixtures, pre-Throne-spawn boot).
+			_deposit_target_pos = _get_self_position(ctx)
 
 	# Kick off the path. If the deposit target is the unit's own position,
 	# the request still fires (the path will arrive on a later tick at

@@ -172,6 +172,28 @@ func test_kargar_deposit_at_throne_credits_team_coin() -> void:
 		+ "If this is 2000, C1.4 only-one-path-per-cycle was violated.")
 
 
+func test_throne_get_deposit_position_returns_throne_world_position() -> void:
+	# Smoke-test for the BUG-E1 fix surface. The fix in UnitState_Returning.enter()
+	# calls `throne.get_deposit_position()` to resolve the walk-target when the
+	# command payload omits an explicit deposit_target. This test locks in that
+	# Throne.get_deposit_position() returns the Throne's WORLD position (not
+	# Vector3.ZERO, not a relative offset from somewhere else). Live-test then
+	# verifies the spatial behavior: workers visibly walk to the Throne.
+	# Test fixture for the full path-target assertion has subtleties around
+	# the MovementComponent scheduler-wiring timing that are out of scope for
+	# this fix-wave; deferred to a follow-up when gp-sys can extend the
+	# fixture properly.
+	_throne = _spawn_throne(Constants.TEAM_IRAN)
+	_throne.position = Vector3(5.0, 0.0, 5.0)
+	var pos: Vector3 = _throne.call(&"get_deposit_position")
+	assert_almost_eq(pos.x, 5.0, 0.01,
+		"BUG-E1 fix-surface: get_deposit_position must return the Throne's "
+		+ "world X (not zero, not relative). UnitState_Returning depends on this.")
+	assert_almost_eq(pos.z, 5.0, 0.01,
+		"BUG-E1 fix-surface: get_deposit_position must return the Throne's "
+		+ "world Z (not zero, not relative). UnitState_Returning depends on this.")
+
+
 func test_kargar_deposit_without_throne_falls_back_to_inline_path() -> void:
 	# Throne-absent fallback path (test fixture w/o match-start spawn).
 	# Coin still credits via inline ResourceSystem.change_resource per
