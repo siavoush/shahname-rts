@@ -199,12 +199,62 @@ func test_sim_tick_completes_extract_after_dwell() -> void:
 		"Kargar._carry_amount_x100 positive after complete_extract")
 
 
-func test_sim_tick_bails_to_idle_when_slot_request_rejected() -> void:
-	# Pre-occupy the mine's only slot. Gathering arrives, requests, fails,
-	# transitions to Idle.
+func test_sim_tick_waits_for_slot_when_node_still_gatherable() -> void:
+	# BUG-F1 fix-up — pre-fix, slot-rejected workers bailed to Idle immediately
+	# (Phase 3 wave 1A simplification). Post-fix, workers WAIT next to the
+	# node when the slot is busy but the node is still gatherable; they retry
+	# request_extract on every sim_phase until the slot frees. This is the
+	# AoE2-style queue: with max_slots=1, multi-selected workers send to the
+	# same node sequence through the slot rather than going Idle.
+	# Pre-occupy the mine's only slot with a phantom worker. Gathering arrives,
+	# requests, fails, but STAYS in Gathering (does not bail to Idle).
 	_spawn_unit_and_mine()
 	_mine.max_slots = 1
 	_mine.request_extract(999)  # phantom worker holds the slot
+	_unit.replace_command(&"gather", {&"target_node": _mine})
+	_tick_fsm()
+	SimClock._test_run_tick()
+	for i in range(60):
+		_tick_fsm()
+	assert_eq(_unit.fsm.current.id, &"gathering",
+		"Gathering must STAY in gathering state when slot busy but node "
+		+ "still gatherable (BUG-F1 fix — wait for slot, do not bail to Idle).")
+
+
+func test_sim_tick_acquires_slot_when_phantom_releases_it() -> void:
+	# BUG-F1 fix-up — companion test. After the phantom releases the slot,
+	# the waiting worker should successfully acquire it and proceed to dwell.
+	_spawn_unit_and_mine()
+	_mine.max_slots = 1
+	_mine.request_extract(999)  # phantom holds slot
+	_unit.replace_command(&"gather", {&"target_node": _mine})
+	_tick_fsm()
+	SimClock._test_run_tick()
+	# Tick a few times — worker waits, slot still busy.
+	for i in range(10):
+		_tick_fsm()
+	# Phantom releases. Next tick the waiting worker should acquire.
+	_mine.release_extract(999)
+	# Tick enough times to let the next acquire fire.
+	for i in range(5):
+		_tick_fsm()
+	# Worker should now hold the slot (slot_held internal state) AND still
+	# be in Gathering (now dwelling). The cleanest external assertion is
+	# that the mine's _occupied set now contains the worker's unit_id.
+	assert_true(_mine._occupied.has(_unit.unit_id),
+		"BUG-F1 fix companion: waiting worker must acquire slot after phantom "
+		+ "releases it; mine._occupied must contain worker's unit_id.")
+
+
+func test_sim_tick_bails_to_idle_when_node_not_gatherable() -> void:
+	# BUG-F1 fix-up — distinct from the queue case: when the slot is rejected
+	# AND the node is no longer gatherable (e.g., depleted between enter and
+	# arrival), the worker bails to Idle. Workers should NOT wait forever on
+	# a dead node.
+	_spawn_unit_and_mine()
+	_mine.max_slots = 1
+	_mine.request_extract(999)  # phantom holds slot
+	_mine.is_gatherable = false  # node "depleted" — workers should bail
 	_unit.replace_command(&"gather", {&"target_node": _mine})
 	_tick_fsm()
 	SimClock._test_run_tick()
@@ -215,7 +265,8 @@ func test_sim_tick_bails_to_idle_when_slot_request_rejected() -> void:
 			bailed = true
 			break
 	assert_true(bailed,
-		"Gathering bails to Idle when the slot request is rejected on arrival")
+		"BUG-F1 fix: worker bails to Idle when slot rejected AND node not "
+		+ "gatherable (do not wait forever on a dead node).")
 
 
 # ---------------------------------------------------------------------------
