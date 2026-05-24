@@ -359,6 +359,51 @@ When the test legitimately requires a rendered frame (visual smoke tests, multi-
 
 **Regression coverage.** Existing `test_fog_system.gd` + `test_production_panel.gd` use the fixed pattern. Project-wide audit candidate (gp-sys's session-7 retro offer): the ~15 defensive-cascade helpers + any other test using `queue_free()` + `await get_tree().process_frame` should be swept for the same shape.
 
+### #18 — Nested-collection element-write via local-variable indirection (PackedByteArray + Array copy-on-write)
+
+**Mechanism.** GDScript's value-typed collections (`PackedByteArray`, `Array`, `PackedInt32Array`, `Dictionary`, etc. — anything that isn't a `Resource` or `Object`) follow **copy-on-write** semantics. When a nested collection is read through a local variable, the local holds a COPY of the inner collection — NOT a reference. Writing to the local's index mutates the COPY; the original container retains the pre-write state. The write succeeds against the local (no error, no warning), but the read from the original container returns the unmodified value.
+
+The pattern that LOOKS like in-place mutation is the trap:
+
+```gdscript
+# WRONG — write lands on local copy; _currently_visible[team] stays zero
+var team_grid: PackedByteArray = _currently_visible[team_id]
+team_grid[cell_idx] = 1
+# next read of _currently_visible[team_id][cell_idx] returns 0
+```
+
+The local-variable assignment IS executed; the byte IS written into `team_grid`; subsequent reads of `team_grid` show the mutation. But `team_grid` is a value-copy detached from `_currently_visible`. The dictionary's stored PackedByteArray is unaffected.
+
+**Rule.** When mutating a nested value-typed collection, use direct nested-index write OR explicit write-back. Both forms are safe:
+
+```gdscript
+# RIGHT (Form A) — direct nested-index write through the container
+_currently_visible[team_id][cell_idx] = 1
+
+# RIGHT (Form B) — read, mutate local, explicit write-back
+var team_grid: PackedByteArray = _currently_visible[team_id]
+team_grid[cell_idx] = 1
+_currently_visible[team_id] = team_grid  # ← required; without this, write vanishes
+```
+
+Form A is preferred when the access chain is short (one nested level). Form B is preferred when many writes happen against the same inner collection (avoids the dictionary lookup per write).
+
+**Canonical incident.** Phase 3 session 8 BUG-D3 — `fog_system.gd::_recompute_team_visibility` used Form-A-without-the-write-back: read `_currently_visible[team]` into a local, called `team_grid[cell_idx] = 1` in the radius-scan loop, never reassigned back to the dictionary. The visibility grid stayed permanently zero across all team queries. FogSystem appeared to be wiring correctly, vision sources registered, the radius-scan loop iterated correctly, but every `is_visible_to(team_id, world_pos)` query returned false. gp-sys-p3s3 caught it during diagnostic-print instrumentation for an adjacent issue — the print of `team_grid[cell_idx]` after assignment showed 1, but the next print of `_currently_visible[team][cell_idx]` showed 0. Fix landed by switching to direct nested-index write (Form A without indirection).
+
+**Audit surface.** Any `Dictionary[K, PackedByteArray]` or `Dictionary[K, Array]` consumer with element-write semantics is at risk. Current known surfaces:
+- `FogSystem._currently_visible` + `_ever_seen` — per-team `PackedByteArray` grids.
+- Future Phase 5 fog renderer cache (per-team).
+- Future Phase 6 AI threat-maps (per-team grids).
+- Any spatial-cache-keyed-by-team or per-unit collection that uses PackedByteArray / Array as the value type.
+
+**Why it bites.** The malformed form reads as idiomatic GDScript ("fetch the array, write to it") and produces zero error, zero warning, zero log diagnostic at runtime. The local-variable IS being written; assertions against the local pass; unit tests against the local pass. The bug only surfaces when downstream code reads from the original container — at which point the divergence between "what the local says" and "what the container says" is invisible without explicit instrumentation. This is the **plausible-but-wrong** category (shared with Pitfall #15 inherited-scene override syntax + Pitfall #16 freed-Object cast): the code looks correct to a human reader, the language doesn't flag it, and only runtime behavioral assertion catches the divergence.
+
+Pairs structurally with the **§9.F3 behavioral-vs-structural test discipline** — the wrong form ships clean *structural* unit tests (the local IS written, IS read, all the assertions about the local pass) but the runtime *effect* (grid stays zero, queries return false) is invisible until you assert at the container boundary.
+
+**Regression coverage.** `test_fog_system.gd::test_recompute_team_visibility_writes_through_to_container` (or equivalent — gp-sys-p3s3's BUG-D3 fix added behavioral assertion that after `_recompute_team_visibility(team)`, at least one byte of `_currently_visible[team]` is non-zero given registered vision sources). Use as the canonical pattern: assert mutation EFFECT by reading from the ORIGINAL container, NOT from a local-variable intermediary.
+
+**Future audit candidate.** Project-side lint rule (L7?) for the pattern `var <name>: PackedByteArray = <dict>[<key>]` followed within the same function by `<name>[<idx>] = <value>` WITHOUT a subsequent `<dict>[<key>] = <name>` write-back. Grep-matchable but brittle to false positives (some functions legitimately mutate a local copy without write-back). Defer until N=2 surface confirms the lint is worth the false-positive cost.
+
 ### Candidate / deferred entries (not yet load-bearing)
 
 | Candidate | Status | Reason |

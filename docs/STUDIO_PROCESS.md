@@ -674,6 +674,50 @@ Cites Manifesto Principle 1 (Truth-Seeking — verify your own work before other
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2 pre-commit-self-review (original prose); operationalized to checklist 2026-05-18 PR C; Step 2 sub-step + Step 3 first-exercise self-check + lens-walk N/A shorthand added 2026-05-21 session-5 close]
 
+#### D10. Cross-track first-consumer diagnostic — broadcast non-self failures
+
+**Actor:** Implementer staging a track's changes for joint or sequenced commit. Most commonly the first downstream consumer of a new producer surface.
+
+**Trigger:** After staging own-track changes locally, before joint-commit or [ready] broadcast. The full headless test suite is run; the implementer parses the results.
+
+**Rule:** When the post-staging full-suite run shows failures in surfaces NOT owned by the implementer's track, **the implementer MUST broadcast a diagnosis to the owning track's implementer (or to lead for lead-side surfaces) before proceeding to commit**. Non-self failures are signal, not noise — they indicate that the implementer's track is the first runtime witness of a producer-side contract bug.
+
+This rule formalizes the structural property: producer surfaces are written with assumed-correct invariants; consumer surfaces are written with assumed-correct producer behavior. Bugs accumulate at the boundary as mismatched assumptions. Static type-checking equates types only; semantic invariants (is_instance_valid before cast, dict-key vs field-name, signal payload shape, tick-context) are not type-equated. **The first runtime consumer is the first witness to producer-side invariant bugs.**
+
+The rule applies regardless of who is "the gating track" — a downstream-consumer implementer running the suite after the producer-track's stage is the canonical execution point. When the consumer IS the gating track (shipping first), they can't benefit from this discipline by definition; in that case §9.L10 / §9.L12 (canonical-pattern grep) is the upstream complement.
+
+**Why (N=4 successful applications + 1 missed-opportunity exhibit):**
+
+1. **Wave 3A.5 — gp-sys catches world-builder's `as Node3D` cast bug.** Staging unit.gd Track 2 (FogSystem vision-source register/deregister), gp-sys ran the full suite and observed a failure in `test_fog_system.gd:test_fog_update_stale_source_cleanup`. Root cause was world-builder's Track 1 `_on_fog_update_phase` casting `rec[&"node"] as Node3D` BEFORE checking `is_instance_valid()`, causing a script error on freed Object before reaching the lazy-cleanup branch. gp-sys broadcast diagnosis + suggested fix to world-builder before commit. Fix folded into Track 1's first commit. **Bug never shipped.**
+
+2. **Wave 3A.6 — gp-sys catches ui-developer's ProductionPanel `close_clears_rows` failure.** Staging Track 1 (Building production state machine), gp-sys observed a failure in `test_production_panel.gd:test_close_clears_rows` (UnitRows children count expected 0, got 1). Not in gp-sys's surface but visible from suite run. Broadcast to ui-developer at [ready] time. Fix landed before Track 2 ship. **Bug never shipped.**
+
+3. **Wave 3A.5 — mirror-reviewer catches FogSystem.sim_phase wiring bug (BUG-D1).** Mirror-reviewer running brief-time review caught that fog_system.gd was wiring to `SimClock.fog_update.connect(...)` instead of `EventBus.sim_phase.connect(...)` per canonical pattern. First-runtime-consumer here was the brief-reviewer rather than an implementer; same shape, different actor. Lead fixed in dedicated BUG-D1 fix-wave commit.
+
+4. **Wave 3A.5 — ai-engineer catches FogSystem team-id bounds bug (BUG-D2).** First runtime consumer of `FogSystem.is_visible_to(TEAM_TURAN, ...)` at TuranController scaffold time. team_id=2 was out of bounds vs hardcoded NUM_TEAMS=2 (TEAM_IRAN=1, TEAM_TURAN=2 — exclusive bound rejects valid team id). ai-engineer surfaced via DummyAI's "no visible Iran target — staying idle" log diagnostic and broadcast diagnosis. Lead fixed in BUG-D2 fix-wave.
+
+5. **Missed-opportunity exhibit — BUG-C1 Wave 3A.6.** ui-developer's production_panel.gd:_read_balance_int (line 368) shipped with the CORRECT canonical Dictionary lookup for BalanceData.buildings access while gp-sys's building.gd `_read_bldg_stats_int` shipped with the WRONG top-level-field pattern per the broken brief. ui-developer was the first cross-track witness of the divergence — could have broadcast brief-vs-shipped-code divergence finding to lead before gp-sys's Track 1 ship — but the cross-track diagnostic discipline was not yet codified for the "brief-vs-canonical-code" axis at that time. BUG-C1 shipped, caught at live-test instead. This exhibit is the rule-validating negative case: had §9.D10 been active, ui-developer would have broadcast and the bug would have been caught one round earlier.
+
+**Operational form:**
+
+Implementer's post-stage workflow:
+1. Stage own-track changes locally (`git add <paths>`).
+2. Run the full headless test suite: `godot --headless --path game -s addons/gut/gut_cmdml.gd -gdir=res://tests -gexit`.
+3. Parse failures. Triage each failure:
+   - **Self-track failure** → fix before commit.
+   - **Non-self failure in same-wave track** → broadcast SendMessage to that track's implementer with diagnosis + suggested fix (where possible). Continue to commit own-track if non-blocking; flag in [ready] message either way.
+   - **Non-self failure in lead-owned surface (briefs, autoloads, contracts)** → broadcast to lead with diagnosis.
+   - **Pre-existing failure** (not introduced by this wave) → note in [ready] but don't gate.
+4. Include cross-track diagnostic findings in the [ready] message body so they don't get lost in chat noise.
+
+**Catch-rate scaling:** approximately 1 successful cross-track catch per fresh producer-consumer relationship per session. A session with N new producer surfaces → expect ~N catches if every consumer implementer runs the discipline. A wave with one fresh producer-consumer relationship → expect ~1 catch.
+
+**Relationship to §9.D7.** §9.D7 originally framed cross-track diagnostic as a refinement sub-clause `D7(b)`. Session-8 retro evidence (N=4 successful catches + 1 negative exhibit across 2 sessions) graduates the pattern from refinement to standalone active rule. §9.D7 is left as-is (its no-silent-coexistence framing remains correct); §9.D10 promotes the cross-track-first-consumer pattern to its own discoverable rule.
+
+Cites Manifesto Principle 1 (Truth-Seeking — non-self failures are signal) + Principle 9 (Automated Enforcement — suite-run + broadcast scales). See also §9.D7 (no-silent-coexistence-with-cross-track-WIP, this rule's parent framing), §9.L10 / §9.L12 (canonical-pattern grep, upstream complements when the consumer is the gating track).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close; gp-sys-p3s3 retro reflection N=4 successful + 1 missed-opportunity (BUG-C1) exhibits → codification as standalone D10 (promoted from prior D7(b) refinement framing)]
+
 ---
 
 ### §9.E — Wave-Mode & Worktree
@@ -828,6 +872,35 @@ Cites Manifesto Principle 1 (Truth-Seeking — verify the effect, not just the s
 Cites Manifesto Principle 1 (Truth-Seeking — test the effect, not the syntax) and Principle 9 (Automated Enforcement — regression-lock at first incidence).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-4]
+
+#### F5. Producer-stub-consumer integration test — ship at least one non-trivial consumer-perspective assertion when shipping a producer with no real consumer yet
+
+*Test-discipline companion to §9.H3 (first-exercise-of-dormant-schema). H3 mandates the call-out at brief-time and the D9 self-check; F5 mandates the test artifact that catches the wiring gap before live-test does.*
+
+**Rule.** When a wave ships a producer API (function, signal, autoload method, or phase handler) whose only consumer at ship time is a stub or the brief's promise of a future consumer, the shipping agent MUST include at least one integration test that: (a) calls or triggers the producer through its intended entry point — NOT by calling the function body directly — and (b) asserts a non-trivial correct output from the consumer's perspective. The test must exercise the full wiring path, not just the function's internal logic.
+
+**Why.** Structural unit tests on the producer ("method exists", "returns correct type given direct call") pass even when the wiring that would drive the producer at runtime is broken. Two confirmed incidents where this gap masked a broken wiring path through multiple test-suite passes:
+
+- **BUG-D1 (Wave 3A.5 / session-7)**: `FogSystem._ready` connected to `SimClock.has_signal(&"fog_update")`, which always returned false — SimClock has no such signal. `_on_fog_update_phase` was never called in production. The function body was correct; all unit tests called it directly via `_on_fog_update_phase()` and passed; the broken `_ready` wiring was never exercised. Mirror-reviewer caught the bug at session-8 brief time after the wave had shipped. Root cause: zero integration tests drove the connection through `EventBus.sim_phase.emit(...)`.
+- **BUG-D2 (Wave 3A.5 / session-7, same wave)**: `is_visible_to(Constants.TEAM_TURAN, ...)` silently returned false due to a 1-indexed vs 0-indexed mismatch in the bounds check. Tests used hardcoded `0` and `1` instead of `Constants.TEAM_IRAN` and `Constants.TEAM_TURAN`; TURAN was never exercised through its canonical team-id. ai-engineer caught it at first runtime. Root cause: tests did not assert a non-trivial output (`is_visible_to` returning true) from the Turan-perspective consumer.
+
+The pattern in both incidents: tests exercised the producer's internals, not the producer's wiring + output from the consumer's vantage. The F3 behavioral-vs-structural rule applies laterally here, but the producer-stub-consumer shape is distinct enough to warrant its own rule — F3 governs "test the effect, not the presence" at the function body level; F5 governs "test the full entry-to-output path when a live consumer doesn't yet exist to do it for you."
+
+**Operational form.** Before shipping a producer API with no live consumer:
+
+1. Identify the intended runtime entry point (e.g., `EventBus.sim_phase.emit(&"fog_update", tick)`, `ResourceSystem.dropoff_for_team(team)`, a HealthComponent signal).
+2. Write one integration test that fires the entry point and asserts a correct consumer-observable output (e.g., `is_visible_to(Constants.TEAM_IRAN, pos) == true` AFTER `EventBus.sim_phase.emit(&"fog_update", 1)`, NOT after a direct `_on_fog_update_phase()` call).
+3. The test is marked `# BUG-D1 wiring-path discipline — §9.F5` in a comment so reviewers can identify it as the entry-point test, not a unit test.
+
+**Complement to §9.D7(b).** §9.D7(b) cross-track diagnostic fires when you observe another track's WIP and can verify against it. §9.F5 fires when you're shipping first and no other track exists yet to act as consumer. Together they close the stub-era wiring gap: D7(b) catches it when a consumer exists but isn't integrated; F5 catches it when no consumer exists yet.
+
+**Scope.** Applies to: autoload phase handlers (sim_phase, EventBus connections), autoload API methods (ResourceSystem, FogSystem), signal declarations with deferred consumers. Does NOT apply to pure function bodies with direct call-site callers — §9.F3 covers that case.
+
+**N=2 confirmed incidents.** BUG-D1 + BUG-D2 (both session-8 bug fixes, same wave, same underlying discipline gap). Mirror-reviewer + ai-engineer acting as de facto runtime-consumer surrogates were the actual detection mechanism — the rule codifies what they did implicitly as an explicit test-authoring step.
+
+Cites Manifesto Principle 1 (Truth-Seeking — test the wiring path, not the function body) + Principle 9 (Automated Enforcement — the gap that makes it to live-test was already detectable in tests). See also §9.H3 (dormant-schema first-exercise call-out), §9.D7(b) (cross-track diagnostic), §9.F3 (behavioral-vs-structural discipline).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close — BUG-D1/D2 root-cause codification, world-builder-p3s2 origination]
 
 ---
 
@@ -1021,22 +1094,49 @@ Cites Manifesto Principle 4 (Lean Iteration — compressing the wave-close fix l
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2]
 
-#### J2. Anchor-category enumeration for Building subclasses
+#### J2. Anchor-category trichotomy — canonical classifier for new Building subclasses
 
-**Rule.** Building subclasses fall into one of several cultural-anchor categories, each requiring a distinct template-shape in the cultural-note block. **Enumeration + sub-slot taxonomy + per-variant template-shape spec live in [`docs/ANCHOR_CATEGORY_TAXONOMY.md`](ANCHOR_CATEGORY_TAXONOMY.md) §1** (extracted to dedicated SSOT 2026-05-21 at Wave 2B Track 5 per §9.C1 — the enumeration cannot live in two places).
+**Rule.** When a new Building subclass enters brief-time review, the loremaster classifies the wave's anchor-category outcome as exactly one of three: **(a) clone-check** (same anchor-category + same sub-slot as an existing building; verify the clone is faithful to the established template), **(b) slot-fit-verify** (same anchor-category + fills a predicted-empty sub-slot; verify slot-fit per the prediction), or **(c) taxonomy-growth-required** (mechanical shape OR cultural register structurally distinct from all enumerated categories; demands a new anchor-category and routes via NEEDS-DESIGN-CHAT verdict). The classification is named at brief-time AND drives the rest of the review: each outcome routes to a different verification shape (faithful-clone audit / slot-fit-prediction audit / new-category proposal with template-shape sketch). Enumeration + sub-slot taxonomy + per-variant template-shape spec + decision-flow diagram live in [`docs/ANCHOR_CATEGORY_TAXONOMY.md`](ANCHOR_CATEGORY_TAXONOMY.md) §1 + §2 (SSOT per §9.C1; the enumeration cannot live in two places).
 
-**Brief-time review uses anchor-category classification as the first-pass question:** "which variant does this building belong to? Same-as-existing or new variant?" Variant misclassification at brief-time is the highest-value risk to catch (per Ma'dan's wave-1B brief-time exchange where lead initially framed Jamshid as "tangential" — a sign that loremaster needed to refine to "this is a labor-organization variant, not a civic-anchor clone").
+**Actor / trigger.**
+- **Lead at brief-drafting time** — pre-classifies the expected outcome in the kickoff brief (lead's working hypothesis; subject to loremaster validation). For clone-check candidates, the lead names the classification explicitly per §9.J1 (clone-check waves ship without brief-time loremaster review; the classification is the lead's call). For slot-fit-verify or taxonomy-growth-required candidates, lead dispatches the loremaster at brief-time.
+- **Loremaster at brief-time review** — validates or refines the lead's classification, then produces the verification shape appropriate to the locked outcome. If the loremaster reclassifies (lead pre-assigned (a) but loremaster lands (b) or (c)), the new classification is authoritative.
 
-**Brief-time review trichotomy (watchlist refinement, loremaster-p3s5 session-5 close, N=2 at Wave 2B Track 0 — codified shape in [`docs/ANCHOR_CATEGORY_TAXONOMY.md`](ANCHOR_CATEGORY_TAXONOMY.md) §2).** Three named outcomes:
-- (a) **clone-check** — same-as-existing slot; verify clone is faithful.
-- (b) **slot-fit-verify** — fills a predicted-empty slot; verify slot-fit per the prediction.
-- (c) **taxonomy-growth-required** — demands a new anchor-category or sub-slot; surfaces a taxonomy gap.
+**Why this matters.** Variant misclassification at brief-time is the highest-value cultural-drift risk to catch — it locks the wrong cultural-note template into the building's `.gd` header, which then propagates to every future clone of that building's sub-slot. The trichotomy forces the question to be answered *explicitly* rather than collapsing silently into "same as the prior building" or "this needs a new framing somehow." Each named outcome has a distinct verification shape; without the classifier, the loremaster's brief-time review has no canonical procedure.
 
-**Graduation status.** N=2 at Wave 2B Track 0 (Sowari-khaneh + Tirandazi both classified as slot-fit-verify under identity-bearing institutional sub-slot taxonomy — axis = military-arm). N=3 graduation expected at Phase-4 first sacral-emitter sub-variant (Dadgah) brief-time review. Until N=3 met: rule applies as watchlist-refinement (followable, not yet ratified). At N=3: graduates to active and the taxonomy doc moves from "currently a single agent's proposal" framing to "ratified."
+**Empirical exhibits across waves (3-of-3 outcomes empirically produced as of Throne wave, 2026-05-22).** Sub-slot citations point at `docs/ANCHOR_CATEGORY_TAXONOMY.md` v1.1.0 §4 building-assignment tables.
 
-**Open question.** Turan economy may surface fundamentally different anchor-categories (default-fire (c) taxonomy-growth-required at first Turan building brief-time per the structural-mismatch hypothesis articulated in [`docs/ANCHOR_CATEGORY_TAXONOMY.md`](ANCHOR_CATEGORY_TAXONOMY.md) §5).
+- **(a) clone-check — N=0 Iran-side as of v1.1.0.** No Iran building has yet shipped as a faithful clone of an existing anchor-category + sub-slot. Every Iran Tier-1 building so far has either filled a predicted-empty sub-slot or grown the taxonomy. First clone-check exhibit is expected post-MVP (Turan economy may surface clones within Turan-specific anchor-categories once those exist; Phase 4+ Iran buildings may clone existing sub-slots).
+- **(b) slot-fit-verify — N=2, both at Wave 2B Track 0 (2026-05-21).** **Sowari-khaneh** filled the predicted-empty *cavalry-tradition* sub-slot + **Tirandazi** filled the predicted-empty *archery-tradition* sub-slot, both under the identity-bearing institutional anchor-category established by Sarbaz-khaneh at Wave 2A. Sub-slot axis: military-arm. Naming-shape divergence (Tirandazi's *-dazi* "practice" vs *-khaneh* "house") was correctly classified as surface-language, NOT anchor-shape divergence — directly because the trichotomy forced the explicit question.
+- **(c) taxonomy-growth-required — N=3 across waves.** **Ma'dan** at Wave 1B (2026-05-15) established *labor-organization* as the second anchor-category (lead's brief initially framed civic-anchor; loremaster routed to taxonomy-growth-required with citation to Pishdadian triad). **Atashkadeh** at Wave 2A.5 (2026-05-18) established *sacral-emitter / divine-source* as the fourth anchor-category (passive-emit mechanical shape structurally distinct from prior three). **Throne** at Wave-3-Throne (2026-05-22) established *sovereignty-bearing institution* as the fifth anchor-category (singular per faction + terminal-stakes + IDropoffTarget + tier-progression via conversion-not-replacement — structurally distinct from all four prior categories; mirror-reviewer C3.1 correctly flagged lead's civic-anchor pre-assignment as mismatched). This is the third taxonomy-growth-required outcome and the empirical proof that the trichotomy is well-shaped — the (c) branch produces real category growth when fired, not just bookkeeping.
 
-[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2; watchlist refinement added 2026-05-21 session-5 close; enumeration extracted to dedicated SSOT doc + N=2 graduation status added 2026-05-21 Wave 2B Track 5 (`18e3f34`)]
+**Operational form (canonical decision flow).** From `docs/ANCHOR_CATEGORY_TAXONOMY.md` §2:
+
+```
+Brief introduces new Building subclass
+    │
+    ├─ Same anchor-category + same sub-slot as an existing building?  ──── YES ──► (a) clone-check
+    │                                                                              verify faithful clone
+    │                                                                              (no brief-time review fire per §9.J1)
+    │
+    ├─ Same anchor-category + predicted-empty sub-slot?                ──── YES ──► (b) slot-fit-verify
+    │                                                                              verify slot-fit per prediction
+    │                                                                              (loremaster brief-time review fires)
+    │
+    └─ Mechanical shape OR cultural register structurally distinct?    ──── YES ──► (c) taxonomy-growth-required
+                                                                                   NEEDS-DESIGN-CHAT verdict
+                                                                                   (loremaster proposes new category;
+                                                                                    routes via design-chat ratification
+                                                                                    before specialist tracks dispatch)
+```
+
+The decision is sequential: clone-check is checked first (cheapest verification), slot-fit-verify second (moderate), taxonomy-growth-required last (highest cost, routes via design-chat). If none of the three branches fire cleanly, the loremaster surfaces the ambiguity to lead before dispatch close — a brief-time review CANNOT exit without a locked classification.
+
+**Coordination with §9.J1.** Brief-time loremaster review fires per §9.J1 for slot-fit-verify and taxonomy-growth-required outcomes only. Clone-check outcomes ship without brief-time loremaster fire — the lead's kickoff brief explicitly names the (a) classification, and wave-close review verifies the clone-fidelity. This preserves §9.J1's "do not fire for clones" rule while closing the classifier-completeness gap that the watchlist version left open (clone-check is *named at lead's brief-drafting time* rather than implicit-by-omission).
+
+**Open question.** Turan economy will likely default-fire (c) taxonomy-growth-required at the first Turan building brief-time per the structural-mismatch hypothesis articulated in [`docs/ANCHOR_CATEGORY_TAXONOMY.md`](ANCHOR_CATEGORY_TAXONOMY.md) §5. Exception: sovereignty-bearing institution is the ONE anchor-category that applies cross-faction symmetrically — Turan's Throne ships as a slot-fit-verify clone of the Iran Throne template, not as taxonomy-growth (different team-id + visual accent + cultural-register prose, same `throne.gd` extends). This NEAR-SYMMETRY exception is the only known Turan slot-fit-verify candidate at the anchor-category-discovery moment.
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2 (J2 introduced as enumeration rule); 2026-05-21 session-5 close (trichotomy added as watchlist refinement, N=1); 2026-05-21 Wave 2B Track 5 `18e3f34` (enumeration extracted to ANCHOR_CATEGORY_TAXONOMY.md v1.0.0; N=2 at Wave 2B Track 0 with Sowari-khaneh + Tirandazi slot-fit-verify); 2026-05-22 Wave-3-Throne Track 4 `d59b771` (3-of-3 trichotomy outcome empirically produced via Throne's taxonomy-growth-required → sovereignty-bearing institution at ANCHOR_CATEGORY_TAXONOMY.md v1.1.0; J2 graduates from watchlist to active rule at session-8 close retro)]
 
 #### J3. Literal-then-tricky-gloss discipline (Persian-term Pattern)
 
@@ -1166,7 +1266,7 @@ Cites Manifesto Principle 1 (Truth-Seeking — observe the system-level outcome,
 
 All applied citation-density discipline; lead accepted each override.
 
-**Brief-time framing (lead's responsibility going forward).** Brief language SHOULD make L1 expectation explicit: *"Brief numbers / key shapes / conventions are starting points. Domain expert overrides with citation are expected; the brief recommendation is not a constraint."* Eliminates agent hesitation about whether to push back.
+**Brief-time framing (lead's responsibility going forward).** Brief language SHOULD make L1 expectation explicit: *"Brief numbers / key shapes / conventions are starting points. Domain expert overrides with citation are expected; the brief recommendation is not a constraint."* Eliminates agent hesitation about whether to push back. For balance numbers specifically, see §9.L11 (brief-drafting balance-audit) — L11 is the origination-side discipline that prevents the round-trip L1 corrects at the receiving end.
 
 Cites Manifesto Principle 1 (Truth-Seeking — evidence wins over incumbency) and Principle 7 (SSOT).
 
@@ -1371,6 +1471,86 @@ Cites Manifesto Principle 1 (Truth-Seeking — code is the truth; briefs are pla
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-23 session-7 close]
 
+#### L11. Brief-drafting balance-audit — lead checks balance.tres before proposing any numeric value that might already exist canonically
+
+**Actor.** Lead (brief author) at brief-drafting time.
+
+**Trigger.** When a wave brief proposes a specific numeric value for any field that is or could be an existing BalanceData entry (unit HP, building HP, cost, construction_ticks, train times, sight radii, etc.).
+
+**Rule.** Before writing the proposed value into the brief, the lead runs `git grep "<entry_key>" game/data/balance.tres` to check whether a canonical value already exists. If it does:
+- The brief MUST cite the existing value AND either (a) explicitly justify the override with design rationale, or (b) defer to the existing canonical value.
+- The brief MUST NOT silently propose a different number as if no prior value exists.
+
+**Why.** Six consecutive §9.L1 overrides across six waves all followed the same pattern: lead's brief proposed a number; balance-engineer found the canonical value in balance.tres / CORE_MECHANICS.md / UnitStats and applied §9.L1. In each case the lead's brief was written without checking the canonical source. The spec-wins override at the receiving end is working correctly; the preventable waste is the brief-drafting gap that makes the override necessary in the first place.
+
+**The two distinct cases (brief author must distinguish):**
+
+- **No prior canonical value (new entity):** brief proposes a starting-point number. Expected to be overridden at Track 3 per §9.L1. Mark explicitly: *"Starting point — balance-engineer overrides with citation."*
+- **Prior canonical value exists:** brief must cite it. Proposing a different value without rationale is a brief-drafting defect; balance-engineer will catch it via §9.L1 and the round-trip is wasted.
+
+**Relationship to §9.L1.** L1 is the **receiving discipline** — specialist overrides with citation when brief contradicts canonical. L11 is the **origination discipline** — lead checks canonical before drafting the brief. Both firing together means the round-trip converges in one pass instead of two. L11 doesn't replace L1; balance-engineer still applies L1 on their own deliverable surface regardless.
+
+**Operational form.** At brief-drafting time: `git grep "bldg_\|unit_\|farr_cfg" game/data/balance.tres | grep "<building_or_unit_key>"`. One-liner confirms whether a sub_resource already exists. If it does, copy its current values into the brief explicitly.
+
+**Canonical incidents (N=6, all §9.L1 balance-engineer overrides that L11 would have prevented the round-trip on):**
+- Wave-1B: `coin_cost = 40` in balance.tres; brief said 75. Override applied.
+- Wave-2A.5: `max_hp = 600` retained; brief suggested 400. Override applied.
+- Wave-2B: `construction_ticks = 1080` retained; brief said ~900. Override applied.
+- Wave-3A.0: fog sight radii (Kargar 3, etc.) retained from FOG_DATA_CONTRACT §2.2 defaults; brief inflated them. Override applied.
+- Wave-3A.6: grain costs for producer buildings; brief values overridden with UnitStats.grain_cost as canonical source.
+- Wave-3-Throne: `max_hp = 2000` in balance.tres:215; brief v1.0.0 proposed 5000 without acknowledging the existing entry. Corrected to 2000 in v1.0.1 per §9.L1 + mirror-reviewer C1.3 finding.
+
+In all six instances, a 30-second `git grep` at brief-drafting time would have surfaced the canonical value. L11 formalizes that 30-second check as a discipline.
+
+Cites Manifesto Principle 7 (SSOT — brief is a planning artifact; balance.tres is the canonical balance record) + Principle 4 (Lean Iteration — prevent the two-pass round-trip when the canonical value is already settled).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close; balance-engineer-p3s3 retro reflection N=6 exhibits → lead codification]
+
+#### L12. Brief-time canonical-pattern grep — lead-side §9.L10 extension
+
+**Actor:** Lead (brief author). Mirror-reviewer at brief-time review as the secondary check.
+
+**Trigger:** Drafting brief prose that specifies API shape, class declaration syntax, GDScript convention, signal payload structure, BalanceData access pattern, or any other element where the project has a canonical pattern visible in shipped code.
+
+**Rule:** Before committing brief prose that prescribes a code shape, **the lead MUST `git grep` for the canonical project pattern** in existing implementers and either (a) cite the canonical reference verbatim with file:line, or (b) explicitly document the divergence + rationale in the brief itself. Brief prose without a canonical anchor is implementer-trap-prone.
+
+This applies to:
+- Class declaration syntax (`class_name X extends Y` vs `extends "res://path/y.gd"` + `class_name X`).
+- BalanceData / autoload / registry access shapes (top-level field vs Dictionary lookup, `Engine.has_singleton` vs `tree.root.get_node_or_null`).
+- Signal declaration patterns (`@warning_ignore("unused_signal")` convention, payload type-ordering).
+- IDropoffTarget-class duck-typed protocols (method names, signatures).
+- Test fixture patterns (`SimClock._is_ticking = true` wrapping, `_run_inside_tick` helpers).
+- Defensive cascade patterns (autoload-or-null, file-exists guards, type-checks).
+
+**Why (N=3+ exhibits):**
+
+1. **BUG-C1 (Wave 3A.6, session 7).** Brief §3.4 specified `BalanceData.bldg_<self.kind>.train_<unit>_<field>` as a top-level field access. Canonical project pattern at `unit_state_constructing.gd:519 _resolve_construction_ticks` was a Dictionary lookup: `bd.get(&"buildings")` then `.get(kind, null)`. Implementer (gp-sys) followed brief literally; `_read_bldg_stats_int` silently returned 0 for all cost lookups; affordability gate trivially passed; deduction skipped; training spawned for free in live-test. Fix-wave at `0679630` rewrote to canonical Dictionary lookup. **Symptom: free units.**
+
+2. **Throne brief v1.0.0 → v1.0.2 (Wave-3-Throne, session 8).** Brief §1 + §4 Track 1 specified `is_dropoff_target_for` / `get_dropoff_position` as the IDropoffTarget protocol method names. Canonical RNC §5.2 names were `deposit` and `get_deposit_position`. Mirror-reviewer brief-time review caught the C1.1 divergence; lead corrected v1.0.0 → v1.0.1. Brief also specified `class_name Throne extends Building`; project canonical at all 7 existing subclasses (atashkadeh/sarbaz_khaneh/sowari_khaneh/tirandazi/mazraeh/madan/khaneh) is `extends "res://scripts/world/buildings/building.gd"` + `class_name Throne` (path-string for class-registry race). Mirror did NOT catch this second divergence at brief-time; gp-sys caught it at implementation time and applied §9.L10 (canonical-pattern overrides brief prose). **Symptom: would have re-triggered class-registry race documented at building.gd:70-75.**
+
+3. **Throne brief max_hp = 5000.** Brief §1 specified Throne max_hp = 5000 as lead-invented value. Mirror C1.3 caught that `bldg_throne` ALREADY EXISTS at `balance.tres:213` with `max_hp = 2000.0` from a balance-engineer wave-prior authoring. Lead's prose was a §9.L1 violation (lead-invention of a balance-engineer-owned numeric); mirror flagged at brief-time review; corrected v1.0.0 → v1.0.1. **Symptom: would have caused balance-engineer round-trip on a numeric the design-spec didn't actually specify.**
+
+**Distinguishes from §9.L11 (balance-engineer numeric-value codification):**
+- §9.L11 is for **numeric values** (HP, damage, costs, dwell ticks) — balance-engineer owns; lead defers.
+- §9.L12 is for **shape / syntax / convention** (class declaration syntax, Dictionary access patterns, signal annotations, defensive cascades) — canonical project pattern owns; lead defers.
+
+Both rules share the same anti-pattern shape: lead-invention in a domain the project already has a canonical answer for. §9.L11 protects balance-engineer's numeric authority; §9.L12 protects the codebase's structural consistency.
+
+**Operational form:**
+
+Before drafting brief prose that specifies a code shape:
+1. `git grep` the canonical pattern across existing implementers (e.g., `git grep "extends.*building.gd" game/scripts/world/buildings/` to find class-declaration shape).
+2. If ≥ 1 canonical implementer exists: cite verbatim in brief with `file_path:line_number` reference. Use that exact shape.
+3. If 0 canonical implementers exist: document the brief as introducing a new canonical pattern with rationale. Mirror-reviewer flags brief-time as "first-canonical-pattern" trigger requiring extra scrutiny.
+4. Mirror-reviewer's brief-time review re-runs the same grep + verifies brief prose matches canonical.
+
+Mirror-reviewer's 4-class review (per Throne wave brief precedent) becomes the load-bearing check at brief-time:
+- **Class 1: schema/canonical-pattern grep** — explicitly mandates this rule. The class is already named; this codifies that §9.L12 IS Class 1's enforcement teeth.
+
+Cites Manifesto Principle 1 (Truth-Seeking — shipped canonical pattern is the truth; brief prose is the plan) + Principle 7 (SSOT). See also §9.L10 (implementer-time canonical-pattern grep, this rule's downstream complement), §9.L11 (balance-engineer numeric-value codification, this rule's sibling).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close; gp-sys-p3s3 retro reflection N=3 exhibits (BUG-C1 + Throne brief v1.0.0 IDropoffTarget naming + Throne brief class_name syntax) → codification]
+
 ---
 
 ### §9.M — Test Discipline
@@ -1506,6 +1686,85 @@ if SimClock.tick % 30 == 0:
 Cites Manifesto Principle 1 (Truth-Seeking — make runtime behavior legible) + Principle 6 (Honest-tools-not-magic-tricks — silent success indistinguishable from silent failure is dishonest) + Principle 9 (Automated Enforcement — reviewer-enforced log presence vs. hope-it-gets-added-someday).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 Wave 3B live-test bug chain (BUG-C1/D1/D2/D3/D4) → user-directive codification]
+
+#### M6.2. UI log instrumentation — state-transitions, not state
+
+**Sub-rule of §9.M6 (day-1 log instrumentation).** §9.M6 mandates `[<system>]` logs from day 1; §9.M6.2 sharpens the rule for UI code where the parent's default "log on every event" guidance would produce noise rather than signal.
+
+**Actor.** UI implementer (ui-developer or whoever ships a Control / CanvasLayer / HUD widget). Applied at moment-of-writing the script, not retro-fitted.
+
+**Trigger.** Any new UI Control, CanvasLayer, panel, button, or HUD widget ships to the game. The parent §9.M6 rule fires; §9.M6.2 specifies WHAT to log within the UI surface.
+
+**Rule.** UI scripts log on STATE TRANSITIONS, not on continuous state. The default "every event" guidance from §9.M6 over-applies to UI because UI is re-rendered ~60 Hz and most "events" are per-frame queries against unchanged state. The rule splits into a log-this list and a do-NOT-log list:
+
+**LOG these (state transitions + user actions + signal emits):**
+1. **Lifecycle events** — `_ready`, `open()`, `close()`, `show()`, `hide()`, `dismiss()`.
+2. **User-action events** — button click, hotkey press, drag start/end, scroll wheel, click-outside dismiss, escape key.
+3. **State-transition events** — affordable→unaffordable, idle→busy, button enabled↔disabled (log when the result FLIPS, not on every re-evaluation).
+4. **Signal-emit events** — when the UI emits a write-shaped signal (e.g., `EventBus.build_placement_started`, `building.request_train`).
+
+**DO NOT log these (per-frame state):**
+1. `_process` body unless a state actually changed THIS frame.
+2. Mouse hover unless it triggers a content change.
+3. Affordability sweeps that run frequently — only log when the affordability RESULT changes (button flipped enabled↔disabled), not when the sweep re-evaluates with the same answer.
+4. Tooltip-text mutation unless the tooltip kind changes (e.g., "Not enough Coin" → "Not enough Grain" is a transition; same-message-different-numbers is not).
+
+**Tag-prefix convention.** Follows §9.M6's `[<system>]` rule with UI-layer sub-tagging:
+- `[ui/<panel-name>]` — panel-specific event. Examples: `[ui/production-panel] open kind=sarbaz_khaneh`, `[ui/build-menu] khaneh-button pressed`, `[ui/resource-hud] coin display=250→260`.
+- `[ui/click]` — click-handler routing decisions (existing pattern in `click_handler.gd` DEBUG_LOG_CLICKS).
+- `[ui]` — generic UI-layer event with no obvious panel owner.
+
+**Why.** UI state bugs hide behind invisible widget mutation faster than sim-side bugs do. Two incident exhibits:
+
+- **Wave 3A.6 Track 2 (ProductionPanel ship, commit `67606ed`).** Shipped without `[ui/production-panel]` log lines. Lead's session-8 retro fact-list flagged the gap. The panel's open/close/train-button/affordability-flip events were ALL silent in the log — any UI bug would require retro-fitting prints to diagnose, exactly the failure mode §9.M6 was created to prevent. Without §9.M6.2's clarification, the implementer (ui-developer) defaulted to "log on every event" but applied that ONLY to user-visible events and dropped state-transition events from the list.
+
+- **Wave 2B BUG-B1 (missing tooltips for older buildings).** Tooltips for Khaneh / Mazra'eh / Ma'dan were grandfathered without log lines. The bug surfaced via live-test ("tooltips not appearing") — but the diagnostic took several broadcasts + re-test cycles. A `[ui/build-menu] tooltip_text set kind=khaneh="<text>"` line at `refresh_button_labels` time would have made the failure mode (tooltip_text never assigned) trivially diagnosable from the log alone.
+
+The §9.M6 parent rule's "log on every event" wording would, applied literally to UI, produce a per-frame log flood that hides real signal. §9.M6.2's "state-transitions not state" framing keeps the signal-to-noise ratio readable.
+
+**Operational form.**
+
+```gdscript
+# Lifecycle log on open/close (lifecycle event).
+func open(building: Node3D) -> void:
+    print("[ui/production-panel] open kind=", building.get(&"kind"))
+    ...
+
+func close() -> void:
+    print("[ui/production-panel] close")
+    ...
+
+# User-action log on button press (user-action event).
+func _on_train_button_pressed(unit_kind: StringName) -> void:
+    print("[ui/production-panel] train-button-pressed unit_kind=", unit_kind)
+    ...
+
+# State-transition log on affordability flip (NOT on every sweep).
+func _refresh_row_affordability(row, ...) -> void:
+    var was_disabled: bool = btn.disabled
+    # ...recompute new disabled state...
+    if was_disabled != btn.disabled:
+        # FLIP — log the transition.
+        print("[ui/production-panel] button-state unit_kind=", unit_kind,
+                " disabled=", btn.disabled, " reason=", reason)
+    # Same-result re-evaluation: silent.
+```
+
+**Where reviewers enforce.**
+
+- **godot-code-reviewer** checks new UI scripts for the log-this list at expected sites (open/close, button handlers, signal-emit call sites). **Missing UI log on a lifecycle or user-action event is a BLOCKER per §9.M6.** Missing log on a state-transition event is a SUGGEST (the rule is newer; codification was session-8).
+- **godot-code-reviewer** also checks for the do-NOT-log list — a `print()` inside `_process` without a state-changed guard is a SUGGEST flag for log-flood risk.
+
+**Where authors apply.**
+
+- **ui-developer** (and any agent shipping UI code) treats the log-this list as part of the implementation, same as §9.M6 parent rule. The do-NOT-log list is the corollary: don't add log noise where there's no signal.
+- **Wave brief authors (lead)** specifying a UI Track deliverable should explicitly call out the log requirement and the state-transition-not-state framing: *"Log instrumentation: `[ui/<panel-name>]` tag-prefix on lifecycle (open/close), user actions (button click, key press), state transitions (affordability flips), signal emits (request_train, build_placement_started). Per §9.M6.2 — state transitions, not state."*
+
+**Retroactive instrumentation policy.** §9.M6.2 is forward-only at the rule level. Recent-wave (last 1-2 sessions) UI code is a candidate for opportunistic backfill IF a hard-to-diagnose UI bug surfaces in live-test; don't backfill speculatively. Wave 3A.6 Track 2's `production_panel.gd` is a known candidate for opportunistic backfill (~6-8 print lines, ~30 minutes) if Throne wave or later UI live-test surfaces a hard-to-diagnose interaction with the production panel.
+
+Cites Manifesto Principle 7 (Observability), Principle 5 (debt-paying discipline), Principle 9 (Automated Enforcement). Parent rule: §9.M6 (day-1 log instrumentation). N=2 incidents: Wave 2B BUG-B1 (missing tooltips, live-test diagnosis cycle) + Wave 3A.6 Track 2 ship at `67606ed` (ProductionPanel without `[ui]` tags, session-8 retro fact-list). Cross-references: §9.M6 parent, §9.L7 affordability sweep, Pitfall #1 (Control mouse_filter).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close — ui-developer-p3s3 origination; UI log-instrumentation gap (Wave 3A.6 Track 2 + Wave 2B BUG-B1) codification]
 
 ---
 
