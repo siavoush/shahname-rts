@@ -829,6 +829,35 @@ Cites Manifesto Principle 1 (Truth-Seeking — test the effect, not the syntax) 
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-4]
 
+#### F5. Producer-stub-consumer integration test — ship at least one non-trivial consumer-perspective assertion when shipping a producer with no real consumer yet
+
+*Test-discipline companion to §9.H3 (first-exercise-of-dormant-schema). H3 mandates the call-out at brief-time and the D9 self-check; F5 mandates the test artifact that catches the wiring gap before live-test does.*
+
+**Rule.** When a wave ships a producer API (function, signal, autoload method, or phase handler) whose only consumer at ship time is a stub or the brief's promise of a future consumer, the shipping agent MUST include at least one integration test that: (a) calls or triggers the producer through its intended entry point — NOT by calling the function body directly — and (b) asserts a non-trivial correct output from the consumer's perspective. The test must exercise the full wiring path, not just the function's internal logic.
+
+**Why.** Structural unit tests on the producer ("method exists", "returns correct type given direct call") pass even when the wiring that would drive the producer at runtime is broken. Two confirmed incidents where this gap masked a broken wiring path through multiple test-suite passes:
+
+- **BUG-D1 (Wave 3A.5 / session-7)**: `FogSystem._ready` connected to `SimClock.has_signal(&"fog_update")`, which always returned false — SimClock has no such signal. `_on_fog_update_phase` was never called in production. The function body was correct; all unit tests called it directly via `_on_fog_update_phase()` and passed; the broken `_ready` wiring was never exercised. Mirror-reviewer caught the bug at session-8 brief time after the wave had shipped. Root cause: zero integration tests drove the connection through `EventBus.sim_phase.emit(...)`.
+- **BUG-D2 (Wave 3A.5 / session-7, same wave)**: `is_visible_to(Constants.TEAM_TURAN, ...)` silently returned false due to a 1-indexed vs 0-indexed mismatch in the bounds check. Tests used hardcoded `0` and `1` instead of `Constants.TEAM_IRAN` and `Constants.TEAM_TURAN`; TURAN was never exercised through its canonical team-id. ai-engineer caught it at first runtime. Root cause: tests did not assert a non-trivial output (`is_visible_to` returning true) from the Turan-perspective consumer.
+
+The pattern in both incidents: tests exercised the producer's internals, not the producer's wiring + output from the consumer's vantage. The F3 behavioral-vs-structural rule applies laterally here, but the producer-stub-consumer shape is distinct enough to warrant its own rule — F3 governs "test the effect, not the presence" at the function body level; F5 governs "test the full entry-to-output path when a live consumer doesn't yet exist to do it for you."
+
+**Operational form.** Before shipping a producer API with no live consumer:
+
+1. Identify the intended runtime entry point (e.g., `EventBus.sim_phase.emit(&"fog_update", tick)`, `ResourceSystem.dropoff_for_team(team)`, a HealthComponent signal).
+2. Write one integration test that fires the entry point and asserts a correct consumer-observable output (e.g., `is_visible_to(Constants.TEAM_IRAN, pos) == true` AFTER `EventBus.sim_phase.emit(&"fog_update", 1)`, NOT after a direct `_on_fog_update_phase()` call).
+3. The test is marked `# BUG-D1 wiring-path discipline — §9.F5` in a comment so reviewers can identify it as the entry-point test, not a unit test.
+
+**Complement to §9.D7(b).** §9.D7(b) cross-track diagnostic fires when you observe another track's WIP and can verify against it. §9.F5 fires when you're shipping first and no other track exists yet to act as consumer. Together they close the stub-era wiring gap: D7(b) catches it when a consumer exists but isn't integrated; F5 catches it when no consumer exists yet.
+
+**Scope.** Applies to: autoload phase handlers (sim_phase, EventBus connections), autoload API methods (ResourceSystem, FogSystem), signal declarations with deferred consumers. Does NOT apply to pure function bodies with direct call-site callers — §9.F3 covers that case.
+
+**N=2 confirmed incidents.** BUG-D1 + BUG-D2 (both session-8 bug fixes, same wave, same underlying discipline gap). Mirror-reviewer + ai-engineer acting as de facto runtime-consumer surrogates were the actual detection mechanism — the rule codifies what they did implicitly as an explicit test-authoring step.
+
+Cites Manifesto Principle 1 (Truth-Seeking — test the wiring path, not the function body) + Principle 9 (Automated Enforcement — the gap that makes it to live-test was already detectable in tests). See also §9.H3 (dormant-schema first-exercise call-out), §9.D7(b) (cross-track diagnostic), §9.F3 (behavioral-vs-structural discipline).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close — BUG-D1/D2 root-cause codification, world-builder-p3s2 origination]
+
 ---
 
 ### §9.G — Agent Persistence & Dispatch Channel
