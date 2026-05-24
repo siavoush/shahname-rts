@@ -13,7 +13,7 @@ references: [QUESTIONS_FOR_DESIGN.md, docs/RESOURCE_NODE_CONTRACT.md, docs/ANCHO
 tags: [wave-kickoff, phase-3, local-dropoffs, economy]
 created: 2026-05-24
 last_updated: 2026-05-24
-brief_version: v1.0.1
+brief_version: v1.0.2
 ---
 
 # Wave 3-LocalDropoffs — Local resource drop-offs (Mazra'eh + Ma'dan)
@@ -104,11 +104,12 @@ Surfaces 1-6 above. Anticipated commit shape:
 
 ### §4.2 — Track 2 (loremaster-p3s5, brief-time cultural review) — light
 
-Anticipated outputs:
-- §9.J2 trichotomy classification: this wave is NOT introducing a new building, so trichotomy fires as **(a) clone-check** for Mazra'eh + Ma'dan implementing a duck-typed protocol. The buildings themselves are unchanged anchor-categories (civic-anchor / labor-organization respectively per ANCHOR_CATEGORY_TAXONOMY v1.1.0).
-- Cultural-note framing for the **local-accumulation pattern**: should mazraeh.gd / madan.gd headers get a small forward-compat note? Per the user's design framing (QUESTIONS_FOR_DESIGN 2026-05-24): "the farm IS where the grain is stored before it goes to the king's seat; the mine IS where ore is processed." This is the dehqan-Throne reciprocity made spatially explicit. Loremaster can decide if a 3-5 line addendum is warranted.
+**Outcome of brief-time review (delivered 2026-05-24):**
 
-Scope: ≤30min. May be N/A entirely if the loremaster judges the existing cultural-notes already cover the local-accumulation case implicitly.
+- **§9.J2 trichotomy classification: (b) slot-fit-verify, NOT (a) clone-check** (loremaster reclassified the lead's pre-assignment per the J2 graduated form's lead-pre-classifies / loremaster-validates contract). Reasoning: this wave isn't a new building cloning an existing template — it's a *protocol-role* (IDropoffTarget) being distributed across multiple anchor-categories. Mazra'eh fills the *grain-depot* sub-slot of the IDropoffTarget role; Ma'dan fills *coin-depot*; Throne (existing) fills *fallback / catch-all*. **Loremaster flags this as a J2 refinement candidate (N=1):** the trichotomy concept generalizes from *anchor-category-level* to *protocol-role-level* classification. Not graduating yet (N=1 at the protocol-role variant); will graduate if a 4th building acquires a new protocol-role in future waves. Track as retro candidate.
+- **J3 (Persian-term gloss): N/A — no gloss-drift.** Existing *dehqan* (Mazra'eh) and *ma'dan-e elm* (Ma'dan) glosses cover the local-accumulation register cleanly. No high-baggage tricky-gloss correction needed.
+- **J4 (claim-mechanism-reviewer triples): 9 mechanical dependencies routed across 3 cultural claims**; 1 explicit DEFERRED (caravan mechanic, Phase 4+). All Track-1-side dependencies owned by gp-sys; loremaster-side dependencies are the addenda below.
+- **Paste-ready addenda for `mazraeh.gd` + `madan.gd` headers** delivered by loremaster (each ~12-14 lines, mirrors Sarbaz-khaneh forward-compat note structural pattern). Lands at **Commit 1.5 (lead-paste)** per established Wave 2A.5 / 2B / Wave-3-Throne pattern. Addenda surface: (a) dehqan-Throne reciprocity made spatially explicit; (b) Ma'dan-as-staging-yard for ore; (c) forward-compat seam for Phase 4+ Trade & Transport caravan-origin.
 
 ### §4.3 — Track 3 (balance-engineer-p3s3, NO-OP expected)
 
@@ -156,6 +157,12 @@ No new balance numbers. Carry capacity / extract amounts unchanged. Confirmation
 ## §9 — Revision history
 
 - **v1.0.0 — 2026-05-24** — initial brief, lead-drafted. Targets mirror-reviewer + loremaster brief-time review.
+- **v1.0.2 — 2026-05-24** — loremaster brief-time cultural review delivered (Track 2):
+  - §9.J2 reclassified from (a) clone-check (lead's pre-assignment) to **(b) slot-fit-verify** at the *protocol-role* level (Mazra'eh fills grain-depot sub-slot, Ma'dan fills coin-depot sub-slot of the IDropoffTarget protocol-role). Loremaster authoritative per J2 graduated form.
+  - **J2 refinement candidate flagged (N=1):** trichotomy generalizes from anchor-category-level to protocol-role-level classification. Track as retro candidate; graduates if 4th building gains new protocol-role in future waves.
+  - J3 N/A — no Persian-term gloss-drift. J4 9 dependencies routed across 3 cultural claims, 1 DEFERRED (caravan, Phase 4+).
+  - Paste-ready addenda for `mazraeh.gd` + `madan.gd` headers delivered (loremaster-verbatim, ~12-14 lines each). Lands at Commit 1.5 (lead-paste) per established Wave 2A.5 / 2B / Wave-3-Throne pattern. Surfaces dehqan-Throne reciprocity made spatially explicit + Phase 4+ Trade & Transport forward-compat seam.
+
 - **v1.0.1 — 2026-05-24** — architecture-reviewer brief-time review findings folded in:
   - **C1.1 BLOCKER** — second `unit_state_returning.gd` call site (`_perform_deposit:274`) added to §3.1 #4 + §6 canonical references. Without this fix the worker would walk to Mazra'eh but deposit at Throne anyway (C1.4 silent violation).
   - **C1.2 BLOCKER** — `dropoff_for_team` vs `dropoff_for_team_by_kind` coexistence resolved as **REPLACE** (existing becomes thin wrapper); call-site sweep targets listed in §6.
