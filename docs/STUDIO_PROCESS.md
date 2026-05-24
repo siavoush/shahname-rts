@@ -1166,7 +1166,7 @@ Cites Manifesto Principle 1 (Truth-Seeking — observe the system-level outcome,
 
 All applied citation-density discipline; lead accepted each override.
 
-**Brief-time framing (lead's responsibility going forward).** Brief language SHOULD make L1 expectation explicit: *"Brief numbers / key shapes / conventions are starting points. Domain expert overrides with citation are expected; the brief recommendation is not a constraint."* Eliminates agent hesitation about whether to push back.
+**Brief-time framing (lead's responsibility going forward).** Brief language SHOULD make L1 expectation explicit: *"Brief numbers / key shapes / conventions are starting points. Domain expert overrides with citation are expected; the brief recommendation is not a constraint."* Eliminates agent hesitation about whether to push back. For balance numbers specifically, see §9.L11 (brief-drafting balance-audit) — L11 is the origination-side discipline that prevents the round-trip L1 corrects at the receiving end.
 
 Cites Manifesto Principle 1 (Truth-Seeking — evidence wins over incumbency) and Principle 7 (SSOT).
 
@@ -1370,6 +1370,41 @@ Cites Manifesto Principle 1 (Truth-Seeking — when uncertain, surface the uncer
 Cites Manifesto Principle 1 (Truth-Seeking — code is the truth; briefs are planning artifacts) + Principle 7 (SSOT — canonical existing patterns are the access SSOT for project-internal structures).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-23 session-7 close]
+
+#### L11. Brief-drafting balance-audit — lead checks balance.tres before proposing any numeric value that might already exist canonically
+
+**Actor.** Lead (brief author) at brief-drafting time.
+
+**Trigger.** When a wave brief proposes a specific numeric value for any field that is or could be an existing BalanceData entry (unit HP, building HP, cost, construction_ticks, train times, sight radii, etc.).
+
+**Rule.** Before writing the proposed value into the brief, the lead runs `git grep "<entry_key>" game/data/balance.tres` to check whether a canonical value already exists. If it does:
+- The brief MUST cite the existing value AND either (a) explicitly justify the override with design rationale, or (b) defer to the existing canonical value.
+- The brief MUST NOT silently propose a different number as if no prior value exists.
+
+**Why.** Six consecutive §9.L1 overrides across six waves all followed the same pattern: lead's brief proposed a number; balance-engineer found the canonical value in balance.tres / CORE_MECHANICS.md / UnitStats and applied §9.L1. In each case the lead's brief was written without checking the canonical source. The spec-wins override at the receiving end is working correctly; the preventable waste is the brief-drafting gap that makes the override necessary in the first place.
+
+**The two distinct cases (brief author must distinguish):**
+
+- **No prior canonical value (new entity):** brief proposes a starting-point number. Expected to be overridden at Track 3 per §9.L1. Mark explicitly: *"Starting point — balance-engineer overrides with citation."*
+- **Prior canonical value exists:** brief must cite it. Proposing a different value without rationale is a brief-drafting defect; balance-engineer will catch it via §9.L1 and the round-trip is wasted.
+
+**Relationship to §9.L1.** L1 is the **receiving discipline** — specialist overrides with citation when brief contradicts canonical. L11 is the **origination discipline** — lead checks canonical before drafting the brief. Both firing together means the round-trip converges in one pass instead of two. L11 doesn't replace L1; balance-engineer still applies L1 on their own deliverable surface regardless.
+
+**Operational form.** At brief-drafting time: `git grep "bldg_\|unit_\|farr_cfg" game/data/balance.tres | grep "<building_or_unit_key>"`. One-liner confirms whether a sub_resource already exists. If it does, copy its current values into the brief explicitly.
+
+**Canonical incidents (N=6, all §9.L1 balance-engineer overrides that L11 would have prevented the round-trip on):**
+- Wave-1B: `coin_cost = 40` in balance.tres; brief said 75. Override applied.
+- Wave-2A.5: `max_hp = 600` retained; brief suggested 400. Override applied.
+- Wave-2B: `construction_ticks = 1080` retained; brief said ~900. Override applied.
+- Wave-3A.0: fog sight radii (Kargar 3, etc.) retained from FOG_DATA_CONTRACT §2.2 defaults; brief inflated them. Override applied.
+- Wave-3A.6: grain costs for producer buildings; brief values overridden with UnitStats.grain_cost as canonical source.
+- Wave-3-Throne: `max_hp = 2000` in balance.tres:215; brief v1.0.0 proposed 5000 without acknowledging the existing entry. Corrected to 2000 in v1.0.1 per §9.L1 + mirror-reviewer C1.3 finding.
+
+In all six instances, a 30-second `git grep` at brief-drafting time would have surfaced the canonical value. L11 formalizes that 30-second check as a discipline.
+
+Cites Manifesto Principle 7 (SSOT — brief is a planning artifact; balance.tres is the canonical balance record) + Principle 4 (Lean Iteration — prevent the two-pass round-trip when the canonical value is already settled).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close; balance-engineer-p3s3 retro reflection N=6 exhibits → lead codification]
 
 ---
 
