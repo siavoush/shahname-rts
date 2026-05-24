@@ -674,6 +674,50 @@ Cites Manifesto Principle 1 (Truth-Seeking — verify your own work before other
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2 pre-commit-self-review (original prose); operationalized to checklist 2026-05-18 PR C; Step 2 sub-step + Step 3 first-exercise self-check + lens-walk N/A shorthand added 2026-05-21 session-5 close]
 
+#### D10. Cross-track first-consumer diagnostic — broadcast non-self failures
+
+**Actor:** Implementer staging a track's changes for joint or sequenced commit. Most commonly the first downstream consumer of a new producer surface.
+
+**Trigger:** After staging own-track changes locally, before joint-commit or [ready] broadcast. The full headless test suite is run; the implementer parses the results.
+
+**Rule:** When the post-staging full-suite run shows failures in surfaces NOT owned by the implementer's track, **the implementer MUST broadcast a diagnosis to the owning track's implementer (or to lead for lead-side surfaces) before proceeding to commit**. Non-self failures are signal, not noise — they indicate that the implementer's track is the first runtime witness of a producer-side contract bug.
+
+This rule formalizes the structural property: producer surfaces are written with assumed-correct invariants; consumer surfaces are written with assumed-correct producer behavior. Bugs accumulate at the boundary as mismatched assumptions. Static type-checking equates types only; semantic invariants (is_instance_valid before cast, dict-key vs field-name, signal payload shape, tick-context) are not type-equated. **The first runtime consumer is the first witness to producer-side invariant bugs.**
+
+The rule applies regardless of who is "the gating track" — a downstream-consumer implementer running the suite after the producer-track's stage is the canonical execution point. When the consumer IS the gating track (shipping first), they can't benefit from this discipline by definition; in that case §9.L10 / §9.L12 (canonical-pattern grep) is the upstream complement.
+
+**Why (N=4 successful applications + 1 missed-opportunity exhibit):**
+
+1. **Wave 3A.5 — gp-sys catches world-builder's `as Node3D` cast bug.** Staging unit.gd Track 2 (FogSystem vision-source register/deregister), gp-sys ran the full suite and observed a failure in `test_fog_system.gd:test_fog_update_stale_source_cleanup`. Root cause was world-builder's Track 1 `_on_fog_update_phase` casting `rec[&"node"] as Node3D` BEFORE checking `is_instance_valid()`, causing a script error on freed Object before reaching the lazy-cleanup branch. gp-sys broadcast diagnosis + suggested fix to world-builder before commit. Fix folded into Track 1's first commit. **Bug never shipped.**
+
+2. **Wave 3A.6 — gp-sys catches ui-developer's ProductionPanel `close_clears_rows` failure.** Staging Track 1 (Building production state machine), gp-sys observed a failure in `test_production_panel.gd:test_close_clears_rows` (UnitRows children count expected 0, got 1). Not in gp-sys's surface but visible from suite run. Broadcast to ui-developer at [ready] time. Fix landed before Track 2 ship. **Bug never shipped.**
+
+3. **Wave 3A.5 — mirror-reviewer catches FogSystem.sim_phase wiring bug (BUG-D1).** Mirror-reviewer running brief-time review caught that fog_system.gd was wiring to `SimClock.fog_update.connect(...)` instead of `EventBus.sim_phase.connect(...)` per canonical pattern. First-runtime-consumer here was the brief-reviewer rather than an implementer; same shape, different actor. Lead fixed in dedicated BUG-D1 fix-wave commit.
+
+4. **Wave 3A.5 — ai-engineer catches FogSystem team-id bounds bug (BUG-D2).** First runtime consumer of `FogSystem.is_visible_to(TEAM_TURAN, ...)` at TuranController scaffold time. team_id=2 was out of bounds vs hardcoded NUM_TEAMS=2 (TEAM_IRAN=1, TEAM_TURAN=2 — exclusive bound rejects valid team id). ai-engineer surfaced via DummyAI's "no visible Iran target — staying idle" log diagnostic and broadcast diagnosis. Lead fixed in BUG-D2 fix-wave.
+
+5. **Missed-opportunity exhibit — BUG-C1 Wave 3A.6.** ui-developer's production_panel.gd:_read_balance_int (line 368) shipped with the CORRECT canonical Dictionary lookup for BalanceData.buildings access while gp-sys's building.gd `_read_bldg_stats_int` shipped with the WRONG top-level-field pattern per the broken brief. ui-developer was the first cross-track witness of the divergence — could have broadcast brief-vs-shipped-code divergence finding to lead before gp-sys's Track 1 ship — but the cross-track diagnostic discipline was not yet codified for the "brief-vs-canonical-code" axis at that time. BUG-C1 shipped, caught at live-test instead. This exhibit is the rule-validating negative case: had §9.D10 been active, ui-developer would have broadcast and the bug would have been caught one round earlier.
+
+**Operational form:**
+
+Implementer's post-stage workflow:
+1. Stage own-track changes locally (`git add <paths>`).
+2. Run the full headless test suite: `godot --headless --path game -s addons/gut/gut_cmdml.gd -gdir=res://tests -gexit`.
+3. Parse failures. Triage each failure:
+   - **Self-track failure** → fix before commit.
+   - **Non-self failure in same-wave track** → broadcast SendMessage to that track's implementer with diagnosis + suggested fix (where possible). Continue to commit own-track if non-blocking; flag in [ready] message either way.
+   - **Non-self failure in lead-owned surface (briefs, autoloads, contracts)** → broadcast to lead with diagnosis.
+   - **Pre-existing failure** (not introduced by this wave) → note in [ready] but don't gate.
+4. Include cross-track diagnostic findings in the [ready] message body so they don't get lost in chat noise.
+
+**Catch-rate scaling:** approximately 1 successful cross-track catch per fresh producer-consumer relationship per session. A session with N new producer surfaces → expect ~N catches if every consumer implementer runs the discipline. A wave with one fresh producer-consumer relationship → expect ~1 catch.
+
+**Relationship to §9.D7.** §9.D7 originally framed cross-track diagnostic as a refinement sub-clause `D7(b)`. Session-8 retro evidence (N=4 successful catches + 1 negative exhibit across 2 sessions) graduates the pattern from refinement to standalone active rule. §9.D7 is left as-is (its no-silent-coexistence framing remains correct); §9.D10 promotes the cross-track-first-consumer pattern to its own discoverable rule.
+
+Cites Manifesto Principle 1 (Truth-Seeking — non-self failures are signal) + Principle 9 (Automated Enforcement — suite-run + broadcast scales). See also §9.D7 (no-silent-coexistence-with-cross-track-WIP, this rule's parent framing), §9.L10 / §9.L12 (canonical-pattern grep, upstream complements when the consumer is the gating track).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close; gp-sys-p3s3 retro reflection N=4 successful + 1 missed-opportunity (BUG-C1) exhibits → codification as standalone D10 (promoted from prior D7(b) refinement framing)]
+
 ---
 
 ### §9.E — Wave-Mode & Worktree
@@ -1461,6 +1505,51 @@ In all six instances, a 30-second `git grep` at brief-drafting time would have s
 Cites Manifesto Principle 7 (SSOT — brief is a planning artifact; balance.tres is the canonical balance record) + Principle 4 (Lean Iteration — prevent the two-pass round-trip when the canonical value is already settled).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close; balance-engineer-p3s3 retro reflection N=6 exhibits → lead codification]
+
+#### L12. Brief-time canonical-pattern grep — lead-side §9.L10 extension
+
+**Actor:** Lead (brief author). Mirror-reviewer at brief-time review as the secondary check.
+
+**Trigger:** Drafting brief prose that specifies API shape, class declaration syntax, GDScript convention, signal payload structure, BalanceData access pattern, or any other element where the project has a canonical pattern visible in shipped code.
+
+**Rule:** Before committing brief prose that prescribes a code shape, **the lead MUST `git grep` for the canonical project pattern** in existing implementers and either (a) cite the canonical reference verbatim with file:line, or (b) explicitly document the divergence + rationale in the brief itself. Brief prose without a canonical anchor is implementer-trap-prone.
+
+This applies to:
+- Class declaration syntax (`class_name X extends Y` vs `extends "res://path/y.gd"` + `class_name X`).
+- BalanceData / autoload / registry access shapes (top-level field vs Dictionary lookup, `Engine.has_singleton` vs `tree.root.get_node_or_null`).
+- Signal declaration patterns (`@warning_ignore("unused_signal")` convention, payload type-ordering).
+- IDropoffTarget-class duck-typed protocols (method names, signatures).
+- Test fixture patterns (`SimClock._is_ticking = true` wrapping, `_run_inside_tick` helpers).
+- Defensive cascade patterns (autoload-or-null, file-exists guards, type-checks).
+
+**Why (N=3+ exhibits):**
+
+1. **BUG-C1 (Wave 3A.6, session 7).** Brief §3.4 specified `BalanceData.bldg_<self.kind>.train_<unit>_<field>` as a top-level field access. Canonical project pattern at `unit_state_constructing.gd:519 _resolve_construction_ticks` was a Dictionary lookup: `bd.get(&"buildings")` then `.get(kind, null)`. Implementer (gp-sys) followed brief literally; `_read_bldg_stats_int` silently returned 0 for all cost lookups; affordability gate trivially passed; deduction skipped; training spawned for free in live-test. Fix-wave at `0679630` rewrote to canonical Dictionary lookup. **Symptom: free units.**
+
+2. **Throne brief v1.0.0 → v1.0.2 (Wave-3-Throne, session 8).** Brief §1 + §4 Track 1 specified `is_dropoff_target_for` / `get_dropoff_position` as the IDropoffTarget protocol method names. Canonical RNC §5.2 names were `deposit` and `get_deposit_position`. Mirror-reviewer brief-time review caught the C1.1 divergence; lead corrected v1.0.0 → v1.0.1. Brief also specified `class_name Throne extends Building`; project canonical at all 7 existing subclasses (atashkadeh/sarbaz_khaneh/sowari_khaneh/tirandazi/mazraeh/madan/khaneh) is `extends "res://scripts/world/buildings/building.gd"` + `class_name Throne` (path-string for class-registry race). Mirror did NOT catch this second divergence at brief-time; gp-sys caught it at implementation time and applied §9.L10 (canonical-pattern overrides brief prose). **Symptom: would have re-triggered class-registry race documented at building.gd:70-75.**
+
+3. **Throne brief max_hp = 5000.** Brief §1 specified Throne max_hp = 5000 as lead-invented value. Mirror C1.3 caught that `bldg_throne` ALREADY EXISTS at `balance.tres:213` with `max_hp = 2000.0` from a balance-engineer wave-prior authoring. Lead's prose was a §9.L1 violation (lead-invention of a balance-engineer-owned numeric); mirror flagged at brief-time review; corrected v1.0.0 → v1.0.1. **Symptom: would have caused balance-engineer round-trip on a numeric the design-spec didn't actually specify.**
+
+**Distinguishes from §9.L11 (balance-engineer numeric-value codification):**
+- §9.L11 is for **numeric values** (HP, damage, costs, dwell ticks) — balance-engineer owns; lead defers.
+- §9.L12 is for **shape / syntax / convention** (class declaration syntax, Dictionary access patterns, signal annotations, defensive cascades) — canonical project pattern owns; lead defers.
+
+Both rules share the same anti-pattern shape: lead-invention in a domain the project already has a canonical answer for. §9.L11 protects balance-engineer's numeric authority; §9.L12 protects the codebase's structural consistency.
+
+**Operational form:**
+
+Before drafting brief prose that specifies a code shape:
+1. `git grep` the canonical pattern across existing implementers (e.g., `git grep "extends.*building.gd" game/scripts/world/buildings/` to find class-declaration shape).
+2. If ≥ 1 canonical implementer exists: cite verbatim in brief with `file_path:line_number` reference. Use that exact shape.
+3. If 0 canonical implementers exist: document the brief as introducing a new canonical pattern with rationale. Mirror-reviewer flags brief-time as "first-canonical-pattern" trigger requiring extra scrutiny.
+4. Mirror-reviewer's brief-time review re-runs the same grep + verifies brief prose matches canonical.
+
+Mirror-reviewer's 4-class review (per Throne wave brief precedent) becomes the load-bearing check at brief-time:
+- **Class 1: schema/canonical-pattern grep** — explicitly mandates this rule. The class is already named; this codifies that §9.L12 IS Class 1's enforcement teeth.
+
+Cites Manifesto Principle 1 (Truth-Seeking — shipped canonical pattern is the truth; brief prose is the plan) + Principle 7 (SSOT). See also §9.L10 (implementer-time canonical-pattern grep, this rule's downstream complement), §9.L11 (balance-engineer numeric-value codification, this rule's sibling).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close; gp-sys-p3s3 retro reflection N=3 exhibits (BUG-C1 + Throne brief v1.0.0 IDropoffTarget naming + Throne brief class_name syntax) → codification]
 
 ---
 
