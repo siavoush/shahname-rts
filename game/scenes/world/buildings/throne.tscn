@@ -1,0 +1,125 @@
+[gd_scene load_steps=6 format=3 uid="uid://shahnameh_throne_building"]
+
+; throne.tscn — Throne (Takht) building scene.
+;
+; Source: 01_CORE_MECHANICS.md §5 — "Throne — Capital. Loss = defeat.
+; Spawns workers."
+;
+; Cultural framing: see throne.gd header (Cultural note block) for the
+; 4-element sovereignty-bearing institution anchor framing. The Throne is
+; the first cross-faction-symmetric anchor-category (ANCHOR_CATEGORY_TAXONOMY.md
+; v1.1.0 §1.5): Iran and Turan share the same anchor-shape with a different
+; cultural register. Kingship transcends faction color — hence the gold accent
+; that contrasts both Iran-blue and Turan-red palettes.
+;
+; Inheriting building.tscn per the established sibling-scene pattern:
+;   - Overrides mesh size + material (4.0 × 3.0 × 4.0 — significantly larger
+;     and taller than all existing buildings; reads as the royal seat).
+;   - Overrides CollisionShape3D to match the new footprint (click-target
+;     accuracy — BUG-07 lesson; Pitfall #15 mandatory regression test target).
+;   - Overrides NavigationObstacle3D vertices to cover the 4.0 × 4.0 XZ
+;     footprint (±2.1 × ±2.1 + 0.1m margin per RNC §3.2 v1.4.0 sizing rule).
+;
+; Size rationale — royal-seat silhouette hierarchy:
+;   Khaneh:        2.0 × 1.2 × 2.0  (domestic dwelling)
+;   Sarbaz-khaneh: 3.0 × 1.2 × 2.0  (military barracks)
+;   Throne:        4.0 × 3.0 × 4.0  (sovereign seat — largest, tallest)
+; The 3.0m height (vs 1.2m for all others) is the primary silhouette cue
+; that "this is the capital building" before color or label renders.
+;
+; Visual placeholder per CLAUDE.md "colored rectangles for buildings":
+;   - BoxMesh 4.0 × 3.0 × 4.0. Square footprint to imply permanence and
+;     symmetry — a throne room, not a functional workshop.
+;   - Gold accent Color(0.85, 0.7, 0.3) — kingship and Farr legitimacy.
+;     Contrasts both Iran-blue AND Turan-red palettes. Deliberately similar
+;     to the MineNode gold (0.85, 0.7, 0.2) but with a warmer amber bias
+;     (+0.1 green) to read as throne-gold vs resource-gold.
+;
+; NavigationObstacle3D — ACTIVE (not inert). The carve fires at placement
+; via the inherited _on_placement_complete → bake_navigation_mesh(false)
+; pipeline (building.gd Task #144 / 910bd9a). SOURCE_GEOMETRY_ROOT_NODE_CHILDREN
+; (terrain.gd Task #147 / be8c355) means the bake sees this obstacle even
+; though Throne spawns under &World as a sibling of Terrain.
+; Both affect_navigation_mesh + carve_navigation_mesh are set (see building.tscn
+; base for the full two-flag rationale).
+;
+; Footprint polygon math (per RNC §3.2 v1.4.0 + building.tscn base precedent):
+;   Mesh XZ: 4.0 × 4.0.  Half-extents: 2.0 × 2.0.
+;   Polygon margin: +0.1m per axis (compensates NAV_AGENT_RADIUS=0.5 erosion).
+;   Result: ±2.1 × ±2.1.
+;
+; Throne is NOT player-buildable — no ghost_placement_preview concern.
+; Throne spawns at match start via main.gd:_spawn_starting_buildings (Track 1).
+;
+; §9.F4 in-either-direction discipline: test_throne_scene.gd asserts
+; CollisionShape3D.shape.size.x == 4.0 (NOT the base 2.0) and
+; MeshInstance3D.mesh.size.x == 4.0. Both directions catch wrong-syntax
+; failure modes (silent fallback to base values).
+;
+; Sources:
+; - 01_CORE_MECHANICS.md §5 — Throne row ("Capital. Loss = defeat.")
+; - 02q_PHASE_3_SESSION_8_THRONE_KICKOFF.md §4 Track 2
+; - docs/ANCHOR_CATEGORY_TAXONOMY.md v1.1.0 §1.5 — sovereignty-bearing institution
+; - docs/RESOURCE_NODE_CONTRACT.md §3.2 v1.4.0 — NavigationObstacle3D carve rule
+; - DECISIONS.md Throne wave — visual differentiation brief
+
+[ext_resource type="PackedScene" uid="uid://shahnameh_building_base" path="res://scenes/world/buildings/building.tscn" id="1_building_template"]
+[ext_resource type="Script" path="res://scripts/world/buildings/throne.gd" id="2_throne"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_throne"]
+; Royal-seat footprint — 4.0 wide × 3.0 tall × 4.0 deep.
+; Square XZ footprint (permanence) + tallest building in the game (sovereignty).
+; Both dimensions exceed all existing buildings (next largest: Sowari-khaneh
+; 3.0×1.4×2.5). The height (3.0 vs 1.2 for most buildings) is the primary
+; silhouette cue at default camera zoom.
+size = Vector3(4.0, 3.0, 4.0)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_throne"]
+; Gold accent — kingship and Farr legitimacy. Contrasts Iran-blue AND Turan-red
+; palettes so both factions' Thrones read as sovereign regardless of team color.
+; Amber bias vs MineNode gold (0.85, 0.7, 0.2) to distinguish throne vs resource.
+; sovereignty-bearing institution anchor per ANCHOR_CATEGORY_TAXONOMY.md v1.1.0.
+albedo_color = Color(0.85, 0.7, 0.3, 1.0)
+shading_mode = 2 ; SHADING_MODE_PER_PIXEL — matches unit / mine / building pipeline.
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_throne"]
+; Collision shape matches the visual mesh for click-target accuracy.
+; BUG-07 lesson: the inherited StaticBody3D provides the CollisionObject3D
+; ancestor; this shape must cover the full rendered silhouette.
+; Pitfall #15 regression test (test_throne_scene.gd) asserts x==4.0 / z==4.0;
+; wrong parent= syntax would leave the base 2.0×1.2×2.0 shape here.
+size = Vector3(4.0, 3.0, 4.0)
+
+
+; Inherit the Building scene template; override mesh, material, collision, obstacle.
+[node name="Throne" instance=ExtResource("1_building_template")]
+script = ExtResource("2_throne")
+
+[node name="MeshInstance3D" parent="." index="0"]
+; Override mesh + material. Y-offset = half-height (1.5) so the bottom
+; face sits flush on terrain at Y=0 — same convention as building.tscn.
+; Base has transform Y=0.6 (half of 1.2); Throne has Y=1.5 (half of 3.0).
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+mesh = SubResource("BoxMesh_throne")
+material_override = SubResource("StandardMaterial3D_throne")
+
+[node name="CollisionShape3D" parent="StaticBody3D"]
+; Override collision shape to match the 4.0×3.0×4.0 mesh footprint.
+; Y-offset 1.5 co-locates with the mesh centre.
+; Pitfall #15: Godot inherited-scene nested-child override syntax requires
+; parent="StaticBody3D" (path in parent attr), NOT name="StaticBody3D/CollisionShape3D"
+; (slash in name is a literal char, not a path separator — causes "node vanished" warning).
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+shape = SubResource("BoxShape3D_throne")
+
+[node name="NavigationObstacle3D" parent="." index="0"]
+; Override vertices for the 4.0×4.0 XZ footprint (base has 2.0×2.0).
+; Per RNC §3.2 v1.4.0: polygon at ±(half-extent + 0.1m margin):
+;   X: ±(2.0 + 0.1) = ±2.1.  Z: ±(2.0 + 0.1) = ±2.1.
+; Vertex order matches building.tscn: (-X,-Z), (+X,-Z), (+X,+Z), (-X,+Z).
+; affect_navigation_mesh + carve_navigation_mesh inherited from base — NOT
+; overridden here (would clear them). See building.tscn for dual-flag rationale.
+; radius ≈ sqrt(2.1²+2.1²) ≈ 2.97 → 3.0 for editor visualization parity.
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+vertices = PackedVector3Array(-2.1, 0, -2.1, 2.1, 0, -2.1, 2.1, 0, 2.1, -2.1, 0, 2.1)
+radius = 3.0
