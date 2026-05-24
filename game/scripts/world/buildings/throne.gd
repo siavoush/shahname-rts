@@ -392,22 +392,41 @@ func get_deposit_position() -> Vector3:
 
 func _init_health_from_balance_data() -> void:
 	# Subscribe to unit_health_zero UNCONDITIONALLY — Throne's filter
-	# (_on_health_zero checks unit_id) ensures we only react to OUR
-	# destruction. Subscription must happen even when HealthComponent
-	# is absent in the scene (Phase 8 will add it; for now, tests +
-	# future production paths drive unit_health_zero directly when
-	# damage lands). Mirrors Unit's death-preempt pattern at
-	# state_machine.gd:_on_unit_health_zero — every Unit listens
-	# globally + filters by id, even before its HealthComponent fires.
-	if not EventBus.unit_health_zero.is_connected(_on_health_zero):
-		EventBus.unit_health_zero.connect(_on_health_zero)
-	# If a HealthComponent IS present (forward-compat — Phase 8 + scene
-	# refinement), initialize it from BalanceData.
+	# BUG-G1 fix (architecture-reviewer 2026-05-24): subscribe to the LOCAL
+	# HealthComponent.health_zero signal, NOT the global
+	# EventBus.unit_health_zero channel. Buildings and Units have SEPARATE
+	# unit_id counters that collide in the same int space (Iran Throne
+	# unit_id=1 collides with Kargar #1 unit_id=1). The Unit-side
+	# global-filter pattern at state_machine.gd:_on_unit_health_zero is
+	# safe WITHIN the Unit namespace because all Units share one counter;
+	# Buildings cannot safely use the same global channel.
+	#
+	# Consequence: if no HealthComponent is present on this scene yet,
+	# the Throne CANNOT be destroyed in this run and throne_destroyed will
+	# never fire. Phase 8 will add HealthComponent to throne.tscn alongside
+	# the win-screen consumer. Until then, the seam is documented but
+	# inert — explicitly and safely.
 	var hc: Node = get_node_or_null(^"HealthComponent")
 	if hc == null:
-		print("[throne]   no HealthComponent in scene — destruction signal "
-			+ "still wired via unit_health_zero subscription")
+		print("[throne]   no HealthComponent in scene — Throne cannot be "
+			+ "destroyed in this run; throne_destroyed signal will not "
+			+ "fire from this instance until Phase 8 adds HC to throne.tscn")
 		return
+	# HC exists — subscribe to its LOCAL health_zero signal. The local
+	# signal cannot collide because we connect to OUR component's signal
+	# directly; no global namespace involved.
+	if hc.has_signal(&"health_zero"):
+		if not hc.health_zero.is_connected(_on_health_zero):
+			hc.health_zero.connect(_on_health_zero)
+	else:
+		# Defensive: HC exists but lacks the local signal (older HC version
+		# or test mock). Log + bail; do NOT fall back to the global channel
+		# because that's exactly the bug we're fixing.
+		push_warning("Throne: HealthComponent present but missing health_zero "
+			+ "signal — destruction signal will not fire. "
+			+ "(Update HealthComponent to expose health_zero per BUG-G1.)")
+		return
+	# Initialize HC from BalanceData.
 	var max_hp: float = _resolve_max_hp()
 	if hc.has_method(&"init_max_hp"):
 		hc.call(&"init_max_hp", max_hp)
@@ -416,10 +435,10 @@ func _init_health_from_balance_data() -> void:
 
 
 func _on_health_zero(unit_id_in: int) -> void:
-	# This subscription is global (every Throne listens to every
-	# unit_health_zero). Filter to OUR unit_id before reacting.
-	if unit_id_in != unit_id:
-		return
+	# Local-signal subscription per BUG-G1: this handler can ONLY be reached
+	# via our OWN HealthComponent.health_zero emit, so unit_id_in matches
+	# self.unit_id by construction. The unit_id_in parameter is retained
+	# for telemetry symmetry with the global signal shape.
 	if _destruction_emitted:
 		return
 	_destruction_emitted = true

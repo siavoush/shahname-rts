@@ -26,6 +26,8 @@ const ThroneScript: Script = preload(
 	"res://scripts/world/buildings/throne.gd")
 const BuildingScript: Script = preload(
 	"res://scripts/world/buildings/building.gd")
+const HealthComponentScript: Script = preload(
+	"res://scripts/units/components/health_component.gd")
 
 
 var _throne: Variant
@@ -63,6 +65,22 @@ func _on_throne_destroyed_capture(team_id: int) -> void:
 func _spawn_throne_scene(team: int = Constants.TEAM_IRAN) -> Variant:
 	var t: Variant = ThroneScene.instantiate()
 	t.set(&"team", team)
+	add_child_autofree(t)
+	return t
+
+
+# Spawn a Throne with a HealthComponent attached BEFORE _ready fires.
+# Phase 8 will add the HealthComponent node to throne.tscn directly; until
+# then tests construct it manually so the local-signal subscription
+# (BUG-G1 fix shape) wires up. Returns the Throne instance with HC as child.
+func _spawn_throne_with_hc(team: int = Constants.TEAM_IRAN) -> Variant:
+	var t: Variant = ThroneScene.instantiate()
+	t.set(&"team", team)
+	var hc: Node = HealthComponentScript.new()
+	hc.name = &"HealthComponent"
+	t.add_child(hc)
+	# Adding `t` to the tree fires Throne._ready which finds the HC and
+	# wires the local-signal subscription per BUG-G1 fix.
 	add_child_autofree(t)
 	return t
 
@@ -208,47 +226,83 @@ func test_deposit_zero_amount_is_noop() -> void:
 # EventBus.throne_destroyed signal — forward-compat Phase 8 seam
 # ---------------------------------------------------------------------------
 
-func test_throne_destroyed_signal_emits_on_health_zero() -> void:
+func test_throne_destroyed_signal_emits_on_local_hc_health_zero() -> void:
 	# Per brief §4 Track 1: "Emits EventBus.throne_destroyed(team) on
-	# HealthComponent fatal-damage path." We bypass the HealthComponent
-	# path here and emit unit_health_zero directly — Throne's handler
-	# filters by unit_id and emits throne_destroyed when its own dies.
-	_throne = _spawn_throne_scene(Constants.TEAM_TURAN)
+	# HealthComponent fatal-damage path." Post-BUG-G1 fix (2026-05-24):
+	# Throne subscribes to its OWN HealthComponent's LOCAL health_zero
+	# signal, NOT the global EventBus.unit_health_zero channel. Test emits
+	# on the local signal of the Throne's own HC.
+	_throne = _spawn_throne_with_hc(Constants.TEAM_TURAN)
 	EventBus.throne_destroyed.connect(_on_throne_destroyed_capture)
-	# Simulate unit_health_zero for THIS Throne's unit_id.
-	var throne_id: int = int(_throne.get(&"unit_id"))
-	EventBus.unit_health_zero.emit(throne_id)
+	var hc: Node = _throne.get_node(^"HealthComponent")
+	assert_not_null(hc,
+		"sanity precondition: spawn-with-hc fixture must attach HealthComponent")
+	# Emit on the LOCAL health_zero signal (the BUG-G1 fix-path).
+	hc.health_zero.emit(int(_throne.get(&"unit_id")))
 	assert_eq(_destroyed_payloads.size(), 1,
-		"throne_destroyed must emit exactly once on matching unit_health_zero")
+		"throne_destroyed must emit exactly once when local HC.health_zero fires")
 	assert_eq(_destroyed_payloads[0], Constants.TEAM_TURAN,
 		"throne_destroyed payload must be the dying Throne's team")
 
 
-func test_throne_destroyed_signal_ignores_other_unit_ids() -> void:
-	# Each Throne subscribes globally to unit_health_zero; the filter must
-	# only react to its OWN unit_id. A unit_health_zero for some random
-	# Unit must NOT fire throne_destroyed.
-	_throne = _spawn_throne_scene(Constants.TEAM_IRAN)
+func test_throne_destroyed_signal_does_not_subscribe_to_global_channel() -> void:
+	# BUG-G1 regression-lock. Pre-fix, Throne subscribed globally to
+	# EventBus.unit_health_zero and filtered by unit_id. Building unit_ids
+	# and Unit unit_ids are SEPARATE counters in the same int space: Iran
+	# Throne unit_id=1 collided with Kargar unit_id=1. Result: when a
+	# Kargar died, the Throne's global filter said "1 == 1, that's me!"
+	# and emitted throne_destroyed.
+	#
+	# Post-fix: Throne does NOT subscribe to the global channel. This test
+	# emits on the global EventBus.unit_health_zero for the SAME unit_id
+	# as the Throne — pre-fix this would fire throne_destroyed; post-fix
+	# it must NOT.
+	_throne = _spawn_throne_with_hc(Constants.TEAM_IRAN)
 	EventBus.throne_destroyed.connect(_on_throne_destroyed_capture)
 	var throne_id: int = int(_throne.get(&"unit_id"))
-	# Emit for a non-Throne unit_id (the +999 makes a collision impossible).
-	EventBus.unit_health_zero.emit(throne_id + 999)
+	# Pre-fix collision: emit on global channel with Throne's unit_id.
+	# Post-fix: Throne is not subscribed to global, so nothing fires.
+	EventBus.unit_health_zero.emit(throne_id)
 	assert_eq(_destroyed_payloads.size(), 0,
-		"throne_destroyed must NOT emit when unit_health_zero is for a different unit_id")
+		"BUG-G1 regression: Throne MUST NOT react to global EventBus.unit_health_zero. "
+		+ "Building unit_ids collide with Unit unit_ids; the only safe channel is "
+		+ "the local HealthComponent.health_zero signal.")
 
 
 func test_throne_destroyed_signal_idempotent() -> void:
-	# Latch test: even if unit_health_zero fires twice for the same
+	# Latch test: even if local health_zero fires twice for the same
 	# Throne (race conditions, double-emit bugs), the signal MUST fire
 	# only once. Matches HealthComponent's latch pattern.
-	_throne = _spawn_throne_scene(Constants.TEAM_IRAN)
+	_throne = _spawn_throne_with_hc(Constants.TEAM_IRAN)
 	EventBus.throne_destroyed.connect(_on_throne_destroyed_capture)
+	var hc: Node = _throne.get_node(^"HealthComponent")
 	var throne_id: int = int(_throne.get(&"unit_id"))
-	EventBus.unit_health_zero.emit(throne_id)
-	EventBus.unit_health_zero.emit(throne_id)
-	EventBus.unit_health_zero.emit(throne_id)
+	hc.health_zero.emit(throne_id)
+	hc.health_zero.emit(throne_id)
+	hc.health_zero.emit(throne_id)
 	assert_eq(_destroyed_payloads.size(), 1,
 		"throne_destroyed must fire exactly once per Throne (latch — no re-emit)")
+
+
+func test_throne_without_hc_does_not_fire_destroyed_signal() -> void:
+	# Post-BUG-G1: no HC attached → no local-signal subscription → Throne
+	# CANNOT be destroyed in this run. This is the explicit forward-compat
+	# shape (Phase 8 will add HC to throne.tscn; until then the seam is
+	# documented but inert). Verifies the inertness is real, not just
+	# documented.
+	_throne = _spawn_throne_scene(Constants.TEAM_IRAN)
+	EventBus.throne_destroyed.connect(_on_throne_destroyed_capture)
+	# Sanity: no HC on this Throne instance.
+	var hc: Node = _throne.get_node_or_null(^"HealthComponent")
+	assert_null(hc,
+		"sanity precondition: _spawn_throne_scene (no _with_hc variant) must NOT attach HC")
+	# Emit global with Throne's unit_id — pre-fix would have fired; post-fix
+	# is silent (no subscription).
+	var throne_id: int = int(_throne.get(&"unit_id"))
+	EventBus.unit_health_zero.emit(throne_id)
+	assert_eq(_destroyed_payloads.size(), 0,
+		"throne_destroyed must NOT fire on a Throne without HealthComponent "
+		+ "(no local-signal subscription possible)")
 
 
 # ---------------------------------------------------------------------------

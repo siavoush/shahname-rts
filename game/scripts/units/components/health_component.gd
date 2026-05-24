@@ -42,6 +42,20 @@ class_name HealthComponent
 # constructed orphan component does not falsely claim unit_id 0.
 @export var unit_id: int = -1
 
+## Local death signal — emitted BEFORE the global EventBus.unit_health_zero.
+## Subscribers that need source-identification (Building subclasses whose
+## unit_id namespace collides with Unit's — Throne, future Qal'eh / Dadgah)
+## subscribe to THIS component's signal directly rather than the global
+## EventBus channel. Avoids the Unit↔Building unit_id collision bug per
+## architecture-reviewer BUG-G1 finding (2026-05-24 session-8 review).
+##
+## Unit-side subscribers (StateMachine death-preempt, FarrDrainDispatcher)
+## continue to use the global EventBus.unit_health_zero channel — Units
+## share a single unit_id counter so the global-filter pattern is sound
+## within the Unit namespace.
+@warning_ignore("unused_signal")
+signal health_zero(unit_id: int)
+
 # Fixed-point storage for current hp. 100 = 1.0 hp. Default 0; set from
 # BalanceData by the parent Unit's _ready (which knows the unit_type).
 # Tests can construct a HealthComponent directly and set max_hp / hp_x100
@@ -227,13 +241,24 @@ func _apply_damage_x100(amount_x100: int, source: Node, cause: StringName) -> vo
 				augmented_cause = StringName(String(cause) + "_idle_worker")
 
 	# Emit ORDER MATTERS — see the listener-order discipline note above.
-	#   1. unit_health_zero — StateMachine death-preempt (Contract §4.2).
-	#      Triggers transition to &"dying" (or queue_free fallback).
+	#   0. health_zero (LOCAL signal) — emitted FIRST so per-instance
+	#      subscribers fire before any global side-effects. Building
+	#      subclasses (Throne, future Qal'eh / Dadgah / etc.) subscribe to
+	#      THIS local signal on their OWN HealthComponent rather than the
+	#      global EventBus.unit_health_zero channel — Buildings and Units
+	#      have separate unit_id counters that COLLIDE in the same int
+	#      space, so the Unit-side global-filter pattern is unsafe for
+	#      Buildings (architecture-reviewer BUG-G1 finding, 2026-05-24).
+	#   1. unit_health_zero (GLOBAL) — Unit-side subscribers only:
+	#      StateMachine death-preempt (Contract §4.2) triggers transition
+	#      to &"dying"; FarrDrainDispatcher reads pre-Dying state for the
+	#      _idle_worker domain suffix.
 	#   2. unit_died — broader payload for telemetry, FarrSystem drain
 	#      (this session's wave 2A), Yadgar (Phase 5), SelectionManager
 	#      eviction (LATER — currently SelectionManager filters via
 	#      is_instance_valid each frame, but a unit_died-driven prune is a
 	#      LATER optimization).
+	health_zero.emit(unit_id)
 	EventBus.unit_health_zero.emit(unit_id)
 	EventBus.unit_died.emit(unit_id, killer_unit_id, augmented_cause, death_pos)
 
