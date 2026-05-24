@@ -13,7 +13,7 @@ references: [QUESTIONS_FOR_DESIGN.md, docs/RESOURCE_NODE_CONTRACT.md, docs/ANCHO
 tags: [wave-kickoff, phase-3, local-dropoffs, economy]
 created: 2026-05-24
 last_updated: 2026-05-24
-brief_version: v1.0.0
+brief_version: v1.0.1
 ---
 
 # Wave 3-LocalDropoffs — Local resource drop-offs (Mazra'eh + Ma'dan)
@@ -36,9 +36,15 @@ Per `QUESTIONS_FOR_DESIGN.md` 2026-05-24 "Trade & Transport economy" entry:
 
 This wave addresses Q1 only. Q2 stays open in design-chat queue.
 
-### Non-throwaway property
+### Non-throwaway property (honest framing per architecture-reviewer C2.4)
 
-Local drop-offs are the *foundation* for Trade & Transport. The local-store accumulation point (Mazra'eh/Ma'dan) becomes the caravan-origin in the bigger system. So even if the design chat eventually green-lights Q2, this wave's work is preserved-not-rewritten.
+The IDropoffTarget protocol + group-join pattern + `dropoff_for_team_by_kind` lookup shape are **platform-shape — preserved-not-rewritten** when Q2 lands.
+
+The deposit-INTERNALS, however, **will be refactored** when Q2 lands: today's Mazra'eh/Ma'dan are deposit-RELAYS (they call `ResourceSystem.change_resource` directly, no local accumulation); Q2's version will be deposit-ACCUMULATORS (track `_local_stock_x100`, emit caravans on full). The protocol method signatures stay; the bodies change.
+
+Net forward-compat: ~70% of this wave's work survives Q2 unchanged (protocol, groups, lookup, tests). ~30% (the in-method bodies) will be re-implemented. This is acceptable per the "ship Option 1 now" framing — the platform-shape work is what's load-bearing.
+
+Optionally (per architecture-reviewer C4.3) we could scaffold a `_local_stock_x100: int = 0` field on Mazra'eh + Ma'dan now (declared but unused) to signal Q2 intent and avoid Property-Schema-Change-In-Phase-4 ripple. **Decision: scaffold the field; cheap; signals Q2 intent.**
 
 ## §3 — Scope
 
@@ -46,8 +52,11 @@ Local drop-offs are the *foundation* for Trade & Transport. The local-store accu
 
 1. **`mazraeh.gd`** implements RNC §5.2 IDropoffTarget for grain. Accepts grain deposits; rejects coin (or routes them to fallback).
 2. **`madan.gd`** implements RNC §5.2 IDropoffTarget for coin. Mirror shape to Mazra'eh; accepts coin; rejects grain.
-3. **`ResourceSystem.dropoff_for_team_by_kind(team, kind)`** (NEW autoload method) — finds nearest kind-matching depot for team, falling back to Throne when none exist. Per-tick memoization + Pitfall #16 guards (mirror Wave-3-Throne `dropoff_for_team` pattern).
-4. **`UnitState_Returning.enter()` Tier-2 query** — replaces the current `ResourceSystem.dropoff_for_team(team)` call with `dropoff_for_team_by_kind(team, _carry_kind)`. Worker's carry-kind drives the lookup.
+3. **`ResourceSystem.dropoff_for_team_by_kind(team, kind)`** (NEW autoload method) — finds nearest kind-matching depot for team, falling back to Throne when none exist. Per-tick memoization (per architecture-reviewer C2.3: **nested Dictionary** `_dropoff_memo_by_kind: Dictionary` where keys are `team` and values are `Dictionary[StringName, Node3D]` — enables per-(team, kind) eviction). Throttled `[resource]` log key MUST also be `(team, kind)` — separate throttle per kind so grain-lookups and coin-lookups on same team don't throttle each other. Pitfall #16 `is_instance_valid()` guard before return (mirror Wave-3-Throne `dropoff_for_team` pattern). EventBus.throne_destroyed eviction: evicts ALL kinds for that team (Throne is the universal fallback). **REPLACE decision (per C1.2):** the existing `ResourceSystem.dropoff_for_team(team)` is REPLACED by `dropoff_for_team_by_kind` — call-site sweep targets are listed in §6 and explicitly include the two `unit_state_returning.gd` sites (lines 152 + 274). Existing `dropoff_for_team` method body becomes a thin wrapper `return dropoff_for_team_by_kind(team, &"")` for any legacy/test path that doesn't have a kind in scope (defensive; we don't expect any such path post-sweep).
+4. **`UnitState_Returning` BOTH call sites Tier-2 query swap** (per architecture-reviewer C1.1 — TWO sites, not one):
+   - **`enter()` line ~152** — walk-target resolution. Swap `ResourceSystem.dropoff_for_team(team)` → `dropoff_for_team_by_kind(team, _carry_kind_at_enter)`. `_carry_kind_at_enter` reads `ctx._carry_kind` at the same point the payload `deposit_target` Vector3 is checked (Tier-1).
+   - **`_perform_deposit()` line ~274** — deposit-routing decision. Swap `ResourceSystem.dropoff_for_team(team)` → `dropoff_for_team_by_kind(team, kind)` where `kind` is the local `kind` variable already in scope from line 255 read.
+   - **Critical:** if these two queries return DIFFERENT depots (e.g., depot destroyed mid-walk), the worker may walk to position A but try to deposit at position B. Log this divergence loudly (`[resource] dropoff_for_team_by_kind enter→deposit divergence team=X kind=Y enter=<refA> deposit=<refB>`) and route the deposit through whichever target `_perform_deposit` query returned. The cached `_deposit_target_pos` is stale but the C1.4 invariant (deposit credits exactly once) still holds via the second query's target.
 5. **`Mazra'eh._ready` group-join** — adds `&"grain_depots"` group join (mirror Throne's `&"thrones"` group pattern).
 6. **`Ma'dan._ready` group-join** — adds `&"coin_depots"` group join.
 7. **Test surface:**
@@ -79,7 +88,13 @@ The `&"grain_depots"` / `&"coin_depots"` group names are forward-compat for:
 
 Surfaces 1-6 above. Anticipated commit shape:
 
-**Commit 1:** `mazraeh.gd` + `madan.gd` IDropoffTarget protocol implementation. Both implement `deposit(resource_kind, amount, worker)` + `get_deposit_position()`. Kind-filter rejects non-matching deposits (loud log + no-op, no fallback to Throne to preserve mirror C1.4 only-one-path-per-cycle).
+**Commit 1:** `mazraeh.gd` + `madan.gd` IDropoffTarget protocol implementation. Both implement `deposit(resource_kind, amount, worker)` + `get_deposit_position()`. Each declares `const ACCEPTED_KIND: StringName = Constants.KIND_GRAIN` (Mazra'eh) or `KIND_COIN` (Ma'dan) — note this is the RESOURCE kind (per RNC §4.6 vs the BUILDING `kind = &"mazraeh"`/`&"madan"`). Kind-filter behavior on mismatch (per architecture-reviewer C2.1):
+- **Loud log** (`[mazraeh] deposit_rejected kind_mismatch got=X expected=Y worker=Z` / same for Ma'dan).
+- **Zero the worker's carry** (set `worker._carry_kind = &""` + `worker._carry_amount_x100 = 0`) so the stale carry doesn't survive to next gather cycle. Per BUG-C1/D1/D2 defensive-fallback-masking lesson: rejection without carry-zero is a silent-loss bug. Loud log + zero, NOT loud log + no-op.
+- **No fallback to Throne** from inside the building (preserves mirror C1.4 only-one-path-per-cycle).
+- Authoritative invariant (per architecture-reviewer C2.1 mitigation): `dropoff_for_team_by_kind` MUST NEVER return a kind-mismatched depot in the first place. Building-side kind-filter is the double-check assertion (defense in depth); the lookup-side filter is the canonical gate. If building-side ever fires, it's a bug signal — the loud log enables diagnosis.
+
+**No deposit-slot mechanic** (per architecture-reviewer C2.5) — Mazra'eh and Ma'dan accept arbitrarily many deposits per tick, same as Throne. AoE2-style deposit-slot queuing is out of scope.
 
 **Commit 2:** `ResourceSystem.dropoff_for_team_by_kind(team, kind)` — new autoload method. Per-tick memo keyed by `(team, kind)`. Pitfall #16 `is_instance_valid()` guard before return. Eviction subscriptions: `EventBus.throne_destroyed` (existing) + any future per-depot-destroyed signals.
 
@@ -115,10 +130,15 @@ No new balance numbers. Carry capacity / extract amounts unchanged. Confirmation
 
 ## §6 — Canonical references gp-sys should grep before implementing (§9.L10)
 
-- `throne.gd:344-380` — RNC §5.2 IDropoffTarget signature shape + kind-filter pattern. Mazra'eh + Ma'dan should mirror.
-- `resource_system.gd:493-565` — existing `dropoff_for_team(team)` + memoization + Pitfall #16 guard + EventBus.throne_destroyed eviction. New `dropoff_for_team_by_kind` extends this pattern.
-- `unit_state_returning.gd:130-160` — three-tier resolution in `enter()` (BUG-E1 fix shape). Tier-2 query changes from `dropoff_for_team(team)` to `dropoff_for_team_by_kind(team, carry_kind)`.
-- `mazraeh.gd` + `madan.gd` headers — existing structure for cultural-note + group-join pattern. New protocol methods slot into the same shape.
+- `throne.gd:344-380` — RNC §5.2 IDropoffTarget signature shape. Mazra'eh + Ma'dan should mirror. **Note: Throne does NOT kind-filter** (accepts all kinds); Mazra'eh + Ma'dan WILL differ via `ACCEPTED_KIND` constant.
+- `resource_system.gd:493-565` — existing `dropoff_for_team(team)` + memoization + Pitfall #16 guard + EventBus.throne_destroyed eviction. New `dropoff_for_team_by_kind` REPLACES (per §3.1 item 3); the existing method becomes a thin wrapper.
+- `unit_state_returning.gd:130-160` — three-tier resolution in `enter()` (BUG-E1 fix shape). **Tier-2 query swap site #1** — `dropoff_for_team(team)` → `dropoff_for_team_by_kind(team, _carry_kind_at_enter)`.
+- `unit_state_returning.gd:248-290` — `_perform_deposit()` method. **Tier-2 query swap site #2** — `dropoff_for_team(team)` → `dropoff_for_team_by_kind(team, kind)` (kind already in scope from line 255 read). Per architecture-reviewer C1.1: missing this site would produce the worker-walks-to-Mazra'eh-but-deposits-at-Throne bug.
+- `mazraeh.gd` + `madan.gd` headers — existing structure for cultural-note + group-join pattern. New protocol methods slot into the same shape. Add `&"grain_depots"` / `&"coin_depots"` group join.
+- `constants.gd:91-92` — `KIND_COIN = &"coin"` + `KIND_GRAIN = &"grain"` StringName values. These are what `_carry_kind` holds and what Mazra'eh/Ma'dan's `ACCEPTED_KIND` must equal.
+- `unit.gd:202` — `var _carry_kind: StringName = &""` field declaration.
+- `unit_state_gathering.gd:258-264` — where `_carry_kind` is written (by `complete_extract` payload). Doesn't need changes; understanding the source helps gp-sys verify the kind-StringName flow.
+- `docs/RESOURCE_NODE_CONTRACT.md:556-594` — IDropoffTarget protocol SSOT. §4.6 distinguishes Building.kind vs resource_kind (avoid confusing them).
 
 ## §7 — Risks
 
@@ -136,3 +156,14 @@ No new balance numbers. Carry capacity / extract amounts unchanged. Confirmation
 ## §9 — Revision history
 
 - **v1.0.0 — 2026-05-24** — initial brief, lead-drafted. Targets mirror-reviewer + loremaster brief-time review.
+- **v1.0.1 — 2026-05-24** — architecture-reviewer brief-time review findings folded in:
+  - **C1.1 BLOCKER** — second `unit_state_returning.gd` call site (`_perform_deposit:274`) added to §3.1 #4 + §6 canonical references. Without this fix the worker would walk to Mazra'eh but deposit at Throne anyway (C1.4 silent violation).
+  - **C1.2 BLOCKER** — `dropoff_for_team` vs `dropoff_for_team_by_kind` coexistence resolved as **REPLACE** (existing becomes thin wrapper); call-site sweep targets listed in §6.
+  - **C2.1 RISK** — kind-filter rejection on Mazra'eh/Ma'dan now zeroes worker carry (not just logs + no-op) — prevents stale-carry-survives-across-cycles bug. Plus authoritative-invariant clarification: lookup-side filter is the canonical gate; building-side is defense-in-depth.
+  - **C2.3 RISK** — memo shape pinned: nested Dictionary `_dropoff_memo_by_kind[team][kind]`. Throttle log key also `(team, kind)`. EventBus.throne_destroyed evicts all kinds for that team.
+  - **C2.4 RISK / C4.3 SUGGEST** — non-throwaway-property honestly reframed (platform-shape preserved; deposit-internals refactor at Q2). Plus `_local_stock_x100: int = 0` field scaffold decision.
+  - **C2.5 RISK** — explicit "no deposit-slot mechanic" on Mazra'eh/Ma'dan; accepts arbitrarily many deposits per tick.
+  - **C2.6 RISK** — depot-destroyed-mid-walk case explicitly handled: `_perform_deposit` re-queries `dropoff_for_team_by_kind`; if result differs from `enter()`'s cached target, log divergence loudly and route through the second query's target (preserves C1.4 invariant via fresh query).
+  - **C2.7 / §6 LOW** — canonical-reference list expanded with second call site (`_perform_deposit:248-290`) + Constants.KIND_* references + unit.gd:202 carry field declaration + unit_state_gathering.gd:258-264 carry-write source + RNC §5.2 protocol SSOT.
+  - **C2.2 LOW** — `ACCEPTED_KIND` constant naming pinned: `Constants.KIND_GRAIN` / `KIND_COIN` (the resource kind, distinct from Building.kind per RNC §4.6).
+  - Acceptance gates §5: implicit pass on architecture-reviewer C4.1 (test the kind-matched local depot's `deposit()` is what fires, observable via `[mazraeh] deposit_received` / `[madan] deposit_received` log).
