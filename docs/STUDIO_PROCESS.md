@@ -1571,6 +1571,85 @@ Cites Manifesto Principle 1 (Truth-Seeking — make runtime behavior legible) + 
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 Wave 3B live-test bug chain (BUG-C1/D1/D2/D3/D4) → user-directive codification]
 
+#### M6.2. UI log instrumentation — state-transitions, not state
+
+**Sub-rule of §9.M6 (day-1 log instrumentation).** §9.M6 mandates `[<system>]` logs from day 1; §9.M6.2 sharpens the rule for UI code where the parent's default "log on every event" guidance would produce noise rather than signal.
+
+**Actor.** UI implementer (ui-developer or whoever ships a Control / CanvasLayer / HUD widget). Applied at moment-of-writing the script, not retro-fitted.
+
+**Trigger.** Any new UI Control, CanvasLayer, panel, button, or HUD widget ships to the game. The parent §9.M6 rule fires; §9.M6.2 specifies WHAT to log within the UI surface.
+
+**Rule.** UI scripts log on STATE TRANSITIONS, not on continuous state. The default "every event" guidance from §9.M6 over-applies to UI because UI is re-rendered ~60 Hz and most "events" are per-frame queries against unchanged state. The rule splits into a log-this list and a do-NOT-log list:
+
+**LOG these (state transitions + user actions + signal emits):**
+1. **Lifecycle events** — `_ready`, `open()`, `close()`, `show()`, `hide()`, `dismiss()`.
+2. **User-action events** — button click, hotkey press, drag start/end, scroll wheel, click-outside dismiss, escape key.
+3. **State-transition events** — affordable→unaffordable, idle→busy, button enabled↔disabled (log when the result FLIPS, not on every re-evaluation).
+4. **Signal-emit events** — when the UI emits a write-shaped signal (e.g., `EventBus.build_placement_started`, `building.request_train`).
+
+**DO NOT log these (per-frame state):**
+1. `_process` body unless a state actually changed THIS frame.
+2. Mouse hover unless it triggers a content change.
+3. Affordability sweeps that run frequently — only log when the affordability RESULT changes (button flipped enabled↔disabled), not when the sweep re-evaluates with the same answer.
+4. Tooltip-text mutation unless the tooltip kind changes (e.g., "Not enough Coin" → "Not enough Grain" is a transition; same-message-different-numbers is not).
+
+**Tag-prefix convention.** Follows §9.M6's `[<system>]` rule with UI-layer sub-tagging:
+- `[ui/<panel-name>]` — panel-specific event. Examples: `[ui/production-panel] open kind=sarbaz_khaneh`, `[ui/build-menu] khaneh-button pressed`, `[ui/resource-hud] coin display=250→260`.
+- `[ui/click]` — click-handler routing decisions (existing pattern in `click_handler.gd` DEBUG_LOG_CLICKS).
+- `[ui]` — generic UI-layer event with no obvious panel owner.
+
+**Why.** UI state bugs hide behind invisible widget mutation faster than sim-side bugs do. Two incident exhibits:
+
+- **Wave 3A.6 Track 2 (ProductionPanel ship, commit `67606ed`).** Shipped without `[ui/production-panel]` log lines. Lead's session-8 retro fact-list flagged the gap. The panel's open/close/train-button/affordability-flip events were ALL silent in the log — any UI bug would require retro-fitting prints to diagnose, exactly the failure mode §9.M6 was created to prevent. Without §9.M6.2's clarification, the implementer (ui-developer) defaulted to "log on every event" but applied that ONLY to user-visible events and dropped state-transition events from the list.
+
+- **Wave 2B BUG-B1 (missing tooltips for older buildings).** Tooltips for Khaneh / Mazra'eh / Ma'dan were grandfathered without log lines. The bug surfaced via live-test ("tooltips not appearing") — but the diagnostic took several broadcasts + re-test cycles. A `[ui/build-menu] tooltip_text set kind=khaneh="<text>"` line at `refresh_button_labels` time would have made the failure mode (tooltip_text never assigned) trivially diagnosable from the log alone.
+
+The §9.M6 parent rule's "log on every event" wording would, applied literally to UI, produce a per-frame log flood that hides real signal. §9.M6.2's "state-transitions not state" framing keeps the signal-to-noise ratio readable.
+
+**Operational form.**
+
+```gdscript
+# Lifecycle log on open/close (lifecycle event).
+func open(building: Node3D) -> void:
+    print("[ui/production-panel] open kind=", building.get(&"kind"))
+    ...
+
+func close() -> void:
+    print("[ui/production-panel] close")
+    ...
+
+# User-action log on button press (user-action event).
+func _on_train_button_pressed(unit_kind: StringName) -> void:
+    print("[ui/production-panel] train-button-pressed unit_kind=", unit_kind)
+    ...
+
+# State-transition log on affordability flip (NOT on every sweep).
+func _refresh_row_affordability(row, ...) -> void:
+    var was_disabled: bool = btn.disabled
+    # ...recompute new disabled state...
+    if was_disabled != btn.disabled:
+        # FLIP — log the transition.
+        print("[ui/production-panel] button-state unit_kind=", unit_kind,
+                " disabled=", btn.disabled, " reason=", reason)
+    # Same-result re-evaluation: silent.
+```
+
+**Where reviewers enforce.**
+
+- **godot-code-reviewer** checks new UI scripts for the log-this list at expected sites (open/close, button handlers, signal-emit call sites). **Missing UI log on a lifecycle or user-action event is a BLOCKER per §9.M6.** Missing log on a state-transition event is a SUGGEST (the rule is newer; codification was session-8).
+- **godot-code-reviewer** also checks for the do-NOT-log list — a `print()` inside `_process` without a state-changed guard is a SUGGEST flag for log-flood risk.
+
+**Where authors apply.**
+
+- **ui-developer** (and any agent shipping UI code) treats the log-this list as part of the implementation, same as §9.M6 parent rule. The do-NOT-log list is the corollary: don't add log noise where there's no signal.
+- **Wave brief authors (lead)** specifying a UI Track deliverable should explicitly call out the log requirement and the state-transition-not-state framing: *"Log instrumentation: `[ui/<panel-name>]` tag-prefix on lifecycle (open/close), user actions (button click, key press), state transitions (affordability flips), signal emits (request_train, build_placement_started). Per §9.M6.2 — state transitions, not state."*
+
+**Retroactive instrumentation policy.** §9.M6.2 is forward-only at the rule level. Recent-wave (last 1-2 sessions) UI code is a candidate for opportunistic backfill IF a hard-to-diagnose UI bug surfaces in live-test; don't backfill speculatively. Wave 3A.6 Track 2's `production_panel.gd` is a known candidate for opportunistic backfill (~6-8 print lines, ~30 minutes) if Throne wave or later UI live-test surfaces a hard-to-diagnose interaction with the production panel.
+
+Cites Manifesto Principle 7 (Observability), Principle 5 (debt-paying discipline), Principle 9 (Automated Enforcement). Parent rule: §9.M6 (day-1 log instrumentation). N=2 incidents: Wave 2B BUG-B1 (missing tooltips, live-test diagnosis cycle) + Wave 3A.6 Track 2 ship at `67606ed` (ProductionPanel without `[ui]` tags, session-8 retro fact-list). Cross-references: §9.M6 parent, §9.L7 affordability sweep, Pitfall #1 (Control mouse_filter).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close — ui-developer-p3s3 origination; UI log-instrumentation gap (Wave 3A.6 Track 2 + Wave 2B BUG-B1) codification]
+
 ---
 
 ### §9.N — Investigation Reports
