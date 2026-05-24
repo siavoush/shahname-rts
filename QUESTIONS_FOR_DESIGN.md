@@ -38,6 +38,34 @@ Keep entries terse. Long questions fragment the design chat's attention.
 ## Open questions
 
 
+## 2026-05-24 — Resource economy expansion: mining ≠ coin direct path? Wood / stone / iron?
+
+**Context:** Surfaced by Siavoush during Wave 3B live-test (2026-05-24). Current Phase 3 economy is intentionally simple — two resources (Coin from mines, Grain from farms). The "mine → coin directly" shortcut is RTS-idiomatic but feels anachronistic for the Kayanian / Heroic Age setting: a mine yielding "coins" skips the refining + minting + tribute chain that's culturally load-bearing in Iran's economy of that period.
+
+**Question:** Should we expand the resource economy with intermediate refining stages and additional raw materials?
+
+**Specific shapes considered:**
+
+1. **Iron-ore → smelted iron → equipment (or coin via taxation):** Iron mined raw, refined at a Foundry/Forge, output gates military unit production (iron is the bottleneck on Tier 2+ units rather than just coin). Could thematically map to the dehqan-craftsperson-state value chain.
+2. **Wood from forests:** Construction material for buildings + arrows for Kamandar/Tirandazi. Currently buildings cost coin+grain abstractly; wood would give construction physical-material grounding.
+3. **Stone from quarries:** Tier-2 building material (Fortress / Atashkadeh-tier buildings cost stone; Tier-1 cost wood). Forces tech-up to feel like material upgrade.
+4. **Coin via tribute / taxation / trade routes** instead of mining: more historically grounded — coinage emerges from concentrated authority (Throne), not from holes in the ground.
+
+**Strategic implications for design chat:**
+
+- **Economy depth vs scope creep.** Adding 2+ resources expands the gather loop, the build cost matrix, and the AI's economy state. Phase 4 already covers production queue + tech tiers; Phase 6+ would absorb the AI complexity.
+- **Cultural authenticity vs RTS-idiomatic familiarity.** Players know SC2/AoE2 mineral+gas / wood+gold+stone+food patterns. The Shahnameh setting wants its own shape but shouldn't be alien.
+- **Refining-chain pedagogy.** A Foundry that turns iron ore into smelted iron lets the game *teach* the historical refining mechanic — same shape as Ma'dan teaching about mining culture.
+- **MVP risk.** Phases 3-8 are scoped for two resources. Expanding now adds 4-6 weeks. Better to defer to Tier 2 vertical slice (post-MVP) once the loop is proven.
+
+**Lead's framing:** strongly recommend treating this as **post-MVP / Tier 2** scope. The current 2-resource economy is enough to prove the gameplay loop. Resource expansion is a natural Tier 2 enhancement that brings cultural authenticity once the foundation works. Phases 9+ candidate.
+
+**Pre-decision required:** none for Phase 3-8. This question only blocks Tier 2 planning.
+
+**Defer to:** post-Phase-8 playtest signal. If the 2-resource economy feels thin in playtest, Tier 2 picks this up. If it feels fine, the question can stay deferred.
+
+---
+
 ## 2026-05-17 — Builder worker position during construction: inside vs outside footprint
 
 **Context:** Phase 3 session 4 wave 2A live-test surfaced that the builder worker stands AT the target_position (building's center) and dwells there during construction. The building gets placed at that position, so visually the worker is INSIDE the building's footprint until construction completes. This has been the behavior for all four shipped Tier-1 buildings (Khaneh, Mazra'eh, Ma'dan, Sarbaz-khaneh) — only visually obvious with Sarbaz-khaneh's larger 3.0×2.0 footprint vs the 2.0×2.0 of others. Wave-1D's navmesh-carve correctly excludes the building's footprint from the navmesh, but the worker already-standing-inside isn't auto-evicted (the carve affects future path queries, not existing positions).
