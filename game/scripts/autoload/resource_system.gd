@@ -54,10 +54,41 @@ var _population: Dictionary = {}
 var _population_cap: Dictionary = {}
 
 
+# === Throne dropoff-target memo (Wave-3-Throne, RNC §5.2) ===================
+#
+# Per RNC §5.2 + brief §4 Track 1: workers query
+# ResourceSystem.dropoff_for_team(team) to find their faction's Throne
+# during gather-deposit cycles. The lookup walks the &"thrones" SceneTree
+# group and filters by team; memoizing per-team per-tick avoids the
+# scene-tree scan on every deposit.
+#
+# Pitfall #16 (mirror C2.1): the memo's stored Node ref may become a
+# freed Object if the Throne is destroyed between the memo-set tick and
+# the next consumer read. We MUST `is_instance_valid()` before returning;
+# we ALSO subscribe to EventBus.throne_destroyed to evict eagerly.
+#
+# Dictionary[int, Node3D] keyed by Constants.TEAM_IRAN / TEAM_TURAN. Empty
+# at start; populated lazily on first lookup; cleared on throne_destroyed.
+# Memo is per-tick effective via _dropoff_memo_tick storing the
+# SimClock.tick value of the most-recent lookup per team. A consumer
+# in a later tick re-walks the group (cheap; thrones group has ≤2 members
+# in MVP — one per faction). The per-tick limit is more about correctness
+# (multi-tick deposits on the same tick all benefit from the cache) than
+# performance.
+var _dropoff_memo: Dictionary = {}
+var _dropoff_memo_tick: Dictionary = {}
+
+
 # === Lifecycle ==============================================================
 
 func _ready() -> void:
 	_load_starting_values_from_balance_data()
+	# Wave-3-Throne — subscribe to throne_destroyed for memo eviction.
+	# When a Throne is destroyed, its Node ref in the memo becomes a
+	# freed Object; we evict eagerly so the next dropoff_for_team call
+	# re-walks the group instead of returning a freed ref.
+	if not EventBus.throne_destroyed.is_connected(_on_throne_destroyed):
+		EventBus.throne_destroyed.connect(_on_throne_destroyed)
 
 
 # Defensive load mirroring FarrSystem._load_starting_value_from_balance_data:
@@ -424,4 +455,111 @@ func reset() -> void:
 	# match doesn't linger and skew enumeration in the next. MatchHarness
 	# discipline.
 	_nodes_by_kind.clear()
+	# Wave-3-Throne: clear the dropoff memo too. Same MatchHarness shape —
+	# a Throne ref from a prior match would be a freed Object in the next.
+	_dropoff_memo.clear()
+	_dropoff_memo_tick.clear()
 	_load_starting_values_from_balance_data()
+
+
+# === Throne dropoff-target lookup (Wave-3-Throne, RNC §5.2) =================
+#
+# Per RNC §5.2 + brief §4 Track 1. Resolves the team's deposit target by
+# walking the &"thrones" SceneTree group + filtering by team. Memoized
+# per-team per-SimClock-tick to avoid scene-tree scans on every gather
+# cycle.
+#
+# **Pitfall #16 MANDATORY (mirror C2.1):** `is_instance_valid()` BEFORE
+# returning the memoized value. Eviction also runs on
+# EventBus.throne_destroyed, but the per-call guard is the load-bearing
+# safety — if the throne was freed between throne_destroyed emit and the
+# next consumer read, the per-call guard catches it.
+#
+# Returns Node3D (the Throne instance) or null when no Throne exists for
+# this team (test fixture, pre-spawn, or destroyed-and-not-yet-respawned
+# state).
+
+
+## Look up the Throne instance serving as the deposit target for a team.
+##
+## Returns the Throne Node3D or null. **The returned ref is validated
+## via is_instance_valid() before return**; callers MAY rely on a
+## non-null return being a live instance THIS tick. Callers walking
+## across multiple ticks SHOULD re-call this method each tick (cheap;
+## memoized).
+##
+## team: Constants.TEAM_IRAN or TEAM_TURAN. TEAM_NEUTRAL returns null
+## (no neutral Throne).
+func dropoff_for_team(team: int) -> Node3D:
+	# Per-tick memo check. SimClock.tick is the canonical "now" — if the
+	# memo entry was set this same tick, return it (after Pitfall #16
+	# guard).
+	var current_tick: int = SimClock.tick
+	if _dropoff_memo_tick.get(team, -1) == current_tick:
+		var cached: Variant = _dropoff_memo.get(team, null)
+		if cached != null and is_instance_valid(cached):
+			return cached as Node3D
+		# Cached ref is dead (freed between memo-set and now). Fall
+		# through to re-walk.
+	# Walk the &"thrones" group, filter by team, take the FIRST match.
+	# MVP has exactly one Throne per faction, so first-match is the only
+	# match. Multi-Throne factions (out of MVP scope) would need a
+	# preference policy (nearest? lowest unit_id?). Today: first.
+	var tree: SceneTree = get_tree()
+	if tree == null:
+		# Test fixture without scene tree — no Thrones to find.
+		_dropoff_memo[team] = null
+		_dropoff_memo_tick[team] = current_tick
+		# §9.M6 — throttled log (don't spam every gather cycle).
+		_log_dropoff_throttled(team, null)
+		return null
+	var found: Node3D = null
+	for node in tree.get_nodes_in_group(&"thrones"):
+		if not is_instance_valid(node):
+			continue
+		if not (node is Node3D):
+			continue
+		var node_team: Variant = node.get(&"team")
+		if typeof(node_team) == TYPE_INT and int(node_team) == team:
+			found = node as Node3D
+			break
+	_dropoff_memo[team] = found
+	_dropoff_memo_tick[team] = current_tick
+	# §9.M6 — throttled log (1 per few seconds; spammy gather cycles
+	# would otherwise drown the log).
+	_log_dropoff_throttled(team, found)
+	return found
+
+
+# Throttle map: team → last-logged tick. Logs at most once per ~3 seconds
+# (90 ticks @ 30Hz) per team. Keeps the live-test log readable without
+# losing the diagnostic signal entirely.
+var _dropoff_log_last_tick: Dictionary = {}
+const _DROPOFF_LOG_THROTTLE_TICKS: int = 90
+
+
+func _log_dropoff_throttled(team: int, found: Node3D) -> void:
+	var last: int = int(_dropoff_log_last_tick.get(team, -10000))
+	var now: int = SimClock.tick
+	if now - last < _DROPOFF_LOG_THROTTLE_TICKS:
+		return
+	_dropoff_log_last_tick[team] = now
+	var found_desc: String = "null"
+	if found != null and is_instance_valid(found):
+		found_desc = "<Throne unit_id=%d pos=%s>" % [
+			int(found.get(&"unit_id")), str(found.global_position)]
+	print("[resource] dropoff_for_team(team=%d) → %s" % [team, found_desc])
+
+
+func _on_throne_destroyed(team_id: int) -> void:
+	# Evict the memo for this team so the next consumer re-walks the
+	# group instead of returning a freed Node ref. Pitfall #16 belt-
+	# and-braces: the per-call `is_instance_valid` in dropoff_for_team
+	# would also catch the freed ref, but eager eviction is faster and
+	# avoids the rare case where validity-check returns true on a
+	# half-freed object during the same-frame destruction.
+	if _dropoff_memo.has(team_id):
+		_dropoff_memo.erase(team_id)
+	if _dropoff_memo_tick.has(team_id):
+		_dropoff_memo_tick.erase(team_id)
+	print("[resource] dropoff_memo evicted for team=%d (throne_destroyed)" % team_id)

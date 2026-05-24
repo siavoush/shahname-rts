@@ -192,17 +192,41 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 		var unit_id: int = int(ctx.unit_id)
 		var granted: bool = _target_node.request_extract(unit_id)
 		if not granted:
-			# Slot rejected (all max_slots taken, or node depleted between
-			# enter and arrival). Phase 3 wave 1A simplification: bail to
-			# Idle. Wave 1B can add a "wait next to the node" sub-state if
-			# playtest shows the bail is too aggressive.
-			push_warning(
-				"UnitState_Gathering: slot rejected at %s for unit %d — "
-				% [str((_target_node as Node3D).global_position), unit_id]
-				+ "transitioning to idle"
-			)
-			_request_idle(ctx)
-			return
+			# Slot rejected (max_slots taken by another worker, or node depleted
+			# between enter and arrival). Two distinct sub-cases:
+			#   1. Node depleted (is_gatherable flipped false) → bail to Idle
+			#      so the worker isn't stuck waiting on a dead node forever.
+			#   2. Node still gatherable, slot just busy → WAIT next to it,
+			#      retry next sim_phase. This is the AoE2-style queue: with
+			#      max_slots=1 (Phase 3 wave 1A simplification), multi-select
+			#      gather sends all workers to the same node and they queue
+			#      sequentially. Pre-fix, all but the first bailed to Idle and
+			#      sat there permanently — the user could not see any gather
+			#      progress after the first carry.
+			# Live-test 2026-05-24 (BUG-F1) surfaced this: multi-selected
+			# workers gathered visibly but only the slot-holder walked back
+			# to the Throne; everyone else sat silently in Idle. The code
+			# comment at this site explicitly anticipated this fix
+			# ("Wave 1B can add a 'wait next to the node' sub-state if
+			# playtest shows the bail is too aggressive").
+			var still_gatherable: bool = bool(_target_node.is_gatherable)
+			if not still_gatherable:
+				push_warning(
+					"UnitState_Gathering: slot rejected at %s for unit %d, "
+					% [str((_target_node as Node3D).global_position), unit_id]
+					+ "node not gatherable — transitioning to idle"
+				)
+				_request_idle(ctx)
+				return
+			# Throttle the [gather] log so the queue doesn't flood — one line
+			# per second per waiting worker is enough for diagnosis. SIM_HZ=30,
+			# so log every 30 ticks. We don't have a tick counter on the state,
+			# but SimClock.tick is available via the autoload.
+			if int(SimClock.tick) % 30 == 0:
+				print("[gather] unit=", unit_id,
+					" waiting for slot at mine ",
+					(_target_node as Node3D).global_position)
+			return  # stay in Gathering, retry next sim_phase
 		_slot_held = true
 		_cached_unit_id = unit_id
 		# Initialize dwell from the node's extract_ticks (per-kind config;

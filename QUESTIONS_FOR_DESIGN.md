@@ -13,7 +13,7 @@ ssot_for:
 references: [01_CORE_MECHANICS.md, DECISIONS.md]
 tags: [log, questions, design-chat, escalations]
 created: 2026-04-23
-last_updated: 2026-05-14
+last_updated: 2026-05-24 (Trade & Transport economy — thesis-level positioning question)
 ---
 
 # Questions for Design
@@ -37,6 +37,134 @@ Keep entries terse. Long questions fragment the design chat's attention.
 
 ## Open questions
 
+
+## 2026-05-24 — Trade & Transport economy — wealth-flow as the central contest (thesis-level positioning)
+
+**Context:** Surfaced by Siavoush during Wave-3-Throne live-test (2026-05-24). The Throne wave shipped IDropoffTarget routing where workers deposit at the Throne. User immediately surfaced the natural follow-on: this design makes distant-mine expansion economically painful (workers walk great distances back to the Throne). Standard RTS fixes for this are well-known (AoE2 secondary drop-offs, StarCraft expansion bases, C&C mobile refineries). User then sketched a fundamentally bigger idea — make the wealth-flow itself a visible, attackable game surface. After back-and-forth refinement, the shape is now coherent enough to capture for the design chat.
+
+**This is a thesis-level question, not a feature-level question.** The decision changes what kind of RTS this is.
+
+---
+
+### The thesis
+
+Not "add a trade mechanic." A positioning shift:
+
+| Axis | SC2 / AoE2 model | Proposed model |
+|---|---|---|
+| Economy's role | **Serves the army.** Build economy → build army → attack base. | **Is the contest.** Army shapes the flow; battles are intersection points. |
+| Army's role | Decisive force. Battles end the game. | **Tool of economic disruption + protection.** Wealth-strangulation is a path to victory. |
+| Win condition | Destroy base / dominate map | Destroy Throne **OR** collapse opponent's wealth-flow until they can't sustain |
+| What you optimize | APM + build order | Route design + escort allocation + raid timing |
+| Map chokepoints matter for | Armies | Trade AND armies (often different chokepoints) |
+
+The market has plenty of "SC2 with a fresh skin." It does not have "raid-economy RTS where the wealth-flow IS the contest." That's a niche-but-loyal audience (AoE4-strategic, Manor Lords, Cossacks fans, Crusader Kings players curious about RTS).
+
+---
+
+### Core mechanics (the proposed system)
+
+**1. Workers deposit at LOCAL stores, not the Throne.**
+- Mazra'eh = grain depot. Ma'dan = coin depot. Workers route to nearest available depot of right kind.
+- This is the foundation — solves the immediate "distant expansion is painful" problem AND is the foundation for everything below.
+- **Cultural fit:** the dehqan's stewardship culminates in delivery to a *local* store (grain in the village granary, ore at the mine head). The local store is where wealth *accumulates* before tribute moves it up.
+
+**2. Caravans transport local-store stockpiles to the Throne.**
+- Local store fills → caravan launches automatically.
+- Caravan is a **visible, attackable unit** on the map between depot and Throne.
+- Loss of caravan = wealth never arrives. Capture is the raid mechanic.
+- **Cultural fit:** *baj* / tax-flow-to-the-king made literally visible. The dehqan-Throne reciprocity that throne.gd's cultural-note already invokes becomes the actual gameplay loop.
+
+**3. Escort automation solves the APM problem.**
+- Player **assigns standing guards** to a transport route (not per-trip micromanagement).
+- Unguarded route = easy raid target. Guarded route = better protected.
+- Strategic decision: "5 Piyade on the south route OR in the frontline army?" — *meaningful* choice, not click-spam.
+
+**4. Settlements + armies demand upkeep (Civilization-borrowed, era-accurate).**
+- Historically grounded: Achaemenid satrap-tribute system, Sasanian army provisioning chains.
+- Bigger army → more upkeep → more dependent on flow → more raidable.
+- Settlements without grain delivery weaken or lose function.
+- Creates a feedback loop: economic power and military power are not independent variables.
+
+---
+
+### Faction asymmetry as logical consequence (not bolted-on)
+
+The economic system **structurally produces** the Shahnameh's lived dynamic:
+
+| | Iran | Turan |
+|---|---|---|
+| Identity | Settled, agricultural, dehqan-tribute-to-takht | Nomadic, raid-economy, oath-of-loyalty-to-named-rulers |
+| Output | Higher wealth-generation | Lower production, cheaper military |
+| Posture | Structurally defensive (wealth + infrastructure to protect) | Structurally aggressive (cheap to launch raids, little to defend) |
+| Hero role | Rostam = line-holder, raid-breaker, asymmetry-tilter | Turanian champions = raid leaders, route-cutters |
+| Win path | Throne destruction OR economic strangulation (defensive variant) | Economic strangulation (preferred) OR Throne destruction |
+| Special bonus | (TBD) Tribute-collection efficiency, settlement defense bonuses | (TBD) Faster intercepts, loot-conversion bonuses, no static-settlement upkeep |
+
+**The asymmetry is emergent from one ruleset**, not from giving each side a different ruleset. That's the Manifesto-principled shape (Principle 6 — *systems over features*).
+
+---
+
+### What this implies for the rest of the project
+
+This is the part that makes it thesis-level, not feature-level:
+
+- **Rostam's role changes.** No longer "biggest stat-stick on the map." He becomes the line-holder, the raid-breaker, the asymmetry-tilter. Different hero design.
+- **Turan AI bar goes up significantly.** Needs raid-planning, route-cutting, retreat-with-loot intent. Today's DummyAI (probe-attack toward nearest visible target) is nowhere near this. **Phase 6+ AI work becomes much larger.**
+- **Maps become core design, not flavor.** Trade routes must exist; chokepoints-for-trade differ from chokepoints-for-armies; frontier zones; route geometry. Map design = design.
+- **UI surfaces opponent's economy state.** Wealth meters; route status; raid alerts. "Economic collapse" win condition needs to be legible to both players.
+- **Tutorial shape changes.** Players coming from SC2 need retraining: "don't just expand and attack — protect your routes, raid theirs."
+- **Time-to-mastery goes up.** Higher ceiling, better retention, harder adoption. Trade-off.
+
+---
+
+### Comparable games (lessons-learned scan)
+
+- **Cossacks 3** — closest parallel. Peasants → local depot → merchant wagons → capital. Wagons attackable. Steppe factions raid. Worth playing if not already.
+- **Anno series** — best UX template. Ships visible, raidable, route-defined; auto-routing default, manual intervention on alerts. The "auto by default + alert intervention" pattern is the APM mitigator.
+- **Total War (Medieval / Three Kingdoms)** — trade-route raids on the strategic map. Less direct because trade is abstracted, but the "trade as attack surface" idea is the same.
+- **Settlers series** — caution case. Beautiful caravan logistics but the supply-chain micro overwhelmed strategic decisions; lost mass appeal. Lesson: keep the strategic layer central; don't drown players in supply-chain detail.
+
+---
+
+### Risks (named)
+
+1. **APM burden.** Cossacks fans love micro-routing; mass audiences bounce. **Mitigation:** auto-routing default + escort-allocation as the strategic interface.
+2. **Defender's dilemma.** Iran defends caravan + frontline + base; Turan attacks anywhere. **Mitigation:** Iran's wealth advantage absorbs raid losses; Turan's cheap army means raids cost little to launch. The asymmetry IS the design — but balance needs careful tuning.
+3. **Pathing complexity.** Long-distance auto-routing across contested territory + threat detection + escort coordination is real engineering work.
+4. **AI bar.** Turan raider intent (pick caravans, intercept at chokepoints, retreat with loot, weigh raid-vs-frontline) is much higher than today's DummyAI. Phase 6+ planning.
+5. **Audience fit.** Alienates pure-SC2 fans; opens to currently-underserved strategic-RTS audience. Positioning bet, not a feature bet.
+
+---
+
+### Staging proposal
+
+| Phase | Scope | Cost |
+|---|---|---|
+| **Now (post-MVP-validation playtest)** | Option 1 only — Mazra'eh = grain drop-off, Ma'dan = coin drop-off. Workers route to nearest available depot. ~1 wave. Doesn't preclude the bigger vision; **foundation** for it. | ~1 wave |
+| **MVP-validation playtest gate** | Confirm the boxes-loop is fun with local drop-offs working. If yes, queue the Trade & Transport system. If no, the bigger system won't save it. | — |
+| **Phase 4 (post-MVP)** | Trade & Transport major feature. Local stores accumulate; caravans auto-route to Throne; caravans are visible attackable units; settlement upkeep introduced. | ~6-10 sessions |
+| **Phase 5+** | Turan raider AI; alert/interception UI; caravan auto-routing polish; full asymmetry tuning; map design pass for trade-chokepoint geometry. | ~10-15 sessions |
+
+The "ship Option 1 now" decision is **non-throwaway** for the bigger vision — local stores must exist either way. So Option 1 is safe to commit to even before the thesis-level decision is made.
+
+---
+
+### What design chat is being asked to decide
+
+Two distinct questions:
+
+**Q1 (small, near-term):** Approve Option 1 — ship Mazra'eh-as-grain-drop-off + Ma'dan-as-coin-drop-off in a near-term wave (post-current-PR-merge). Solves the immediate distant-expansion friction. Estimated 1 wave.
+
+**Q2 (large, positioning-level):** Commit to the Trade & Transport thesis for Phase 4+? This re-anchors Phase 4-8 around wealth-flow as the central mechanic, with cascading implications for AI, maps, UI, tutorial, hero design, and audience targeting. Estimated impact across the remaining MVP and post-MVP scope.
+
+**Lead's recommendation:** Q1 = yes, do it now (Option 1 is non-throwaway foundation). Q2 = open a dedicated design-chat thread before MVP-validation playtest ends, so the next major-direction decision is queued when the time comes. Don't decide Q2 in passing; it's worth deliberate thinking.
+
+**Cultural-fit assessment (lead):** Q2 is the *right thesis* for a Shahnameh adaptation specifically. The epic isn't a pitched-battle story; it's a contested-civilization story (raid-economy + sworn-loyalty vs farr-tribute). Making wealth-flow the central mechanic IS the Shahnameh adaptation. Making it pitched battles is just SC2-with-skin. But the commitment is bigger than the casual framing suggests; deserves the deliberate thinking.
+
+**Pre-decision required for current PR:** none. PR #39 (Throne wave) ships as-is; Option 1 lands in a follow-on wave; Q2 stays open until design-chat time allows.
+
+---
 
 ## 2026-05-24 — Resource economy expansion: mining ≠ coin direct path? Wood / stone / iron?
 

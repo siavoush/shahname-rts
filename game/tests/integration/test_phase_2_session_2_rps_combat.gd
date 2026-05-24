@@ -152,7 +152,13 @@ class _InstantPathScheduler extends "res://scripts/core/path_scheduler.gd":
 
 # Helper: collect nodes with (unit_id, team) properties recursively.
 func _collect_unit_nodes(node: Node, out: Array) -> void:
-	if (&"unit_id" in node) and (&"team" in node) and (node is Node3D):
+	# Wave-3-Throne: filter out Buildings (which also have unit_id + team +
+	# are Node3D — the Building base class) via SceneTree group membership.
+	# Match-start Thrones would otherwise inflate the unit count and break
+	# the "exactly 33 unit_ids" assertion downstream.
+	if (&"unit_id" in node) and (&"team" in node) and (node is Node3D) \
+			and not node.is_in_group(&"buildings") \
+			and not node.is_in_group(&"thrones"):
 		out.append(node)
 	for child in node.get_children():
 		_collect_unit_nodes(child, out)

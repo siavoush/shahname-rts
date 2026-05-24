@@ -567,3 +567,78 @@ func test_starting_units_have_unit_ids_1_through_33() -> void:
 		"Turan Savar unit_ids must be 28..30")
 	assert_eq(_collect_sorted_ids(world, _is_turan_asb_savar), [31, 32, 33],
 		"Turan AsbSavar unit_ids must be 31..33")
+
+
+# ===========================================================================
+# Wave-3-Throne — match-start building spawn
+# ===========================================================================
+#
+# Per brief §4 Track 1: `main.gd:_spawn_starting_buildings` (NEW) spawns
+# Iran Throne at Z<0 + Turan Throne at Z>0 BEFORE _spawn_starting_units
+# fires. The order matters: workers need to find Thrones via the
+# &"thrones" SceneTree group from tick 0.
+
+func _is_throne(node: Node) -> bool:
+	return (
+		node is Node3D
+		and node.is_in_group(&"thrones")
+	)
+
+
+func test_main_ready_spawns_two_thrones_under_world() -> void:
+	_main_node = await _spawn_main_with_stub_world()
+	var world: Node = _main_node.get_node(^"World")
+	var thrones: Array = []
+	for child in world.get_children():
+		if _is_throne(child):
+			thrones.append(child)
+	assert_eq(thrones.size(), 2,
+		"main.gd._spawn_starting_buildings must spawn exactly 2 Thrones "
+		+ "(one per faction) under World")
+
+
+func test_main_ready_spawns_iran_throne_south_negative_z() -> void:
+	_main_node = await _spawn_main_with_stub_world()
+	var world: Node = _main_node.get_node(^"World")
+	var iran_throne: Node3D = null
+	for child in world.get_children():
+		if _is_throne(child) and int(child.get(&"team")) == Constants.TEAM_IRAN:
+			iran_throne = child as Node3D
+			break
+	assert_not_null(iran_throne, "Iran Throne must be spawned")
+	assert_lt(iran_throne.position.z, 0.0,
+		"Iran Throne must be on the south side (Z<0), behind the Kargar/Piyade "
+		+ "clusters. Got position.z=%f" % iran_throne.position.z)
+
+
+func test_main_ready_spawns_turan_throne_north_positive_z() -> void:
+	_main_node = await _spawn_main_with_stub_world()
+	var world: Node = _main_node.get_node(^"World")
+	var turan_throne: Node3D = null
+	for child in world.get_children():
+		if _is_throne(child) and int(child.get(&"team")) == Constants.TEAM_TURAN:
+			turan_throne = child as Node3D
+			break
+	assert_not_null(turan_throne, "Turan Throne must be spawned")
+	assert_gt(turan_throne.position.z, 0.0,
+		"Turan Throne must be on the north side (Z>0), behind the Turan unit "
+		+ "clusters. Got position.z=%f" % turan_throne.position.z)
+
+
+func test_main_ready_thrones_have_correct_team_assignments() -> void:
+	# Cross-team verification: exactly one Iran-team Throne and one Turan-team
+	# Throne exist; no NEUTRAL Thrones; no wrong-team Thrones.
+	_main_node = await _spawn_main_with_stub_world()
+	var world: Node = _main_node.get_node(^"World")
+	var iran_count: int = 0
+	var turan_count: int = 0
+	for child in world.get_children():
+		if not _is_throne(child):
+			continue
+		var t: int = int(child.get(&"team"))
+		if t == Constants.TEAM_IRAN:
+			iran_count += 1
+		elif t == Constants.TEAM_TURAN:
+			turan_count += 1
+	assert_eq(iran_count, 1, "Exactly one Iran Throne spawned at match start")
+	assert_eq(turan_count, 1, "Exactly one Turan Throne spawned at match start")

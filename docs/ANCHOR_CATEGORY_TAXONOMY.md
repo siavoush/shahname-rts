@@ -2,23 +2,23 @@
 title: Anchor-Category Taxonomy for Building Subclasses
 type: spec
 status: living
-version: 1.0.0
+version: 1.1.0
 owner: shahnameh-loremaster
-summary: Per-variant template-shape specification for Building anchor-categories. Iran Tier-1 5/5 + Tier-2 sub-slot taxonomy + Turan prediction notes + brief-time-review trichotomy classifier. SSOT for loremaster brief-time review classifications.
+summary: Per-variant template-shape specification for Building anchor-categories. Iran Tier-1 6/6 (with Throne) + Tier-2 sub-slot taxonomy + Turan prediction notes (including cross-faction near-symmetry exception for sovereignty-bearing institution) + brief-time-review trichotomy classifier. SSOT for loremaster brief-time review classifications.
 audience: all
 read_when: building-cultural-review, anchor-category-classification-questions
 prerequisites: [STUDIO_PROCESS.md, 00_SHAHNAMEH_RESEARCH.md, 01_CORE_MECHANICS.md]
 ssot_for:
-  - anchor-category template-shapes (civic-anchor, labor-organization, identity-bearing institutional, sacral-emitter / divine-source)
+  - anchor-category template-shapes (civic-anchor, labor-organization, identity-bearing institutional, sacral-emitter / divine-source, sovereignty-bearing institution)
   - sub-slot taxonomy within each anchor-category
   - J2 brief-time-review trichotomy classifier (clone-check / slot-fit-verify / taxonomy-growth-required)
   - naming-shape-vs-anchor-shape discipline
   - Iran Tier-1 + Tier-2 building-to-variant assignments
-  - Turan prediction notes (structural-mismatch hypothesis)
+  - Turan prediction notes (structural-mismatch hypothesis + sovereignty-bearing institution near-symmetry exception)
 references: [STUDIO_PROCESS.md §9.J, 00_SHAHNAMEH_RESEARCH.md, 01_CORE_MECHANICS.md §5]
 tags: [taxonomy, cultural-authenticity, building, loremaster, ssot]
 created: 2026-05-21
-last_updated: 2026-05-21
+last_updated: 2026-05-22
 ---
 
 # Anchor-Category Taxonomy for Building Subclasses
@@ -208,6 +208,61 @@ Four anchor-category variants currently enumerated for Iran-side buildings. Each
   → depends on (j) cultural-note block names WHICH legitimacy-source [loremaster]
 ```
 
+### 1.5 Sovereignty-bearing institution
+
+**Persian/Shahnameh anchor.** The institutional CENTER of the realm — the *seat* of rule, distinct from any individual ruler. The king carries the Farr (sacral-emitter generates it; Throne is its terminus), commands the *sepah* (identity-bearing-institutional produces it), is sustained by the *dehqan* tax-base (civic-anchor + labor-organization), but ALL of these flow through the *seat-of-rule* the Throne instantiates. Kay Khosrow renouncing "the throne" (`00_SHAHNAMEH_RESEARCH.md` §1 line 103) is renouncing the institutional surface, not just personal rule — the throne persists; Kay Khosrow leaves. Kaveh raising his banner (§1 line 90) is the *threat-to-the-throne* that overthrows Zahhak; Fereydun installing himself on it (§1 line 91) is the *re-legitimation* of the seat. The Shahnameh's political theology treats the throne as the singular institutional artifact whose continuity IS the kingdom's continuity.
+
+**Mechanical shape.**
+- Singular per faction (one Throne; not replicable; pre-placed at match-start, NOT player-built).
+- High HP + defendable (load-bearing: destruction must require sustained military effort; `balance.tres bldg_throne.max_hp = 2000.0`).
+- IDropoffTarget protocol — workers deposit AT the Throne per RNC §5.2 canonical pattern; the realm's resources flow TO the seat (mechanical surface of tribute-to-the-king).
+- Spawns workers (kargar) — the king's seat provisions the labor-base.
+- Vision source registered with FogSystem at placement.
+- **Destruction is TERMINAL** — emits `EventBus.throne_destroyed(team_id)` triggering Phase-8 win-condition consumer.
+- Forward-compat: convertible to Tier-2 *fortified-royal-seat* form (Qal'eh) preserving seat-identity through tier-transition (conversion-not-replacement; see sub-slot conversion-mechanic note below).
+
+**Cultural shape.**
+- Not one institution among many but the *condition-of-possibility* for all other institutions in the realm.
+- Loss = civilizational defeat, NOT mere military setback.
+- Bidirectional flow: tribute flows IN (dropoff target); realm-identity flows OUT (the kingdom is "where the Throne stands").
+- Mechanical register: *terminus + locus + holder* — distinct from sacral-emitter's *source* register, civic-anchor's *cultivator* register, identity-bearing-institutional's *transformer* register, labor-organization's *amplifier* register.
+- The ONE anchor-category that applies cross-faction at the shape level (Iran + Turan both have a singular royal seat); cultural register differs (Farr-legitimized vs sworn-bond-legitimized) but anchor-shape is invariant — see "Cross-faction near-symmetry" below.
+
+**Canonical examples.**
+- **Throne** (تخت, *takht*) — singular royal seat; spawned at match-start for both Iran and Turan. Iran Tier-1; ships Wave-3-Throne (Phase 3 session 8). See `game/scripts/world/buildings/throne.gd` header.
+- **Qal'eh** (قلعه, *qal'eh*, "fortress") — Tier-2 fortified-royal-seat; per `01_CORE_MECHANICS.md §5 line 193`, "the Fortress structure converts your Throne to 'Fortress mode'." Same anchor-category, tier-progression sub-slot specialization. Wave 2C / Phase 4.
+
+**Sub-slot axis. *Tier-progression of the seat.*** Each sub-slot specializes the seat by its tier-level + cultural register of rulership at that tier.
+
+| Sub-slot | Building | Tier | Cultural register |
+|---|---|---|---|
+| base-royal-seat | Throne | 1 | The founding seat; bare institutional surface |
+| fortified-royal-seat | Qal'eh | 2 | The defended seat; rule that has earned fortification through Tier-1→Tier-2 progression |
+| imperial-court-seat *(predicted, post-MVP)* | Royal Court | 3 | The expanded seat with formal court ritual; per `01_CORE_MECHANICS.md §8 line 284` |
+
+**Sub-slot conversion-mechanic note (STRUCTURAL — distinguishes this anchor-category from the other four).** Sub-slot progression is NOT new-instance placement; it is *conversion of the existing seat*. This is a structural difference from sacral-emitter sub-slots (Atashkadeh / Dadgah / Barghah / Yadgar are independent placeable buildings) and from identity-bearing-institutional sub-slots (Sarbaz-khaneh / Sowari-khaneh / Tirandazi are independent placeable buildings). The conversion-mechanic preserves the *singular-per-faction* invariant — the realm has ONE seat at any moment, even as that seat upgrades through tiers. **Future tier-progression work (Wave 2C Qal'eh; post-MVP Royal Court) inherits the conversion-not-replacement pattern from the Throne template-seed.**
+
+**Cross-faction NEAR-symmetry (loremaster leading hypothesis — DISTINCT from the structural-mismatch hypothesis governing the other four anchor-categories).** Turan ALSO has a Throne (Afrasiyab's seat is canonically named and located in the epic; capture/destruction of the enemy throne is the climactic act of the Iran-Turan wars; Kay Khosrow's victory over Afrasiyab per `00_SHAHNAMEH_RESEARCH.md` §1 line 103 + §1 line 121 indirectly via Siavoush's vengeance arc is the seat-fall that closes the Kayanian heroic age). The cultural register differs sharply — Iran: Farr-legitimized theological kingship anchored in sacred-flame continuity; Turan: sworn-loyalty named-rulership anchored in personal-bond to Afrasiyab/khan-lineage — but the anchor-shape (singular seat, terminal-stakes, IDropoffTarget, destruction = end-of-realm) is invariant. **This is the ONE anchor-category where cross-faction application is symmetric, NOT structurally-mismatched.** See §5 for the Turan-prediction table entry.
+
+**J4 triples pattern.** See `game/scripts/world/buildings/throne.gd` header for the full template. Abbreviated:
+```
+"Building is the singular institutional seat; destruction ends the kingdom"
+  → depends on (a) singleton-per-faction invariant enforced at spawn [gp-sys main.gd]
+  → depends on (b) terminal-stakes wired via EventBus.throne_destroyed signal [gp-sys]
+  → depends on (c) HealthComponent fatal-damage path emits signal [gp-sys]
+  → depends on (d) HP tunable so destruction requires sustained military effort [balance-engineer]
+"Realm's resources flow TO the seat (tribute-to-king reciprocity)"
+  → depends on (e) IDropoffTarget protocol implemented per RNC §5.2 [gp-sys]
+  → depends on (f) UnitState_Returning routes through Throne.deposit when present [gp-sys]
+  → depends on (g) ResourceSystem.dropoff_for_team lookup [gp-sys, engine-architect]
+"Cross-faction near-symmetry — same anchor-shape, different register"
+  → depends on (h) Iran and Turan both spawn Throne with same class [gp-sys main.gd]
+  → depends on (i) cultural-note prose names the register-divergence (Farr vs sworn-bond) [loremaster]
+"Forward-compat: tier-transition preserves seat identity"
+  → depends on (j) Throne supports Qal'eh conversion path [DEFERRED, Wave 2C / Phase 4]
+  → depends on (k) sub-slot axis (tier-progression) documented in taxonomy doc [loremaster, this dispatch]
+```
+
 ---
 
 ## 2. Brief-time review trichotomy (J2 refinement)
@@ -322,29 +377,30 @@ Persian morphology marks cultural register through a variety of compound suffixe
 
 All Iran-side `Building` subclasses currently shipped or predicted, with their anchor-category + sub-slot + Wave shipping reference + cultural-note citation.
 
-### 4.1 Tier 1 (5/5 shipped, complete)
+### 4.1 Tier 1 (6/6 shipped — 5 player-buildable + 1 pre-placed Throne)
 
 | Building | Persian | Anchor-category | Sub-slot | Wave | Cultural-note source |
 |---|---|---|---|---|---|
+| Throne | تخت | Sovereignty-bearing institution | base-royal-seat | Wave-3-Throne (Phase 3 session 8) | `game/scripts/world/buildings/throne.gd` header |
 | Khaneh | خانه | Civic-anchor | household-anchor | Pre-Phase-3 / wave 1A scaffolding | `game/scripts/world/buildings/khaneh.gd` |
 | Mazra'eh | مزرعه | Civic-anchor | cultivated-land-anchor | Wave 1A | `game/scripts/world/buildings/mazraeh.gd` lines 14-52 |
 | Ma'dan | معدن | Labor-organization | metallurgical-craft amplifier | Wave 1B | `game/scripts/world/buildings/madan.gd` lines 21-82 |
 | Sarbaz-khaneh | سربازخانه | Identity-bearing institutional | generic-infantry sepah | Wave 2A | `game/scripts/world/buildings/sarbaz_khaneh.gd` lines 25-104 |
 | Atashkadeh | آتشکده | Sacral-emitter / divine-source | sacred-flame continuity | Wave 2A.5 | `game/scripts/world/buildings/atashkadeh.gd` header |
 
-**Tier-1 closure observation.** Iran Tier-1 5/5 shipped 4-for-4 in their predicted anchor-categories without retrofit. This validates the taxonomy's predictive power at the easy case (Iran-side, settled-faction). The harder case is Turan (see §6).
+**Tier-1 closure observation (REVISED at Wave-3-Throne).** Iran Tier-1 is now 6/6 (5 player-buildable + 1 pre-placed Throne). The Throne wave grew the taxonomy from 4 to 5 anchor-categories (sovereignty-bearing institution added). The original 4-category framework was *incomplete* for Tier-1 closure; the Throne wave surfaced the missing category. This is the J2 trichotomy's third taxonomy-growth-required outcome (Ma'dan labor-organization 2026-05-15; Atashkadeh sacral-emitter 2026-05-18; Throne sovereignty-bearing institution 2026-05-22). With clone-check ×0 + slot-fit-verify ×2 (Sowari-khaneh + Tirandazi at Wave 2B) + taxonomy-growth-required ×3, the trichotomy has now produced all three outcomes empirically and is ready for §9.J2 promotion from watchlist to active rule.
 
 ### 4.2 Tier 2 (2/5 currently being shipped by Wave 2B)
 
 | Building | Persian | Anchor-category | Sub-slot | Wave | Cultural-note source |
 |---|---|---|---|---|---|
-| Qal'eh | قلعه | (gateway/tier-up — anchor-category TBD) | — | Wave 2C / Phase 4 | not yet authored |
-| Sowari-khaneh | سواری‌خانه | Identity-bearing institutional | cavalry-tradition | Wave 2B (in-flight) | `game/scripts/world/buildings/sowari_khaneh.gd` (pending Track 1.5) |
-| Tirandazi | تیراندازی | Identity-bearing institutional | archery-tradition | Wave 2B (in-flight) | `game/scripts/world/buildings/tirandazi.gd` (pending Track 1.5) |
+| Qal'eh | قلعه | Sovereignty-bearing institution | fortified-royal-seat | Wave 2C / Phase 4 | not yet authored |
+| Sowari-khaneh | سواری‌خانه | Identity-bearing institutional | cavalry-tradition | Wave 2B | `game/scripts/world/buildings/sowari_khaneh.gd` header |
+| Tirandazi | تیراندازی | Identity-bearing institutional | archery-tradition | Wave 2B | `game/scripts/world/buildings/tirandazi.gd` header |
 | Barghah | بارگاه | Sacral-emitter / divine-source | sovereignty-source *(predicted)* | Phase 4+ | not yet authored |
 | Yadgar | یادگار | Sacral-emitter / divine-source | memorial-source *(predicted)* | Phase 4+ | not yet authored |
 
-**Qal'eh open question.** Qal'eh's anchor-category is not yet locked. The mechanical role (Tier-1→Tier-2 conversion of the Throne building per `01_CORE_MECHANICS.md §5 line 193`) is a *tier-gateway* mechanic distinct from the four enumerated anchor-categories. May demand a fifth anchor-category (something like *sovereignty-gateway* or *tier-transformation*) OR may sit outside the anchor-category taxonomy entirely (it's a conversion of an existing building, not a new building-instance). Loremaster brief-time review at Wave 2C will resolve.
+**Qal'eh anchor-category RESOLVED at Wave-3-Throne (2026-05-22).** Per the sovereignty-bearing institution category established by Throne (§1.5), Qal'eh is the *fortified-royal-seat* sub-slot — Tier-2 conversion of the Throne preserving seat-identity through tier-progression. The conversion-mechanic (Throne → Qal'eh) is the canonical example of sub-slot progression *within* the same anchor-category, distinct from new-instance placement seen in other anchor-categories. This resolves the prior open question (was "anchor-category TBD" through v1.0.0; now locked at v1.1.0). Loremaster brief-time review at Wave 2C will verify the slot-fit-verify clone of the Throne template rather than re-litigating the category.
 
 **Dadgah is Tier-1 in spec but ships Phase-4.** Per `01_CORE_MECHANICS.md §5 line 187`, Dadgah is listed under Tier-1 buildings, but Phase 3 scope only ships Khaneh + Mazra'eh + Ma'dan + Sarbaz-khaneh + Atashkadeh as Tier-1. Dadgah is deferred to Phase 4. When it ships, it will be the first Phase-4 sacral-emitter sub-variant and an expected J2 trichotomy N=3 graduation candidate.
 
@@ -362,6 +418,7 @@ The Shahnameh's Iran-Turan asymmetry is NOT cosmetic. Iran is *settled, agrarian
 
 | Iran building | Turan analogue (leading hypothesis) | Structural mismatch |
 |---|---|---|
+| **Throne (sovereignty-bearing institution)** | **Throne (sovereignty-bearing institution) — Afrasiyab's seat** | **NEAR-SYMMETRY (exception — the ONE anchor-category that applies cross-faction symmetrically).** Iran and Turan both have a singular royal seat. Cultural register differs sharply: Iran's takht is *Farr-legitimized* (theological kingship anchored in sacred-flame continuity, sustained-by-just-rule); Turan's takht is *sworn-loyalty-legitimized* (personal-bond to Afrasiyab/khan-lineage, sustained-by-allegiance). Anchor-shape invariant: singular seat, terminal-stakes, IDropoffTarget, destruction = end-of-realm. **DO clone the Throne for Turan — same `throne.gd` extends, different team-id + visual accent + cultural register noted in prose.** Established at Wave-3-Throne (Phase 3 session 8). |
 | Mazra'eh (Grain via cultivation) | *karavan* (کاروان) — mobile caravan unit traveling between hubs with Grain payloads | Iran's grain comes from settled cultivation; Turan's comes from trade-route mobility. **Mazra'eh-as-fixed-resource-node is structurally wrong for Turan.** |
 | Ma'dan (Coin via organized labor at ore body) | *baj* (باج) — tribute extraction from subject peoples + raid-spoils | Iran's coin comes from organized-labor-on-ore; Turan's comes from extraction-by-demand. **Ma'dan-as-modifier-emitter is structurally wrong for Turan.** |
 | Sarbaz-khaneh / Sowari-khaneh / Tirandazi (institutional military training) | *otaq*-cluster (otaq = mobile-tent-household) + sworn-warrior-to-khan loyalty bond | Iran's military identity lives in institutional buildings; Turan's lives in the loyalty bond between named ruler (Afrasiyab, Piran) and named warrior. **Identity-bearing institutional clone is structurally wrong for Turan.** |
@@ -417,12 +474,14 @@ The discipline that consumes this doc:
 
 ## 7. Version history
 
+- **v1.1.0** (2026-05-22) — Wave-3-Throne (Phase 3 session 8) ships **sovereignty-bearing institution** as fifth anchor-category. New §1.5 defines mechanical shape (singular per faction, terminal-stakes, IDropoffTarget, conversion-not-replacement sub-slot progression) + cultural shape (institutional CENTER of the realm; the *seat* distinct from any individual ruler). Three sub-slots: base-royal-seat (Throne, Tier-1, ships this wave) + fortified-royal-seat (Qal'eh, Tier-2, anchor-category RESOLVED from prior v1.0.0 open-question) + imperial-court-seat (Royal Court, Tier-3, post-MVP). §4.1 Iran Tier-1 grows from 5/5 to 6/6 (Throne added). §4.2 Qal'eh row resolved to sovereignty-bearing institution. §5 Turan-prediction table prepends NEAR-SYMMETRY exception row — the Throne is the ONE anchor-category that applies cross-faction symmetrically (same anchor-shape, different cultural register: Iran Farr-legitimized vs Turan sworn-loyalty-legitimized). J2 trichotomy now has empirical precedent for all three outcomes (clone-check ×0, slot-fit-verify ×2, taxonomy-growth-required ×3); promotion from §9.J2 watchlist to active rule is appropriate at session-8 close retro.
 - **v1.0.0** (2026-05-21) — Initial ratification. Iran Tier-1 5/5 + Tier-2 2/5 in-flight assignments locked. J2 trichotomy + naming-shape-vs-anchor-shape discipline + Turan prediction notes consolidated from prior Building `.gd` headers and `STUDIO_PROCESS.md §9.J2`. Per Wave 2B Track 5 dispatch.
 
 **Next version triggers:**
-- Tier-2 closure (Qal'eh + Barghah + Yadgar ship + anchor-category locked) → v1.1.0 likely PATCH-MINOR depending on whether Qal'eh demands a fifth category.
-- Phase-4 Dadgah brief-time → J2 trichotomy N=3 graduation candidate; if it graduates, this doc moves from "watchlist refinement awaiting" to "ratified active rule" cross-reference. PATCH bump likely.
-- Turan first-building kickoff → v2.0.0 MAJOR; structural-mismatch hypothesis becomes empirical artifact.
+- Wave 2C / Phase 4 Qal'eh ship → slot-fit-verify under sovereignty-bearing institution / fortified-royal-seat sub-slot. PATCH bump (v1.1.x) for table cleanup + cultural-note citation.
+- Phase-4 first sacral-emitter sub-variant (Dadgah likely) → fourth slot-fit-verify under sacral-emitter / justice-source. PATCH bump.
+- §9.J2 watchlist-to-active promotion at session-8 close retro → MINOR bump to reflect the trichotomy's ratified status here.
+- Turan first-building kickoff → v2.0.0 MAJOR; structural-mismatch hypothesis becomes empirical artifact (except for the NEAR-SYMMETRY Throne case already in §5).
 
 ---
 

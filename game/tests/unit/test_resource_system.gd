@@ -384,3 +384,82 @@ func test_reset_restores_starting_values() -> void:
 		"reset restores Iran coin to 150")
 	assert_almost_eq(ResourceSystem.grain_for(Constants.TEAM_IRAN), 50.0, 1e-6,
 		"reset restores Iran grain to 50")
+
+
+# ===========================================================================
+# Wave-3-Throne — dropoff_for_team (RNC §5.2 deposit-target lookup)
+# ===========================================================================
+
+const _ThroneScene: PackedScene = preload(
+	"res://scenes/world/buildings/throne.tscn")
+
+
+func _spawn_throne_in_group(team: int) -> Variant:
+	var t: Variant = _ThroneScene.instantiate()
+	t.set(&"team", team)
+	add_child_autofree(t)
+	return t
+
+
+func test_dropoff_for_team_returns_null_when_no_throne() -> void:
+	# Cold path: no Thrones spawned → dropoff_for_team returns null.
+	# Returning state falls back to inline change_resource per defensive shape.
+	var result: Node3D = ResourceSystem.dropoff_for_team(Constants.TEAM_IRAN)
+	assert_null(result,
+		"dropoff_for_team must return null when no Throne exists for the team")
+
+
+func test_dropoff_for_team_finds_throne_in_group() -> void:
+	# Hot path: Throne spawned + in &"thrones" group → lookup returns it.
+	var throne: Variant = _spawn_throne_in_group(Constants.TEAM_IRAN)
+	var result: Node3D = ResourceSystem.dropoff_for_team(Constants.TEAM_IRAN)
+	assert_eq(result, throne,
+		"dropoff_for_team must return the Throne instance via SceneTree group iteration")
+
+
+func test_dropoff_for_team_filters_by_team() -> void:
+	# Cross-team safety: Iran Throne must NOT be returned for TEAM_TURAN.
+	# Mirror C1.2 anti-misuse: team-filter step prevents cross-team Throne leak.
+	var iran_throne: Variant = _spawn_throne_in_group(Constants.TEAM_IRAN)
+	var iran_result: Node3D = ResourceSystem.dropoff_for_team(Constants.TEAM_IRAN)
+	var turan_result: Node3D = ResourceSystem.dropoff_for_team(Constants.TEAM_TURAN)
+	assert_eq(iran_result, iran_throne,
+		"Iran query returns Iran Throne")
+	assert_null(turan_result,
+		"Turan query must return null when only Iran Throne exists")
+
+
+func test_dropoff_for_team_validates_is_instance_valid() -> void:
+	# Pitfall #16: stored Node ref may become a freed Object between
+	# memo-set and consumer read. dropoff_for_team MUST is_instance_valid
+	# before returning.
+	var throne: Variant = _spawn_throne_in_group(Constants.TEAM_IRAN)
+	# Populate the memo by calling once.
+	var first: Node3D = ResourceSystem.dropoff_for_team(Constants.TEAM_IRAN)
+	assert_eq(first, throne, "sanity: first call returns Throne")
+	# Free the Throne (non-canonical path: no throne_destroyed emit).
+	throne.free()
+	# Per-call is_instance_valid guard must catch the freed ref.
+	var second: Node3D = ResourceSystem.dropoff_for_team(Constants.TEAM_IRAN)
+	assert_null(second,
+		"Pitfall #16 regression: dropoff_for_team must NOT return a freed Object")
+
+
+func test_dropoff_for_team_memo_evicted_on_throne_destroyed_signal() -> void:
+	# Eager-eviction path: EventBus.throne_destroyed fires →
+	# ResourceSystem clears the team's memo entry.
+	var throne: Variant = _spawn_throne_in_group(Constants.TEAM_IRAN)
+	var first: Node3D = ResourceSystem.dropoff_for_team(Constants.TEAM_IRAN)
+	assert_eq(first, throne, "sanity: memo populated")
+	# Emit throne_destroyed — evicts memo. Throne still in group, so
+	# re-walk returns same instance (eviction clears memo only).
+	EventBus.throne_destroyed.emit(Constants.TEAM_IRAN)
+	var second: Node3D = ResourceSystem.dropoff_for_team(Constants.TEAM_IRAN)
+	assert_eq(second, throne,
+		"Post-eviction re-walk returns same Throne if still in group")
+
+
+func test_dropoff_for_team_neutral_returns_null() -> void:
+	# TEAM_NEUTRAL is not an economic actor; no neutral Throne exists.
+	var result: Node3D = ResourceSystem.dropoff_for_team(Constants.TEAM_NEUTRAL)
+	assert_null(result, "dropoff_for_team(TEAM_NEUTRAL) returns null")

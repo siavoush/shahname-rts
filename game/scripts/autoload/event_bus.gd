@@ -145,6 +145,29 @@ signal resource_changed(team: int, kind: StringName, delta_x100: int,
 signal building_placed(unit_id: int, kind: StringName, team: int, position: Vector3)
 
 
+# ---- Throne destruction signal (Wave-3-Throne) -----------------------------
+# Emitted by Throne._on_health_zero when a Throne's HealthComponent hits
+# zero. Forward-compat seam for Phase 8 win/lose screen — destroying a
+# faction's Throne is the terminal-stakes condition.
+#
+# This wave (Throne wave) only emits the signal; no consumer subscribes
+# yet. Phase 8 ships the win-screen UI consumer.
+#
+# Also consumed by ResourceSystem.dropoff_for_team to invalidate the
+# per-team memo when a Throne is destroyed (the cached freed-Node would
+# fail is_instance_valid; this signal lets us evict eagerly).
+#
+# Payload: team_id (Constants.TEAM_IRAN or TEAM_TURAN) — which faction
+# just lost its Throne.
+#
+# @warning_ignore("unused_signal") per existing EventBus convention:
+# the win-screen consumer lands in Phase 8; ResourceSystem subscribes at
+# autoload init. Annotation matches the every-Phase-0/1-signal pattern
+# where consumers landed later than emitters.
+@warning_ignore("unused_signal")
+signal throne_destroyed(team_id: int)
+
+
 # ---- Build-placement UI signals (read-shaped) ------------------------------
 # Emitted by the build menu when the player clicks a building button — the
 # user has entered placement mode. The BuildPlacementHandler subscribes and
