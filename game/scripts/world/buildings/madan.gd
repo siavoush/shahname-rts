@@ -80,6 +80,32 @@ extends "res://scripts/world/buildings/building.gd"
 ## not cartoon villains" rule: each faction's economy reflects its
 ## social organization; copy/paste between them produces hollow design.
 ##
+## Local-accumulation pattern — ore-source as staging yard (Wave 3-LocalDropoffs,
+## 2026-05-25):
+##
+## Ma'dan now implements RNC §5.2 IDropoffTarget for coin — workers extracting
+## from the adjacent mine deposit coin HERE (the ore-staging yard at the ma'dan
+## site) before any onward flow to the Throne. This surfaces a structural
+## reality the prior cultural-note already implied but did not mechanically
+## realize: *ma'dan as place where ore is brought out and held* — the labor-
+## organization frame's "organized labor around an ore body" requires a local
+## locus where the brought-out substance accumulates before any further
+## refinement, minting, or tribute-flow to the king's purse. The mechanic
+## now matches the prose. Ma'dan is the FIRST stop in the coin-flow, not
+## the final terminus (Throne remains the canonical "sim-o-zar" treasury).
+##
+## Forward-compat seam (Phase 4+ Trade & Transport scope): the ore-staging
+## yard becomes the caravan-origin for coin once Trade & Transport ships.
+## The `&"coin_depots"` SceneTree group + `dropoff_for_team_by_kind` API
+## shape are the structural seams future caravan-source consumers will read.
+## Sharper than the Mazra'eh case: per the existing Turan structural-mismatch
+## caveat above, Turan plausibly does NOT build Ma'dan AT ALL — Turan's coin
+## economy routes through *baj* tribute + raid-spoils. A future caravan
+## mechanic for Iran-side Ma'dan→Throne flow has NO Turan-side analogue at
+## the building-level; Turan's coin-flow is unit-mediated (raid-spoils) rather
+## than depot-mediated. See `QUESTIONS_FOR_DESIGN.md` 2026-05-24 "Trade &
+## Transport economy" entry.
+##
 ## What lives here vs in the base class:
 ##   - kind = &"madan" (dual-init pattern as in khaneh.gd / mazraeh.gd).
 ##   - NO resource_kind, NO ResourceNode-shape fields (is_gatherable,

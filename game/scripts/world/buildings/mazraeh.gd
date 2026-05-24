@@ -51,6 +51,26 @@ extends "res://scripts/world/buildings/building.gd"
 ##   Do not clone Mazra'eh as a Turan building (flagged for session N when Turan
 ##   economy ships; will require fresh loremaster review).
 ##
+##   Local-accumulation pattern — dehqan-Throne reciprocity made spatially
+##   explicit (Wave 3-LocalDropoffs, 2026-05-25):
+##
+##   Mazra'eh now implements RNC §5.2 IDropoffTarget for grain — workers
+##   harvesting from this farm deposit grain HERE (local granary) before any
+##   onward flow to the Throne. This surfaces the Shahnameh-era economic-
+##   political fact that the dehqan's land is itself a *site of accumulation*
+##   distinct from the royal treasury: harvested grain is held at the
+##   farmstead's granary before any tax-flow leaves. The mechanic preserves
+##   the "wealth flows to the takht" framing established by `throne.gd`
+##   (Wave-3-Throne) — Mazra'eh is the FIRST stop, not the final terminus.
+##
+##   Forward-compat seam (Phase 4+ Trade & Transport scope): the local-store
+##   accumulation point becomes the caravan-origin once Trade & Transport
+##   ships. The `&"grain_depots"` SceneTree group + `dropoff_for_team_by_kind`
+##   API shape are the structural seams future caravan-source consumers will
+##   read; the cultural framing here (farmstead-granary as staging yard) is
+##   the cultural seam future caravan-mechanic prose will inherit. See
+##   `QUESTIONS_FOR_DESIGN.md` 2026-05-24 "Trade & Transport economy" entry.
+##
 ## What lives here vs in Building base:
 ##   - kind = &"mazraeh" (dual-init pattern as in khaneh.gd).
 ##   - Duck-typed three-call API (request_extract / complete_extract /
