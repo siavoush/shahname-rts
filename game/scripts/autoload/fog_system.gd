@@ -350,6 +350,14 @@ func _on_fog_update_phase() -> void:
 	for si in range(NUM_TEAMS):
 		_currently_visible[si].fill(0)
 
+	# DEBUG: count sources by team
+	var team_counts: Dictionary = {}
+	for h in _sources:
+		var tid: int = _sources[h][&"team"]
+		team_counts[tid] = team_counts.get(tid, 0) + 1
+	if SimClock.tick % 60 == 0:  # once a second
+		print("[fog-diag] tick=", SimClock.tick, " sources_by_team=", team_counts, " total=", _sources.size())
+
 	# Stale handle keys collected for cleanup (avoids mutating dict while iterating).
 	var stale: Array[int] = []
 
@@ -371,22 +379,23 @@ func _on_fog_update_phase() -> void:
 			continue
 		var si: int = _team_index(team_id)
 
-		var vis: PackedByteArray = _currently_visible[si]
-		var seen: PackedByteArray = _ever_seen[si]
-
+		# BUG-D3 fix: PackedByteArray is value-type with copy-on-write semantics
+		# in GDScript. `var vis = _currently_visible[si]` then `vis[idx] = 1` writes
+		# to a local copy — the storage is never updated. Index directly into the
+		# Array[PackedByteArray] members instead.
 		if rec[&"is_static"]:
 			# Static source: use pre-cached cells.
 			for idx in rec[&"cached_cells"]:
-				vis[idx] = 1
-				seen[idx] = 1
+				_currently_visible[si][idx] = 1
+				_ever_seen[si][idx] = 1
 		else:
 			# Dynamic source (unit): recompute integer-circle each tick.
 			var radius: int = rec[&"radius_cells"]
 			var center: Vector2i = world_to_cell(node.global_position)
 			if radius <= 0:
 				var single_idx: int = _cell_index(center)
-				vis[single_idx] = 1
-				seen[single_idx] = 1
+				_currently_visible[si][single_idx] = 1
+				_ever_seen[si][single_idx] = 1
 			else:
 				for dy in range(-radius, radius + 1):
 					var cy: int = center.y + dy
@@ -399,11 +408,21 @@ func _on_fog_update_phase() -> void:
 						if cx < 0 or cx >= grid_w:
 							continue
 						var idx: int = cy * grid_w + cx
-						vis[idx] = 1
-						seen[idx] = 1
+						_currently_visible[si][idx] = 1
+						_ever_seen[si][idx] = 1
 
 	for handle in stale:
 		_sources.erase(handle)
+
+	# DEBUG: after rebuild, count visible cells per team
+	if SimClock.tick % 60 == 0:
+		var iran_visible: int = 0
+		var turan_visible: int = 0
+		for v in _currently_visible[0]:
+			if v == 1: iran_visible += 1
+		for v in _currently_visible[1]:
+			if v == 1: turan_visible += 1
+		print("[fog-diag]   post-rebuild: iran_idx=0 visible_cells=", iran_visible, " turan_idx=1 visible_cells=", turan_visible)
 
 
 # ---------------------------------------------------------------------------

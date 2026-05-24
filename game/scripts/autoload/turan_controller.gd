@@ -118,6 +118,7 @@ func _ready() -> void:
 	# schema's Normal default. Test fixtures often construct TuranController
 	# without the full balance chain.
 	_probe_cadence_ticks = _resolve_probe_cadence()
+	print("[turan] TuranController._ready — cadence=", _probe_cadence_ticks)  # DEBUG (live-test diag)
 
 	# Subscribe to EventBus.sim_phase. Canonical pattern (per brief §4 Track 1
 	# + BUG-D1 lesson at `fog_system.gd` post-fix `f855ec5`):
@@ -214,10 +215,12 @@ func _step_idle() -> void:
 	if _ticks_since_last_probe < _probe_cadence_ticks:
 		return
 	# Cadence elapsed — try to launch a probe.
+	print("[turan] cadence elapsed, attempting probe at tick=", SimClock.tick)  # DEBUG
 	var target: Variant = _pick_target()
 	if not is_instance_valid(target):
 		# No visible Iran unit. Stay idle; counter stays at cadence so we
 		# retry next AI-tick (don't wait another full cadence after a no-op).
+		print("[turan]   no visible Iran target — staying idle")  # DEBUG
 		return
 	var commanded: Variant = _pick_turan_unit(target)
 	if not is_instance_valid(commanded):
@@ -226,7 +229,9 @@ func _step_idle() -> void:
 		# Per brief §4 Track 1 Decision 5: "Pop-cap fallback if no Turan
 		# units alive — log debug message, stay in idle. No production-
 		# driving (deferred per §1 exclusions)."
+		print("[turan]   target found but no Turan unit near it — staying idle")  # DEBUG
 		return
+	print("[turan]   PROBE FIRING — target=", target, " commanded=", commanded)  # DEBUG
 	# Issue the attack-move. Pitfall #16 safety: we just `is_instance_valid`d
 	# both Variants above — the cast inside _issue_attack_move is safe in
 	# this synchronous path.
@@ -315,17 +320,21 @@ func _resolve_probe_cadence() -> int:
 func _pick_target() -> Variant:
 	var fog: Node = _autoload_or_null(&"FogSystem")
 	if fog == null:
+		print("[turan-diag]   FogSystem autoload not found")  # DEBUG
 		return null
 	var spatial: Node = _autoload_or_null(&"SpatialIndex")
 	if spatial == null:
+		print("[turan-diag]   SpatialIndex autoload not found")  # DEBUG
 		return null
 	# Query Iran-team agents in a broad radius. SpatialIndex.query_radius_team
 	# returns SpatialAgentComponent Nodes; the parent is the Unit.
 	var origin: Vector3 = Vector3.ZERO
 	var agents: Array = spatial.call(
 		&"query_radius_team", origin, _PROBE_SEARCH_RADIUS_M, Constants.TEAM_IRAN)
+	print("[turan-diag]   SpatialIndex returned ", agents.size(), " Iran agents")  # DEBUG
 	var best_target: Variant = null
 	var best_dist_sq: float = INF
+	var fog_rejected: int = 0
 	for agent in agents:
 		if not is_instance_valid(agent):
 			continue
@@ -336,7 +345,9 @@ func _pick_target() -> Variant:
 			continue
 		var pos: Vector3 = (parent as Node3D).global_position
 		# Fog gate: target must be currently visible to Turan.
-		if not fog.call(&"is_visible_to", Constants.TEAM_TURAN, pos):
+		var vis: bool = fog.call(&"is_visible_to", Constants.TEAM_TURAN, pos)
+		if not vis:
+			fog_rejected += 1
 			continue
 		var dx: float = pos.x - origin.x
 		var dz: float = pos.z - origin.z
@@ -344,6 +355,8 @@ func _pick_target() -> Variant:
 		if d2 < best_dist_sq:
 			best_dist_sq = d2
 			best_target = parent
+	if best_target == null and agents.size() > 0:
+		print("[turan-diag]   fog rejected ", fog_rejected, " of ", agents.size(), " agents")  # DEBUG
 	return best_target
 
 

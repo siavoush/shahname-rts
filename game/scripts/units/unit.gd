@@ -428,8 +428,18 @@ func _register_fog_vision_source() -> void:
 	# Compose the per-kind field name. Per FogConfig schema:
 	#   sight_kargar_cells / sight_piyade_cells / sight_kamandar_cells /
 	#   sight_savar_cells / sight_rostam_cells.
+	# BUG-D4 fix: Turan unit_types are prefixed with "turan_" (e.g.,
+	# "turan_piyade") but FogConfig field names are NOT prefixed — per
+	# FOG_DATA_CONTRACT §2.2 "Turan units use the same keys (symmetric)."
+	# Strip the prefix before the lookup. Mirrors combat_matrix.gd's
+	# _turan_base_to_iran_key fold pattern.
+	var lookup_kind: String = String(unit_type)
+	if lookup_kind.begins_with("turan_"):
+		lookup_kind = lookup_kind.substr(6)  # strip "turan_"
+		if lookup_kind == "asb_savar":
+			lookup_kind = "asb_savar_kamandar"  # special case per balance.tres
 	var field_name: StringName = StringName(
-		"sight_" + String(unit_type) + "_cells")
+		"sight_" + lookup_kind + "_cells")
 	var path: String = Constants.PATH_BALANCE_DATA
 	if not FileAccess.file_exists(path):
 		return  # No BalanceData on disk — bare-fixture path.
