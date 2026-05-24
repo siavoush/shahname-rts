@@ -2,7 +2,7 @@
 title: Phase 3 Session 8 — Throne Wave Kickoff (Iran + Turan HQ + game-goal landmark)
 type: plan
 status: draft
-version: 1.0.1
+version: 1.0.2
 owner: team-lead
 summary: Throne wave — ships the Iran + Turan HQ buildings that close Phase 3's economic loop AND seed the Phase 8 win condition. Currently the Kargar deposit path is inline (no walk-back, dead RNC §5 IDropoffTarget protocol); the Throne becomes the canonical drop-off target. Both factions get a Throne spawned at match start. High HP + golden visual accent + "destroyed = lose" forward-compat seam (Phase 8 win-screen consumer). Wave 3B's TuranController gets a natural high-priority target. **First wave to use §9.M6 log-instrumentation-from-day-1 + mirror-reviewer brief-time review as MANDATORY discipline gates.** Closes Phase 3.
 audience: all
@@ -31,10 +31,11 @@ Before this wave, the project has:
 - Buildings constructed by workers; AI probe-attacking starter units; no win condition.
 
 After this wave, the project has:
-- **Iran Throne + Turan Throne** spawned at match start; both factions have a visible royal seat
-- **Workers walk back to the Throne** to deposit resources — the `change_resource` chokepoint call MOVES from `unit_state_returning._perform_deposit` to `Throne.deposit(resource_kind, amount, worker)` per RNC §5.2 canonical pattern. UnitState_Returning delegates by calling `target.deposit(...)`. (Mirror-reviewer C1.4 disambiguation: deposit-accounting moves into Throne; Returning becomes a routing layer.)
+- **Iran Throne + Turan Throne** spawned at match start; both factions have a visible royal seat. **The Throne is the FIRST cross-faction-symmetric anchor-category** — Turan ships an identical `throne.gd extends Building` instance (different team-id + visual accent), DIFFERENT cultural register (Iran: Farr-legitimized theological kingship; Turan: sworn-loyalty named-rulership), SAME anchor-shape (singular seat, terminal-stakes, IDropoffTarget, destruction = end-of-realm). This is the **opposite of the structural-mismatch pattern** that governs the other four anchor-categories per loremaster brief-time review.
+- **Workers walk back to the Throne** to deposit resources — the `change_resource` chokepoint call MOVES from `unit_state_returning._perform_deposit` to `Throne.deposit(resource_kind, amount, worker)` per RNC §5.2 canonical pattern. UnitState_Returning delegates by calling `target.deposit(...)`. (Mirror-reviewer C1.4 disambiguation: deposit-accounting moves into Throne; Returning becomes a routing layer.) **The dehqan-Throne reciprocity (tribute-to-the-king) is the mechanical realization of the Shahnameh's attested economic-political relationship.**
 - **TuranController has a natural high-priority target** (the Iran Throne) — combat acquires stakes
 - **Throne destruction = forward-compat win-condition seam** for Phase 8 (`EventBus.throne_destroyed(team_id)` signal; UI screen lands in Phase 8)
+- **NEW fifth anchor-category established**: `sovereignty-bearing institution` per `docs/ANCHOR_CATEGORY_TAXONOMY.md` v1.1.0. Sub-slot axis is *tier-progression of the seat*: Throne (Tier 1 base-royal-seat) → Qal'eh (Tier 2 fortified-royal-seat, Phase 4 conversion-not-replacement) → Royal Court (Tier 3 imperial-court-seat, post-MVP). **Qal'eh's anchor-category question from session-6 retro Q3 Gap 1 is RESOLVED at this wave.**
 - The cultural lore the project has been carrying (`unit_state_returning.gd` "tribute to the king" prose, `fog_config.gd:77` "always-on building vision anchoring the Iran start area") finally has a real referent in code
 
 **This wave closes Phase 3.** Phase 4 then opens with proper production-queue UI, tech-tier advancement, and the full Farr generator/drain set per `02_IMPLEMENTATION_PLAN.md` §3.4.
@@ -45,7 +46,7 @@ After this wave, the project has:
 
 | Surface | Wave state |
 |---|---|
-| **`throne.gd` Building subclass** | NEW class extends `building.gd`. `kind = &"throne"`. **`max_hp = 2000` per existing `balance.tres:213` `bldg_throne.max_hp = 2000.0`** (lead deferring to balance-engineer's wave-prior authoring per §9.L1; original brief's 5000 was lead-invention without spec basis). 4×4 cell footprint. **Implements RNC §5.2 canonical IDropoffTarget protocol: `deposit(resource_kind: StringName, amount: int, worker: Unit) -> void` + `get_deposit_position() -> Vector3`** (mirror C1.1 — the contract's actual method signatures, NOT lead's invented `is_dropoff_target_for` / `get_dropoff_position`). **Anchor-category: TBD by loremaster Track 4 brief-time review** (mirror C3.1 — civic-anchor already occupied by Khaneh/Mazra'eh; Throne likely sacral-emitter or identity-bearing-institutional; lead does NOT pre-assign). |
+| **`throne.gd` Building subclass** | NEW class extends `building.gd`. `kind = &"throne"`. **`max_hp = 2000` per existing `balance.tres:213` `bldg_throne.max_hp = 2000.0`** (lead deferring to balance-engineer's wave-prior authoring per §9.L1; original brief's 5000 was lead-invention without spec basis). 4×4 cell footprint. **Implements RNC §5.2 canonical IDropoffTarget protocol: `deposit(resource_kind: StringName, amount: int, worker: Unit) -> void` + `get_deposit_position() -> Vector3`** (mirror C1.1 — the contract's actual method signatures). **Anchor-category: `sovereignty-bearing institution`** (NEW fifth category proposed by loremaster Track 4 brief-time review 2026-05-24; resolves mirror C3.1 + session-6 retro Q3 Gap 1 Qal'eh open question; J2 trichotomy taxonomy-growth-required outcome #3). See `docs/ANCHOR_CATEGORY_TAXONOMY.md` v1.1.0 §1.5 for category definition. |
 | **`throne.tscn` scene** | NEW scene inheriting `building.tscn`. Mesh: large box ~4×3×4 m (visibly larger than Khaneh/Sarbaz-khaneh). Material: gold accent (e.g., `Color(0.85, 0.7, 0.3)`); contrasts both Iran-blue + Turan-red palettes — kingship transcends faction color. |
 | **Match-start spawn** | `main.gd:_spawn_starting_buildings` (NEW function or extension of existing): spawn Iran Throne at Iran-side HQ position (Z<0, far south, near the Kargar spawn cluster). Spawn Turan Throne at Turan-side mirror position (Z>0, far north). |
 | **Worker-deposit routing** | `unit_state_returning.gd:_perform_deposit` (lines 214-243; already wired to economy chokepoint at line 235) REFACTORS: query for the team's Throne via `ResourceSystem.dropoff_for_team(team)`; if Throne exists, call `throne.deposit(kind, amount, worker_node)` instead of `ResourceSystem.change_resource(...)` directly. The Throne owns the chokepoint call internally (per RNC §5.2 canonical pattern). **If no Throne** (test fixtures, pre-Throne-spawn): fall back to current inline `change_resource` call. **Critical mirror C1.4 disambiguation: only ONE path calls change_resource per deposit — either Throne.deposit (when Throne exists) OR Returning (fallback). NEVER both.** Update Returning's existing call to translate `ResourceSystem.add(...)` per RNC §5.2 stale example into the canonical `ResourceSystem.change_resource(...)` name (Track 1 acknowledges RNC §5.2 has stale `.add` reference; not in scope to fix the contract this wave). |
@@ -203,18 +204,24 @@ Track 1 (gameplay-systems) implementing `ResourceSystem.dropoff_for_team` should
 **Tests:**
 - `test_balance_data.gd` — assert `bldg_throne.max_hp == 5000`, costs == 0.
 
-### Track 4 — shahnameh-loremaster-p3s5 — cultural framing + Persian naming + anchor-category classification
+### Track 4 — shahnameh-loremaster-p3s5 — anchor-category classification + cultural-note prose (ALREADY SHIPPED at brief-time review 2026-05-24)
 
-**Mirror C3.1 correction:** Anchor-category is loremaster's call, not lead's pre-assignment. Per existing `ANCHOR_CATEGORY_TAXONOMY.md`, `civic-anchor` is occupied by Khaneh + Mazra'eh (settled-life institutions). Throne is structurally different — closer to **sacral-emitter** (continuity-of-legitimating-substance, kingship-as-Farr-bearer) OR **identity-bearing-institutional** (the institution that DEFINES "Iranian civilization"). Loremaster picks; lead does not pre-frame.
+**Status: COMPLETE pre-implementation.** Loremaster's brief-time review (2026-05-24) delivered both deliverables. Lead green-lit; loremaster ships taxonomy doc as separate Track 4 commit on this branch before gp-sys's Track 1 dispatch.
 
-**Files:**
+**Outcomes:**
 
-- **Cultural-note prose** (4-part loremaster template per memory `feedback_world_builder_discipline.md`) — to be pasted into `throne.gd`'s header comment by gp-sys at Track 1 commit-1.5. Should cover:
-  - **Historical referent:** the Kayanian throne — Kay Kavus / Kay Khosrow / Kay Lohrasp. Or the broader institution. Loremaster's call.
-  - **Mechanical-thematic link:** "destroy the throne, end the kingdom" — the win condition mirrors Iran-Turan war's final-battle dynamics in the Shahnameh.
-  - **Persian terminology:** suggested in-engine display name (e.g., "Takht" / تخت — throne) for Phase 4 Persian-translation pass.
-  - **Cross-faction symmetry:** does Turan have a meaningfully different Throne name? Afrasiyab's seat? Or symmetric for MVP? Loremaster's call.
-- **`docs/ANCHOR_CATEGORY_TAXONOMY.md`** — classify Throne into existing category (civic-anchor / labor-organization / identity-bearing institutional / sacral-emitter) OR propose new category if none fits. Show reasoning. Update taxonomy doc with Throne row if classification fits an existing category cleanly; propose new category at retro if not.
+- **Anchor-category resolution:** loremaster walked through each of the four existing anchor-categories and rejected each (civic-anchor: Throne not replicable + not productive-stewardship-shaped; labor-organization: Throne not a buff-emitter; identity-bearing-institutional: Throne does NOT produce named-arm units + at different level of abstraction; sacral-emitter: Throne is *terminus* of legitimacy, NOT *source-emitter*; sacral-emitter has continuous passive emit, Throne has none).
+- **NEW fifth anchor-category proposed: `sovereignty-bearing institution`.** Mechanical shape: singular per faction + terminal-stakes + IDropoffTarget + high HP + spawns workers + tier-transition convertible. Cultural shape: institutional CENTER of the realm; condition-of-possibility for institutions; loss = civilizational defeat.
+- **Sub-slot axis: tier-progression of the seat (CONVERSION, not new-instance placement)** — Throne → Qal'eh → Royal Court. This is structurally distinct from sub-slot specialization in other anchor-categories.
+- **Cross-faction NEAR-symmetry hypothesis** — the ONE anchor-category where Iran and Turan share structurally-symmetric building (different cultural register, same anchor-shape). OPPOSITE of structural-mismatch pattern of other four categories.
+- **J2 trichotomy graduates** — 3-of-3 outcomes empirically produced (clone-check×0, slot-fit-verify×2, taxonomy-growth-required×3). Lead codifies graduation in STUDIO_PROCESS §9.J at session-8 retro PR.
+
+**Files (loremaster ships as separate Track 4 commit):**
+
+- **`docs/ANCHOR_CATEGORY_TAXONOMY.md` v1.0.0 → v1.1.0**: 5 edits (§1.5 new category, §4.1 row, §4.2 Qal'eh row + RESOLVED prose, §5 Turan near-symmetry exception, §7 changelog + frontmatter version bump).
+- **Cultural-note 4-part prose** (delivered in SendMessage; lead pastes at gp-sys's Track 1 Commit-1.5 per established Wave 2A.5 / 2B pattern; verbatim).
+
+**Track 1 (gp-sys) gets cultural-note paste at Commit-1.5 — same pattern as Wave 2A.5 / 2B.**
 
 **§9.M6 log instrumentation:** none (no code shipped by this track).
 
@@ -281,4 +288,4 @@ Shared surfaces touched:
 
 **Mirror's 4 verified surfaces** (no change): FogSystem.register_vision_source 4-arg signature; EventBus.sim_phase signal canonical; sight_throne_cells=4 schema; Building base hooks.
 
-*Status: v1.0.1 — POST-MIRROR-REVIEW 2026-05-24 by lead. Ready for loremaster brief-time review (Track 4 anchor-category) and implementer dispatch. Throne wave is the **second wave to use mirror-reviewer brief-time discipline** (first was Wave 3B at session-7 close), validating the discipline empirically — caught 4 blockers that would have shipped to retroactive bug fix-wave otherwise.*
+*Status: v1.0.2 — POST-MIRROR + POST-LOREMASTER 2026-05-24 by lead. Both brief-time reviews complete. Ready for implementer dispatch (gp-sys Track 1 + world-builder Track 2 + balance-engineer Track 3) immediately upon loremaster's taxonomy doc commit landing. Throne wave is the **second wave to use mirror-reviewer + first wave to use loremaster-classification-blocking-implementer-dispatch** — both disciplines empirically validated this session.*
