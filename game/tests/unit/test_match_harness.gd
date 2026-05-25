@@ -43,6 +43,15 @@ func _on_farr_changed(amount: float, reason: String, source_unit_id: int,
 
 func before_each() -> void:
 	_farr_events = []
+	# Defensive autoload reset at the START of every test, not just END.
+	# Task #208 workspace-bleed fix (2026-05-25): prior tests in other
+	# files can leak SimClock.tick state via _physics_process firing
+	# between their last after_each and our test body — only after_each
+	# resetting was a guard against in-file bleed but not cross-file. This
+	# defensive front-reset closes the workspace-bleed window.
+	SimClock.reset()
+	GameState.reset()
+	PathSchedulerService.reset()
 	# Do NOT create a harness here — each test creates its own to isolate
 	# the start_match / teardown lifecycle.
 

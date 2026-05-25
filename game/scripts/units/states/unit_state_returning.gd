@@ -78,6 +78,15 @@ var _arrival_pending: bool = false
 # the "no walk" / "instant arrival" path running the deposit twice.
 var _deposited: bool = false
 
+# Cached depot reference from enter() time. Used by _perform_deposit() to
+# detect mid-walk divergence — if the fresh dropoff_for_team_by_kind query
+# returns a DIFFERENT depot than enter() resolved against, the worker
+# walked to position A but is depositing at depot B (depot A destroyed
+# mid-walk, or a closer one was built / spawned). The fresh re-query is
+# authoritative for the deposit credit (C1.4 holds), but the divergence
+# is a signal worth logging per §9.M6 day-1-instrumentation discipline.
+var _deposit_target_dropoff: Node3D = null
+
 # The mine the gather loop is anchored on. After deposit completes, we
 # transition back to Gathering with this Node as the target — sustains the
 # loop without input layer intervention.
@@ -96,6 +105,7 @@ func _init() -> void:
 func enter(_prev: Object, ctx: Object) -> void:
 	_movement = null
 	_deposit_target_pos = Vector3.ZERO
+	_deposit_target_dropoff = null
 	_arrival_pending = false
 	_deposited = false
 	_loop_target_node = null
@@ -165,9 +175,17 @@ func enter(_prev: Object, ctx: Object) -> void:
 		if dropoff != null and is_instance_valid(dropoff) \
 				and dropoff.has_method(&"get_deposit_position"):
 			_deposit_target_pos = dropoff.call(&"get_deposit_position")
+			# Cache the depot reference for mid-walk divergence detection
+			# in _perform_deposit. Per architecture-reviewer C2.6 +
+			# godot-code-reviewer fix-up wave (2026-05-25): if the fresh
+			# re-query at deposit time returns a DIFFERENT depot than this
+			# cached ref, log the divergence loudly per §9.M6 day-1
+			# instrumentation discipline.
+			_deposit_target_dropoff = dropoff
 		else:
 			# Zero-walk fallback (test fixtures, pre-depot-spawn boot).
 			_deposit_target_pos = _get_self_position(ctx)
+			_deposit_target_dropoff = null
 
 	# Kick off the path. If the deposit target is the unit's own position,
 	# the request still fires (the path will arrive on a later tick at
@@ -296,6 +314,24 @@ func _perform_deposit(ctx: Object) -> void:
 		# to position B; for now the deposit fires from wherever the
 		# worker landed.
 		var dropoff: Node3D = ResourceSystem.dropoff_for_team_by_kind(team, kind)
+		# Mid-walk divergence detection (architecture-reviewer C2.6 +
+		# godot-code-reviewer fix-up wave 2026-05-25). If the fresh re-query
+		# returns a DIFFERENT depot than enter()'s cached ref, log it loudly
+		# per §9.M6 day-1-instrumentation discipline. The fresh query is
+		# authoritative for the deposit credit (C1.4 holds); the cached
+		# walk-target was stale, but the divergence is a real signal
+		# (depot destroyed mid-walk, OR closer depot built/spawned mid-walk).
+		# Log so live-test can verify the depot-destroyed-mid-walk case
+		# without retro-fitting prints.
+		if _deposit_target_dropoff != null and dropoff != _deposit_target_dropoff:
+			var cached_id: String = "<freed>"
+			if is_instance_valid(_deposit_target_dropoff):
+				cached_id = str(_deposit_target_dropoff)
+			var fresh_id: String = "null"
+			if dropoff != null:
+				fresh_id = str(dropoff)
+			print("[returning] dropoff_divergence team=%d kind=%s enter=%s deposit=%s"
+				% [team, str(kind), cached_id, fresh_id])
 		if dropoff != null and is_instance_valid(dropoff) \
 				and dropoff.has_method(&"deposit"):
 			# Depot-present path. Depot.deposit owns the chokepoint call
@@ -327,6 +363,7 @@ func exit() -> void:
 	_loop_target_node = null
 	_arrival_pending = false
 	_deposited = false
+	_deposit_target_dropoff = null
 
 
 func _get_self_position(ctx: Object) -> Vector3:

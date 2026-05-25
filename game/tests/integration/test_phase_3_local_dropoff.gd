@@ -84,6 +84,14 @@ func _spawn_madan(team: int, pos: Vector3 = Vector3.ZERO) -> Variant:
 	return m
 
 
+func _spawn_mazraeh(team: int, pos: Vector3 = Vector3.ZERO) -> Variant:
+	var m: Variant = MazraehScene.instantiate()
+	m.set(&"team", team)
+	m.position = pos
+	_world_root.add_child(m)
+	return m
+
+
 func _spawn_throne(team: int, pos: Vector3 = Vector3.ZERO) -> Variant:
 	var t: Variant = ThroneScene.instantiate()
 	t.set(&"team", team)
@@ -125,6 +133,26 @@ func _enter_returning_with_coin_carry(deposit_target: Vector3) -> void:
 			&"deposit_target": deposit_target,
 			&"carry_kind": Constants.KIND_COIN,
 			&"carry_amount_x100": 1000,
+		},
+	}
+	_kargar.fsm.transition_to(&"returning")
+
+
+func _enter_returning_with_grain_carry(deposit_target: Vector3) -> void:
+	# Mirror of _enter_returning_with_coin_carry but for grain. Tests the
+	# kind-aware routing branch for KIND_GRAIN → &"grain_depots" group →
+	# nearest Mazra'eh. Without a grain-side integration test, the C1.1
+	# BOTH-call-sites regression vector would have zero end-to-end coverage
+	# on the grain path (godot-code-reviewer BLOCKER 2 fix-up wave).
+	_kargar._carry_kind = Constants.KIND_GRAIN
+	_kargar._carry_amount_x100 = 500  # 5 Grain (smaller than Coin to differentiate)
+	_kargar.current_command = {
+		"kind": &"return",
+		"payload": {
+			&"target_node": _mine,
+			&"deposit_target": deposit_target,
+			&"carry_kind": Constants.KIND_GRAIN,
+			&"carry_amount_x100": 500,
 		},
 	}
 	_kargar.fsm.transition_to(&"returning")
@@ -237,3 +265,80 @@ func test_kargar_with_coin_carry_falls_back_to_inline_when_no_depot() -> void:
 	assert_eq(coin_after - coin_before, 1000,
 		"No-depot inline-fallback deposit must credit by 1000 x100 "
 		+ "(wave-1B path preserved when no canonical IDropoffTarget exists)")
+
+
+# ---------------------------------------------------------------------------
+# Grain kind-routing: Mazra'eh-present, Throne-present → routes to Mazra'eh
+# (godot-code-reviewer BLOCKER 2 fix-up — grain side had zero end-to-end
+# coverage despite being half the wave's scope. The C1.1 BOTH-call-sites
+# regression vector specifically would surface here for the grain path.)
+# ---------------------------------------------------------------------------
+
+func test_kargar_with_grain_carry_deposits_at_mazraeh_when_present() -> void:
+	# Setup: BOTH Mazra'eh AND Throne exist. The kind-aware routing must
+	# pick Mazra'eh (kind-matching local depot) NOT Throne (universal
+	# fallback). Mirror of the coin/Ma'dan test but for grain.
+	_mazraeh = _spawn_mazraeh(Constants.TEAM_IRAN, Vector3.ZERO)
+	_throne = _spawn_throne(Constants.TEAM_IRAN, Vector3(0.0, 0.0, -32.0))
+	_kargar = _spawn_kargar()
+	_mine = _spawn_mine()
+	# Sanity: dropoff_for_team_by_kind(IRAN, KIND_GRAIN) returns the Mazra'eh
+	# (not the Throne). The Mazra'eh is in &"grain_depots" group.
+	var dropoff: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN)
+	assert_eq(dropoff, _mazraeh,
+		"sanity precondition: dropoff_for_team_by_kind(IRAN, KIND_GRAIN) "
+		+ "with Mazra'eh + Throne both present must return the Mazra'eh "
+		+ "(kind-matching local depot wins over universal fallback)")
+	# Drive Returning to deposit. Use grain carry (500 x100 = 5 Grain).
+	var grain_before: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	_enter_returning_with_grain_carry(Vector3.ZERO)
+	SimClock._test_run_tick()
+	for i in range(120):
+		if _kargar.fsm.current == null:
+			break
+		var sid: StringName = _kargar.fsm.current.id
+		_tick_fsm()
+		if sid != &"returning":
+			break
+		if i % 2 == 0:
+			SimClock._test_run_tick()
+	var grain_after: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	# Critical: 500 x100, not 1000. C1.4 only-one-path enforced. Distinct
+	# carry amount from coin test (1000 x100) makes it clear which kind
+	# was credited if the test fails.
+	assert_eq(grain_after - grain_before, 500,
+		"Mazra'eh-routed deposit must credit team by EXACTLY 500 x100 once. "
+		+ "If this is 1000 (double credit), C1.4 only-one-path violated. "
+		+ "If 0 (no credit), the BOTH-call-sites swap regressed and grain "
+		+ "deposit fell through to Throne fallback / inline change_resource.")
+
+
+func test_kargar_with_grain_carry_falls_back_to_throne_when_no_mazraeh() -> void:
+	# Setup: ONLY Throne (no Mazra'eh). dropoff_for_team_by_kind must fall
+	# back to Throne for grain. Throne accepts all kinds (no kind-filter,
+	# universal fallback), so deposit credits via Throne's chokepoint.
+	_throne = _spawn_throne(Constants.TEAM_IRAN, Vector3.ZERO)
+	_kargar = _spawn_kargar()
+	_mine = _spawn_mine()
+	var dropoff: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN)
+	assert_eq(dropoff, _throne,
+		"sanity precondition: dropoff_for_team_by_kind(IRAN, KIND_GRAIN) "
+		+ "with no Mazra'eh must fall back to Throne (universal fallback)")
+	var grain_before: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	_enter_returning_with_grain_carry(Vector3.ZERO)
+	SimClock._test_run_tick()
+	for i in range(120):
+		if _kargar.fsm.current == null:
+			break
+		var sid: StringName = _kargar.fsm.current.id
+		_tick_fsm()
+		if sid != &"returning":
+			break
+		if i % 2 == 0:
+			SimClock._test_run_tick()
+	var grain_after: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	assert_eq(grain_after - grain_before, 500,
+		"Throne-fallback grain deposit must credit by 500 x100 once "
+		+ "(Throne accepts all kinds; same C1.4 invariant as Mazra'eh path)")
