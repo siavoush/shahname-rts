@@ -12,12 +12,45 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-24 (Wave-3-Throne close — Iran/Turan HQ + sovereignty-bearing institution anchor-category + Iran Tier-1 6/6 complete)
+last_updated: 2026-05-24 (Wave-3-LocalDropoffs close — Mazra'eh + Ma'dan as kind-matching IDropoffTarget; workers route to nearest depot)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-05-24 — Wave-3-LocalDropoffs close: Mazra'eh + Ma'dan as kind-matching IDropoffTarget; nearest-depot routing
+
+**Branch:** `feat/wave-3-local-dropoffs`  **Commits:** `e3f4d4b` (Track 1 implementation) → `02ff9b5` (Commit 1.5 cultural-note paste)
+
+**What shipped:**
+
+Mazra'eh + Ma'dan now implement RNC §5.2 IDropoffTarget for grain + coin respectively. Workers carrying coin walk to the **nearest Ma'dan**; workers carrying grain walk to the **nearest Mazra'eh**; Throne becomes the universal fallback when no kind-matching depot exists for the worker's team. Closes Q1 from the Trade & Transport economy design space (`QUESTIONS_FOR_DESIGN.md` 2026-05-24 entry).
+
+**Implementation surfaces:**
+
+- `mazraeh.gd` + `madan.gd` — `deposit(resource_kind, amount, worker)` + `get_deposit_position()` per RNC §5.2. `ACCEPTED_KIND` constant (KIND_GRAIN / KIND_COIN). Kind-filter on mismatch: loud log + **zero worker carry** (prevents stale-carry-survives-cycles bug class). Group-join `&"grain_depots"` / `&"coin_depots"` on _ready. `_local_stock_x100: int = 0` field scaffold (Q2 forward-compat for caravan-origin).
+- `resource_system.gd` — `dropoff_for_team_by_kind(team, kind) -> Node3D` (new method). Nested-Dict memo `_dropoff_memo_by_kind[team][kind]`. Per-(team, kind) throttle log. EventBus.throne_destroyed evicts all kinds for team. Existing `dropoff_for_team(team)` REPLACED by thin wrapper (SSOT preserved).
+- `unit_state_returning.gd` — **BOTH** call sites swapped to `dropoff_for_team_by_kind`: `enter()` for walk-target resolution + `_perform_deposit()` for deposit-routing. Mid-walk divergence handling (depot destroyed between enter() and arrival): fresh `_perform_deposit` query is authoritative; loud log on divergence.
+
+**Loremaster Commit 1.5 cultural-note addenda** pasted verbatim into mazraeh.gd + madan.gd headers (per established Wave 2A.5 / 2B / Wave-3-Throne pattern). Surfaces dehqan-Throne reciprocity made spatially explicit — local depot is the FIRST stop in wealth-flow, not final terminus. Forward-compat seam for Phase 4+ Trade & Transport caravan-origin explicitly documented. Mazra'eh + Ma'dan asymmetry preserved (Turan structural-mismatch note sharper for Ma'dan: Turan plausibly doesn't build Ma'dan at all; coin-flow routes through baj tribute + raid-spoils, unit-mediated rather than depot-mediated).
+
+**Tests:**
+
+29 new assertions across 4 files: `test_mazraeh.gd` (+6) + `test_madan.gd` (+6) + `test_resource_system.gd` (+8) + `test_phase_3_local_dropoff.gd` (NEW integration, 3 assertions). Integration test asserts EXACTLY 1000 x100 deposit per cycle — mirror C1.4 only-one-path-per-cycle observable. Full headless suite: **1561 passing / 1 pre-existing flake / 3 risky-pending.** Pre-existing flake at `test_match_harness.gd::test_start_match_resets_sim_clock_tick_to_zero` is Task #208 workspace-bleed (confirmed not Track 1 regression via stash-and-rerun). gp-sys flagged as §9.D10 cross-track diagnostic evidence for Task #208 hopper.
+
+**Process highlights:**
+
+- **Architecture-reviewer brief-time review N=3** — caught **2 BLOCKERS + 7 RISKS** before any code shipped. Headline catch (C1.1): brief v1.0.0 named only ONE of TWO `unit_state_returning.gd` call sites. Without v1.0.1 correction, worker would walk to Mazra'eh but deposit at Throne anyway. Same logical shape as BUG-G1; caught at brief-time, not post-implementation. **§9.L12 brief-time canonical-pattern grep discipline working as designed.**
+- **§9.J2 trichotomy classification reclassified** by loremaster from lead's pre-(a) clone-check to **(b) slot-fit-verify** at the *protocol-role* level. Mazra'eh fills `grain-depot` sub-slot, Ma'dan fills `coin-depot` sub-slot, Throne fills `fallback / catch-all` of the IDropoffTarget protocol-role. Loremaster authoritative per J2 graduated-form's override clause. Flagged as **J2-refinement candidate (N=1)**: trichotomy generalizes from anchor-category-level to protocol-role-level; would graduate at N=2 if a 4th building gains a new protocol-role in future waves.
+
+**Open at wave-close:**
+
+- **Live-test gate (user-driven).** Verify Kargar carrying coin walks to nearest Ma'dan (not Throne) when Ma'dan exists. Verify Throne fallback when no Ma'dan. Same for grain → Mazra'eh. Per `tools/run_game.sh`.
+- **Side-quest (parallel, no blocker):** loremaster cross-checking Trade & Transport economic thesis against Shahnameh + Persian lore. Output forthcoming.
+- **Task #208 workspace-bleed flake** — surfaces deterministically under expanded test suite; gp-sys flagged via §9.D10. Retro investigation deferred to next session.
 
 ---
 

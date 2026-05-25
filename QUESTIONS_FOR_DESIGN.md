@@ -13,7 +13,7 @@ ssot_for:
 references: [01_CORE_MECHANICS.md, DECISIONS.md]
 tags: [log, questions, design-chat, escalations]
 created: 2026-04-23
-last_updated: 2026-05-24 (Trade & Transport economy — thesis-level positioning question)
+last_updated: 2026-05-24 (Shahnameh economy cross-check — 2 refinements + 1 needs-expert-input dehqan-compression flag)
 ---
 
 # Questions for Design
@@ -36,6 +36,39 @@ When a Claude Code session hits a question it cannot resolve from the specs — 
 Keep entries terse. Long questions fragment the design chat's attention.
 
 ## Open questions
+
+
+## 2026-05-24 — Shahnameh economy cross-check — two refinements + one needs-expert-input flag
+
+**Context:** Loremaster cross-checked the Trade & Transport economic thesis (see entry below) against the Shahnameh + pre-Islamic Iran historical record. Output is `docs/SHAHNAMEH_ECONOMY_RESEARCH.md` v1.0.0 (451 lines, shipped at commit `07261a4`).
+
+**Top-line:** thesis holds. "Wealth-flow IS the contest" is *more* culturally honest for a Shahnameh RTS than SC2-model is — pre-Islamic Iran's structural reality WAS tribute/tax administrative flows + frontier raiding. Positioning bet is sound.
+
+**Two material refinements for Phase 4+ design chat to weigh:**
+
+1. **Reframe upkeep as royal-largesse / down-flow, NOT cost+deficit.** Shahnameh battles are champion-combat-decisive, NOT supply-line-decisive. Caravan-attackable mechanic (Q3) IS canonical at frontier-raiding level — safe. But "armies degrade from upkeep-failure" overstates the epic. Reframe as "the just king sustains his sepah from the treasury (royal duty + down-flow as righteous rule)." Same mechanic, different cultural-framing; honors historical reality without claiming epic-narrative-decisiveness it doesn't have.
+
+2. **Royal largesse / down-flow is canonical and MISSING from current project framing.** Kings dispensing treasure to heroes, soldiers, subjects is HALF the Shahnameh's economic-political picture. Just-king-as-generous-distributor is a load-bearing moral axis. Surfaces in future mechanic prose; not a structural change yet.
+
+**One needs-expert-input flag:**
+
+3. **The "dehqan-Throne reciprocity" framing the project has been saturating toward (Mazra'eh / Throne / Wave 3-LocalDropoffs addenda) is partially anachronistic.** The *dehqan* as institutional category is most strongly Sasanian-and-later; Kayanian-heroic-age content predates the technical institution by centuries. Ferdowsi himself reads it backward into the heroic age (his own dehqan-stock identity is the lens). Following his practice is defensible, but the project should ACKNOWLEDGE the compression at the discipline-doc layer rather than presenting it as Kayanian-era institutional fact.
+
+   **Loremaster's recommendation:** one-paragraph clarification in `00_SHAHNAMEH_RESEARCH.md`. Existing cultural-notes (throne.gd, mazraeh.gd, madan.gd) **do not need editing** — they ship as-is.
+
+   **Confidence-level:** loremaster explicitly flags Q6.3 (this dehqan-chronological-compression finding) as **LOWER confidence than the rest of the doc.** They are NOT an Iranist specialist on this specific question. Needs expert sanity-check before any `00_SHAHNAMEH_RESEARCH.md` edit lands. If a Shahnameh-khani scholar or Iranist consults and disagrees, the finding should be revised.
+
+**Three framing-shifts (not refinements, just worth knowing):**
+
+- **Bidirectional raiding is canonical.** Iran also raids Turan (Manuchehr, Kay Khosrow, Rostam, Esfandiyar). When raid mechanic ships, both factions should be capable; differ in cultural prose (Iran-as-retribution vs Turan-as-opportunism), not in mechanic.
+- **Bizhan-Manizheh = canonical caravan-mechanic anchor.** Rostam disguises as a caravan-master to infiltrate Turan and rescue Bizhan. Validates caravans-with-armed-retinue as canonical-feeling game objects + provides a Phase 4+ campaign-mission anchor.
+- **Turan's structural-mismatch hypothesis needs case-by-case evaluation per anchor-category** — Throne is the canonical NEAR-SYMMETRY exception (per ANCHOR_CATEGORY_TAXONOMY v1.1.0 §5). Future Turan-side building work should not assume all-structural-mismatch.
+
+**What this question is asking:** review the research, decide which refinements to absorb at Phase 4+ kickoff time, and **specifically: route Q6.3 (dehqan-compression flag) to an Iranist-specialist if available** (Shahnameh-khani scholar, academic Iranist, anyone with deeper expertise on Achaemenid → Parthian → Sasanian institutional history). The fix prose at `00_SHAHNAMEH_RESEARCH.md` can wait until the expert-input lands.
+
+**Blocking:** No. Wave 3-LocalDropoffs (current PR #41) is unaffected; addenda ship as queued. This question lives in the design-chat queue for Phase 4+ Trade & Transport kickoff time.
+
+**Defer to:** Phase 4+ Trade & Transport wave kickoff brief, OR earlier if user has Iranist-specialist contact who can sanity-check Q6.3.
 
 
 ## 2026-05-24 — Trade & Transport economy — wealth-flow as the central contest (thesis-level positioning)

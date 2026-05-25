@@ -333,3 +333,77 @@ func test_madan_scene_has_static_body_collision() -> void:
 	assert_not_null(shape,
 		"StaticBody3D must contain a CollisionShape3D — body without "
 		+ "shape is a no-op for raycasts")
+
+
+# ===========================================================================
+# Wave-3-LocalDropoffs (session 9) — IDropoffTarget protocol conformance
+# ===========================================================================
+#
+# Per RNC §5.2 + brief v1.0.1 §3.1 item 4. Ma'dan accepts coin deposits
+# (ACCEPTED_KIND = Constants.KIND_COIN), kind-filters non-coin with a
+# loud log + worker-carry-zero, and joins the &"coin_depots" group.
+
+func test_madan_joins_coin_depots_group() -> void:
+	_madan = _spawn_madan()
+	assert_true(_madan.is_in_group(&"coin_depots"),
+		"Ma'dan must join &\"coin_depots\" group at _ready — required for "
+		+ "dropoff_for_team_by_kind lookup (mirror C1.2 anti-misuse)")
+
+
+func test_madan_implements_idropofftarget_protocol() -> void:
+	_madan = _spawn_madan()
+	assert_true(_madan.has_method(&"deposit"),
+		"Ma'dan must implement deposit() per RNC §5.2 IDropoffTarget")
+	assert_true(_madan.has_method(&"get_deposit_position"),
+		"Ma'dan must implement get_deposit_position() per RNC §5.2")
+
+
+func test_madan_accepted_kind_is_coin() -> void:
+	_madan = _spawn_madan()
+	assert_eq(_madan.ACCEPTED_KIND, Constants.KIND_COIN,
+		"Ma'dan.ACCEPTED_KIND must equal Constants.KIND_COIN")
+
+
+func test_madan_deposit_coin_calls_change_resource_chokepoint() -> void:
+	_madan = _spawn_madan(Constants.TEAM_IRAN)
+	SimClock._is_ticking = true
+	var coin_before: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	_madan.deposit(Constants.KIND_COIN, 5000, null)
+	SimClock._is_ticking = false
+	var coin_after: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	assert_eq(coin_after - coin_before, 5000,
+		"Ma'dan.deposit(KIND_COIN, 5000, null) must increase coin_x100 "
+		+ "by exactly 5000 via change_resource chokepoint")
+
+
+func test_madan_deposit_grain_kind_filter_rejects() -> void:
+	# REJECT non-coin. C2.1 invariant: no chokepoint call.
+	_madan = _spawn_madan(Constants.TEAM_IRAN)
+	SimClock._is_ticking = true
+	var grain_before: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	_madan.deposit(Constants.KIND_GRAIN, 1000, null)
+	SimClock._is_ticking = false
+	var grain_after: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+	assert_eq(grain_after, grain_before,
+		"Ma'dan must NOT credit grain on kind-mismatched deposit "
+		+ "(C2.1 invariant: rejection means no chokepoint call)")
+
+
+func test_madan_deposit_zero_amount_is_noop() -> void:
+	_madan = _spawn_madan(Constants.TEAM_IRAN)
+	SimClock._is_ticking = true
+	var coin_before: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	_madan.deposit(Constants.KIND_COIN, 0, null)
+	_madan.deposit(Constants.KIND_COIN, -100, null)
+	SimClock._is_ticking = false
+	var coin_after: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	assert_eq(coin_after, coin_before,
+		"Ma'dan.deposit with amount <= 0 must be a no-op")
+
+
+func test_madan_local_stock_x100_forward_compat_field() -> void:
+	_madan = _spawn_madan()
+	var stock: Variant = _madan.get(&"_local_stock_x100")
+	assert_eq(typeof(stock), TYPE_INT,
+		"Ma'dan._local_stock_x100 must exist as int (Q2 forward-compat)")
+	assert_eq(int(stock), 0, "_local_stock_x100 default 0 (unused at MVP)")

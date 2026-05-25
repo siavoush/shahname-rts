@@ -80,6 +80,32 @@ extends "res://scripts/world/buildings/building.gd"
 ## not cartoon villains" rule: each faction's economy reflects its
 ## social organization; copy/paste between them produces hollow design.
 ##
+## Local-accumulation pattern — ore-source as staging yard (Wave 3-LocalDropoffs,
+## 2026-05-25):
+##
+## Ma'dan now implements RNC §5.2 IDropoffTarget for coin — workers extracting
+## from the adjacent mine deposit coin HERE (the ore-staging yard at the ma'dan
+## site) before any onward flow to the Throne. This surfaces a structural
+## reality the prior cultural-note already implied but did not mechanically
+## realize: *ma'dan as place where ore is brought out and held* — the labor-
+## organization frame's "organized labor around an ore body" requires a local
+## locus where the brought-out substance accumulates before any further
+## refinement, minting, or tribute-flow to the king's purse. The mechanic
+## now matches the prose. Ma'dan is the FIRST stop in the coin-flow, not
+## the final terminus (Throne remains the canonical "sim-o-zar" treasury).
+##
+## Forward-compat seam (Phase 4+ Trade & Transport scope): the ore-staging
+## yard becomes the caravan-origin for coin once Trade & Transport ships.
+## The `&"coin_depots"` SceneTree group + `dropoff_for_team_by_kind` API
+## shape are the structural seams future caravan-source consumers will read.
+## Sharper than the Mazra'eh case: per the existing Turan structural-mismatch
+## caveat above, Turan plausibly does NOT build Ma'dan AT ALL — Turan's coin
+## economy routes through *baj* tribute + raid-spoils. A future caravan
+## mechanic for Iran-side Ma'dan→Throne flow has NO Turan-side analogue at
+## the building-level; Turan's coin-flow is unit-mediated (raid-spoils) rather
+## than depot-mediated. See `QUESTIONS_FOR_DESIGN.md` 2026-05-24 "Trade &
+## Transport economy" entry.
+##
 ## What lives here vs in the base class:
 ##   - kind = &"madan" (dual-init pattern as in khaneh.gd / mazraeh.gd).
 ##   - NO resource_kind, NO ResourceNode-shape fields (is_gatherable,
@@ -129,10 +155,31 @@ class_name Madan
 ## ships the bldg_madan sub-resource entry).
 const KIND_MADAN: StringName = &"madan"
 
+## Wave-3-LocalDropoffs (session 9): the RESOURCE kind this Ma'dan accepts
+## as an IDropoffTarget. Distinct from `kind = &"madan"` (the Building
+## kind) per RNC §4.6's kind-vs-resource_kind distinction. Mirror of
+## Mazra'eh.ACCEPTED_KIND; see that file's header for the kind-filter
+## rationale + defense-in-depth framing.
+const ACCEPTED_KIND: StringName = Constants.KIND_COIN
+
+## SceneTree group name for coin-depot lookup. ResourceSystem.dropoff_for_
+## team_by_kind iterates this group filtered by team + ACCEPTED_KIND to
+## find a worker's deposit target for coin. Mirrors Throne's &"thrones"
+## group pattern + Mazra'eh's &"grain_depots".
+const COIN_DEPOTS_GROUP: StringName = &"coin_depots"
+
 ## Opaque FogSystem handle returned by register_vision_source at placement.
 ## Used to deregister when the building is removed from the scene tree.
 ## -1 = not registered (before placement or if FogSystem unavailable).
 var _fog_handle: int = -1
+
+## Wave-3-LocalDropoffs forward-compat scaffold (brief v1.0.1 §2 + C4.3):
+## the per-Ma'dan accumulation buffer for Trade & Transport Q2. Today
+## this field is unused — `deposit()` calls `ResourceSystem.change_resource`
+## directly (deposit-RELAY shape). Q2 refactors to deposit-ACCUMULATOR.
+## Mirror of Mazra'eh._local_stock_x100; see that file's header for the
+## platform-shape preserved / internals refactored boundary rationale.
+var _local_stock_x100: int = 0
 
 
 # === Defensive fallback constants ===========================================
@@ -173,6 +220,13 @@ func _ready() -> void:
 	# refactors.
 	kind = KIND_MADAN
 	super._ready()
+	# Wave-3-LocalDropoffs (session 9) — join the &"coin_depots" group so
+	# ResourceSystem.dropoff_for_team_by_kind can find this instance for
+	# coin-carrying workers. Mirrors Mazra'eh's &"grain_depots" join +
+	# Throne's &"thrones" group pattern.
+	add_to_group(COIN_DEPOTS_GROUP)
+	print("[madan] _ready team=%d position=%s unit_id=%d joined=%s" % [
+		team, str(global_position), unit_id, str(COIN_DEPOTS_GROUP)])
 
 
 # === Autoload helper =========================================================
@@ -428,3 +482,57 @@ func _exit_tree() -> void:
 		if fog != null and fog.has_method(&"deregister_vision_source"):
 			fog.call(&"deregister_vision_source", _fog_handle)
 		_fog_handle = -1
+
+
+# === IDropoffTarget protocol — RNC §5.2 (Wave-3-LocalDropoffs, session 9) ===
+#
+# Ma'dan implements the duck-typed IDropoffTarget protocol for COIN-
+# carrying workers. Mirror of mazraeh.gd's implementation (see that file
+# for the kind-filter rationale + Mirror C1.4 framing). Only difference:
+# ACCEPTED_KIND = Constants.KIND_COIN.
+#
+# Today's shape (deposit-RELAY): direct ResourceSystem.change_resource
+# call. Tomorrow's shape (Q2 Trade & Transport deposit-ACCUMULATOR):
+# _local_stock_x100 accumulation + caravan emission. Platform-shape
+# preserved; internals refactored at Q2.
+
+
+## Implements IDropoffTarget — see RESOURCE_NODE_CONTRACT.md §5.
+##
+## Accepts coin deposits. Rejects grain (or any non-coin kind) with a
+## loud log + worker carry zeroed per architecture-reviewer C2.1
+## mitigation. See mazraeh.gd::deposit header for the canonical rationale.
+func deposit(resource_kind: StringName, amount: int, worker: Unit) -> void:
+	if amount <= 0:
+		return
+	var worker_id: int = -1
+	if worker != null and is_instance_valid(worker):
+		worker_id = worker.unit_id
+	if resource_kind != ACCEPTED_KIND:
+		print("[madan] deposit_rejected kind_mismatch got=%s expected=%s worker=%d team=%d" % [
+			str(resource_kind), str(ACCEPTED_KIND), worker_id, team])
+		# Zero stale carry (C2.1 mitigation: rejection without carry-zero
+		# is a silent-loss bug shape).
+		if worker != null and is_instance_valid(worker):
+			if &"_carry_kind" in worker:
+				worker.set(&"_carry_kind", &"")
+			if &"_carry_amount_x100" in worker:
+				worker.set(&"_carry_amount_x100", 0)
+		return
+	# Kind-match path. §9.M6 log BEFORE chokepoint call.
+	print("[madan] deposit_received from=%d kind=%s amount_x100=%d team=%d" % [
+		worker_id, str(resource_kind), amount, team])
+	# Canonical chokepoint call. Mirror C1.4: Ma'dan owns this when this
+	# path fires. Future Q2 refactor: `_local_stock_x100 += amount` +
+	# caravan emit.
+	ResourceSystem.change_resource(
+		team, resource_kind, amount, &"gather_deposit", worker)
+
+
+## Implements IDropoffTarget — see RESOURCE_NODE_CONTRACT.md §5.
+##
+## Returns the world position the worker should walk to BEFORE depositing.
+## Mirrors Mazra'eh.get_deposit_position(): small Y nudge for visual
+## arrival at the building's footprint center.
+func get_deposit_position() -> Vector3:
+	return global_position + Vector3(0.0, 0.5, 0.0)

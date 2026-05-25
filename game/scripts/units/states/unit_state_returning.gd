@@ -78,6 +78,15 @@ var _arrival_pending: bool = false
 # the "no walk" / "instant arrival" path running the deposit twice.
 var _deposited: bool = false
 
+# Cached depot reference from enter() time. Used by _perform_deposit() to
+# detect mid-walk divergence — if the fresh dropoff_for_team_by_kind query
+# returns a DIFFERENT depot than enter() resolved against, the worker
+# walked to position A but is depositing at depot B (depot A destroyed
+# mid-walk, or a closer one was built / spawned). The fresh re-query is
+# authoritative for the deposit credit (C1.4 holds), but the divergence
+# is a signal worth logging per §9.M6 day-1-instrumentation discipline.
+var _deposit_target_dropoff: Node3D = null
+
 # The mine the gather loop is anchored on. After deposit completes, we
 # transition back to Gathering with this Node as the target — sustains the
 # loop without input layer intervention.
@@ -96,6 +105,7 @@ func _init() -> void:
 func enter(_prev: Object, ctx: Object) -> void:
 	_movement = null
 	_deposit_target_pos = Vector3.ZERO
+	_deposit_target_dropoff = null
 	_arrival_pending = false
 	_deposited = false
 	_loop_target_node = null
@@ -149,13 +159,33 @@ func enter(_prev: Object, ctx: Object) -> void:
 		var team_for_dropoff: int = Constants.TEAM_NEUTRAL
 		if &"team" in ctx:
 			team_for_dropoff = int(ctx.team)
-		var dropoff: Node3D = ResourceSystem.dropoff_for_team(team_for_dropoff)
+		# Wave-3-LocalDropoffs (session 9) — kind-aware lookup. Resolve
+		# the worker's carry kind at enter() time (`_carry_kind_at_enter`)
+		# so we walk to the nearest kind-matching local depot (Mazra'eh
+		# for grain, Ma'dan for coin), falling back to Throne when no
+		# kind-matching local depot exists. Per brief v1.0.1 §3.1 item 4
+		# (architecture-reviewer C1.1) + §6 canonical references.
+		var carry_kind_at_enter: StringName = &""
+		if &"_carry_kind" in ctx:
+			var ck: Variant = ctx.get(&"_carry_kind")
+			if typeof(ck) == TYPE_STRING_NAME:
+				carry_kind_at_enter = ck
+		var dropoff: Node3D = ResourceSystem.dropoff_for_team_by_kind(
+			team_for_dropoff, carry_kind_at_enter)
 		if dropoff != null and is_instance_valid(dropoff) \
 				and dropoff.has_method(&"get_deposit_position"):
 			_deposit_target_pos = dropoff.call(&"get_deposit_position")
+			# Cache the depot reference for mid-walk divergence detection
+			# in _perform_deposit. Per architecture-reviewer C2.6 +
+			# godot-code-reviewer fix-up wave (2026-05-25): if the fresh
+			# re-query at deposit time returns a DIFFERENT depot than this
+			# cached ref, log the divergence loudly per §9.M6 day-1
+			# instrumentation discipline.
+			_deposit_target_dropoff = dropoff
 		else:
-			# Zero-walk fallback (test fixtures, pre-Throne-spawn boot).
+			# Zero-walk fallback (test fixtures, pre-depot-spawn boot).
 			_deposit_target_pos = _get_self_position(ctx)
+			_deposit_target_dropoff = null
 
 	# Kick off the path. If the deposit target is the unit's own position,
 	# the request still fires (the path will arrive on a later tick at
@@ -266,20 +296,50 @@ func _perform_deposit(ctx: Object) -> void:
 		var team: int = Constants.TEAM_NEUTRAL
 		if &"team" in ctx:
 			team = int(ctx.team)
-		# Wave-3-Throne canonical RNC §5.2 routing.
-		# ResourceSystem.dropoff_for_team is Pitfall-#16-safe (validates
-		# is_instance_valid before return); the further has_method check
-		# here is belt-and-braces against a future non-Throne &"thrones"
-		# group member (impossible at MVP but cheap to guard).
-		var dropoff: Node3D = ResourceSystem.dropoff_for_team(team)
+		# Wave-3-LocalDropoffs (session 9) canonical RNC §5.2 routing —
+		# kind-aware lookup. Per brief v1.0.1 §3.1 item 4 +
+		# architecture-reviewer C1.1: this is call site #2 (the first
+		# is `enter()`'s walk-target resolution). Missing this site
+		# would produce the worker-walks-to-Mazra'eh-but-deposits-at-Throne
+		# bug — C1.4 silent violation.
+		#
+		# **Depot-destroyed-mid-walk handling (architecture-reviewer C2.6):**
+		# the second query may return a DIFFERENT depot than `enter()`
+		# cached if the original target was destroyed mid-walk. Log the
+		# divergence loudly and route through THIS query's target — the
+		# C1.4 only-one-path invariant still holds via the fresh query.
+		# The cached `_deposit_target_pos` is stale (worker walked to
+		# position A but depot B is now closer/the-only-one), but deposit
+		# credits go through correctly. Phase 4 polish: re-issue movement
+		# to position B; for now the deposit fires from wherever the
+		# worker landed.
+		var dropoff: Node3D = ResourceSystem.dropoff_for_team_by_kind(team, kind)
+		# Mid-walk divergence detection (architecture-reviewer C2.6 +
+		# godot-code-reviewer fix-up wave 2026-05-25). If the fresh re-query
+		# returns a DIFFERENT depot than enter()'s cached ref, log it loudly
+		# per §9.M6 day-1-instrumentation discipline. The fresh query is
+		# authoritative for the deposit credit (C1.4 holds); the cached
+		# walk-target was stale, but the divergence is a real signal
+		# (depot destroyed mid-walk, OR closer depot built/spawned mid-walk).
+		# Log so live-test can verify the depot-destroyed-mid-walk case
+		# without retro-fitting prints.
+		if _deposit_target_dropoff != null and dropoff != _deposit_target_dropoff:
+			var cached_id: String = "<freed>"
+			if is_instance_valid(_deposit_target_dropoff):
+				cached_id = str(_deposit_target_dropoff)
+			var fresh_id: String = "null"
+			if dropoff != null:
+				fresh_id = str(dropoff)
+			print("[returning] dropoff_divergence team=%d kind=%s enter=%s deposit=%s"
+				% [team, str(kind), cached_id, fresh_id])
 		if dropoff != null and is_instance_valid(dropoff) \
 				and dropoff.has_method(&"deposit"):
-			# Throne-present path. Throne.deposit owns the chokepoint
-			# call internally; we do NOT call change_resource here.
-			# C1.4 only-one-path enforced.
+			# Depot-present path. Depot.deposit owns the chokepoint call
+			# internally; we do NOT call change_resource here. C1.4
+			# only-one-path enforced.
 			dropoff.call(&"deposit", kind, int(amount_x100), ctx)
 		else:
-			# Throne-absent fallback (test fixtures, pre-spawn). Preserve
+			# Depot-absent fallback (test fixtures, pre-spawn). Preserve
 			# the wave 1B inline call exactly as shipped.
 			ResourceSystem.change_resource(
 				team, kind, int(amount_x100), &"gather_deposit", ctx)
@@ -303,6 +363,7 @@ func exit() -> void:
 	_loop_target_node = null
 	_arrival_pending = false
 	_deposited = false
+	_deposit_target_dropoff = null
 
 
 func _get_self_position(ctx: Object) -> Vector3:
