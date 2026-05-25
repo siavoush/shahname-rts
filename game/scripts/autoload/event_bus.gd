@@ -168,6 +168,35 @@ signal building_placed(unit_id: int, kind: StringName, team: int, position: Vect
 signal throne_destroyed(team_id: int)
 
 
+# ---- Building destruction (Wave 3-BuildingDestructibility) -----------------
+# Emitted by Building._on_health_zero when ANY building's HealthComponent
+# hits zero. Generic shape (per architecture-reviewer C2.1 R4 resolution):
+# per-building signals would proliferate; a single generic signal scales
+# cleanly with AI consumers (Phase 6+ raid-mechanic, Trade & Transport
+# Q2 economy-strangulation).
+#
+# Throne ALSO emits the specific `throne_destroyed(team)` above (Phase 8
+# win-screen consumer; already named). All 8 buildings — including
+# Throne — emit this generic signal in addition.
+#
+# Payload:
+#   team_id   — Constants.TEAM_IRAN or TEAM_TURAN — which faction just
+#               lost the building.
+#   kind      — StringName: &"throne" / &"khaneh" / &"mazraeh" / &"madan"
+#               / &"sarbaz_khaneh" / &"atashkadeh" / &"sowari_khaneh" /
+#               &"tirandazi". Phase 4+ additions extend this enum
+#               (Dadgah / Barghah / Yadgar / Qal'eh).
+#   unit_id   — Building's own unit_id (distinct namespace from Unit ids
+#               per BUG-G1).
+#
+# @warning_ignore("unused_signal") per existing EventBus convention.
+# Sink-tracked (added to _SINK_SIGNALS below) — destruction events are
+# write-shaped gameplay-state mutations; replay determinism + telemetry
+# both care.
+@warning_ignore("unused_signal")
+signal building_destroyed(team_id: int, kind: StringName, unit_id: int)
+
+
 # ---- Build-placement UI signals (read-shaped) ------------------------------
 # Emitted by the build menu when the player clicks a building button — the
 # user has entered placement mode. The BuildPlacementHandler subscribes and
@@ -226,6 +255,10 @@ const _SINK_SIGNALS: Array[StringName] = [
 	&"unit_died",
 	&"resource_changed",
 	&"building_placed",
+	# Wave 3-BuildingDestructibility (session 9) — destruction events are
+	# write-shaped gameplay-state mutations; sinks track them for replay
+	# determinism + telemetry.
+	&"building_destroyed",
 	# Extend as new write-shaped signals are added. Order is not significant.
 	# `selection_changed` and `build_placement_started` are read-shaped (UI
 	# side-effects only) and intentionally NOT in the sink registry.
@@ -300,6 +333,9 @@ func _make_forwarder(sig: StringName, sink: Callable) -> Callable:
 			return func(unit_id: int, kind: StringName, team: int,
 					position: Vector3) -> void:
 				sink.call(sig, [unit_id, kind, team, position])
+		&"building_destroyed":
+			return func(team_id: int, kind: StringName, unit_id: int) -> void:
+				sink.call(sig, [team_id, kind, unit_id])
 		_:
 			push_error("EventBus._make_forwarder: signal '%s' has no forwarder arm" % sig)
 			return Callable()

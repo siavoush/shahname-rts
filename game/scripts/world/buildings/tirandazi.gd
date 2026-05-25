@@ -362,8 +362,30 @@ func _resolve_fog_sight_cells() -> int:
 
 
 func _exit_tree() -> void:
+	# Wave 3-BuildingDestructibility (session 9, architecture-reviewer
+	# C1.2 BLOCKER fix-up): super-call required.
+	super._exit_tree()
 	if _fog_handle >= 0:
 		var fog: Node = _autoload_or_null(&"FogSystem")
 		if fog != null and fog.has_method(&"deregister_vision_source"):
 			fog.call(&"deregister_vision_source", _fog_handle)
 		_fog_handle = -1
+
+
+# === Destruction handler — subclass override =================================
+
+## Wave 3-BuildingDestructibility (session 9). On hp=0: cancel
+## production + emit final state_changed + call super. Per
+## architecture-reviewer C2.5 + §3.1.a.
+func _on_health_zero(unit_id_in: int) -> void:
+	if _destruction_emitted:
+		return
+	if _production_state == &"training":
+		var canceled_unit: StringName = _production_unit
+		_production_state = &"idle"
+		_production_unit = &""
+		_production_progress_ticks = 0
+		_production_total_ticks = 0
+		production_state_changed.emit(unit_id, &"idle", canceled_unit, 0.0)
+		print("[tirandazi] production_cancel_on_destruction unit=%s" % str(canceled_unit))
+	super._on_health_zero(unit_id_in)

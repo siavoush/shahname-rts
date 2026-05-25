@@ -181,6 +181,20 @@ var _fog_handle: int = -1
 ## platform-shape preserved / internals refactored boundary rationale.
 var _local_stock_x100: int = 0
 
+## Wave 3-BuildingDestructibility (session 9, architecture-reviewer C2.2):
+## cache the MineNode this Ma'dan registered itself as extraction modifier
+## on at Stage 2 (_on_construction_complete). On destruction
+## (_on_health_zero), we call `_registered_mine.unregister_extraction_
+## modifier(self)` to release the buff — without this cache, we'd have to
+## re-discover the nearest mine, which may have shifted (e.g., the mine
+## depleted between Stage 2 and destruction).
+##
+## **Pitfall #16 mandatory:** the cached ref may be a freed Object if the
+## mine depleted (and `queue_free`'d itself) before this Ma'dan was
+## destroyed. `_on_health_zero` MUST `is_instance_valid()`-guard the
+## ref before calling unregister.
+var _registered_mine: Node = null
+
 
 # === Defensive fallback constants ===========================================
 #
@@ -314,6 +328,10 @@ func _on_construction_complete(_placer_unit_id: int) -> void:
 	var nearest_mine: Node = _find_nearest_mine_within_radius(radius_m)
 	if nearest_mine != null:
 		nearest_mine.register_extraction_modifier(self)
+		# Wave 3-BuildingDestructibility (session 9): cache the mine ref so
+		# `_on_health_zero` can unregister cleanly without re-discovery
+		# (architecture-reviewer C2.2). Pitfall #16 guard at unregister time.
+		_registered_mine = nearest_mine
 	# If no mine within radius (Q4 free placement): no-op fallthrough.
 	# The Ma'dan still exists as a placed building; it just doesn't do
 	# anything at runtime. A future mine built nearby would not retroactively
@@ -477,6 +495,9 @@ func _resolve_fog_sight_cells() -> int:
 
 
 func _exit_tree() -> void:
+	# Wave 3-BuildingDestructibility (session 9, architecture-reviewer
+	# C1.2 BLOCKER fix-up): super-call required.
+	super._exit_tree()
 	if _fog_handle >= 0:
 		var fog: Node = _autoload_or_null(&"FogSystem")
 		if fog != null and fog.has_method(&"deregister_vision_source"):
@@ -536,3 +557,27 @@ func deposit(resource_kind: StringName, amount: int, worker: Unit) -> void:
 ## arrival at the building's footprint center.
 func get_deposit_position() -> Vector3:
 	return global_position + Vector3(0.0, 0.5, 0.0)
+
+
+# === Destruction handler — subclass override =================================
+
+## Wave 3-BuildingDestructibility (session 9). On hp=0:
+##   1. Unregister this Ma'dan as the cached mine's extraction modifier
+##      (Pitfall #16 is_instance_valid guard — mine may have depleted +
+##      freed between Stage 2 registration and destruction).
+##   2. Log the cleanup for live-test diagnostics.
+##   3. Call super (base does latch + generic building_destroyed emit +
+##      [<kind>] destroyed log + queue_free).
+##
+## Per architecture-reviewer C2.2 + §3.1.a checklist.
+func _on_health_zero(unit_id_in: int) -> void:
+	if _destruction_emitted:
+		return
+	# Subclass-specific cleanup: release the cached mine's modifier slot.
+	if _registered_mine != null and is_instance_valid(_registered_mine):
+		if _registered_mine.has_method(&"unregister_extraction_modifier"):
+			_registered_mine.unregister_extraction_modifier(self)
+			print("[madan] unregistered_modifier mine=%s" % str(_registered_mine.name))
+	_registered_mine = null
+	# Base handles latch + generic emit + queue_free.
+	super._on_health_zero(unit_id_in)

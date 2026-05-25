@@ -245,25 +245,10 @@ const THRONES_GROUP: StringName = &"thrones"
 ## Opaque FogSystem handle. -1 = not registered.
 var _fog_handle: int = -1
 
-## Latch to ensure throne_destroyed signal emits exactly once per Throne.
-## Mirrors HealthComponent's unit_health_zero latch pattern.
-var _destruction_emitted: bool = false
-
-
-# === Defensive fallback constants ===========================================
-#
-# Match prior-subclass pattern (Atashkadeh.cost_coin / etc.) — "config error
-# doesn't break the live game" — when balance.tres is unreachable or the
-# bldg_throne entry is missing, the building still functions with reasonable
-# defaults rather than zero-valued degenerate behavior.
-#
-# Per 01_CORE_MECHANICS.md §5 (Throne row): "Capital. Loss = defeat. Spawns
-# workers." Spec doesn't give numeric HP; lead defers to balance-engineer
-# at balance.tres:215 = max_hp 2000.
-
-## Fallback Throne max_hp if BalanceData unreachable. 2000 matches
-## balance.tres:215 bldg_throne.max_hp.
-const _FALLBACK_MAX_HP: float = 2000.0
+# Wave 3-BuildingDestructibility (session 9): `_destruction_emitted` field
+# +  `_resolve_max_hp` + `_init_health_from_balance_data` factored to
+# Building base per architecture-reviewer C4.3 + C4.4. Throne's previous
+# duplicate declarations removed — now inherits from base.
 
 
 # === Lifecycle hooks =========================================================
@@ -296,11 +281,9 @@ func _ready() -> void:
 	# both Thrones at expected positions.
 	print("[throne] _ready team=%d position=%s unit_id=%d max_hp_target=%.1f" % [
 		team, str(global_position), unit_id, _resolve_max_hp()])
-	# Initialize HealthComponent if present. Scene composition follows the
-	# pattern of other buildings (building.tscn → HealthComponent child).
-	# We read max_hp from BalanceData.buildings[&"throne"].max_hp (canonical
-	# Dictionary lookup per BUG-C1 fix-wave learning; NOT bldg_<kind>).
-	_init_health_from_balance_data()
+	# Wave 3-BuildingDestructibility (session 9) — _init_health_from_balance_data
+	# is now called by base Building._ready (factored per architecture-reviewer
+	# C4.4). Throne no longer needs to call it explicitly.
 	# Register FogSystem vision source. Mirror of Atashkadeh / Sarbaz-khaneh
 	# pattern. is_static = true (Throne never moves); sight = 4 cells per
 	# FogConfig.sight_throne_cells (forward-compat schema from 3A.0; Throne
@@ -379,73 +362,41 @@ func get_deposit_position() -> Vector3:
 	return global_position + Vector3(0.0, 0.5, 0.0)
 
 
-# === Damage / destruction signal ============================================
+# === Destruction handler — subclass override =================================
 #
-# Per brief §4 Track 1 + §1 forward-compat seam: Throne emits
-# EventBus.throne_destroyed(team_id) when its HealthComponent hits zero.
-# Phase 8 win-screen consumer subscribes; this wave only emits.
+# Wave 3-BuildingDestructibility (session 9) — `_init_health_from_balance_data`
+# + `_resolve_max_hp` factored to Building base. Throne keeps its own
+# `_on_health_zero` override to ALSO emit the specific
+# EventBus.throne_destroyed(team) signal (Phase 8 win-screen consumer).
 #
-# Wire-up shape: at _ready time, find the HealthComponent child and
-# connect to its unit_health_zero signal. The signal payload is the
-# unit_id (Throne's building unit_id, distinct from Unit ids).
+# Per architecture-reviewer C4.4 subclass override pattern (brief v1.0.1
+# §3.1.a): subclass-specific cleanup BEFORE super-call. Throne has no
+# additional cleanup beyond what base does (fog deregister is in
+# _exit_tree); the specific signal-emit is the only differentiator.
 
 
-func _init_health_from_balance_data() -> void:
-	# Subscribe to unit_health_zero UNCONDITIONALLY — Throne's filter
-	# BUG-G1 fix (architecture-reviewer 2026-05-24): subscribe to the LOCAL
-	# HealthComponent.health_zero signal, NOT the global
-	# EventBus.unit_health_zero channel. Buildings and Units have SEPARATE
-	# unit_id counters that collide in the same int space (Iran Throne
-	# unit_id=1 collides with Kargar #1 unit_id=1). The Unit-side
-	# global-filter pattern at state_machine.gd:_on_unit_health_zero is
-	# safe WITHIN the Unit namespace because all Units share one counter;
-	# Buildings cannot safely use the same global channel.
-	#
-	# Consequence: if no HealthComponent is present on this scene yet,
-	# the Throne CANNOT be destroyed in this run and throne_destroyed will
-	# never fire. Phase 8 will add HealthComponent to throne.tscn alongside
-	# the win-screen consumer. Until then, the seam is documented but
-	# inert — explicitly and safely.
-	var hc: Node = get_node_or_null(^"HealthComponent")
-	if hc == null:
-		print("[throne]   no HealthComponent in scene — Throne cannot be "
-			+ "destroyed in this run; throne_destroyed signal will not "
-			+ "fire from this instance until Phase 8 adds HC to throne.tscn")
-		return
-	# HC exists — subscribe to its LOCAL health_zero signal. The local
-	# signal cannot collide because we connect to OUR component's signal
-	# directly; no global namespace involved.
-	if hc.has_signal(&"health_zero"):
-		if not hc.health_zero.is_connected(_on_health_zero):
-			hc.health_zero.connect(_on_health_zero)
-	else:
-		# Defensive: HC exists but lacks the local signal (older HC version
-		# or test mock). Log + bail; do NOT fall back to the global channel
-		# because that's exactly the bug we're fixing.
-		push_warning("Throne: HealthComponent present but missing health_zero "
-			+ "signal — destruction signal will not fire. "
-			+ "(Update HealthComponent to expose health_zero per BUG-G1.)")
-		return
-	# Initialize HC from BalanceData.
-	var max_hp: float = _resolve_max_hp()
-	if hc.has_method(&"init_max_hp"):
-		hc.call(&"init_max_hp", max_hp)
-	if hc.has_method(&"set"):
-		hc.set(&"unit_id", unit_id)
-
-
+## Override of base Building._on_health_zero. Throne additionally emits
+## the specific `EventBus.throne_destroyed(team)` signal that Phase 8's
+## win-screen will consume.
+##
+## Local-signal subscription per BUG-G1: this handler can ONLY be reached
+## via OUR HealthComponent.health_zero emit, so unit_id_in matches
+## self.unit_id by construction (parameter retained for telemetry).
 func _on_health_zero(unit_id_in: int) -> void:
-	# Local-signal subscription per BUG-G1: this handler can ONLY be reached
-	# via our OWN HealthComponent.health_zero emit, so unit_id_in matches
-	# self.unit_id by construction. The unit_id_in parameter is retained
-	# for telemetry symmetry with the global signal shape.
 	if _destruction_emitted:
 		return
-	_destruction_emitted = true
-	# §9.M6 — log destruction so live-test can verify the signal fires
-	# and the Phase 8 win-screen seam will receive it.
-	print("[throne] destroyed team=%d unit_id=%d" % [team, unit_id])
+	# Emit specific throne_destroyed signal FIRST, before super (which
+	# emits generic building_destroyed). Per Phase 8 win-screen design:
+	# the specific signal is what triggers the end-screen; the generic
+	# is for AI / telemetry consumers.
+	# Note: we DON'T set _destruction_emitted = true here — super does
+	# that. The order matters only for signal-ordering, not for the
+	# latch.
+	print("[throne] also emitting specific throne_destroyed team=%d" % team)
 	EventBus.throne_destroyed.emit(team)
+	# Base impl handles: latch, generic building_destroyed emit, queue_free,
+	# [<kind>] destroyed log.
+	super._on_health_zero(unit_id_in)
 
 
 # === Autoload + BalanceData helpers ==========================================
@@ -462,32 +413,13 @@ func _autoload_or_null(autoload_name: StringName) -> Node:
 	return tree.root.get_node_or_null(NodePath(autoload_name))
 
 
-## Read max_hp from BalanceData.buildings[&"throne"].max_hp via the
-## canonical Dictionary lookup (per BUG-C1 fix-wave learning;
-## `building.gd:_read_bldg_stats_int` uses the same shape). Falls back to
-## _FALLBACK_MAX_HP on any defensive failure.
-func _resolve_max_hp() -> float:
-	var path: String = Constants.PATH_BALANCE_DATA
-	if not FileAccess.file_exists(path):
-		print("[throne]   max_hp fallback (no balance.tres)")
-		return _FALLBACK_MAX_HP
-	var bd: Resource = load(path)
-	if bd == null:
-		print("[throne]   max_hp fallback (balance.tres failed to load)")
-		return _FALLBACK_MAX_HP
-	var bldgs: Variant = bd.get(&"buildings")
-	if typeof(bldgs) != TYPE_DICTIONARY:
-		print("[throne]   max_hp fallback (buildings dict missing)")
-		return _FALLBACK_MAX_HP
-	var stats: Variant = (bldgs as Dictionary).get(KIND_THRONE, null)
-	if stats == null or not (stats is Resource):
-		print("[throne]   max_hp fallback (no bldg_throne entry)")
-		return _FALLBACK_MAX_HP
-	var v: Variant = (stats as Resource).get(&"max_hp")
-	if typeof(v) != TYPE_FLOAT and typeof(v) != TYPE_INT:
-		print("[throne]   max_hp fallback (bldg_throne.max_hp not numeric)")
-		return _FALLBACK_MAX_HP
-	return float(v)
+# Wave 3-BuildingDestructibility (session 9): `_resolve_max_hp` factored
+# to Building base. Throne inherits — base reads
+# BalanceData.buildings[&"throne"].max_hp (= 2000.0 per balance.tres:215)
+# via the canonical Dictionary lookup. Base fallback is 100.0; Throne's
+# was 2000.0. Live-test will verify the base read fires before falling
+# back; if it falls back, the live-test log will show the [throne]
+# fallback trail.
 
 
 ## Register a FogSystem vision source for this Throne. Sight = 4 cells per
