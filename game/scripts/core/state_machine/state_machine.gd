@@ -247,6 +247,12 @@ func _apply_transition(target_id: StringName, reason: StringName) -> void:
 		prev.id if prev != null else &"",
 		target_id,
 		SimClock.tick)
+	# §9.M6 — log the transition. Pre-this-log, FSM transitions were
+	# invisible; pre-discipline gap masking the BUG-H4-shape "AttackMove
+	# kills target, doesn't resume" diagnosis.
+	print("[fsm] unit_id=%d %s→%s reason=%s tick=%d" % [
+		unit_id, str(prev.id if prev != null else &""),
+		str(target_id), str(reason), SimClock.tick])
 
 
 # Map a command kind to the state id that should run it.
