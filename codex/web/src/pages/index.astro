@@ -1,0 +1,19 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+const all = (await getCollection('entries')).sort((a, b) => a.data.title.localeCompare(b.data.title));
+---
+<Base title="Index">
+  <h1>Shahnameh Codex</h1>
+  <p>{all.length} entries.</p>
+  <ul>
+    {all.map((e) => (
+      <li>
+        <a href={`/entry/${e.id}`}>{e.data.title}</a>
+        {e.data.title_fa && <span dir="rtl"> {e.data.title_fa}</span>}
+        {e.data.status === 'stub' && <span class="stub"> · stub</span>}
+        <br /><small>{e.data.summary}</small>
+      </li>
+    ))}
+  </ul>
+</Base>
