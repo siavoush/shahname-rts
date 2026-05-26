@@ -6,6 +6,17 @@ const all = (await getCollection('entries')).sort((a, b) => a.data.title.localeC
 <Base title="Index">
   <h1>Shahnameh Codex</h1>
   <p>{all.length} entries.</p>
+
+  <link rel="stylesheet" href="/pagefind/pagefind-ui.css" />
+  <div id="search" style="margin: 1.5rem 0"></div>
+  <script src="/pagefind/pagefind-ui.js" is:inline></script>
+  <script is:inline>
+    window.addEventListener('DOMContentLoaded', () => {
+      if (typeof PagefindUI === 'undefined') return;
+      new PagefindUI({ element: '#search', showSubResults: true, resetStyles: false });
+    });
+  </script>
+
   <ul>
     {all.map((e) => (
       <li>

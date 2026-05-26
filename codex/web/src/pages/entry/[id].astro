@@ -30,6 +30,9 @@ const backItems = all
 ---
 <Base title={d.title}>
   <h1>{d.title}{d.title_fa && <span dir="rtl" style="margin-inline-start:.5rem">{d.title_fa}</span>}</h1>
+  {d.aka && d.aka.length > 0 && (
+    <span class="sr-only">also known as {d.aka.join(', ')}</span>
+  )}
   <p><em>{d.summary}</em></p>
   <p>
     {d.age && <span class="tag">{d.age}</span>}
