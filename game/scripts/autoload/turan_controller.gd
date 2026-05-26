@@ -107,6 +107,17 @@ var _current_probe_target: Variant = null
 ## on probing→idle.
 var _current_probe_unit: Variant = null
 
+## Last logged stall state — used to rate-limit per-tick stall logs to
+## state-change events only (BUG-H5 log-flood fix 2026-05-26). Without
+## this gate the retry-asap loop (_step_idle stays in idle, cadence pinned
+## at ceiling, re-fires every AI tick) prints the cadence-elapsed +
+## no-target lines 30x/sec → 90+ lines/sec → 800KB+ log in 4 min.
+var _last_stall_reason: String = ""
+
+## Last picked-target signature — gates the diag log to state-change only.
+## Same rationale as _last_stall_reason: prevent per-tick spam.
+var _last_pick_signature: String = ""
+
 
 # ---------------------------------------------------------------------------
 # Lifecycle
@@ -149,6 +160,8 @@ func reset() -> void:
 	_ticks_since_last_probe = 0
 	_current_probe_target = null
 	_current_probe_unit = null
+	_last_stall_reason = ""
+	_last_pick_signature = ""
 
 
 ## Public read-only snapshot of FSM state for tests + the future F3 debug
@@ -214,24 +227,23 @@ func _step_idle() -> void:
 	_ticks_since_last_probe += 1
 	if _ticks_since_last_probe < _probe_cadence_ticks:
 		return
-	# Cadence elapsed — try to launch a probe.
-	print("[turan] cadence elapsed, attempting probe at tick=", SimClock.tick)  # DEBUG
+	# Cadence elapsed — try to launch a probe. Per the original Wave 3B
+	# design, on no-target we STAY at the cadence ceiling and retry every
+	# AI tick (30/sec). All per-tick stall logs are gated by stall-reason
+	# state-change to avoid log flood (BUG-H5).
 	var target: Variant = _pick_target()
 	if not is_instance_valid(target):
-		# No visible Iran unit. Stay idle; counter stays at cadence so we
-		# retry next AI-tick (don't wait another full cadence after a no-op).
-		print("[turan]   no visible Iran target — staying idle")  # DEBUG
+		_log_stall_once("no_visible_iran_target")
 		return
 	var commanded: Variant = _pick_turan_unit(target)
 	if not is_instance_valid(commanded):
-		# No alive Turan unit OR all Turan units are too far / freed. Stay
-		# idle; same retry-asap semantics as no-target.
-		# Per brief §4 Track 1 Decision 5: "Pop-cap fallback if no Turan
-		# units alive — log debug message, stay in idle. No production-
-		# driving (deferred per §1 exclusions)."
-		print("[turan]   target found but no Turan unit near it — staying idle")  # DEBUG
+		_log_stall_once("no_turan_unit_near_target")
 		return
-	print("[turan]   PROBE FIRING — target=", target, " commanded=", commanded)  # DEBUG
+	# PROBE FIRING — clear stall latch + log the event (single shot per probe).
+	if _last_stall_reason != "":
+		print("[turan] stall_end after_reason=%s tick=%d" % [_last_stall_reason, SimClock.tick])
+		_last_stall_reason = ""
+	print("[turan] PROBE FIRING — target=", target, " commanded=", commanded, " tick=", SimClock.tick)
 	# Issue the attack-move. Pitfall #16 safety: we just `is_instance_valid`d
 	# both Variants above — the cast inside _issue_attack_move is safe in
 	# this synchronous path.
@@ -272,6 +284,17 @@ func _step_probing() -> void:
 # ---------------------------------------------------------------------------
 # Internals
 # ---------------------------------------------------------------------------
+
+## Log a stall reason ONCE per stall period — re-firing only when the
+## reason transitions. Prevents the retry-asap loop from spamming 30
+## lines/sec into the log (BUG-H5 log-flood). When the reason matches
+## the last logged reason, stay silent.
+func _log_stall_once(reason: String) -> void:
+	if reason == _last_stall_reason:
+		return
+	print("[turan] stall_start reason=%s tick=%d" % [reason, SimClock.tick])
+	_last_stall_reason = reason
+
 
 ## Resolve `_probe_cadence_ticks` from `BalanceData.ai.normal_wave_cadence_ticks`.
 ##
@@ -414,9 +437,10 @@ func _pick_target() -> Variant:
 	else:
 		print("[turan-diag]   SpatialIndex autoload not found")  # DEBUG
 
-	# §9.M6 — diag log on EVERY probe attempt (not just no-target). Shows
-	# the full candidate-evaluation picture so live-test can verify whether
-	# buildings were considered, fog-rejected, or beaten by a closer unit.
+	# §9.M6 — diag log gated to state-change only (BUG-H5). The signature
+	# encodes the candidate-counts + picked target; identical signatures
+	# back-to-back fire once per state-change, not per-tick (the retry-asap
+	# loop would otherwise spam 30 lines/sec).
 	var picked_label: String = "null"
 	if best_target != null:
 		var picked_uid: Variant = best_target.get(&"unit_id")
@@ -433,9 +457,14 @@ func _pick_target() -> Variant:
 				picked_kind_label = str(k)
 		picked_label = "unit_id=%d (%s) dist=%.2f" % [
 			picked_uid_int, picked_kind_label, sqrt(best_dist_sq)]
-	print("[turan-diag] _pick_target: buildings_total=%d eligible=%d fog_rej=%d units_total=%d fog_rej=%d picked=%s" % [
+	var sig: String = "b%d_e%d_fb%d_u%d_fu%d_%s" % [
 		buildings_total, buildings_eligible, buildings_fog_rejected,
-		agents.size(), unit_fog_rejected, picked_label])
+		agents.size(), unit_fog_rejected, picked_label]
+	if sig != _last_pick_signature:
+		print("[turan-diag] _pick_target: buildings_total=%d eligible=%d fog_rej=%d units_total=%d fog_rej=%d picked=%s tick=%d" % [
+			buildings_total, buildings_eligible, buildings_fog_rejected,
+			agents.size(), unit_fog_rejected, picked_label, SimClock.tick])
+		_last_pick_signature = sig
 	return best_target
 
 
