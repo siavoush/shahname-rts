@@ -300,33 +300,34 @@ func _resolve_probe_cadence() -> int:
 	return cadence
 
 
-## Pick the nearest Iran unit visible to Turan via FogSystem.
+## Pick the nearest Iran target visible to Turan via FogSystem.
 ##
-## Per brief §4 Track 1 Decision 2: "Target priority — nearest Iran unit
-## visible to Turan via `FogSystem.is_visible_to`."
+## Priority order:
+##   1. Iran Throne if visible (decisive — win condition).
+##   2. Nearest visible Iran building OR unit (combined candidate pool).
+##
+## BUG-H1 fix (Wave 3-BuildingDestructibility live-test): pre-fix code only
+## considered Iran units (SpatialIndex) after Throne. Buildings with HC could
+## take damage in theory but were never targeted → defensibility unplayable.
+## Fix extends the candidate pool to include all non-Throne Iran buildings
+## via the canonical &"buildings" SceneTree group (registered at
+## `building.gd:358`).
 ##
 ## Strategy:
-##   1. Query the SpatialIndex for all Iran-team units within a wide radius
-##      centered on... the map origin. (MVP simplification — Phase 6 will
-##      use the per-Turan-unit distance.) Wave 3B treats the entire map as
-##      one search zone since the map is 256m square and AI doesn't yet
-##      track its own positions.
-##   2. Filter by `FogSystem.is_visible_to(TEAM_TURAN, unit.global_position)`.
-##   3. Return the nearest one to the map origin (Vector3.ZERO).
+##   1. Throne special-case (preserved from Wave 3-Throne).
+##   2. Walk &"buildings" group; filter to TEAM_IRAN + non-Throne + fog-visible.
+##   3. Query SpatialIndex for Iran-team agents; filter to fog-visible.
+##   4. Merge both candidate lists; return nearest to map origin.
 ##
-## Returns Variant: a live Node3D (Iran unit) on success, or null when no
-## visible Iran target exists. Caller MUST `is_instance_valid()` before
+## Returns Variant: a live Node3D (Iran unit or building) on success, or null
+## when no visible Iran target exists. Caller MUST `is_instance_valid()` before
 ## casting.
 func _pick_target() -> Variant:
 	var fog: Node = _autoload_or_null(&"FogSystem")
 	if fog == null:
 		print("[turan-diag]   FogSystem autoload not found")  # DEBUG
 		return null
-	# Wave-3-Throne — prefer Iran Throne if visible. Per brief §4 Track 1
-	# + mirror C1.2 anti-misuse: buildings register via SceneTree group
-	# (&"thrones"), NOT via SpatialIndex (which tracks UNITS only via
-	# SpatialAgentComponent). Misuse would silently return zero Thrones —
-	# the BUG-D2 shape recapitulated, mirror-flagged at brief-time.
+	# Priority 1: Iran Throne if visible.
 	var iran_throne: Variant = _find_iran_throne_if_visible(fog)
 	if iran_throne != null:
 		# §9.M6 — log the target-priority transition. Only when we
@@ -337,41 +338,76 @@ func _pick_target() -> Variant:
 			print("[turan] target_switch unit → throne (iran_throne unit_id=%d)" % [
 				int((iran_throne as Node3D).get(&"unit_id"))])
 		return iran_throne
-	var spatial: Node = _autoload_or_null(&"SpatialIndex")
-	if spatial == null:
-		print("[turan-diag]   SpatialIndex autoload not found")  # DEBUG
-		return null
-	# Query Iran-team agents in a broad radius. SpatialIndex.query_radius_team
-	# returns SpatialAgentComponent Nodes; the parent is the Unit.
+
+	# Priority 2: nearest visible Iran building OR unit.
 	var origin: Vector3 = Vector3.ZERO
-	var agents: Array = spatial.call(
-		&"query_radius_team", origin, _PROBE_SEARCH_RADIUS_M, Constants.TEAM_IRAN)
-	print("[turan-diag]   SpatialIndex returned ", agents.size(), " Iran agents")  # DEBUG
 	var best_target: Variant = null
 	var best_dist_sq: float = INF
-	var fog_rejected: int = 0
-	for agent in agents:
-		if not is_instance_valid(agent):
-			continue
-		var parent: Node = agent.get_parent()
-		if not is_instance_valid(parent):
-			continue
-		if not (parent is Node3D):
-			continue
-		var pos: Vector3 = (parent as Node3D).global_position
-		# Fog gate: target must be currently visible to Turan.
-		var vis: bool = fog.call(&"is_visible_to", Constants.TEAM_TURAN, pos)
-		if not vis:
-			fog_rejected += 1
-			continue
-		var dx: float = pos.x - origin.x
-		var dz: float = pos.z - origin.z
-		var d2: float = dx * dx + dz * dz
-		if d2 < best_dist_sq:
-			best_dist_sq = d2
-			best_target = parent
-	if best_target == null and agents.size() > 0:
-		print("[turan-diag]   fog rejected ", fog_rejected, " of ", agents.size(), " agents")  # DEBUG
+
+	# Building candidates via &"buildings" group. Excludes Throne (handled above)
+	# via &"thrones" group check. Pitfall #16 safety: validate each Node before
+	# any access — group nodes can be freed asynchronously per Wave 3-BD destruction.
+	var building_candidates: int = 0
+	var building_fog_rejected: int = 0
+	var tree: SceneTree = get_tree()
+	if tree != null:
+		for node in tree.get_nodes_in_group(&"buildings"):
+			if not is_instance_valid(node):
+				continue
+			if not (node is Node3D):
+				continue
+			# Skip Throne — already handled in priority 1.
+			if node.is_in_group(&"thrones"):
+				continue
+			var node_team: Variant = node.get(&"team")
+			if typeof(node_team) != TYPE_INT or int(node_team) != Constants.TEAM_IRAN:
+				continue
+			building_candidates += 1
+			var b_pos: Vector3 = (node as Node3D).global_position
+			var b_vis: bool = fog.call(&"is_visible_to", Constants.TEAM_TURAN, b_pos)
+			if not b_vis:
+				building_fog_rejected += 1
+				continue
+			var bdx: float = b_pos.x - origin.x
+			var bdz: float = b_pos.z - origin.z
+			var b_d2: float = bdx * bdx + bdz * bdz
+			if b_d2 < best_dist_sq:
+				best_dist_sq = b_d2
+				best_target = node
+
+	# Unit candidates via SpatialIndex.
+	var spatial: Node = _autoload_or_null(&"SpatialIndex")
+	var agents: Array = []
+	var unit_fog_rejected: int = 0
+	if spatial != null:
+		agents = spatial.call(
+			&"query_radius_team", origin, _PROBE_SEARCH_RADIUS_M, Constants.TEAM_IRAN)
+		for agent in agents:
+			if not is_instance_valid(agent):
+				continue
+			var parent: Node = agent.get_parent()
+			if not is_instance_valid(parent):
+				continue
+			if not (parent is Node3D):
+				continue
+			var pos: Vector3 = (parent as Node3D).global_position
+			var vis: bool = fog.call(&"is_visible_to", Constants.TEAM_TURAN, pos)
+			if not vis:
+				unit_fog_rejected += 1
+				continue
+			var dx: float = pos.x - origin.x
+			var dz: float = pos.z - origin.z
+			var d2: float = dx * dx + dz * dz
+			if d2 < best_dist_sq:
+				best_dist_sq = d2
+				best_target = parent
+	else:
+		print("[turan-diag]   SpatialIndex autoload not found")  # DEBUG
+
+	# §9.M6 — diag log when no target found despite candidates existing.
+	if best_target == null:
+		print("[turan-diag]   no target — buildings=%d (fog_rej=%d), units=%d (fog_rej=%d)" % [
+			building_candidates, building_fog_rejected, agents.size(), unit_fog_rejected])
 	return best_target
 
 
