@@ -347,8 +347,16 @@ func _pick_target() -> Variant:
 	# Building candidates via &"buildings" group. Excludes Throne (handled above)
 	# via &"thrones" group check. Pitfall #16 safety: validate each Node before
 	# any access — group nodes can be freed asynchronously per Wave 3-BD destruction.
-	var building_candidates: int = 0
-	var building_fog_rejected: int = 0
+	#
+	# Filter is "non-Turan" rather than "Iran only" per user design intent
+	# (BUG-H1 live-test 2026-05-26): half-built buildings (team=TEAM_NEUTRAL=0,
+	# the brief window between scene-instantiation and place_at when the
+	# worker is interrupted) should also be destroyable. The looser filter
+	# catches that case. Currently no buildings live at TEAM_NEUTRAL outside
+	# this transient state, so this doesn't introduce false-positive targets.
+	var buildings_total: int = 0
+	var buildings_eligible: int = 0
+	var buildings_fog_rejected: int = 0
 	var tree: SceneTree = get_tree()
 	if tree != null:
 		for node in tree.get_nodes_in_group(&"buildings"):
@@ -356,17 +364,19 @@ func _pick_target() -> Variant:
 				continue
 			if not (node is Node3D):
 				continue
+			buildings_total += 1
 			# Skip Throne — already handled in priority 1.
 			if node.is_in_group(&"thrones"):
 				continue
 			var node_team: Variant = node.get(&"team")
-			if typeof(node_team) != TYPE_INT or int(node_team) != Constants.TEAM_IRAN:
+			# Non-Turan filter (includes TEAM_IRAN + TEAM_NEUTRAL half-built).
+			if typeof(node_team) == TYPE_INT and int(node_team) == Constants.TEAM_TURAN:
 				continue
-			building_candidates += 1
+			buildings_eligible += 1
 			var b_pos: Vector3 = (node as Node3D).global_position
 			var b_vis: bool = fog.call(&"is_visible_to", Constants.TEAM_TURAN, b_pos)
 			if not b_vis:
-				building_fog_rejected += 1
+				buildings_fog_rejected += 1
 				continue
 			var bdx: float = b_pos.x - origin.x
 			var bdz: float = b_pos.z - origin.z
@@ -404,10 +414,28 @@ func _pick_target() -> Variant:
 	else:
 		print("[turan-diag]   SpatialIndex autoload not found")  # DEBUG
 
-	# §9.M6 — diag log when no target found despite candidates existing.
-	if best_target == null:
-		print("[turan-diag]   no target — buildings=%d (fog_rej=%d), units=%d (fog_rej=%d)" % [
-			building_candidates, building_fog_rejected, agents.size(), unit_fog_rejected])
+	# §9.M6 — diag log on EVERY probe attempt (not just no-target). Shows
+	# the full candidate-evaluation picture so live-test can verify whether
+	# buildings were considered, fog-rejected, or beaten by a closer unit.
+	var picked_label: String = "null"
+	if best_target != null:
+		var picked_uid: Variant = best_target.get(&"unit_id")
+		var picked_uid_int: int = -1
+		if typeof(picked_uid) == TYPE_INT:
+			picked_uid_int = int(picked_uid)
+		var picked_kind_or_type: Variant = best_target.get(&"unit_type")
+		var picked_kind_label: String = ""
+		if typeof(picked_kind_or_type) == TYPE_STRING_NAME:
+			picked_kind_label = str(picked_kind_or_type)
+		else:
+			var k: Variant = best_target.get(&"kind")
+			if typeof(k) == TYPE_STRING_NAME:
+				picked_kind_label = str(k)
+		picked_label = "unit_id=%d (%s) dist=%.2f" % [
+			picked_uid_int, picked_kind_label, sqrt(best_dist_sq)]
+	print("[turan-diag] _pick_target: buildings_total=%d eligible=%d fog_rej=%d units_total=%d fog_rej=%d picked=%s" % [
+		buildings_total, buildings_eligible, buildings_fog_rejected,
+		agents.size(), unit_fog_rejected, picked_label])
 	return best_target
 
 

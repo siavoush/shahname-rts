@@ -411,6 +411,14 @@ func place_at(world_pos: Vector3, owner_team: int, placer_unit_id: int) -> void:
 	global_position = world_pos
 	team = owner_team
 	is_complete = true
+	# §9.M6 — log the team transition + placement. Building._ready fires
+	# with team=TEAM_NEUTRAL (default); place_at is when the building
+	# transitions to its owning team. Pre-this-log, this transition was
+	# invisible, which masked partial-state buildings (worker interrupted
+	# mid-construction → place_at never runs → team stays at 0 → AI
+	# targeting filters reject it).
+	print("[%s] place_at team=%d position=%s placer_unit_id=%d is_complete=true" % [
+		str(kind), team, str(world_pos), placer_unit_id])
 	_on_placement_complete(placer_unit_id)
 
 
