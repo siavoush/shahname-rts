@@ -1,0 +1,65 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+
+export async function getStaticPaths() {
+  const all = await getCollection('entries');
+  return all.map((e) => ({ params: { id: e.id }, props: { entry: e, all } }));
+}
+
+const { entry, all } = Astro.props;
+const { Content } = await render(entry);
+const d = entry.data;
+
+const byId = Object.fromEntries(all.map((e) => [e.id, e]));
+const link = (id) => {
+  const t = byId[id];
+  return { href: `/entry/${id}`, title: t ? t.data.title : id, stub: !t || t.data.status === 'stub' };
+};
+
+const relList = Object.entries(d.relationships || {}).map(([k, ids]) => ({ k, items: ids.map(link) }));
+const relatedItems = (d.related || []).map(link);
+const backItems = all
+  .filter((e) => e.id !== entry.id && (
+    Object.values(e.data.relationships || {}).flat().includes(entry.id) ||
+    (e.data.related || []).includes(entry.id) ||
+    e.data.origin === entry.id ||
+    e.data.seat === entry.id
+  ))
+  .map((e) => ({ href: `/entry/${e.id}`, title: e.data.title }));
+---
+<Base title={d.title}>
+  <h1>{d.title}{d.title_fa && <span dir="rtl" style="margin-inline-start:.5rem">{d.title_fa}</span>}</h1>
+  {d.aka && d.aka.length > 0 && (
+    <span class="sr-only">also known as {d.aka.join(', ')}</span>
+  )}
+  <p><em>{d.summary}</em></p>
+  <p>
+    {d.age && <span class="tag">{d.age}</span>}
+    {d.register && <span class="tag">{d.register}</span>}
+    <span class="tag">{d.type}</span>
+    {d.status === 'stub' && <span class="stub">stub — not yet written</span>}
+  </p>
+
+  <Content />
+
+  <nav class="sidebar">
+    {relList.length > 0 && (
+      <div>
+        <strong>Relationships</strong>
+        <ul>
+          {relList.map((r) => (
+            <li>{r.k}: {r.items.map((l) => (<a href={l.href} class={l.stub ? 'stub' : ''}>{l.title} </a>))}</li>
+          ))}
+        </ul>
+      </div>
+    )}
+    {relatedItems.length > 0 && (
+      <p><strong>See also:</strong> {relatedItems.map((l) => (<a href={l.href} class={l.stub ? 'stub' : ''}>{l.title} </a>))}</p>
+    )}
+    {backItems.length > 0 && (
+      <p><strong>Mentioned in:</strong> {backItems.map((l) => (<a href={l.href}>{l.title} </a>))}</p>
+    )}
+    {d.sources && d.sources.length > 0 && (<p><strong>Sources:</strong> {d.sources.join(', ')}</p>)}
+  </nav>
+</Base>

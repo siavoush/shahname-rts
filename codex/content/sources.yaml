@@ -1,0 +1,20 @@
+ganjoor:
+  title: "Ganjoor — Ferdowsi, Shāhnāmeh (complete Persian, verse-by-verse)"
+  kind: primary-text
+  url: https://ganjoor.net/ferdousi/shahname
+  license: public-domain
+warner-warner:
+  title: "Warner & Warner, The Sháhnáma of Firdausí (1905) — complete English"
+  kind: translation
+  license: public-domain
+davis:
+  title: "Dick Davis, Shahnameh (Penguin)"
+  kind: translation
+  license: copyrighted   # reference-only — do NOT ship in-game
+khaleghi-motlagh:
+  title: "Djalal Khaleghi-Motlagh — critical edition (canonical reading)"
+  kind: critical-edition
+iranica:
+  title: "Encyclopaedia Iranica"
+  kind: reference
+  url: https://www.iranicaonline.org

@@ -1,0 +1,7 @@
+# Generated artifacts & dependencies — never committed.
+node_modules/
+build/
+.astro/
+dist/
+*.log
+.DS_Store
