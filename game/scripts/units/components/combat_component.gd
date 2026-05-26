@@ -138,6 +138,16 @@ var target_lookup_callable: Callable = Callable()
 func set_target(unit_id_value: int) -> void:
 	if _target_unit_id == unit_id_value:
 		return
+	# §9.M6 — log target change. Skips the idempotent re-entry so we only
+	# see real target acquisitions / retargets / clears, not the per-tick spam.
+	var owner_uid: int = -1
+	var parent_node: Node = get_parent()
+	if parent_node != null:
+		var raw_uid: Variant = parent_node.get(&"unit_id")
+		if typeof(raw_uid) == TYPE_INT:
+			owner_uid = int(raw_uid)
+	print("[combat] target_change attacker_id=%d %d→%d" % [
+		owner_uid, _target_unit_id, unit_id_value])
 	_target_unit_id = unit_id_value
 	_attack_cooldown_ticks = 0
 
@@ -231,6 +241,34 @@ func _sim_tick(_dt: float) -> void:
 		# ranged units (Kamandar, ...) will pass &"ranged_attack" from
 		# their own combat path — a CombatComponent-level "kind" flag is
 		# a LATER refactor when the second cause source ships.
+		# §9.M6 — log damage fire. Fires at attack_speed_per_sec rate (~1 Hz
+		# for Piyade), bounded log volume. Includes attacker + target ids,
+		# resolved unit types, post-multiplier damage_x100, distance.
+		var owner_uid_for_log: int = -1
+		var owner_parent: Node = get_parent()
+		if owner_parent != null:
+			var raw_owner_uid: Variant = owner_parent.get(&"unit_id")
+			if typeof(raw_owner_uid) == TYPE_INT:
+				owner_uid_for_log = int(raw_owner_uid)
+		var target_uid_for_log: int = -1
+		var raw_target_uid: Variant = target.get(&"unit_id")
+		if typeof(raw_target_uid) == TYPE_INT:
+			target_uid_for_log = int(raw_target_uid)
+		var target_type_for_log: StringName = &""
+		var raw_ttype: Variant = target.get(&"unit_type")
+		if typeof(raw_ttype) == TYPE_STRING_NAME:
+			target_type_for_log = raw_ttype
+		elif typeof(raw_ttype) == TYPE_STRING:
+			target_type_for_log = StringName(raw_ttype)
+		else:
+			# Buildings expose `kind: StringName` instead of `unit_type`.
+			var raw_kind: Variant = target.get(&"kind")
+			if typeof(raw_kind) == TYPE_STRING_NAME:
+				target_type_for_log = raw_kind
+		print("[combat] fire attacker_id=%d (%s) target_id=%d (%s) damage_x100=%d dist=%.2f" % [
+			owner_uid_for_log, str(attacker_unit_type),
+			target_uid_for_log, str(target_type_for_log),
+			scaled_damage_x100, sqrt(dist_sq)])
 		health.call(&"take_damage_x100", scaled_damage_x100, get_parent(), &"melee_attack")
 	# Cooldown reset. roundi enforces the deterministic rounding rule
 	# called out in Sim Contract §1.6.
