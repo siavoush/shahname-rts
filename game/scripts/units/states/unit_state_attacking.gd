@@ -75,6 +75,13 @@ var _combat: Variant = null
 # Cached MovementComponent ref. Set in enter; cleared in exit.
 var _movement: Variant = null
 
+# §9.M6 — last tick we emitted a periodic diag. Rate-limited to 1 Hz
+# (30 ticks @ SIM_HZ=30) so we can see what's happening during a long
+# walk-toward-target phase without flooding the log. Resets to -1 on
+# enter so each engagement gets its own logging cadence.
+var _last_diag_log_tick: int = -1
+var _last_diag_branch: StringName = &""
+
 
 func _init() -> void:
 	id = &"attacking"
@@ -146,6 +153,8 @@ func enter(_prev: Object, ctx: Object) -> void:
 		return
 
 	_target = found
+	_last_diag_log_tick = -1
+	_last_diag_branch = &""
 
 
 # Per-tick:
@@ -178,6 +187,32 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 		var aabb: AABB = _target.get_footprint_aabb()
 		fp_half = maxf(aabb.size.x, aabb.size.z) * 0.5
 	var edge_dist: float = maxf(0.0, center_dist - fp_half)
+
+	# §9.M6 — periodic diag (BUG-H7 fix-up). Fires on branch-transition
+	# always + at most once per second otherwise. Lets us see whether the
+	# unit is walking, in range, what the distances actually are.
+	var current_branch: StringName = &"walking" if edge_dist > attack_range else &"in_range"
+	var should_log: bool = (current_branch != _last_diag_branch) \
+		or (_last_diag_log_tick == -1) \
+		or (SimClock.tick - _last_diag_log_tick >= 30)
+	if should_log:
+		var target_uid_log: int = -1
+		if _target != null:
+			var raw_uid: Variant = _target.get(&"unit_id")
+			if typeof(raw_uid) == TYPE_INT:
+				target_uid_log = int(raw_uid)
+		var is_moving_log: String = "n/a"
+		if _movement != null and &"is_moving" in _movement:
+			is_moving_log = str(bool(_movement.is_moving))
+		var owner_uid_log: int = -1
+		if ctx != null and &"unit_id" in ctx:
+			owner_uid_log = int(ctx.unit_id)
+		print("[attacking] unit_id=%d target_id=%d branch=%s center_dist=%.2f fp_half=%.2f edge_dist=%.2f attack_range=%.2f is_moving=%s self_pos=(%.2f, %.2f) target_pos=(%.2f, %.2f) tick=%d" % [
+			owner_uid_log, target_uid_log, str(current_branch),
+			center_dist, fp_half, edge_dist, attack_range, is_moving_log,
+			self_pos.x, self_pos.z, target_pos.x, target_pos.z, SimClock.tick])
+		_last_diag_log_tick = SimClock.tick
+		_last_diag_branch = current_branch
 
 	if edge_dist > attack_range:
 		# Step 3: out of range — walk toward target. Re-issue each tick so a
