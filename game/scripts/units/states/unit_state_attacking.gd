@@ -162,15 +162,24 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 		return
 
 	# Step 2: distance. XZ-only projection — same convention as SpatialIndex.
+	# Edge-distance semantic for Buildings (BUG-H6 fix-up): the unit can't
+	# reach the building's center (blocked by NavigationObstacle3D) so the
+	# range check uses center-distance minus footprint half-extent. For
+	# Units the footprint is treated as 0 (point target).
 	var attack_range: float = _read_attack_range()
-	var range_sq: float = attack_range * attack_range
 	var self_pos: Vector3 = _get_self_position(ctx)
 	var target_pos: Vector3 = _target.global_position
 	var dx: float = target_pos.x - self_pos.x
 	var dz: float = target_pos.z - self_pos.z
 	var dist_sq: float = dx * dx + dz * dz
+	var center_dist: float = sqrt(dist_sq)
+	var fp_half: float = 0.0
+	if _target.has_method(&"get_footprint_aabb"):
+		var aabb: AABB = _target.get_footprint_aabb()
+		fp_half = maxf(aabb.size.x, aabb.size.z) * 0.5
+	var edge_dist: float = maxf(0.0, center_dist - fp_half)
 
-	if dist_sq > range_sq:
+	if edge_dist > attack_range:
 		# Step 3: out of range — walk toward target. Re-issue each tick so a
 		# moving target stays tracked. The scheduler cancels prior in-flight
 		# requests internally on each new request, so this is safe.

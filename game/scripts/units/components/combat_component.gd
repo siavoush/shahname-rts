@@ -182,14 +182,22 @@ func _sim_tick(_dt: float) -> void:
 		_set_sim(&"_target_unit_id", -1)
 		return
 
-	# Step 4: XZ-only range check. Squared distance avoids a sqrt; matches
-	# SpatialIndex's _xz_distance_sq projection.
+	# Step 4: XZ-only range check. Edge-distance semantic for Buildings
+	# (BUG-H6 fix-up): the unit can't reach the building's center (blocked
+	# by NavigationObstacle3D) so the range check uses center-distance
+	# minus footprint half-extent. For Units the footprint is 0.
 	var attacker_pos: Vector3 = _get_owner_position()
 	var target_pos: Vector3 = target.global_position
 	var dx: float = attacker_pos.x - target_pos.x
 	var dz: float = attacker_pos.z - target_pos.z
 	var dist_sq: float = dx * dx + dz * dz
-	if dist_sq > attack_range * attack_range:
+	var center_dist: float = sqrt(dist_sq)
+	var fp_half: float = 0.0
+	if target.has_method(&"get_footprint_aabb"):
+		var aabb: AABB = target.get_footprint_aabb()
+		fp_half = maxf(aabb.size.x, aabb.size.z) * 0.5
+	var edge_dist: float = maxf(0.0, center_dist - fp_half)
+	if edge_dist > attack_range:
 		# Out of range; the state machine re-enters Moving to close.
 		# Don't reset cooldown here — if we just regained range, we want
 		# to fire on the next tick, not eat another wait cycle.

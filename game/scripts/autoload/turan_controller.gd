@@ -244,11 +244,23 @@ func _step_idle() -> void:
 		print("[turan] stall_end after_reason=%s tick=%d" % [_last_stall_reason, SimClock.tick])
 		_last_stall_reason = ""
 	print("[turan] PROBE FIRING — target=", target, " commanded=", commanded, " tick=", SimClock.tick)
-	# Issue the attack-move. Pitfall #16 safety: we just `is_instance_valid`d
-	# both Variants above — the cast inside _issue_attack_move is safe in
-	# this synchronous path.
-	var target_pos: Vector3 = (target as Node3D).global_position
-	_issue_attack_move(commanded as Node3D, target_pos)
+	# Issue the attack. Pitfall #16 safety: we just `is_instance_valid`d
+	# both Variants above — the cast below is safe in this synchronous path.
+	#
+	# BUG-H6 fix-up (Wave 3-BD live-test 2026-05-27): we issue COMMAND_ATTACK
+	# with target_unit_id, NOT COMMAND_ATTACK_MOVE with a Vector3. Reason: the
+	# Vector3 destination is the building's center, which is INSIDE the
+	# NavigationObstacle3D footprint. Pathing to it fails (or auto-snaps to
+	# the obstacle edge, then is_moving=false fires arrival), UnitState_AttackMove
+	# transitions to Idle → probe ends without combat. COMMAND_ATTACK uses
+	# UnitState_Attacking's own walk-toward + range-check logic; it doesn't
+	# need to reach the building's center, just attack_range of it. Works
+	# uniformly for both Unit and Building targets (both have unit_id).
+	var target_uid: int = -1
+	var raw_uid: Variant = target.get(&"unit_id")
+	if typeof(raw_uid) == TYPE_INT:
+		target_uid = int(raw_uid)
+	_issue_attack(commanded as Node3D, target_uid)
 	# Capture refs for monitoring + transition.
 	_current_probe_target = target
 	_current_probe_unit = commanded
@@ -531,6 +543,34 @@ func _issue_attack_move(unit: Node3D, target_position: Vector3) -> void:
 		&"replace_command",
 		Constants.COMMAND_ATTACK_MOVE,
 		{&"target": target_position},
+	)
+
+
+## Issue COMMAND_ATTACK with target_unit_id payload. Used for Unit + Building
+## targets where the Turan unit needs to walk-toward + engage within
+## attack_range without trying to reach the destination's exact center
+## (which for buildings is inside a NavigationObstacle3D footprint and
+## causes UnitState_AttackMove to bail to Idle — BUG-H6 2026-05-27).
+##
+## UnitState_Attacking handles the walk-toward logic internally per its
+## per-tick distance check + request_repath fallback.
+func _issue_attack(unit: Node3D, target_unit_id: int) -> void:
+	if not is_instance_valid(unit):
+		return
+	if not unit.has_method(&"replace_command"):
+		return
+	if target_unit_id < 0:
+		# Defensive: target without unit_id — fall back to attack-move via
+		# global_position (legacy code path for the rare no-unit_id target).
+		push_warning(
+			"TuranController._issue_attack: target has no valid unit_id; "
+			+ "skipping attack command"
+		)
+		return
+	unit.call(
+		&"replace_command",
+		Constants.COMMAND_ATTACK,
+		{&"target_unit_id": target_unit_id},
 	)
 
 
