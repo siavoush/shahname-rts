@@ -126,31 +126,43 @@ func enter(_prev: Object, ctx: Object) -> void:
 		if typeof(raw) == TYPE_DICTIONARY:
 			cmd = raw
 	var payload: Dictionary = cmd.get(&"payload", {})
-	if not payload.has(&"target_unit_id"):
-		push_warning(
-			"UnitState_Attacking.enter: current_command.payload has no "
-			+ "`target_unit_id`; transitioning to idle")
-		_request_idle(ctx)
-		return
-	var target_id_raw: Variant = payload[&"target_unit_id"]
-	if typeof(target_id_raw) != TYPE_INT:
-		push_warning(
-			"UnitState_Attacking.enter: payload.target_unit_id is not an int; "
-			+ "transitioning to idle")
-		_request_idle(ctx)
-		return
-	var target_id: int = int(target_id_raw)
-
-	# Resolve the target Unit by id. Scene-tree walk is fine at Phase 2's
-	# 15-unit cap; LATER item is a UnitRegistry autoload (see file header).
-	var found: Variant = _find_unit_by_id(ctx, target_id)
-	if found == null or not is_instance_valid(found):
-		push_warning(
-			"UnitState_Attacking.enter: target_unit_id=%d does not resolve "
-			% target_id
-			+ "to a live Unit; transitioning to idle")
-		_request_idle(ctx)
-		return
+	# BUG-H8 (2026-05-27): prefer `target_node` payload key if present.
+	# The scene-tree walk `_find_unit_by_id` cannot disambiguate Unit/Building
+	# unit_id collisions (per BUG-G1 architecture finding: both share the
+	# global unit_id counter). When the issuer knows the actual target node
+	# (e.g., TuranController picking a Khaneh whose unit_id collides with a
+	# worker), it passes the ref directly via `target_node`. Fallback to id
+	# lookup preserves backward-compat with player-side COMMAND_ATTACK paths
+	# (right-click attack on enemy unit) that only have unit_id at dispatch time.
+	var found: Variant = null
+	var target_node_raw: Variant = payload.get(&"target_node", null)
+	if target_node_raw != null and is_instance_valid(target_node_raw):
+		found = target_node_raw
+	else:
+		if not payload.has(&"target_unit_id"):
+			push_warning(
+				"UnitState_Attacking.enter: current_command.payload has no "
+				+ "`target_unit_id` and no valid `target_node`; transitioning to idle")
+			_request_idle(ctx)
+			return
+		var target_id_raw: Variant = payload[&"target_unit_id"]
+		if typeof(target_id_raw) != TYPE_INT:
+			push_warning(
+				"UnitState_Attacking.enter: payload.target_unit_id is not an int; "
+				+ "transitioning to idle")
+			_request_idle(ctx)
+			return
+		var target_id: int = int(target_id_raw)
+		# Resolve the target Unit by id. Scene-tree walk is fine at Phase 2's
+		# 15-unit cap; LATER item is a UnitRegistry autoload (see file header).
+		found = _find_unit_by_id(ctx, target_id)
+		if found == null or not is_instance_valid(found):
+			push_warning(
+				"UnitState_Attacking.enter: target_unit_id=%d does not resolve "
+				% target_id
+				+ "to a live Unit; transitioning to idle")
+			_request_idle(ctx)
+			return
 
 	_target = found
 	_last_diag_log_tick = -1
@@ -241,6 +253,10 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 	_cancel_in_flight_repath()
 	if _combat != null and _combat.has_method(&"set_target"):
 		_combat.set_target(int(_target.unit_id))
+	# BUG-H8 — push the actual Node ref so CombatComponent's _resolve_target
+	# bypasses the unit_id namespace-collision walk.
+	if _combat != null and _combat.has_method(&"set_target_node"):
+		_combat.set_target_node(_target)
 	# Drive combat._sim_tick so cooldown advances and damage fires. Until
 	# the CombatSystem phase coordinator lands (LATER — same refactor shape
 	# as MovementSystem in BUILD_LOG 2026-05-01 wave 2), Attacking is the

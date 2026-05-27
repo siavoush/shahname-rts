@@ -117,6 +117,13 @@ var _target_unit_id: int = -1
 # 5v5 mirror combat scale).
 var target_lookup_callable: Callable = Callable()
 
+# BUG-H8 (2026-05-27): cached target Node ref to bypass the scene-tree walk
+# when the caller knows the actual target. Avoids the Unit/Building
+# unit_id namespace collision (per BUG-G1) where _walk_for_unit_id returns
+# whichever node-of-id-N is found first — which may not be the intended
+# target. Set via set_target_node(node); cleared on set_target(-1).
+var _cached_target_node: Variant = null
+
 
 # === Public API =============================================================
 
@@ -150,6 +157,22 @@ func set_target(unit_id_value: int) -> void:
 		owner_uid, _target_unit_id, unit_id_value])
 	_target_unit_id = unit_id_value
 	_attack_cooldown_ticks = 0
+	if unit_id_value == -1:
+		_cached_target_node = null
+
+
+## Cache the actual target Node ref. Bypasses _resolve_target's id lookup
+## (which can return wrong node on Unit/Building unit_id collision per
+## BUG-G1). Caller MUST also call set_target(unit_id) for consistency.
+## Pass null to clear.
+func set_target_node(node: Variant) -> void:
+	if node == null:
+		_cached_target_node = null
+		return
+	if not is_instance_valid(node):
+		_cached_target_node = null
+		return
+	_cached_target_node = node
 
 
 # === Per-tick simulation ====================================================
@@ -297,6 +320,12 @@ func _sim_tick(_dt: float) -> void:
 # otherwise walks the parent Unit's siblings looking for any Unit whose
 # unit_id matches. Returns null if not found.
 func _resolve_target(uid: int) -> Node3D:
+	# BUG-H8: prefer cached Node ref if set. Bypasses the namespace-collision
+	# risk in _walk_for_unit_id (Unit + Building both index into the global
+	# unit_id counter; walk-first-hit can return the wrong one).
+	if _cached_target_node != null and is_instance_valid(_cached_target_node) \
+			and _cached_target_node is Node3D:
+		return _cached_target_node as Node3D
 	if target_lookup_callable.is_valid():
 		var result: Variant = target_lookup_callable.call(uid)
 		if result is Node3D:

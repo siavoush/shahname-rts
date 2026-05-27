@@ -260,7 +260,7 @@ func _step_idle() -> void:
 	var raw_uid: Variant = target.get(&"unit_id")
 	if typeof(raw_uid) == TYPE_INT:
 		target_uid = int(raw_uid)
-	_issue_attack(commanded as Node3D, target_uid)
+	_issue_attack(commanded as Node3D, target, target_uid)
 	# Capture refs for monitoring + transition.
 	_current_probe_target = target
 	_current_probe_unit = commanded
@@ -554,7 +554,7 @@ func _issue_attack_move(unit: Node3D, target_position: Vector3) -> void:
 ##
 ## UnitState_Attacking handles the walk-toward logic internally per its
 ## per-tick distance check + request_repath fallback.
-func _issue_attack(unit: Node3D, target_unit_id: int) -> void:
+func _issue_attack(unit: Node3D, target_node: Variant, target_unit_id: int) -> void:
 	if not is_instance_valid(unit):
 		return
 	if not unit.has_method(&"replace_command"):
@@ -567,10 +567,22 @@ func _issue_attack(unit: Node3D, target_unit_id: int) -> void:
 			+ "skipping attack command"
 		)
 		return
+	# BUG-H8 (2026-05-27 live-test): the payload carries the actual target
+	# Node ref in addition to target_unit_id. UnitState_Attacking's
+	# fallback _find_unit_by_id walk hits namespace collisions between
+	# Buildings and Units (both share the global unit_id counter — per
+	# BUG-G1 architecture-review finding). The Node ref lets the receiver
+	# bypass the ambiguous lookup. target_unit_id stays in the payload for
+	# (a) backward-compat with other COMMAND_ATTACK callers (player
+	# right-click) and (b) downstream CombatComponent set_target which
+	# still uses id.
 	unit.call(
 		&"replace_command",
 		Constants.COMMAND_ATTACK,
-		{&"target_unit_id": target_unit_id},
+		{
+			&"target_unit_id": target_unit_id,
+			&"target_node": target_node,
+		},
 	)
 
 
