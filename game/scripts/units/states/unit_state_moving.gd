@@ -83,6 +83,12 @@ var _arrival_pending: bool = false
 # repeated requests to the same target (an idempotent re-issue is harmless).
 var _target: Vector3 = Vector3.ZERO
 
+# §9.M6 observability — state-change-gated path-state log. Cached per enter()
+# and updated only on transition (PENDING → READY → COMPLETED → FAILED). Per
+# Wave-3-BD observability sweep — this would have surfaced BUG-H6/H8 walk-
+# failures in ~10s. Reset to -1 on enter so the first tick always logs.
+var _last_path_state: int = -1
+
 
 func _init() -> void:
 	id = &"moving"
@@ -102,6 +108,7 @@ func _init() -> void:
 func enter(_prev: Object, ctx: Object) -> void:
 	_movement = null
 	_arrival_pending = false
+	_last_path_state = -1
 	if ctx == null:
 		push_warning("UnitState_Moving.enter: null ctx — bailing to idle")
 		return
@@ -162,6 +169,15 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 	# scheduler returned no path and we cleared in-flight handles). Bail
 	# back to whatever's queued, or Idle.
 	var path_state: int = _movement.path_state
+	# §9.M6 — log path-state transition (state-change-gated; per-tick path-
+	# state reads would spam the log).
+	if path_state != _last_path_state:
+		var uid: int = -1
+		if ctx != null and &"unit_id" in ctx:
+			uid = int(ctx.unit_id)
+		print("[moving] unit_id=%d path_state=%d→%d target=%s" % [
+			uid, _last_path_state, path_state, str(_target)])
+		_last_path_state = path_state
 	if path_state == _IPathScheduler.PathState.FAILED \
 			or path_state == _IPathScheduler.PathState.CANCELLED:
 		push_warning(

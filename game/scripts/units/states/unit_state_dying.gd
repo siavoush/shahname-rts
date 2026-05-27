@@ -61,6 +61,15 @@ func _init() -> void:
 func enter(_prev: Object, ctx: Object) -> void:
 	if ctx == null or not is_instance_valid(ctx):
 		return
+	# §9.M6 — log death-state entry. Critical for "unit suddenly disappeared"
+	# diagnostics. One-shot per unit (Dying is terminal — no re-entry).
+	var uid: int = -1
+	if &"unit_id" in ctx:
+		uid = int(ctx.unit_id)
+	var k: StringName = &""
+	if &"kind" in ctx:
+		k = ctx.kind
+	print("[dying] unit_id=%d kind=%s — queue_free deferred" % [uid, str(k)])
 	if not ctx.has_method(&"queue_free"):
 		return
 	ctx.queue_free.call_deferred()
