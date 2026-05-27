@@ -123,6 +123,9 @@ func request_repath(target: Vector3) -> void:
 	_waypoints = PackedVector3Array()
 	_waypoint_index = 0
 	_last_path_state = _IPathScheduler.PathState.PENDING
+	# §9.M6 — log repath event (one-shot per new request).
+	print("[movement] unit_id=%d repath_requested target=%s request_id=%d" % [
+		unit_id, str(target), _request_id])
 
 
 ## Live read of the current path state. Polls the scheduler if a request
