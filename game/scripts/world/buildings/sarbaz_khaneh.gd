@@ -226,6 +226,9 @@ func _ready() -> void:
 	# would wipe the _init [&"piyade"]. Same shape as `kind` above.
 	produces = [&"piyade"]
 	super._ready()
+	# §9.M6 — spawn log mirroring throne.gd:282 / madan.gd:242 / mazraeh.gd:197.
+	print("[sarbaz_khaneh] _ready team=%d position=%s unit_id=%d" % [
+		team, str(global_position), unit_id])
 
 
 # === Autoload helper =========================================================

@@ -79,6 +79,9 @@ func _ready() -> void:
 	# Unit._apply_balance_data_defaults).
 	kind = KIND_KHANEH
 	super._ready()
+	# §9.M6 — spawn log mirroring throne.gd:282 / madan.gd:242 / mazraeh.gd:197.
+	print("[khaneh] _ready team=%d position=%s unit_id=%d" % [
+		team, str(global_position), unit_id])
 
 
 # === Placement side-effect ===================================================

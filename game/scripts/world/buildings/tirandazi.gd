@@ -240,6 +240,9 @@ func _ready() -> void:
 	# and _ready (kargar.gd header pattern). Same shape as `kind` above.
 	produces = [&"kamandar"]
 	super._ready()
+	# §9.M6 — spawn log mirroring throne.gd:282 / madan.gd:242 / mazraeh.gd:197.
+	print("[tirandazi] _ready team=%d position=%s unit_id=%d" % [
+		team, str(global_position), unit_id])
 
 
 # === Autoload helper =========================================================
