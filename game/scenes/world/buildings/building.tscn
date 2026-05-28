@@ -1,4 +1,4 @@
-[gd_scene load_steps=5 format=3 uid="uid://shahnameh_building_base"]
+[gd_scene load_steps=6 format=3 uid="uid://shahnameh_building_base"]
 
 ; building.tscn — base Building scene template.
 ;
@@ -52,6 +52,7 @@
 ;   CollisionObject3D ancestors
 
 [ext_resource type="Script" path="res://scripts/world/buildings/building.gd" id="1_building"]
+[ext_resource type="Script" path="res://scripts/units/components/health_component.gd" id="2_health"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_building"]
 ; Base building placeholder silhouette — wider and taller than a unit
@@ -136,3 +137,26 @@ affect_navigation_mesh = true
 carve_navigation_mesh = true
 vertices = PackedVector3Array(-1.1, 0, -1.1, 1.1, 0, -1.1, 1.1, 0, 1.1, -1.1, 0, 1.1)
 radius = 1.5
+
+[node name="HealthComponent" type="Node" parent="."]
+; Wave 3-BuildingDestructibility (session 9) — every building has HP.
+;
+; HealthComponent extends SimNode (Node base). hp is initialized in
+; Building._ready by reading BalanceData.buildings[<kind>].max_hp per
+; the BUG-C1 canonical Dictionary-lookup pattern. All 8 shipped
+; buildings inherit this node from the base scene template; concrete
+; subclasses do NOT need their own per-scene override.
+;
+; The duck-typed get_health() method on Building base (added at this
+; wave) returns this node, satisfying combat_component.gd:195-199's
+; protocol. Without HealthComponent, buildings were invulnerable to
+; Turan attack (live-test caught at PR #41).
+;
+; Per BUG-G1 architecture-reviewer finding (2026-05-24): Buildings
+; subscribe to this component's LOCAL health_zero signal (not the
+; global EventBus.unit_health_zero channel) because Building unit_ids
+; collide with Unit unit_ids — same int space, different counters.
+; The local-signal subscription is wired in Building._init_health_
+; from_balance_data() (factored from throne.gd:393-435 per
+; architecture-reviewer C4.4).
+script = ExtResource("2_health")

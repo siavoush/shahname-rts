@@ -226,6 +226,9 @@ func _ready() -> void:
 	# would wipe the _init [&"piyade"]. Same shape as `kind` above.
 	produces = [&"piyade"]
 	super._ready()
+	# §9.M6 — spawn log mirroring throne.gd:282 / madan.gd:242 / mazraeh.gd:197.
+	print("[sarbaz_khaneh] _ready team=%d position=%s unit_id=%d" % [
+		team, str(global_position), unit_id])
 
 
 # === Autoload helper =========================================================
@@ -348,8 +351,46 @@ func _resolve_fog_sight_cells() -> int:
 
 
 func _exit_tree() -> void:
+	# Wave 3-BuildingDestructibility (session 9, architecture-reviewer
+	# C1.2 BLOCKER fix-up): super-call required — base building.gd:
+	# _exit_tree disconnects sim_phase. Without super-call the FSM
+	# would keep ticking after destruction.
+	super._exit_tree()
 	if _fog_handle >= 0:
 		var fog: Node = _autoload_or_null(&"FogSystem")
 		if fog != null and fog.has_method(&"deregister_vision_source"):
 			fog.call(&"deregister_vision_source", _fog_handle)
 		_fog_handle = -1
+
+
+# === Destruction handler — subclass override =================================
+
+## Wave 3-BuildingDestructibility (session 9). On hp=0:
+##   1. Cancel any in-flight production (drop policy — costs NOT
+##      refunded). Explicit field-clearing + production_state_changed
+##      emit so ProductionPanel UI hides cleanly.
+##   2. Call super (latch + generic emit + queue_free).
+##
+## Per architecture-reviewer C2.5 + §3.1.a checklist.
+func _on_health_zero(unit_id_in: int) -> void:
+	if _destruction_emitted:
+		return
+	_cancel_production_on_destruction()
+	super._on_health_zero(unit_id_in)
+
+
+## Helper for production-cancel cleanup. Shared shape across the 3
+## producer buildings (Sarbaz-khaneh / Sowari-khaneh / Tirandazi); each
+## maintains its own _production_* fields per Building base. Per
+## architecture-reviewer C2.5: explicit field-clearing + final signal
+## emit so freed-building doesn't error subscribers.
+func _cancel_production_on_destruction() -> void:
+	if _production_state != &"training":
+		return
+	var canceled_unit: StringName = _production_unit
+	_production_state = &"idle"
+	_production_unit = &""
+	_production_progress_ticks = 0
+	_production_total_ticks = 0
+	production_state_changed.emit(unit_id, &"idle", canceled_unit, 0.0)
+	print("[sarbaz_khaneh] production_cancel_on_destruction unit=%s" % str(canceled_unit))

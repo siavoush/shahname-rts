@@ -177,8 +177,26 @@ func take_damage_x100(
 # death-preempt signal) fires BEFORE unit_died so the FSM transitions
 # to Dying first; unit_died is the broader telemetry/Farr-drain channel.
 func _apply_damage_x100(amount_x100: int, source: Node, cause: StringName) -> void:
+	var hp_before_x100: int = hp_x100
 	var new_hp_x100: int = max(0, hp_x100 - amount_x100)
 	_set_sim(&"hp_x100", new_hp_x100)
+	# §9.M6 — log every damage application. Bounded by attack_speed_per_sec
+	# on the attacker side; not per-tick. Includes unit_id + hp transition
+	# + cause for telemetry parity with FarrSystem.
+	var parent_for_kind: Node = get_parent()
+	var owner_label: String = ""
+	if parent_for_kind != null:
+		var parent_unit_type: Variant = parent_for_kind.get(&"unit_type")
+		if typeof(parent_unit_type) == TYPE_STRING_NAME:
+			owner_label = str(parent_unit_type)
+		elif typeof(parent_unit_type) == TYPE_STRING:
+			owner_label = String(parent_unit_type)
+		else:
+			var parent_kind: Variant = parent_for_kind.get(&"kind")
+			if typeof(parent_kind) == TYPE_STRING_NAME:
+				owner_label = str(parent_kind)
+	print("[health] damage_applied unit_id=%d (%s) hp_x100=%d→%d max_x100=%d cause=%s" % [
+		unit_id, owner_label, hp_before_x100, new_hp_x100, max_hp_x100, str(cause)])
 	if new_hp_x100 != 0 or _zero_emitted:
 		return
 
@@ -195,6 +213,10 @@ func _apply_damage_x100(amount_x100: int, source: Node, cause: StringName) -> vo
 	# damages this same unit synchronously from its handler) cannot recurse
 	# through the death path.
 	_set_sim(&"_zero_emitted", true)
+	# §9.M6 — log zero-crossing. Fires exactly once per death (latch
+	# protected). Useful sentinel for "did this entity actually die".
+	print("[health] zero_crossing unit_id=%d (%s) pos=(%.1f, %.1f) cause=%s" % [
+		unit_id, owner_label, death_pos.x, death_pos.z, str(cause)])
 
 	# Resolve killer's unit_id from the source Node (duck-typed; same
 	# pattern as FarrSystem.apply_farr_change).

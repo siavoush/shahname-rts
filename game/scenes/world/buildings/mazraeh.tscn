@@ -1,4 +1,4 @@
-[gd_scene load_steps=5 format=3 uid="uid://shahnameh_mazraeh_building"]
+[gd_scene load_steps=6 format=3 uid="uid://shahnameh_mazraeh_building"]
 
 ; mazraeh.tscn — Mazra'eh (Iran grain farm) building scene.
 ;
@@ -42,6 +42,7 @@
 ; workaround without coordination.
 
 [ext_resource type="Script" path="res://scripts/world/buildings/mazraeh.gd" id="1_mazraeh"]
+[ext_resource type="Script" path="res://scripts/units/components/health_component.gd" id="2_health"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_mazraeh"]
 ; Flat field silhouette — 4.0 wide × 0.3 tall × 4.0 deep.
@@ -93,3 +94,12 @@ material_override = SubResource("StandardMaterial3D_mazraeh")
 ; co-located with the rendered field's centre.
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.15, 0)
 shape = SubResource("BoxShape3D_mazraeh")
+
+[node name="HealthComponent" type="Node" parent="."]
+; Wave 3-BuildingDestructibility — Mazra'eh participates in the destruction
+; chain via its local HC. Standalone scene (NOT inheriting building.tscn),
+; so HC is added directly here mirroring unit.tscn:68 pattern. Per BUG-G1
+; fix-pattern, building.gd subscribes to this LOCAL HC.health_zero signal
+; (not the global EventBus.unit_health_zero) to avoid Building/Unit
+; unit_id namespace collision.
+script = ExtResource("2_health")

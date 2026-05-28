@@ -107,6 +107,17 @@ var _current_probe_target: Variant = null
 ## on probing→idle.
 var _current_probe_unit: Variant = null
 
+## Last logged stall state — used to rate-limit per-tick stall logs to
+## state-change events only (BUG-H5 log-flood fix 2026-05-26). Without
+## this gate the retry-asap loop (_step_idle stays in idle, cadence pinned
+## at ceiling, re-fires every AI tick) prints the cadence-elapsed +
+## no-target lines 30x/sec → 90+ lines/sec → 800KB+ log in 4 min.
+var _last_stall_reason: String = ""
+
+## Last picked-target signature — gates the diag log to state-change only.
+## Same rationale as _last_stall_reason: prevent per-tick spam.
+var _last_pick_signature: String = ""
+
 
 # ---------------------------------------------------------------------------
 # Lifecycle
@@ -149,6 +160,8 @@ func reset() -> void:
 	_ticks_since_last_probe = 0
 	_current_probe_target = null
 	_current_probe_unit = null
+	_last_stall_reason = ""
+	_last_pick_signature = ""
 
 
 ## Public read-only snapshot of FSM state for tests + the future F3 debug
@@ -214,29 +227,40 @@ func _step_idle() -> void:
 	_ticks_since_last_probe += 1
 	if _ticks_since_last_probe < _probe_cadence_ticks:
 		return
-	# Cadence elapsed — try to launch a probe.
-	print("[turan] cadence elapsed, attempting probe at tick=", SimClock.tick)  # DEBUG
+	# Cadence elapsed — try to launch a probe. Per the original Wave 3B
+	# design, on no-target we STAY at the cadence ceiling and retry every
+	# AI tick (30/sec). All per-tick stall logs are gated by stall-reason
+	# state-change to avoid log flood (BUG-H5).
 	var target: Variant = _pick_target()
 	if not is_instance_valid(target):
-		# No visible Iran unit. Stay idle; counter stays at cadence so we
-		# retry next AI-tick (don't wait another full cadence after a no-op).
-		print("[turan]   no visible Iran target — staying idle")  # DEBUG
+		_log_stall_once("no_visible_iran_target")
 		return
 	var commanded: Variant = _pick_turan_unit(target)
 	if not is_instance_valid(commanded):
-		# No alive Turan unit OR all Turan units are too far / freed. Stay
-		# idle; same retry-asap semantics as no-target.
-		# Per brief §4 Track 1 Decision 5: "Pop-cap fallback if no Turan
-		# units alive — log debug message, stay in idle. No production-
-		# driving (deferred per §1 exclusions)."
-		print("[turan]   target found but no Turan unit near it — staying idle")  # DEBUG
+		_log_stall_once("no_turan_unit_near_target")
 		return
-	print("[turan]   PROBE FIRING — target=", target, " commanded=", commanded)  # DEBUG
-	# Issue the attack-move. Pitfall #16 safety: we just `is_instance_valid`d
-	# both Variants above — the cast inside _issue_attack_move is safe in
-	# this synchronous path.
-	var target_pos: Vector3 = (target as Node3D).global_position
-	_issue_attack_move(commanded as Node3D, target_pos)
+	# PROBE FIRING — clear stall latch + log the event (single shot per probe).
+	if _last_stall_reason != "":
+		print("[turan] stall_end after_reason=%s tick=%d" % [_last_stall_reason, SimClock.tick])
+		_last_stall_reason = ""
+	print("[turan] PROBE FIRING — target=", target, " commanded=", commanded, " tick=", SimClock.tick)
+	# Issue the attack. Pitfall #16 safety: we just `is_instance_valid`d
+	# both Variants above — the cast below is safe in this synchronous path.
+	#
+	# BUG-H6 fix-up (Wave 3-BD live-test 2026-05-27): we issue COMMAND_ATTACK
+	# with target_unit_id, NOT COMMAND_ATTACK_MOVE with a Vector3. Reason: the
+	# Vector3 destination is the building's center, which is INSIDE the
+	# NavigationObstacle3D footprint. Pathing to it fails (or auto-snaps to
+	# the obstacle edge, then is_moving=false fires arrival), UnitState_AttackMove
+	# transitions to Idle → probe ends without combat. COMMAND_ATTACK uses
+	# UnitState_Attacking's own walk-toward + range-check logic; it doesn't
+	# need to reach the building's center, just attack_range of it. Works
+	# uniformly for both Unit and Building targets (both have unit_id).
+	var target_uid: int = -1
+	var raw_uid: Variant = target.get(&"unit_id")
+	if typeof(raw_uid) == TYPE_INT:
+		target_uid = int(raw_uid)
+	_issue_attack(commanded as Node3D, target, target_uid)
 	# Capture refs for monitoring + transition.
 	_current_probe_target = target
 	_current_probe_unit = commanded
@@ -273,6 +297,17 @@ func _step_probing() -> void:
 # Internals
 # ---------------------------------------------------------------------------
 
+## Log a stall reason ONCE per stall period — re-firing only when the
+## reason transitions. Prevents the retry-asap loop from spamming 30
+## lines/sec into the log (BUG-H5 log-flood). When the reason matches
+## the last logged reason, stay silent.
+func _log_stall_once(reason: String) -> void:
+	if reason == _last_stall_reason:
+		return
+	print("[turan] stall_start reason=%s tick=%d" % [reason, SimClock.tick])
+	_last_stall_reason = reason
+
+
 ## Resolve `_probe_cadence_ticks` from `BalanceData.ai.normal_wave_cadence_ticks`.
 ##
 ## Defensive shape: any failure in the BalanceData chain falls back to the
@@ -300,33 +335,34 @@ func _resolve_probe_cadence() -> int:
 	return cadence
 
 
-## Pick the nearest Iran unit visible to Turan via FogSystem.
+## Pick the nearest Iran target visible to Turan via FogSystem.
 ##
-## Per brief §4 Track 1 Decision 2: "Target priority — nearest Iran unit
-## visible to Turan via `FogSystem.is_visible_to`."
+## Priority order:
+##   1. Iran Throne if visible (decisive — win condition).
+##   2. Nearest visible Iran building OR unit (combined candidate pool).
+##
+## BUG-H1 fix (Wave 3-BuildingDestructibility live-test): pre-fix code only
+## considered Iran units (SpatialIndex) after Throne. Buildings with HC could
+## take damage in theory but were never targeted → defensibility unplayable.
+## Fix extends the candidate pool to include all non-Throne Iran buildings
+## via the canonical &"buildings" SceneTree group (registered at
+## `building.gd:358`).
 ##
 ## Strategy:
-##   1. Query the SpatialIndex for all Iran-team units within a wide radius
-##      centered on... the map origin. (MVP simplification — Phase 6 will
-##      use the per-Turan-unit distance.) Wave 3B treats the entire map as
-##      one search zone since the map is 256m square and AI doesn't yet
-##      track its own positions.
-##   2. Filter by `FogSystem.is_visible_to(TEAM_TURAN, unit.global_position)`.
-##   3. Return the nearest one to the map origin (Vector3.ZERO).
+##   1. Throne special-case (preserved from Wave 3-Throne).
+##   2. Walk &"buildings" group; filter to TEAM_IRAN + non-Throne + fog-visible.
+##   3. Query SpatialIndex for Iran-team agents; filter to fog-visible.
+##   4. Merge both candidate lists; return nearest to map origin.
 ##
-## Returns Variant: a live Node3D (Iran unit) on success, or null when no
-## visible Iran target exists. Caller MUST `is_instance_valid()` before
+## Returns Variant: a live Node3D (Iran unit or building) on success, or null
+## when no visible Iran target exists. Caller MUST `is_instance_valid()` before
 ## casting.
 func _pick_target() -> Variant:
 	var fog: Node = _autoload_or_null(&"FogSystem")
 	if fog == null:
 		print("[turan-diag]   FogSystem autoload not found")  # DEBUG
 		return null
-	# Wave-3-Throne — prefer Iran Throne if visible. Per brief §4 Track 1
-	# + mirror C1.2 anti-misuse: buildings register via SceneTree group
-	# (&"thrones"), NOT via SpatialIndex (which tracks UNITS only via
-	# SpatialAgentComponent). Misuse would silently return zero Thrones —
-	# the BUG-D2 shape recapitulated, mirror-flagged at brief-time.
+	# Priority 1: Iran Throne if visible.
 	var iran_throne: Variant = _find_iran_throne_if_visible(fog)
 	if iran_throne != null:
 		# §9.M6 — log the target-priority transition. Only when we
@@ -337,41 +373,110 @@ func _pick_target() -> Variant:
 			print("[turan] target_switch unit → throne (iran_throne unit_id=%d)" % [
 				int((iran_throne as Node3D).get(&"unit_id"))])
 		return iran_throne
-	var spatial: Node = _autoload_or_null(&"SpatialIndex")
-	if spatial == null:
-		print("[turan-diag]   SpatialIndex autoload not found")  # DEBUG
-		return null
-	# Query Iran-team agents in a broad radius. SpatialIndex.query_radius_team
-	# returns SpatialAgentComponent Nodes; the parent is the Unit.
+
+	# Priority 2: nearest visible Iran building OR unit.
 	var origin: Vector3 = Vector3.ZERO
-	var agents: Array = spatial.call(
-		&"query_radius_team", origin, _PROBE_SEARCH_RADIUS_M, Constants.TEAM_IRAN)
-	print("[turan-diag]   SpatialIndex returned ", agents.size(), " Iran agents")  # DEBUG
 	var best_target: Variant = null
 	var best_dist_sq: float = INF
-	var fog_rejected: int = 0
-	for agent in agents:
-		if not is_instance_valid(agent):
-			continue
-		var parent: Node = agent.get_parent()
-		if not is_instance_valid(parent):
-			continue
-		if not (parent is Node3D):
-			continue
-		var pos: Vector3 = (parent as Node3D).global_position
-		# Fog gate: target must be currently visible to Turan.
-		var vis: bool = fog.call(&"is_visible_to", Constants.TEAM_TURAN, pos)
-		if not vis:
-			fog_rejected += 1
-			continue
-		var dx: float = pos.x - origin.x
-		var dz: float = pos.z - origin.z
-		var d2: float = dx * dx + dz * dz
-		if d2 < best_dist_sq:
-			best_dist_sq = d2
-			best_target = parent
-	if best_target == null and agents.size() > 0:
-		print("[turan-diag]   fog rejected ", fog_rejected, " of ", agents.size(), " agents")  # DEBUG
+
+	# Building candidates via &"buildings" group. Excludes Throne (handled above)
+	# via &"thrones" group check. Pitfall #16 safety: validate each Node before
+	# any access — group nodes can be freed asynchronously per Wave 3-BD destruction.
+	#
+	# Filter is "non-Turan" rather than "Iran only" per user design intent
+	# (BUG-H1 live-test 2026-05-26): half-built buildings (team=TEAM_NEUTRAL=0,
+	# the brief window between scene-instantiation and place_at when the
+	# worker is interrupted) should also be destroyable. The looser filter
+	# catches that case. Currently no buildings live at TEAM_NEUTRAL outside
+	# this transient state, so this doesn't introduce false-positive targets.
+	var buildings_total: int = 0
+	var buildings_eligible: int = 0
+	var buildings_fog_rejected: int = 0
+	var tree: SceneTree = get_tree()
+	if tree != null:
+		for node in tree.get_nodes_in_group(&"buildings"):
+			if not is_instance_valid(node):
+				continue
+			if not (node is Node3D):
+				continue
+			buildings_total += 1
+			# Skip Throne — already handled in priority 1.
+			if node.is_in_group(&"thrones"):
+				continue
+			var node_team: Variant = node.get(&"team")
+			# Non-Turan filter (includes TEAM_IRAN + TEAM_NEUTRAL half-built).
+			if typeof(node_team) == TYPE_INT and int(node_team) == Constants.TEAM_TURAN:
+				continue
+			buildings_eligible += 1
+			var b_pos: Vector3 = (node as Node3D).global_position
+			var b_vis: bool = fog.call(&"is_visible_to", Constants.TEAM_TURAN, b_pos)
+			if not b_vis:
+				buildings_fog_rejected += 1
+				continue
+			var bdx: float = b_pos.x - origin.x
+			var bdz: float = b_pos.z - origin.z
+			var b_d2: float = bdx * bdx + bdz * bdz
+			if b_d2 < best_dist_sq:
+				best_dist_sq = b_d2
+				best_target = node
+
+	# Unit candidates via SpatialIndex.
+	var spatial: Node = _autoload_or_null(&"SpatialIndex")
+	var agents: Array = []
+	var unit_fog_rejected: int = 0
+	if spatial != null:
+		agents = spatial.call(
+			&"query_radius_team", origin, _PROBE_SEARCH_RADIUS_M, Constants.TEAM_IRAN)
+		for agent in agents:
+			if not is_instance_valid(agent):
+				continue
+			var parent: Node = agent.get_parent()
+			if not is_instance_valid(parent):
+				continue
+			if not (parent is Node3D):
+				continue
+			var pos: Vector3 = (parent as Node3D).global_position
+			var vis: bool = fog.call(&"is_visible_to", Constants.TEAM_TURAN, pos)
+			if not vis:
+				unit_fog_rejected += 1
+				continue
+			var dx: float = pos.x - origin.x
+			var dz: float = pos.z - origin.z
+			var d2: float = dx * dx + dz * dz
+			if d2 < best_dist_sq:
+				best_dist_sq = d2
+				best_target = parent
+	else:
+		print("[turan-diag]   SpatialIndex autoload not found")  # DEBUG
+
+	# §9.M6 — diag log gated to state-change only (BUG-H5). The signature
+	# encodes the candidate-counts + picked target; identical signatures
+	# back-to-back fire once per state-change, not per-tick (the retry-asap
+	# loop would otherwise spam 30 lines/sec).
+	var picked_label: String = "null"
+	if best_target != null:
+		var picked_uid: Variant = best_target.get(&"unit_id")
+		var picked_uid_int: int = -1
+		if typeof(picked_uid) == TYPE_INT:
+			picked_uid_int = int(picked_uid)
+		var picked_kind_or_type: Variant = best_target.get(&"unit_type")
+		var picked_kind_label: String = ""
+		if typeof(picked_kind_or_type) == TYPE_STRING_NAME:
+			picked_kind_label = str(picked_kind_or_type)
+		else:
+			var k: Variant = best_target.get(&"kind")
+			if typeof(k) == TYPE_STRING_NAME:
+				picked_kind_label = str(k)
+		picked_label = "unit_id=%d (%s) dist=%.2f" % [
+			picked_uid_int, picked_kind_label, sqrt(best_dist_sq)]
+	var sig: String = "b%d_e%d_fb%d_u%d_fu%d_%s" % [
+		buildings_total, buildings_eligible, buildings_fog_rejected,
+		agents.size(), unit_fog_rejected, picked_label]
+	if sig != _last_pick_signature:
+		print("[turan-diag] _pick_target: buildings_total=%d eligible=%d fog_rej=%d units_total=%d fog_rej=%d picked=%s tick=%d" % [
+			buildings_total, buildings_eligible, buildings_fog_rejected,
+			agents.size(), unit_fog_rejected, picked_label, SimClock.tick])
+		_last_pick_signature = sig
 	return best_target
 
 
@@ -438,6 +543,46 @@ func _issue_attack_move(unit: Node3D, target_position: Vector3) -> void:
 		&"replace_command",
 		Constants.COMMAND_ATTACK_MOVE,
 		{&"target": target_position},
+	)
+
+
+## Issue COMMAND_ATTACK with target_unit_id payload. Used for Unit + Building
+## targets where the Turan unit needs to walk-toward + engage within
+## attack_range without trying to reach the destination's exact center
+## (which for buildings is inside a NavigationObstacle3D footprint and
+## causes UnitState_AttackMove to bail to Idle — BUG-H6 2026-05-27).
+##
+## UnitState_Attacking handles the walk-toward logic internally per its
+## per-tick distance check + request_repath fallback.
+func _issue_attack(unit: Node3D, target_node: Variant, target_unit_id: int) -> void:
+	if not is_instance_valid(unit):
+		return
+	if not unit.has_method(&"replace_command"):
+		return
+	if target_unit_id < 0:
+		# Defensive: target without unit_id — fall back to attack-move via
+		# global_position (legacy code path for the rare no-unit_id target).
+		push_warning(
+			"TuranController._issue_attack: target has no valid unit_id; "
+			+ "skipping attack command"
+		)
+		return
+	# BUG-H8 (2026-05-27 live-test): the payload carries the actual target
+	# Node ref in addition to target_unit_id. UnitState_Attacking's
+	# fallback _find_unit_by_id walk hits namespace collisions between
+	# Buildings and Units (both share the global unit_id counter — per
+	# BUG-G1 architecture-review finding). The Node ref lets the receiver
+	# bypass the ambiguous lookup. target_unit_id stays in the payload for
+	# (a) backward-compat with other COMMAND_ATTACK callers (player
+	# right-click) and (b) downstream CombatComponent set_target which
+	# still uses id.
+	unit.call(
+		&"replace_command",
+		Constants.COMMAND_ATTACK,
+		{
+			&"target_unit_id": target_unit_id,
+			&"target_node": target_node,
+		},
 	)
 
 

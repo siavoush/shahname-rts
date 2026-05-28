@@ -276,6 +276,9 @@ func _ready() -> void:
 	# future refactors.
 	kind = KIND_ATASHKADEH
 	super._ready()
+	# §9.M6 — spawn log mirroring throne.gd:282 / madan.gd:242 / mazraeh.gd:197.
+	print("[atashkadeh] _ready team=%d position=%s unit_id=%d" % [
+		team, str(global_position), unit_id])
 
 
 # === Autoload helper =========================================================
@@ -465,6 +468,9 @@ func _resolve_fog_sight_cells() -> int:
 
 
 func _exit_tree() -> void:
+	# Wave 3-BuildingDestructibility (session 9, architecture-reviewer
+	# C1.2 BLOCKER fix-up): super-call required.
+	super._exit_tree()
 	if _fog_handle >= 0:
 		var fog: Node = _autoload_or_null(&"FogSystem")
 		if fog != null and fog.has_method(&"deregister_vision_source"):

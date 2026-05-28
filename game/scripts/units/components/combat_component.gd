@@ -117,6 +117,13 @@ var _target_unit_id: int = -1
 # 5v5 mirror combat scale).
 var target_lookup_callable: Callable = Callable()
 
+# BUG-H8 (2026-05-27): cached target Node ref to bypass the scene-tree walk
+# when the caller knows the actual target. Avoids the Unit/Building
+# unit_id namespace collision (per BUG-G1) where _walk_for_unit_id returns
+# whichever node-of-id-N is found first — which may not be the intended
+# target. Set via set_target_node(node); cleared on set_target(-1).
+var _cached_target_node: Variant = null
+
 
 # === Public API =============================================================
 
@@ -138,8 +145,34 @@ var target_lookup_callable: Callable = Callable()
 func set_target(unit_id_value: int) -> void:
 	if _target_unit_id == unit_id_value:
 		return
+	# §9.M6 — log target change. Skips the idempotent re-entry so we only
+	# see real target acquisitions / retargets / clears, not the per-tick spam.
+	var owner_uid: int = -1
+	var parent_node: Node = get_parent()
+	if parent_node != null:
+		var raw_uid: Variant = parent_node.get(&"unit_id")
+		if typeof(raw_uid) == TYPE_INT:
+			owner_uid = int(raw_uid)
+	print("[combat] target_change attacker_id=%d %d→%d" % [
+		owner_uid, _target_unit_id, unit_id_value])
 	_target_unit_id = unit_id_value
 	_attack_cooldown_ticks = 0
+	if unit_id_value == -1:
+		_cached_target_node = null
+
+
+## Cache the actual target Node ref. Bypasses _resolve_target's id lookup
+## (which can return wrong node on Unit/Building unit_id collision per
+## BUG-G1). Caller MUST also call set_target(unit_id) for consistency.
+## Pass null to clear.
+func set_target_node(node: Variant) -> void:
+	if node == null:
+		_cached_target_node = null
+		return
+	if not is_instance_valid(node):
+		_cached_target_node = null
+		return
+	_cached_target_node = node
 
 
 # === Per-tick simulation ====================================================
@@ -172,14 +205,22 @@ func _sim_tick(_dt: float) -> void:
 		_set_sim(&"_target_unit_id", -1)
 		return
 
-	# Step 4: XZ-only range check. Squared distance avoids a sqrt; matches
-	# SpatialIndex's _xz_distance_sq projection.
+	# Step 4: XZ-only range check. Edge-distance semantic for Buildings
+	# (BUG-H6 fix-up): the unit can't reach the building's center (blocked
+	# by NavigationObstacle3D) so the range check uses center-distance
+	# minus footprint half-extent. For Units the footprint is 0.
 	var attacker_pos: Vector3 = _get_owner_position()
 	var target_pos: Vector3 = target.global_position
 	var dx: float = attacker_pos.x - target_pos.x
 	var dz: float = attacker_pos.z - target_pos.z
 	var dist_sq: float = dx * dx + dz * dz
-	if dist_sq > attack_range * attack_range:
+	var center_dist: float = sqrt(dist_sq)
+	var fp_half: float = 0.0
+	if target.has_method(&"get_footprint_aabb"):
+		var aabb: AABB = target.get_footprint_aabb()
+		fp_half = maxf(aabb.size.x, aabb.size.z) * 0.5
+	var edge_dist: float = maxf(0.0, center_dist - fp_half)
+	if edge_dist > attack_range:
 		# Out of range; the state machine re-enters Moving to close.
 		# Don't reset cooldown here — if we just regained range, we want
 		# to fire on the next tick, not eat another wait cycle.
@@ -231,6 +272,34 @@ func _sim_tick(_dt: float) -> void:
 		# ranged units (Kamandar, ...) will pass &"ranged_attack" from
 		# their own combat path — a CombatComponent-level "kind" flag is
 		# a LATER refactor when the second cause source ships.
+		# §9.M6 — log damage fire. Fires at attack_speed_per_sec rate (~1 Hz
+		# for Piyade), bounded log volume. Includes attacker + target ids,
+		# resolved unit types, post-multiplier damage_x100, distance.
+		var owner_uid_for_log: int = -1
+		var owner_parent: Node = get_parent()
+		if owner_parent != null:
+			var raw_owner_uid: Variant = owner_parent.get(&"unit_id")
+			if typeof(raw_owner_uid) == TYPE_INT:
+				owner_uid_for_log = int(raw_owner_uid)
+		var target_uid_for_log: int = -1
+		var raw_target_uid: Variant = target.get(&"unit_id")
+		if typeof(raw_target_uid) == TYPE_INT:
+			target_uid_for_log = int(raw_target_uid)
+		var target_type_for_log: StringName = &""
+		var raw_ttype: Variant = target.get(&"unit_type")
+		if typeof(raw_ttype) == TYPE_STRING_NAME:
+			target_type_for_log = raw_ttype
+		elif typeof(raw_ttype) == TYPE_STRING:
+			target_type_for_log = StringName(raw_ttype)
+		else:
+			# Buildings expose `kind: StringName` instead of `unit_type`.
+			var raw_kind: Variant = target.get(&"kind")
+			if typeof(raw_kind) == TYPE_STRING_NAME:
+				target_type_for_log = raw_kind
+		print("[combat] fire attacker_id=%d (%s) target_id=%d (%s) damage_x100=%d dist=%.2f" % [
+			owner_uid_for_log, str(attacker_unit_type),
+			target_uid_for_log, str(target_type_for_log),
+			scaled_damage_x100, sqrt(dist_sq)])
 		health.call(&"take_damage_x100", scaled_damage_x100, get_parent(), &"melee_attack")
 	# Cooldown reset. roundi enforces the deterministic rounding rule
 	# called out in Sim Contract §1.6.
@@ -251,6 +320,12 @@ func _sim_tick(_dt: float) -> void:
 # otherwise walks the parent Unit's siblings looking for any Unit whose
 # unit_id matches. Returns null if not found.
 func _resolve_target(uid: int) -> Node3D:
+	# BUG-H8: prefer cached Node ref if set. Bypasses the namespace-collision
+	# risk in _walk_for_unit_id (Unit + Building both index into the global
+	# unit_id counter; walk-first-hit can return the wrong one).
+	if _cached_target_node != null and is_instance_valid(_cached_target_node) \
+			and _cached_target_node is Node3D:
+		return _cached_target_node as Node3D
 	if target_lookup_callable.is_valid():
 		var result: Variant = target_lookup_callable.call(uid)
 		if result is Node3D:

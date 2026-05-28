@@ -12,12 +12,46 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-24 (Wave-3-LocalDropoffs close — Mazra'eh + Ma'dan as kind-matching IDropoffTarget; workers route to nearest depot)
+last_updated: 2026-05-28 (Wave-3-BuildingDestructibility close — all 8 Iran buildings destructible + combat path buildings-aware + §9.M6 observability sweep)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-05-28 — Wave-3-BuildingDestructibility close: all 8 Iran buildings destructible + combat path buildings-aware + §9.M6 observability sweep
+
+**Branch:** `feat/wave-3-building-destructibility`  **PR:** #42  **Commits:** `698f8a9` (wave core) → `a5665eb` (BUG-H1 building targeting) → `2057420` (BUG-H2 combat observability) → `3a0e6d6` (BUG-H3 half-built buildings + place_at log) → `0627602` (BUG-H4 FSM log) → `2d9b1ba` (BUG-H5 Turan stall gating) → `ff6d953` (BUG-H6 COMMAND_ATTACK + edge-distance) → `3cf3df1` (BUG-H7 attacking diag) → `bc01f34` (BUG-H8 unit_id namespace collision) → `6079e7b` + `7ee9d30` + `1be88d9` (observability sweep) → `0ef4548` (BUG-H9 repath log gating). 13 commits total.
+
+**What shipped:**
+
+All 8 Iran building subclasses (Throne, Khaneh, Mazra'eh, Ma'dan, Sarbaz-khaneh, Sowari-khaneh, Tirandazi, Atashkadeh) are now destructible. They take combat damage via HealthComponent inherited through `building.tscn` base (6 subclasses) or directly added on the standalone scenes (madan.tscn + mazraeh.tscn). Building base owns the destruction chain — `_init_health_from_balance_data()` reads `BalanceData.buildings[<kind>].max_hp`; subscribes to LOCAL `HC.health_zero` signal per BUG-G1 pattern; `_on_health_zero()` with `_destruction_emitted` idempotency latch emits new `EventBus.building_destroyed(team, kind, unit_id)` signal then `queue_free()`s.
+
+Per-subclass cleanup overrides: **Throne** emits both `throne_destroyed(team)` (Phase 8 win-screen consumer) + generic; **Khaneh** decrements pop_cap via `ResourceSystem.change_population_cap(team, -delta, &"khaneh_destroyed", self)`; **Mazra'eh** calls `ResourceSystem.unregister_node(self)`; **Ma'dan** unregisters mine modifier on cached `_registered_mine` (Pitfall #16 `is_instance_valid` guard); **3 producer subclasses** cancel training; **Atashkadeh** inherits base default (FarrSystem forward-compat seam noted). Pre-existing bug fixed: 7/8 building `_exit_tree` overrides now call `super._exit_tree()` first.
+
+Turan AI extended to target buildings — `TuranController._pick_target` walks `&"buildings"` SceneTree group (filtered to non-Turan + fog-visible); Throne still priority-1 via `&"thrones"` group special-case; combined-pool nearest-to-origin tie-break. Half-built buildings (`team=TEAM_NEUTRAL` transient state between scene-instantiation and `place_at`) included per user design intent.
+
+Combat path now buildings-aware: edge-distance semantic in `UnitState_Attacking` + `CombatComponent` (`edge_dist = max(0, center_dist - footprint_half)` via `target.get_footprint_aabb()` duck-typing — unit targets get fp_half=0 so behavior is bitwise-identical pre-wave). `COMMAND_ATTACK` payload now carries `target_node: Variant` alongside `target_unit_id: int` to bypass Unit/Building unit_id namespace collision (per BUG-G1 — Buildings and Units share the global counter, scene-tree walks can resolve the wrong node). `CombatComponent` gets `set_target_node(node)` + `_cached_target_node` field; `_resolve_target` checks the cache first. Falls back to id-walk for player-side callers (right-click attack) that only have id at dispatch.
+
+**Major secondary deliverable: §9.M6 observability sweep** — back-fill of `print("[<system>] ...")` instrumentation across pre-rule systems. The BUG-H1..H9 chain itself was rooted in observability gaps (each fix required adding a log to diagnose the next bug). User-verbatim refinement 2026-05-27: *"the log needs to have EVERYTHING except camera movement essentially. otherwise you are blind and just guessing."* Sweep covered: 5 building subclass `_ready` logs (Khaneh, Sarbaz-khaneh, Sowari-khaneh, Tirandazi, Atashkadeh); FSM transition log; combat path (target_change, fire, damage_applied, zero_crossing); building place_at log; 6 unit_state events (Moving/AttackMove path-state transitions, Constructing stage 1+2, Gathering completion, Returning depot-vs-fallback, Dying enter); autoload events (ResourceSystem change_resource + change_population_cap + register/unregister, FogSystem vision_source register/deregister, MovementComponent repath_requested). All per-tick spammy paths state-change-gated via 5 sentinel patterns mirroring the canonical `TuranController._log_stall_once`.
+
+**Empirical verification (2026-05-28 live-test):** Iran worker builds Khaneh at (0.88, 0, 16.79) → `[resource] population_cap team=1 delta=5 total=5 reason=khaneh_placed` → wait ~120s → `[turan] PROBE FIRING — target=Khaneh` → TuranSavar walks (`fp_half=1.00 edge_dist=1.43 attack_range=1.50` confirms edge-distance fix) → 20 melee swings → `[health] zero_crossing unit_id=3 (khaneh)` → `[resource] population_cap team=1 delta=-5 total=0 reason=khaneh_destroyed` → `[khaneh] destroyed team=1 unit_id=3` → `[fog] vision_source_deregistered handle=30`. Full destruction chain end-to-end visible.
+
+**Tests:** 1576 total, 1573 passing, 3 risky/pending pre-existing, 0 failures (pre-commit hook ran lint + GUT clean on every commit). New tests: 5 in `test_turan_controller.gd` (BUG-H1 building targeting); 5 in `test_phase_3_building_destruction.gd` (Ma'dan canonical cleanup + latch idempotency + BUG-G1 regression × 2 + Throne dual-signal).
+
+**Review verdicts (architecture-reviewer + godot-code-reviewer, final pass):** APPROVE / RECOMMEND MERGE. godot-code-reviewer: 0 BLOCKERS, all Pitfalls #15/#16/#17/#18 verified clean across 13-commit surface; 6 SUGGEST/NIT items all non-blocking. architecture-reviewer: 0 code BLOCKERS, ARCH.md docs-stale was a BLOCKER (this entry + the v0.36.0 §6 entry close that); 6 retro candidates surfaced for session 9 close retro.
+
+**Retro candidates surfaced:**
+1. §9.M6.x state-change-gated diag log pattern codification (5 sites converged this wave).
+2. Brief-vs-wave-actual scope codification (13 commits when scoped to "8 buildings get HC" — Principle 10 working as intended, not scope creep).
+3. STATE_MACHINE_CONTRACT.md COMMAND_ATTACK payload schema pinning (target_unit_id canonical + target_node ref-bypass).
+4. Per-kind destruction unit tests for 4 buildings without one (Khaneh pop-cap, producer trio cancel + signal-emit).
+5. Pre-rule systems back-fill obligation (the §9.M6 rule was scoped to "every new system" — pre-rule systems carried debt that this sweep paid down).
+6. Action-items-don't-defer (user-corrected the lead's lean toward deferring the observability sweep; see `feedback_action_items_dont_defer.md` memory).
+
+**What's next:** session 9 close retro (rich material — N=8 incidents on observability gap, the BUG-H chain itself, the 13-commit-wave pattern, the codex parallel-session worktree-collision incident from 2026-05-26).
 
 ---
 

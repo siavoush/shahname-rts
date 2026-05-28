@@ -380,6 +380,9 @@ func _resolve_fog_sight_cells() -> int:
 
 
 func _exit_tree() -> void:
+	# Wave 3-BuildingDestructibility (session 9, architecture-reviewer
+	# C1.2 BLOCKER fix-up): super-call required.
+	super._exit_tree()
 	if _fog_handle >= 0:
 		var fog: Node = _autoload_or_null(&"FogSystem")
 		if fog != null and fog.has_method(&"deregister_vision_source"):
@@ -480,3 +483,30 @@ func deposit(resource_kind: StringName, amount: int, worker: Unit) -> void:
 ## target.
 func get_deposit_position() -> Vector3:
 	return global_position + Vector3(0.0, 0.5, 0.0)
+
+
+# === Destruction handler — subclass override =================================
+
+## Wave 3-BuildingDestructibility (session 9). On hp=0:
+##   1. Unregister this Mazra'eh as a ResourceSystem gather node so the
+##      registry doesn't hold a freed-Object ref. Active gather workers
+##      handle dead-target via existing `is_instance_valid(_target_node)`
+##      check in UnitState_Gathering:162-164 — slot release is automatic
+##      on next worker tick.
+##   2. Log the cleanup for live-test diagnostics.
+##   3. Call super (latch + generic emit + queue_free).
+##
+## Per §3.1.a checklist. Group memberships (&"buildings", &"grain_depots",
+## &"resource_nodes") auto-removed on queue_free per Godot SceneTree
+## convention.
+func _on_health_zero(unit_id_in: int) -> void:
+	if _destruction_emitted:
+		return
+	# Unregister from ResourceSystem's resource-node registry. Pitfall #16
+	# implicit guard: ResourceSystem.unregister_node tolerates an unknown
+	# node (idempotent — see resource_system.gd `unregister_node`).
+	if ResourceSystem.has_method(&"unregister_node"):
+		ResourceSystem.unregister_node(self)
+		print("[mazraeh] unregistered_resource_node unit_id=%d" % unit_id)
+	# Base handles latch + generic emit + queue_free.
+	super._on_health_zero(unit_id_in)

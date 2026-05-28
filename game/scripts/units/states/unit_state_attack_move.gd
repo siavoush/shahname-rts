@@ -111,6 +111,11 @@ var _target: Vector3 = Vector3.ZERO
 # Flips true on first READY tick; arrival fires when latched + is_moving false.
 var _arrival_pending: bool = false
 
+# §9.M6 observability — state-change-gated path-state log. Mirror of
+# UnitState_Moving._last_path_state pattern. Reset to -1 on enter so the
+# first tick always logs.
+var _last_path_state: int = -1
+
 
 func _init() -> void:
 	id = &"attack_move"
@@ -123,6 +128,7 @@ func enter(_prev: Object, ctx: Object) -> void:
 	_movement = null
 	_arrival_pending = false
 	_target = Vector3.ZERO
+	_last_path_state = -1
 
 	if ctx == null:
 		push_warning("UnitState_AttackMove.enter: null ctx — bailing to idle")
@@ -175,6 +181,14 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 
 	# Path failure → fall through to next command (or Idle).
 	var path_state: int = _movement.path_state
+	# §9.M6 — state-change-gated path-state log.
+	if path_state != _last_path_state:
+		var uid: int = -1
+		if ctx != null and &"unit_id" in ctx:
+			uid = int(ctx.unit_id)
+		print("[attack_move] unit_id=%d path_state=%d→%d target=%s" % [
+			uid, _last_path_state, path_state, str(_target)])
+		_last_path_state = path_state
 	if path_state == _IPathScheduler.PathState.FAILED \
 			or path_state == _IPathScheduler.PathState.CANCELLED:
 		push_warning(
@@ -198,6 +212,15 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 	if enemy == null:
 		return
 
+	# §9.M6 — engage-detection event log (one-shot per engagement).
+	var uid_self: int = -1
+	if ctx != null and &"unit_id" in ctx:
+		uid_self = int(ctx.unit_id)
+	var uid_enemy: int = -1
+	if enemy != null and &"unit_id" in enemy:
+		uid_enemy = int(enemy.get(&"unit_id"))
+	print("[attack_move] unit_id=%d enemy_detected enemy_id=%d" % [
+		uid_self, uid_enemy])
 	# Found one. Queue resume-AttackMove (so the unit returns to its travel
 	# after the kill), then push Attack at the front of the queue and
 	# transition_to_next — the standard dispatcher hands off to Attacking

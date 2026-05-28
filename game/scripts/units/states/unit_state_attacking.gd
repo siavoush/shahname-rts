@@ -75,6 +75,13 @@ var _combat: Variant = null
 # Cached MovementComponent ref. Set in enter; cleared in exit.
 var _movement: Variant = null
 
+# §9.M6 — last tick we emitted a periodic diag. Rate-limited to 1 Hz
+# (30 ticks @ SIM_HZ=30) so we can see what's happening during a long
+# walk-toward-target phase without flooding the log. Resets to -1 on
+# enter so each engagement gets its own logging cadence.
+var _last_diag_log_tick: int = -1
+var _last_diag_branch: StringName = &""
+
 
 func _init() -> void:
 	id = &"attacking"
@@ -119,33 +126,47 @@ func enter(_prev: Object, ctx: Object) -> void:
 		if typeof(raw) == TYPE_DICTIONARY:
 			cmd = raw
 	var payload: Dictionary = cmd.get(&"payload", {})
-	if not payload.has(&"target_unit_id"):
-		push_warning(
-			"UnitState_Attacking.enter: current_command.payload has no "
-			+ "`target_unit_id`; transitioning to idle")
-		_request_idle(ctx)
-		return
-	var target_id_raw: Variant = payload[&"target_unit_id"]
-	if typeof(target_id_raw) != TYPE_INT:
-		push_warning(
-			"UnitState_Attacking.enter: payload.target_unit_id is not an int; "
-			+ "transitioning to idle")
-		_request_idle(ctx)
-		return
-	var target_id: int = int(target_id_raw)
-
-	# Resolve the target Unit by id. Scene-tree walk is fine at Phase 2's
-	# 15-unit cap; LATER item is a UnitRegistry autoload (see file header).
-	var found: Variant = _find_unit_by_id(ctx, target_id)
-	if found == null or not is_instance_valid(found):
-		push_warning(
-			"UnitState_Attacking.enter: target_unit_id=%d does not resolve "
-			% target_id
-			+ "to a live Unit; transitioning to idle")
-		_request_idle(ctx)
-		return
+	# BUG-H8 (2026-05-27): prefer `target_node` payload key if present.
+	# The scene-tree walk `_find_unit_by_id` cannot disambiguate Unit/Building
+	# unit_id collisions (per BUG-G1 architecture finding: both share the
+	# global unit_id counter). When the issuer knows the actual target node
+	# (e.g., TuranController picking a Khaneh whose unit_id collides with a
+	# worker), it passes the ref directly via `target_node`. Fallback to id
+	# lookup preserves backward-compat with player-side COMMAND_ATTACK paths
+	# (right-click attack on enemy unit) that only have unit_id at dispatch time.
+	var found: Variant = null
+	var target_node_raw: Variant = payload.get(&"target_node", null)
+	if target_node_raw != null and is_instance_valid(target_node_raw):
+		found = target_node_raw
+	else:
+		if not payload.has(&"target_unit_id"):
+			push_warning(
+				"UnitState_Attacking.enter: current_command.payload has no "
+				+ "`target_unit_id` and no valid `target_node`; transitioning to idle")
+			_request_idle(ctx)
+			return
+		var target_id_raw: Variant = payload[&"target_unit_id"]
+		if typeof(target_id_raw) != TYPE_INT:
+			push_warning(
+				"UnitState_Attacking.enter: payload.target_unit_id is not an int; "
+				+ "transitioning to idle")
+			_request_idle(ctx)
+			return
+		var target_id: int = int(target_id_raw)
+		# Resolve the target Unit by id. Scene-tree walk is fine at Phase 2's
+		# 15-unit cap; LATER item is a UnitRegistry autoload (see file header).
+		found = _find_unit_by_id(ctx, target_id)
+		if found == null or not is_instance_valid(found):
+			push_warning(
+				"UnitState_Attacking.enter: target_unit_id=%d does not resolve "
+				% target_id
+				+ "to a live Unit; transitioning to idle")
+			_request_idle(ctx)
+			return
 
 	_target = found
+	_last_diag_log_tick = -1
+	_last_diag_branch = &""
 
 
 # Per-tick:
@@ -162,15 +183,50 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 		return
 
 	# Step 2: distance. XZ-only projection — same convention as SpatialIndex.
+	# Edge-distance semantic for Buildings (BUG-H6 fix-up): the unit can't
+	# reach the building's center (blocked by NavigationObstacle3D) so the
+	# range check uses center-distance minus footprint half-extent. For
+	# Units the footprint is treated as 0 (point target).
 	var attack_range: float = _read_attack_range()
-	var range_sq: float = attack_range * attack_range
 	var self_pos: Vector3 = _get_self_position(ctx)
 	var target_pos: Vector3 = _target.global_position
 	var dx: float = target_pos.x - self_pos.x
 	var dz: float = target_pos.z - self_pos.z
 	var dist_sq: float = dx * dx + dz * dz
+	var center_dist: float = sqrt(dist_sq)
+	var fp_half: float = 0.0
+	if _target.has_method(&"get_footprint_aabb"):
+		var aabb: AABB = _target.get_footprint_aabb()
+		fp_half = maxf(aabb.size.x, aabb.size.z) * 0.5
+	var edge_dist: float = maxf(0.0, center_dist - fp_half)
 
-	if dist_sq > range_sq:
+	# §9.M6 — periodic diag (BUG-H7 fix-up). Fires on branch-transition
+	# always + at most once per second otherwise. Lets us see whether the
+	# unit is walking, in range, what the distances actually are.
+	var current_branch: StringName = &"walking" if edge_dist > attack_range else &"in_range"
+	var should_log: bool = (current_branch != _last_diag_branch) \
+		or (_last_diag_log_tick == -1) \
+		or (SimClock.tick - _last_diag_log_tick >= 30)
+	if should_log:
+		var target_uid_log: int = -1
+		if _target != null:
+			var raw_uid: Variant = _target.get(&"unit_id")
+			if typeof(raw_uid) == TYPE_INT:
+				target_uid_log = int(raw_uid)
+		var is_moving_log: String = "n/a"
+		if _movement != null and &"is_moving" in _movement:
+			is_moving_log = str(bool(_movement.is_moving))
+		var owner_uid_log: int = -1
+		if ctx != null and &"unit_id" in ctx:
+			owner_uid_log = int(ctx.unit_id)
+		print("[attacking] unit_id=%d target_id=%d branch=%s center_dist=%.2f fp_half=%.2f edge_dist=%.2f attack_range=%.2f is_moving=%s self_pos=(%.2f, %.2f) target_pos=(%.2f, %.2f) tick=%d" % [
+			owner_uid_log, target_uid_log, str(current_branch),
+			center_dist, fp_half, edge_dist, attack_range, is_moving_log,
+			self_pos.x, self_pos.z, target_pos.x, target_pos.z, SimClock.tick])
+		_last_diag_log_tick = SimClock.tick
+		_last_diag_branch = current_branch
+
+	if edge_dist > attack_range:
 		# Step 3: out of range — walk toward target. Re-issue each tick so a
 		# moving target stays tracked. The scheduler cancels prior in-flight
 		# requests internally on each new request, so this is safe.
@@ -197,6 +253,10 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 	_cancel_in_flight_repath()
 	if _combat != null and _combat.has_method(&"set_target"):
 		_combat.set_target(int(_target.unit_id))
+	# BUG-H8 — push the actual Node ref so CombatComponent's _resolve_target
+	# bypasses the unit_id namespace-collision walk.
+	if _combat != null and _combat.has_method(&"set_target_node"):
+		_combat.set_target_node(_target)
 	# Drive combat._sim_tick so cooldown advances and damage fires. Until
 	# the CombatSystem phase coordinator lands (LATER — same refactor shape
 	# as MovementSystem in BUILD_LOG 2026-05-01 wave 2), Attacking is the

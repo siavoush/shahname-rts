@@ -79,6 +79,15 @@ var _target: Vector3 = Vector3.ZERO
 # without an explicit poll, and so tests can inspect the last-known state.
 var _last_path_state: int = _IPathScheduler.PathState.READY
 
+# BUG-H9 (2026-05-28): cached last-logged target Vector3 for the
+# repath_requested log's state-change gating. UnitState_Attacking and
+# UnitState_AttackMove re-issue request_repath every tick during walk,
+# producing identical target Vector3s tick-after-tick. Without this
+# cache the log spams 30 lines/sec per attacking unit. Mirrors the
+# canonical TuranController._log_stall_once pattern from BUG-H5.
+# Sentinel INF-vector so the first call always logs.
+var _last_logged_repath_target: Vector3 = Vector3(INF, INF, INF)
+
 # Distance threshold for "arrived at this waypoint". Smaller than the
 # move-per-tick distance so units don't overshoot at low speeds; larger
 # than 0 so floating-point drift doesn't trap us in an arrival loop.
@@ -123,6 +132,14 @@ func request_repath(target: Vector3) -> void:
 	_waypoints = PackedVector3Array()
 	_waypoint_index = 0
 	_last_path_state = _IPathScheduler.PathState.PENDING
+	# §9.M6 — log repath event, state-change-gated (BUG-H9). The pre-gate
+	# log fired on EVERY call → 30 lines/sec/unit during UnitState_Attacking's
+	# per-tick walk-toward-target re-issue. Comparing to _last_logged_repath_target
+	# (Vector3 sentinel) collapses repeated identical targets into a single log.
+	if target != _last_logged_repath_target:
+		print("[movement] unit_id=%d repath_requested target=%s request_id=%d" % [
+			unit_id, str(target), _request_id])
+		_last_logged_repath_target = target
 
 
 ## Live read of the current path state. Polls the scheduler if a request

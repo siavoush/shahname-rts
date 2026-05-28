@@ -247,6 +247,12 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 	# the node and frees our slot (complete_extract is double-release-safe
 	# with the exit() release path).
 	var payload: Dictionary = _target_node.complete_extract(int(ctx.unit_id))
+	# §9.M6 — gather-completion event log. One-shot per gather cycle (per-tick
+	# dwell countdown is silent; only the completion fires this print).
+	print("[gather] unit_id=%d completed kind=%s amount_x100=%d" % [
+		int(ctx.unit_id),
+		str(payload.get(&"kind", &"")),
+		int(payload.get(&"amount_x100", 0))])
 	# Mark the slot as no longer held so exit() doesn't double-release
 	# (release_extract is idempotent but the slot is gone).
 	_slot_held = false

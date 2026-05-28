@@ -258,6 +258,11 @@ func change_resource(
 	# source_unit_id resolution is a 3-line re-add when a consumer needs it
 	# (see git history pre-v1.2.2 for the resolution pattern). Per Manifesto
 	# Principle 4 (Lean Iteration): dead reference-only code deleted.
+	# §9.M6 — log every resource mutation (chokepoint event; non-spammy
+	# because change_resource fires only on deposits/spends/refunds, not
+	# per-tick).
+	print("[resource] change team=%d kind=%s delta_x100=%d total_x100=%d reason=%s" % [
+		team, str(kind), effective_delta, post, str(reason)])
 	EventBus.resource_changed.emit(team, kind, effective_delta, post)
 
 
@@ -309,6 +314,9 @@ func change_population_cap(
 	var effective_delta: int = post - pre
 	_population_cap[team] = post
 	_set_sim(&"_population_cap", _population_cap)
+	# §9.M6 — log population_cap mutation.
+	print("[resource] population_cap team=%d delta=%d total=%d reason=%s" % [
+		team, effective_delta, post, str(reason)])
 	EventBus.resource_changed.emit(team, &"population_cap", effective_delta, post)
 
 
@@ -408,6 +416,10 @@ func register_node(node: Node, kind: StringName) -> void:
 			+ "(Caller may have called _on_placement_complete twice.)")
 		return
 	bucket.append(node)
+	# §9.M6 — log registration event (one-shot per register; bucket-size
+	# in the suffix gives quick "how many of this kind exist" diagnostic).
+	print("[resource] registered_node kind=%s node=%s bucket_size=%d" % [
+		str(kind), str(node), bucket.size()])
 
 
 ## Remove a node from the registry. Idempotent — unregistering an unknown
@@ -426,6 +438,9 @@ func unregister_node(node: Node) -> void:
 		var bucket: Array = _nodes_by_kind[kind]
 		if bucket.has(node):
 			bucket.erase(node)
+			# §9.M6 — log unregister event (one-shot per kind/node pair).
+			print("[resource] unregistered_node kind=%s node=%s bucket_size=%d" % [
+				str(kind), str(node), bucket.size()])
 			# Don't return — defensively continue scanning in case a bug
 			# double-registered the node under two kinds. Harmless for the
 			# common case (single registration); diagnostic for the bad case.

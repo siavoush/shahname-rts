@@ -79,6 +79,9 @@ func _ready() -> void:
 	# Unit._apply_balance_data_defaults).
 	kind = KIND_KHANEH
 	super._ready()
+	# §9.M6 — spawn log mirroring throne.gd:282 / madan.gd:242 / mazraeh.gd:197.
+	print("[khaneh] _ready team=%d position=%s unit_id=%d" % [
+		team, str(global_position), unit_id])
 
 
 # === Placement side-effect ===================================================
@@ -244,6 +247,9 @@ func _resolve_fog_sight_cells() -> int:
 
 
 func _exit_tree() -> void:
+	# Wave 3-BuildingDestructibility (session 9, architecture-reviewer
+	# C1.2 BLOCKER fix-up): super-call required.
+	super._exit_tree()
 	if _fog_handle >= 0:
 		var fog: Node = _autoload_or_null(&"FogSystem")
 		if fog != null and fog.has_method(&"deregister_vision_source"):
@@ -268,3 +274,36 @@ static func population_capacity() -> int:
 	if typeof(cap_v) != TYPE_INT and typeof(cap_v) != TYPE_FLOAT:
 		return _FALLBACK_POPULATION_CAPACITY
 	return int(cap_v)
+
+
+# === Destruction handler — subclass override =================================
+
+## Wave 3-BuildingDestructibility (session 9). On hp=0:
+##   1. Decrement the team's population_cap by the same delta we
+##      contributed at _on_placement_complete. Over-cap state (existing
+##      pop > new cap) is acceptable per existing change_population_cap
+##      semantics — workers persist; production blocks until pop falls.
+##   2. Log the cleanup.
+##   3. Call super (latch + generic emit + queue_free).
+##
+## Per architecture-reviewer C2.4 + §3.1.a checklist: API name is
+## `change_population_cap`, NOT `adjust_pop_cap`. Sim Contract §1.3:
+## change_population_cap asserts is_ticking, so this MUST be called
+## from inside a sim_phase handler — which _on_health_zero is, via the
+## HealthComponent.take_damage → emit chain that originates in
+## CombatComponent's sim_phase tick.
+func _on_health_zero(unit_id_in: int) -> void:
+	if _destruction_emitted:
+		return
+	# Decrement the cap by the same delta we contributed at placement.
+	# _resolve_population_capacity reads the canonical value from
+	# BalanceData; same value at placement + destruction guarantees
+	# delta symmetry (no off-by-one).
+	var pop_cap_delta: int = _resolve_population_capacity()
+	if pop_cap_delta > 0:
+		ResourceSystem.change_population_cap(
+			team, -pop_cap_delta, &"khaneh_destroyed", self)
+		print("[khaneh] population_cap_delta=-%d team=%d (destruction)" % [
+			pop_cap_delta, team])
+	# Base handles latch + generic emit + queue_free.
+	super._on_health_zero(unit_id_in)

@@ -323,6 +323,12 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 		_structurally_placed = true
 		_total_construction_ticks = _resolve_construction_ticks(_building_kind)
 		_dwell_remaining_ticks = _total_construction_ticks
+		# §9.M6 — Stage 1 (structural placement) event log.
+		var placer_uid: int = -1
+		if ctx != null and &"unit_id" in ctx:
+			placer_uid = int(ctx.unit_id)
+		print("[constructing] stage1_placement_complete unit_id=%d kind=%s total_ticks=%d" % [
+			placer_uid, str(_building_kind), _total_construction_ticks])
 		# Fall through to the dwell tick — this tick counts toward
 		# construction so a kind with construction_ticks = 1 completes
 		# on the arrival tick itself (degenerate-edge correctness).
@@ -351,6 +357,9 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 		var placer_unit_id: int = -1
 		if ctx != null and &"unit_id" in ctx:
 			placer_unit_id = int(ctx.unit_id)
+		# §9.M6 — Stage 2 (construction complete / operational activation) log.
+		print("[constructing] stage2_construction_complete unit_id=%d kind=%s" % [
+			placer_unit_id, str(_building_kind)])
 		_building_ref.call(&"_on_construction_complete", placer_unit_id)
 		# Emit construction_finalized AFTER the virtual runs — the
 		# externally-observable Stage-2 completion signal. Resolves the

@@ -334,11 +334,17 @@ func _perform_deposit(ctx: Object) -> void:
 				% [team, str(kind), cached_id, fresh_id])
 		if dropoff != null and is_instance_valid(dropoff) \
 				and dropoff.has_method(&"deposit"):
+			# §9.M6 — log the deposit path taken (one-shot per deposit).
+			print("[returning] deposit_via_depot unit_id=%d team=%d kind=%s amount_x100=%d depot=%s" % [
+				int(ctx.unit_id), team, str(kind), int(amount_x100), str(dropoff)])
 			# Depot-present path. Depot.deposit owns the chokepoint call
 			# internally; we do NOT call change_resource here. C1.4
 			# only-one-path enforced.
 			dropoff.call(&"deposit", kind, int(amount_x100), ctx)
 		else:
+			# §9.M6 — log the fallback path taken.
+			print("[returning] deposit_via_fallback unit_id=%d team=%d kind=%s amount_x100=%d" % [
+				int(ctx.unit_id), team, str(kind), int(amount_x100)])
 			# Depot-absent fallback (test fixtures, pre-spawn). Preserve
 			# the wave 1B inline call exactly as shipped.
 			ResourceSystem.change_resource(

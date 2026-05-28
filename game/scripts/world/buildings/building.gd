@@ -366,6 +366,13 @@ func _ready() -> void:
 	if not EventBus.sim_phase.is_connected(_on_sim_phase):
 		EventBus.sim_phase.connect(_on_sim_phase)
 
+	# Wave 3-BuildingDestructibility (session 9) — every building gets HP
+	# + a local-signal subscription per BUG-G1 fix-pattern. Throne's
+	# implementation (factored from throne.gd:393-435) promoted to base
+	# per architecture-reviewer C4.4 — all 8 subclasses inherit; only
+	# _on_health_zero is subclass-specific.
+	_init_health_from_balance_data()
+
 
 # === Placement API ==========================================================
 
@@ -404,6 +411,14 @@ func place_at(world_pos: Vector3, owner_team: int, placer_unit_id: int) -> void:
 	global_position = world_pos
 	team = owner_team
 	is_complete = true
+	# §9.M6 — log the team transition + placement. Building._ready fires
+	# with team=TEAM_NEUTRAL (default); place_at is when the building
+	# transitions to its owning team. Pre-this-log, this transition was
+	# invisible, which masked partial-state buildings (worker interrupted
+	# mid-construction → place_at never runs → team stays at 0 → AI
+	# targeting filters reject it).
+	print("[%s] place_at team=%d position=%s placer_unit_id=%d is_complete=true" % [
+		str(kind), team, str(world_pos), placer_unit_id])
 	_on_placement_complete(placer_unit_id)
 
 
@@ -878,3 +893,162 @@ func _read_bldg_stats_int(field_name: StringName) -> int:
 	if typeof(v) != TYPE_INT and typeof(v) != TYPE_FLOAT:
 		return 0
 	return int(v)
+
+
+# === HealthComponent integration (Wave 3-BuildingDestructibility) ===========
+#
+# Per brief v1.0.1 §3.1 + §6 (architecture-reviewer C4.3 + C4.4):
+# factored from throne.gd:393-435 to base so all 8 building subclasses
+# inherit the HealthComponent wiring + local-signal subscription. Only
+# _on_health_zero is subclass-specific (per-building cleanup).
+#
+# **BUG-G1 fix-pattern (session-8 architecture-reviewer finding):**
+# Buildings subscribe to their OWN HealthComponent.health_zero LOCAL
+# signal, NOT the global EventBus.unit_health_zero channel. Buildings
+# and Units have SEPARATE unit_id counters that collide in the same
+# int space (Iran Throne unit_id=1 collides with Kargar #1 unit_id=1).
+# The Unit-side global-filter pattern is safe within the Unit
+# namespace; Buildings cannot use the same channel safely.
+#
+# **§9.D8/D10 cross-track diagnostic note:** the HealthComponent node
+# is added to the base building.tscn (session 9 wave); subclasses
+# inherit the node for free. Concrete subclasses do NOT need per-scene
+# HealthComponent overrides.
+
+
+## Latch so the destruction signal emits exactly once per building.
+## Mirror of HealthComponent's _zero_emitted pattern at
+## health_component.gd:74 — once destroyed, always destroyed.
+## Subclass _on_health_zero overrides should check this before
+## emitting the destruction signal.
+var _destruction_emitted: bool = false
+
+
+## Returns the building's HealthComponent child node, or null if the
+## scene doesn't have one (test fixture / pre-Wave-3-BD scene).
+## Duck-typed protocol match for combat_component.gd:195-199 —
+## CombatComponent calls `target.get_health()` to check target validity
+## and deal damage. Returning the HC node lets the combat path work
+## with buildings (it doesn't differentiate Unit vs Building targets).
+##
+## **Untyped Node return** (not HealthComponent) to avoid hard
+## class_name dependency at parse time — matches the unit.gd:get_health
+## pattern. Callers may type-narrow via `as HealthComponent`.
+func get_health() -> Node:
+	return get_node_or_null(^"HealthComponent")
+
+
+## Initialize HealthComponent from BalanceData.buildings[<kind>].max_hp
+## per the BUG-C1 canonical Dictionary-lookup pattern. Subscribe to the
+## LOCAL HC.health_zero signal per BUG-G1 fix-pattern.
+##
+## Called from base Building._ready (above) — every building runs this
+## at scene-ready time. If HealthComponent is absent in the scene
+## (test fixture or pre-Wave-3-BD scene), the function early-bails
+## defensively: building remains invulnerable for that run, with a
+## diagnostic log. Production scenes always have HC via the base
+## building.tscn (Wave 3-BuildingDestructibility scene-edit).
+##
+## Subclasses do NOT override this; they override _on_health_zero
+## for cleanup specifics (per architecture-reviewer C4.4 + §3.1 item 3).
+func _init_health_from_balance_data() -> void:
+	var hc: Node = get_node_or_null(^"HealthComponent")
+	if hc == null:
+		# Test fixture or pre-Wave-3-BD scene. Building remains
+		# invulnerable; log so live-test can flag missing HC.
+		print("[%s]   no HealthComponent in scene — building cannot be "
+			% str(kind)
+			+ "destroyed in this run (test fixture or pre-Wave-3-BD scene)")
+		return
+	# Subscribe to LOCAL health_zero signal — BUG-G1 fix-pattern. The
+	# local signal cannot collide because we connect to OUR component's
+	# signal directly; no global namespace involved.
+	if hc.has_signal(&"health_zero"):
+		if not hc.health_zero.is_connected(_on_health_zero):
+			hc.health_zero.connect(_on_health_zero)
+	else:
+		# Defensive: HC exists but lacks the local signal (older HC
+		# version or test mock). Log + bail; do NOT fall back to the
+		# global channel — that's exactly the bug BUG-G1 fixes.
+		push_warning("%s: HealthComponent present but missing health_zero "
+			% str(kind)
+			+ "signal — destruction signal will not fire. "
+			+ "(Update HealthComponent to expose health_zero per BUG-G1.)")
+		return
+	# Initialize HC from BalanceData (canonical Dictionary lookup per
+	# BUG-C1 + §9.L11 — reads buildings[<kind>].max_hp, NOT bldg_<kind>).
+	var max_hp: float = _resolve_max_hp()
+	if hc.has_method(&"init_max_hp"):
+		hc.call(&"init_max_hp", max_hp)
+	if hc.has_method(&"set"):
+		hc.set(&"unit_id", unit_id)
+
+
+## Read max_hp from BalanceData.buildings[<kind>].max_hp via the
+## canonical Dictionary lookup per BUG-C1 fix-wave learning. Falls
+## back to 100.0 if any defensive step fails (file missing, BD null,
+## dict missing, entry missing, type mismatch).
+##
+## Fallback rationale: 100.0 is a visible-positive value — a building
+## with fallback HP can still be attacked + destroyed, but in a
+## diagnostic timeframe (50× faster than the typical 500-2000 HP
+## production range). §9.L9 fallback-by-failure-visibility-shape:
+## fallback should be diagnosable when it fires, not silent. 100.0
+## flagged via the log line in _init_health_from_balance_data.
+func _resolve_max_hp() -> float:
+	const _FALLBACK_MAX_HP: float = 100.0
+	if kind == &"":
+		return _FALLBACK_MAX_HP
+	var path: String = Constants.PATH_BALANCE_DATA
+	if not FileAccess.file_exists(path):
+		return _FALLBACK_MAX_HP
+	var bd: Resource = load(path)
+	if bd == null:
+		return _FALLBACK_MAX_HP
+	var bldgs: Variant = bd.get(&"buildings")
+	if typeof(bldgs) != TYPE_DICTIONARY:
+		return _FALLBACK_MAX_HP
+	var stats: Variant = (bldgs as Dictionary).get(kind, null)
+	if stats == null or not (stats is Resource):
+		return _FALLBACK_MAX_HP
+	var v: Variant = (stats as Resource).get(&"max_hp")
+	if typeof(v) != TYPE_FLOAT and typeof(v) != TYPE_INT:
+		return _FALLBACK_MAX_HP
+	return float(v)
+
+
+## Subclass hook fired when this building's HealthComponent emits its
+## local health_zero signal. Default implementation:
+##   1. Latch via _destruction_emitted (idempotent — only fires once).
+##   2. Log destruction with [<kind>] tag per §9.M6.
+##   3. Emit generic EventBus.building_destroyed(team, kind, unit_id).
+##   4. queue_free().
+##
+## Subclasses override to ADD specific cleanup BEFORE the emit + free.
+## Subclass override pattern (per architecture-reviewer C4.4 + §3.1.a):
+##   func _on_health_zero(unit_id_in: int) -> void:
+##       if _destruction_emitted: return
+##       # ... subclass-specific cleanup (registry/group/Subsystem) ...
+##       super._on_health_zero(unit_id_in)  # fire the base latch + emit + free
+##
+## Throne also emits the specific EventBus.throne_destroyed signal
+## (Phase 8 win-screen consumer) AFTER cleanup but BEFORE super-call,
+## OR by calling super first and then emitting. Both shapes work; the
+## existing throne.gd:_on_health_zero is the canonical reference.
+##
+## unit_id_in parameter retained for telemetry symmetry with the
+## global signal shape; local-signal subscription guarantees this
+## matches self.unit_id by construction.
+func _on_health_zero(unit_id_in: int) -> void:
+	if _destruction_emitted:
+		return
+	_destruction_emitted = true
+	# §9.M6 — log destruction with kind-tag for live-test diagnostics.
+	print("[%s] destroyed team=%d unit_id=%d" % [str(kind), team, unit_id])
+	# Emit generic destruction signal (architecture-reviewer C2.1 R4
+	# resolution — per-building signals would proliferate, generic
+	# scales cleanly with AI consumers).
+	EventBus.building_destroyed.emit(team, kind, unit_id)
+	# Free the node. _exit_tree (with proper super-call per §3.1 item 5)
+	# handles fog deregister + sim_phase disconnect.
+	queue_free()

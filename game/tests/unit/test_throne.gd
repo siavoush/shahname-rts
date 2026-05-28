@@ -284,25 +284,33 @@ func test_throne_destroyed_signal_idempotent() -> void:
 		"throne_destroyed must fire exactly once per Throne (latch — no re-emit)")
 
 
-func test_throne_without_hc_does_not_fire_destroyed_signal() -> void:
-	# Post-BUG-G1: no HC attached → no local-signal subscription → Throne
-	# CANNOT be destroyed in this run. This is the explicit forward-compat
-	# shape (Phase 8 will add HC to throne.tscn; until then the seam is
-	# documented but inert). Verifies the inertness is real, not just
-	# documented.
+func test_throne_global_unit_health_zero_does_not_fire_destroyed_signal() -> void:
+	# Wave 3-BuildingDestructibility (session 9) UPDATE: Throne scenes now
+	# ALWAYS have HealthComponent (inherited from base building.tscn). The
+	# BUG-G1 invariant remains testable: even with HC present, global
+	# EventBus.unit_health_zero with the Throne's unit_id MUST NOT fire
+	# throne_destroyed, because the Throne subscribes to the LOCAL
+	# HealthComponent.health_zero signal only.
+	#
+	# The post-Wave-3-BD invariant: ONLY a local emit (via HC.health_zero
+	# directly, or via take_damage→damage→hp_zero chain) triggers
+	# throne_destroyed. Global EventBus.unit_health_zero is for Units only.
 	_throne = _spawn_throne_scene(Constants.TEAM_IRAN)
 	EventBus.throne_destroyed.connect(_on_throne_destroyed_capture)
-	# Sanity: no HC on this Throne instance.
+	# Sanity: HC IS present now (Wave 3-BuildingDestructibility inheritance).
 	var hc: Node = _throne.get_node_or_null(^"HealthComponent")
-	assert_null(hc,
-		"sanity precondition: _spawn_throne_scene (no _with_hc variant) must NOT attach HC")
-	# Emit global with Throne's unit_id — pre-fix would have fired; post-fix
-	# is silent (no subscription).
+	assert_not_null(hc,
+		"sanity precondition: post-Wave-3-BD all Throne scenes have HC "
+		+ "(inherited from base building.tscn)")
+	# Emit GLOBAL unit_health_zero with Throne's unit_id — BUG-G1 invariant:
+	# Throne does NOT subscribe to the global channel, so this MUST NOT fire
+	# throne_destroyed. Only the LOCAL HC.health_zero signal can fire it.
 	var throne_id: int = int(_throne.get(&"unit_id"))
 	EventBus.unit_health_zero.emit(throne_id)
 	assert_eq(_destroyed_payloads.size(), 0,
-		"throne_destroyed must NOT fire on a Throne without HealthComponent "
-		+ "(no local-signal subscription possible)")
+		"throne_destroyed must NOT fire on global EventBus.unit_health_zero "
+		+ "emit (BUG-G1 invariant: Throne subscribes to LOCAL HC.health_zero "
+		+ "only — Building/Unit unit_id namespace collision protected)")
 
 
 # ---------------------------------------------------------------------------

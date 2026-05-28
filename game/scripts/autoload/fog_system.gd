@@ -318,6 +318,9 @@ func register_vision_source(
 		&"is_static": is_static,
 		&"cached_cells": cached,
 	}
+	# §9.M6 — log vision-source registration (one-shot per register).
+	print("[fog] vision_source_registered team=%d handle=%d static=%s radius_cells=%d node=%s" % [
+		team_id, handle, str(is_static), sight_radius_cells, str(node)])
 	return handle
 
 
@@ -327,6 +330,8 @@ func register_vision_source(
 func deregister_vision_source(handle: int) -> void:
 	if _sources.has(handle):
 		_sources.erase(handle)
+		# §9.M6 — log vision-source deregistration (one-shot per handle).
+		print("[fog] vision_source_deregistered handle=%d" % handle)
 
 
 # ---------------------------------------------------------------------------
