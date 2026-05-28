@@ -375,6 +375,53 @@ Cites Manifesto Principle 1 (Truth-Seeking — observable error in dispatch is o
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-3]
 
+#### B4. Named track-modes in brief drafting — `must-ship` / `audit-only` / `verify-existing`
+
+**Actor.** Lead at brief-drafting time + mirror-reviewer at brief-time review (verifies the track-mode declaration matches the wave's actual surface).
+
+**Trigger.** Drafting any Track section in a wave brief that dispatches a specialist agent (balance-engineer, world-builder, loremaster, ui-developer, etc.).
+
+**Rule.** Every Track explicitly declares its track-mode at the head of the section. Three named modes:
+
+- **`must-ship`** — Track delivers code/data that doesn't exist canonically yet. Specialist is dispatched, produces deliverable, ships in PR.
+- **`audit-only`** — Track examines existing code/data for compliance with the wave's needs; ONLY ships changes if the audit surfaces a real gap. Specialist runs the audit, broadcasts findings, ships only if needed.
+- **`verify-existing`** — Track confirms existing code/data is correct for the wave's needs; ships ONLY a single-field correction if anything is wrong. Specialist runs a short grep/read; expected effort is <5 minutes. Often no dispatch needed (lead does the verify inline).
+
+**Why.** Wave 3-BD evidence: Track 3 (balance-engineer) was initially briefed as "add max_hp entries" (`must-ship` shape). Architecture-reviewer caught that all 8 entries already existed at balance.tres lines 215, 233, 257, 307, 352, 392, 426, 464. Brief was patched v1.0.0 → v1.0.1 with Track 3 marked "OPTIONAL audit." Three steps where one would do: if the brief had declared `verify-existing` from v1.0.0, balance-engineer would have done a 30-second grep, broadcast "verified," and the round-trip cost would be near-zero.
+
+**balance-engineer-p3s3 retro reflection 2026-05-28:** *"The most efficient Track 3 dispatches are where the brief correctly scopes 'confirm X holds; if wrong, single-field edit' rather than 'add X.'"*
+
+**Relationship to §9.L11.** §9.L11 codifies the lead's brief-drafting balance.tres grep. The named-track-mode is the **downstream consequence** of that grep:
+- If grep finds NO canonical → Track is `must-ship`.
+- If grep finds canonical but the wave needs a different value → Track is `must-ship` + explicit override justification.
+- If grep finds canonical matching the wave's needs → Track is `verify-existing` (lead pre-verified; backstop check).
+- If the wave needs to confirm existing values hold (e.g., max_hp readable via `BalanceData.buildings[<kind>].max_hp` Dictionary lookup) → Track is `audit-only` (specialist confirms the read-path works, no edits needed unless broken).
+
+**Operational form.** Brief Track section opens with a `**Track-mode:**` declaration:
+
+```markdown
+### Track 3 — balance-engineer
+
+**Track-mode:** `verify-existing` — `bldg_throne` entry expected at balance.tres:213
+with `max_hp = 2000.0` per Wave-3-Throne v1.0.1 (architecture-reviewer C1.3 catch).
+Track confirms the entry is still present + readable via canonical Dictionary
+lookup `BalanceData.buildings[&"throne"].max_hp`. If verification passes,
+broadcast `[verified]` + no PR commit. If verification fails, single-field
+correction + commit.
+```
+
+**Where reviewers enforce.**
+
+- **Mirror-reviewer brief-time review** verifies every Track has a `**Track-mode:**` declaration AND the declaration matches the wave's actual surface (per the §9.L11 brief-drafting balance.tres grep result). Missing track-mode = SUGGEST → BLOCKER if scope ambiguity would cause unnecessary specialist dispatch.
+
+**Where authors apply.**
+
+- **Lead (brief author)** runs the §9.L11 grep first; sets track-mode based on grep result; writes the explicit declaration. The declaration is the brief's contract with the specialist: "here's what I expect you to do; here's why I think it's that scope."
+
+Cites Manifesto Principle 4 (Lean Iteration — eliminate the 3-step round-trip when 1 step suffices) + Principle 7 (SSOT — the grep result IS the canonical source for which track-mode applies). Companion rule to §9.L11 (balance.tres grep) + §9.L11.1 (two-actor framing).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-28 session-9 close; balance-engineer-p3s3 retro reflection → lead codification]
+
 ---
 
 ### §9.C — SSOT Discipline
@@ -717,6 +764,91 @@ Implementer's post-stage workflow:
 Cites Manifesto Principle 1 (Truth-Seeking — non-self failures are signal) + Principle 9 (Automated Enforcement — suite-run + broadcast scales). See also §9.D7 (no-silent-coexistence-with-cross-track-WIP, this rule's parent framing), §9.L10 / §9.L12 (canonical-pattern grep, upstream complements when the consumer is the gating track).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close; gp-sys-p3s3 retro reflection N=4 successful + 1 missed-opportunity (BUG-C1) exhibits → codification as standalone D10 (promoted from prior D7(b) refinement framing)]
+
+#### D11. First-Consumer Trace — every wave brief names the first end-to-end consumer of its surface
+
+**Actor.** Lead at brief-drafting time + mirror-reviewer at brief-time review (holds the brief if the trace is "we'll see").
+
+**Trigger.** Drafting any wave brief that ships a new code surface (API, signal, autoload, component, state, protocol). Every wave that ships a surface.
+
+**Rule.** Every wave brief includes a **§5 First-Consumer Trace** section (or equivalent named section) with three explicit fields:
+
+```markdown
+### §5 First-Consumer Trace
+
+**First consumer:** <name + file:line> — the FIRST end-to-end consumer of this wave's
+surface that will fire after this wave merges.
+
+**First-fire tick:** <when the consumer first exercises the surface> — match-start
+tick=N, first Turan probe at tick=3600, first worker arrival at tick~470, etc.
+
+**Gate that would prevent first fire:** <what would mask the integration> — fog
+not yet revealed, no Iran target visible, no producer building shipped yet, etc.
+If the gate is opaque ("we'll see at live-test"), the brief is incomplete.
+```
+
+**Why.** gp-sys-p3s3 retro reflection (2026-05-28) identified the "first-consumer-of-pre-existing-surface" gap as the latent-bug pattern responsible for session-9's BUG-H chain:
+
+- **Wave 3A.5** shipped vision-source registration with a team-id check → **BUG-D2 latent** (Turan-team-id rejected by bounds check) until first Turan-side fog read fired.
+- **Wave 3B** shipped `_pick_target` filter for Iran units → **BUG-H1 latent** (buildings not in candidate pool) until first wave where Iran built any non-Throne building.
+- **Wave 3-Throne** shipped LOCAL-signal pattern fix for HC.health_zero → **BUG-G1 latent** (universal applicability) until other buildings inherited the same surface.
+
+In each case, the wave shipped a surface that didn't have an immediate consumer in the same wave. The consumer arrived 1-3 waves later. The consumer revealed an assumption-failure in the original surface. **The trace surfaces the assumption gap at brief-time, BEFORE the consumer arrives**, by forcing the brief to name where + when + how the surface will be first exercised.
+
+**Branching on the trace's answer.**
+
+- **Consumer shipped + fires at tick N in the same wave** → integration verifiable in-wave. No fix-up budget needed.
+- **Consumer shipped in prior wave + first fires in this wave** → integration verifiable in-wave. No fix-up budget needed; but brief explicitly cites the prior-wave anchor.
+- **Consumer SHIPS in this wave + first fires LATER** (after Phase-N+M when downstream wave ships) → **mark surface FORWARD-COMPAT in code + docs**. Brief documents the assumption gap explicitly. Fix-up budget expected when consumer arrives.
+- **Consumer not yet identified ("we'll find out at live-test")** → **MIRROR-REVIEWER HOLDS THE BRIEF**. Brief is incomplete. Either name the consumer or scope the wave to ship-with-its-own-consumer.
+
+**The FORWARD-COMPAT marker (sub-pattern).** When a wave ships a surface without a co-resident consumer in the same wave, the surface gets a `# FORWARD-COMPAT — first consumer expected in Wave N+M, surface assumptions untested.` comment at the canonical declaration site (signal declaration, public method, protocol method). The marker signals to future-agents (and future-self) that the surface's assumptions haven't been tested against a real consumer yet. When the consumer ships, the marker comes off — the assumptions are now tested.
+
+**Existing FORWARD-COMPAT precedent (informal):** Mazra'eh's `_local_stock_x100: int = 0` field scaffolded for Phase 4+ Trade & Transport caravan-origin (PR #41 Wave 3-LocalDropoffs). Existing pattern; this rule formalizes it.
+
+**Operational form.**
+
+Brief Track section at brief-drafting time:
+1. Lead names the first consumer in §5 (or returns to §3 to add a co-resident consumer if none exists).
+2. Lead identifies first-fire tick + the gate that would prevent it.
+3. If first-fire is in a downstream wave: brief documents the gap + the surface receives FORWARD-COMPAT marker in code.
+4. Mirror-reviewer brief-time review holds the brief if §5 is missing or "we'll see."
+
+**Where reviewers enforce.**
+
+- **Mirror-reviewer brief-time review** checks for §5 presence + content quality. Missing §5 = BLOCKER. "We'll see" content = BLOCKER ("name the consumer, or scope-up the wave to include one").
+- **architecture-reviewer + godot-code-reviewer post-implementation** check that FORWARD-COMPAT markers are present on shipped surfaces without co-resident consumers + are removed when the downstream consumer arrives.
+
+**Where authors apply.**
+
+- **Lead (brief author)** runs the first-consumer trace BEFORE drafting Tracks. The trace's answer determines whether the wave needs to grow to include its own consumer.
+- **Implementer agents** add FORWARD-COMPAT markers in code per the trace's branch decision.
+
+**Anti-patterns.**
+
+- Brief ships surface + Track section says "the consumer will exercise this later" without naming when "later" is. The wave can't be integration-tested in-place. Symptom: BUG surfaces 1-3 waves downstream.
+- Lead claims "consumer is obvious — the next wave will use it." If it's obvious, the trace is trivial to write. Resist the no-trace path.
+- Mirror-reviewer accepts "we'll see at live-test" as a valid §5. The whole point of §5 is to surface the integration assumption gap at brief-time, NOT at live-test.
+
+**N=3 latent-bug exhibits (session 9 BUG-H chain root causes).**
+
+| Wave | Surface shipped | First consumer | Gap | Bug surfaced |
+|---|---|---|---|---|
+| Wave 3A.5 | Vision-source registration with team-id check | Turan-side fog read | First Turan-side fog read (Wave 3B+) | BUG-D2 (Wave 3B live-test) |
+| Wave 3B | `TuranController._pick_target` filter | Iran building targets | First wave with Iran non-Throne building (Wave 3-LocalDropoffs+) | BUG-H1 (Wave 3-BD live-test) |
+| Wave 3-Throne | LOCAL HC.health_zero subscription | All buildings inheriting destruction | All-8-buildings destruction wave (Wave 3-BD) | BUG-G1 generalization (Wave 3-BD architecture-reviewer brief-time catch) |
+
+Each would have surfaced at brief-time if §5 First-Consumer Trace had fired:
+- Wave 3A.5's §5: "First consumer = TuranController fog-read at Wave 3B sim_phase. First-fire tick = 3600 (Turan probe). Gate = Turan unit must register fog vision (which requires the bounds-check to NOT reject TURAN team_id)." Brief-time mirror would have caught the bounds-check gap.
+- Wave 3B's §5: "First consumer = TuranController.set_target on combat-fire path. First-fire tick = ~3700 (probe + walk + range). Gate = target must be in candidate pool. Iran units are; Iran buildings are NOT." Brief-time mirror would have flagged "buildings not in candidate pool" as a future-wave integration gap.
+
+**Companion rules.**
+
+- §9.D11 (First-Consumer Trace, this rule) + §9.B4 (named track-modes) + §9.L11.1 (two-actor framing) form a **brief-time triad**: name the consumer (D11), declare track-mode (B4), backstop balance.tres + canonical patterns (L11.1 + L12). All three fire at brief-drafting; all three have mirror-reviewer backstops at brief-time review.
+
+Cites Manifesto Principle 10 (Feedback Cycle — surface the integration question at brief-time, not at live-test) + Principle 1 (Truth-Seeking — name the assumption, don't ship-and-pray) + Principle 6 (Honest-tools-not-magic-tricks — "we'll see" is hand-waving).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-28 session-9 close; gp-sys-p3s3 retro reflection N=3 latent-bug exhibits (BUG-D2 + BUG-H1 + BUG-G1 generalization) → lead codification]
 
 ---
 
@@ -1194,6 +1326,74 @@ Cites Manifesto Principle 1 (Truth-Seeking — verify before endorsing alignment
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-17 session-2; claim→mechanism→reviewer triples refinement + player-visible-surfaces watchlist added 2026-05-21 session-5 close]
 
+#### J5. Side-quest research dispatch — wave-decoupled, multi-wave-informing loremaster research (N=2 watchlist, N=3 graduation pending)
+
+**Status.** N=2 watchlist — NOT yet an active rule. Two exhibits to date; codification candidate awaiting a third instance per the J-cluster graduation discipline.
+
+**Actor.** Lead dispatches; loremaster produces; downstream wave briefs consume.
+
+**Trigger.** A design-chat decision is anticipated multiple waves out AND benefits from substantive Shahnameh-or-historical research that doesn't fit cleanly into a wave's brief-time review slot. Distinguishing test: *"does the research output have to be true by the wave's close, or can it inform multiple waves?"* If "informs multiple future decisions" → side-quest dispatch.
+
+**Distinguishing from existing loremaster dispatch modes:**
+
+| Mode | Coupling | Timing | Deliverable |
+|---|---|---|---|
+| **Brief-time review (§9.J1 + J2)** | Wave-coupled | Fires before tracks dispatch; blocks track-dispatch on verdict | Paste-ready prose at Commit 1.5 + J2 classification + J4 triples |
+| **Wave-close culture-paste (Commit 1.5 pattern)** | Wave-coupled | Wave-final; lead pastes verbatim into headers | Cultural-note addendum prose for the wave's deliverable |
+| **Side-quest research dispatch (§9.J5)** | Wave-DECOUPLED | Parallel to in-flight wave work; no timeline pressure | `docs/*_RESEARCH.md` standalone artifact (~200-500 lines) referenceable by future briefs |
+
+**Rule (proposed, pending N=3 graduation).** Lead dispatches a loremaster side-quest when:
+
+1. Design-chat is considering a positioning bet that benefits from Shahnameh/historical-economic/cultural research deeper than a 30-45 min brief-time review can produce.
+2. The output will inform DECISIONS multiple waves downstream (not just the next wave's brief).
+3. The lead is NOT under time pressure for the output to land at a specific moment.
+
+**Dispatch shape.** Lead sends a structured research question via SendMessage to the persistent loremaster instance:
+
+```markdown
+**Side-quest research dispatch: <topic>**
+
+Wave context: <which design-chat decision the research informs; which wave(s) will consume>
+Time budget: NO TIMELINE PRESSURE. Take the time the question deserves.
+Output shape: Your call — typically a docs/<topic>_RESEARCH.md doc, 200-500 lines.
+
+Six explicit sub-questions to anchor the research:
+1. <substantive question 1>
+2. <substantive question 2>
+... (etc.)
+
+J4 honest-confidence-disclosure (mandatory): where is your source-material competence
+high vs lower? Surface any compression-flags or anachronism-risks explicitly per
+the J4 slot-creating-rule discipline.
+```
+
+**Why this works (loremaster-p3s5 reflection 2026-05-28).** *"The deliverable (451-line research doc) was substantive, fed design-chat decisions, but didn't block any wave. The dispatch hit at a moment when the design-chat was actively considering a positioning bet (Trade & Transport economy thesis); the research timed-into the decision window. The dispatch slot — 'parallel research, no timeline pressure' — produced better thinking precisely because the time-pressure-shape was right for the cognitive task."*
+
+**N=2 exhibits.**
+
+1. **Session 6 (2026-05-23).** `docs/SHAHNAMEH_ECONOMIC_RESOURCES_RESEARCH.md` — "5 central economic resources of ancient Iran." Side-quest research feeding Phase 3+ resource-modeling decisions. ~Task #180 reference.
+
+2. **Session 9 (2026-05-25).** `docs/SHAHNAMEH_ECONOMY_RESEARCH.md` (commit `07261a4`) — Trade & Transport economy thesis cross-check. ~451 lines. Top-line: T&T thesis HOLDS + is MORE culturally honest than SC2-derived "everything goes to central HQ" pattern. Two refinements (upkeep-as-royal-largesse / down-flow; royal largesse missing from current framing) + Q6.3 dehqan-compression lower-confidence flag + Bizhan-Manizheh as canonical caravan-mechanic narrative anchor.
+
+**N=3 graduation criteria.**
+
+- A third side-quest dispatch with the same shape (wave-decoupled, multi-wave-informing, standalone `_RESEARCH.md` artifact) lands.
+- Down-stream consumption verified: at least one future wave brief explicitly cites the research doc as input to its design.
+- Loremaster confirms the dispatch pattern still feels right (vs. tugging back toward wave-coupled review).
+
+Once N=3 graduation lands, this watchlist entry is promoted to a full rule with:
+- Explicit "when to dispatch side-quest vs. fold into brief" decision heuristic.
+- Operational form for the dispatch message + the research doc structure.
+- Cross-references to §9.J1/J2/J4 (the wave-coupled siblings).
+
+**Why watchlist rather than premature rule (J4 discipline).** Loremaster-p3s5 reflection 2026-05-28: *"Honest J4 caveat on this refinement: I'm not entirely sure the protocol-role-level extension is generative or just structurally-similar pattern I noticed. The N=2/N=3 evidence threshold is exactly the discipline for distinguishing those two cases. Keeping it on watchlist rather than promoting prematurely is the right call."* The J-cluster's N=3 graduation criterion is itself the project's slot-creating-rule discipline that the dispatch pattern would benefit from honoring.
+
+**Forward-watch surfaces.** Phase 4+ entry will likely surface the third instance — either Trade & Transport caravan-mechanic-specific research, or a sacral-emitter ConsecratedTarget protocol research, or an Atashkadeh + FarrSystem coupling research.
+
+Cites Manifesto Principle 4 (Lean Iteration — parallel research without timeline pressure produces better thinking than time-budgeted brief-time review for substantive questions) + Principle 1 (Truth-Seeking — substantive research artifacts > compressed brief-time hot-takes for multi-wave-informing design questions).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-28 session-9 close; loremaster-p3s5 retro reflection (N=2 watchlist proposal) + N=2 exhibits → lead codification as watchlist entry]
+
 ---
 
 ### §9.K — Retro Practice
@@ -1506,6 +1706,49 @@ Cites Manifesto Principle 7 (SSOT — brief is a planning artifact; balance.tres
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close; balance-engineer-p3s3 retro reflection N=6 exhibits → lead codification]
 
+#### L11.1. §9.L11 two-actor framing — author primary + reviewer backstop (codified post-violation)
+
+**Refinement of §9.L11.** L11 codified the author-side discipline at session-8 close (lead grep balance.tres before drafting). At session-9 close — exactly one post-codification opportunity later — lead violated the rule (Wave 3-BD brief v1.0.0 proposed Track 3 to add `max_hp` entries already shipped at balance.tres lines 215, 233, 257, 307, 352, 392, 426, 464). Architecture-reviewer brief-time review caught the violation.
+
+**Lesson (balance-engineer-p3s3 retro reflection 2026-05-28):** *"Codifying a rule in a document doesn't create the habit — it creates a reference. What failed here is the same thing that would fail with any checklist that relies on the author to remember to run it: lead was in brief-drafting mode, attention was on the wave's design intent, and the 30-second grep didn't happen."*
+
+**Refinement.** §9.L11 is a two-actor rule, not one:
+
+- **Primary actor (lead, brief author):** the 30-second `git grep balance.tres` at brief-drafting time. Fires when writing any numeric value into a brief. THIS DISCIPLINE WILL FAIL UNDER DRAFTING PRESSURE. Codification creates a reference, not a habit.
+- **Backstop actor (architecture-reviewer, brief-time mirror review):** explicit balance.tres cross-check on every brief that proposes numeric values for entries that already exist canonically. This is the load-bearing enforcement — external check, doesn't depend on author self-discipline in the drafting moment.
+
+**Backstop operational form (mirror-reviewer brief-time discipline addendum).** At brief-time review, for every numeric value the brief proposes (HP, damage, cost, ticks, multipliers, radii):
+
+```
+For each numeric value V proposed in the brief:
+    Run `git grep "<entry_key>" game/data/balance.tres`
+    If a canonical value V_canonical exists:
+        If V != V_canonical AND the brief doesn't explicitly cite + justify the override:
+            BLOCKER finding: "Brief proposes V=<X>; canonical at balance.tres:<line> is V_canonical=<Y>. Brief must either cite + justify the override, or defer to canonical."
+        If V == V_canonical:
+            VERIFIED: "Brief's V matches canonical."
+    Else (no canonical value):
+        Verify the brief marks the value explicitly as "Starting point — balance-engineer overrides per §9.L1."
+```
+
+**Why the two-actor framing is the right shape.**
+
+1. **Primary discipline alone is insufficient.** N=1 violation in N=1 post-codification opportunity (Wave 3-BD v1.0.0) is direct evidence. Self-discipline rules that depend on author attention under drafting pressure fail predictably.
+2. **Backstop discipline alone is wasteful.** If lead never does the grep, every brief proposes wrong-or-right-by-accident numeric values that mirror-reviewer must catch. Round-trip cost is real.
+3. **Two-actor framing converges in one pass when both fire.** Lead's grep catches 70-80% of violations at brief-drafting time; backstop catches the remaining 20-30% lead missed. Round-trip becomes one pass instead of one-and-a-half passes (Wave 3-BD evidence: backstop caught v1.0.0 violation; v1.0.1 was correct in one revision).
+
+**Generalizes beyond §9.L11.** The same shape applies to any author-side discipline:
+- **§9.L11** (numeric values) + brief-time architecture-reviewer backstop.
+- **§9.L12** (canonical-pattern grep) + brief-time mirror-reviewer backstop (already shipped at session 8).
+- **§9.M6.3** (observability back-fill audit) + brief-time mirror-reviewer mechanical grep backstop (this session, see §9.M6.3).
+- **§9.D11** (First-Consumer Trace) + brief-time mirror-reviewer holds the brief if section is "we'll see" (this session, see §9.D11).
+
+**Project-wide pattern: author-side rules need reviewer-side backstops.** Codifying an author-side rule without a reviewer-side enforcement seam is half-implementing the rule. The reviewer-side enforcement is what makes the rule reliable.
+
+Cites Manifesto Principle 9 (Automated Enforcement — backstop IS the enforcement) + Principle 6 (Honest-tools-not-magic-tricks — admitting "self-discipline fails under drafting pressure" is more honest than "we codified it, problem solved"). N=1 post-codification violation (Wave 3-BD v1.0.0 max_hp); N=1 post-codification backstop catch (architecture-reviewer Wave 3-BD v1.0.0 → v1.0.1 correction).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-28 session-9 close; balance-engineer-p3s3 retro reflection (2-actor refinement) + lead self-discipline failure (Wave 3-BD v1.0.0) → codification]
+
 #### L12. Brief-time canonical-pattern grep — lead-side §9.L10 extension
 
 **Actor:** Lead (brief author). Mirror-reviewer at brief-time review as the secondary check.
@@ -1765,6 +2008,132 @@ func _refresh_row_affordability(row, ...) -> void:
 Cites Manifesto Principle 7 (Observability), Principle 5 (debt-paying discipline), Principle 9 (Automated Enforcement). Parent rule: §9.M6 (day-1 log instrumentation). N=2 incidents: Wave 2B BUG-B1 (missing tooltips, live-test diagnosis cycle) + Wave 3A.6 Track 2 ship at `67606ed` (ProductionPanel without `[ui]` tags, session-8 retro fact-list). Cross-references: §9.M6 parent, §9.L7 affordability sweep, Pitfall #1 (Control mouse_filter).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close — ui-developer-p3s3 origination; UI log-instrumentation gap (Wave 3A.6 Track 2 + Wave 2B BUG-B1) codification]
+
+#### M6.3. Observability is a wave-time gate, not a session-time chore — pre-rule systems back-fill obligation discharges at the wave that touches them
+
+**Sub-rule of §9.M6.** §9.M6 originally scoped to "every NEW system from day 1." Pre-rule systems (combat path, state machine, components shipped Phase 0/1/2 before §9.M6 was codified) carry observability debt. M6.3 tightens the rule: when a wave touches a pre-rule file, the wave is the back-fill discharge moment. Not a separate session-time chore; not a retro action-item to defer; the wave that touches the file is the moment the file's §9.M6 compliance becomes the wave's responsibility.
+
+**User-verbatim refinement (2026-05-27 mid-Wave-3-BD):** *"the log needs to have EVERYTHING except camera movement essentially. otherwise you are blind and just guessing."* The rule's predicate set is therefore: every state mutation (`_set_sim` call), every signal emit (`EventBus.X.emit`), every state transition (`transition_to`), every discrete event, every public method that changes state — **except pure-UI / camera / hover / per-frame visual interpolation** (which is the do-NOT-log set, expanded from §9.M6.2's UI carve-out).
+
+**Rule.** When a wave's brief enumerates files it modifies:
+1. **Each modified file is audited at brief-drafting time** for §9.M6 compliance on the paths the wave exercises. The lead grep:
+   ```
+   git grep -nE "(_set_sim|EventBus\.[a-z_]+\.emit|transition_to)\(" <file>
+   ```
+   For each hit: is there a `print("[<system>] ...")` line within ~5 lines? If no, the file is non-compliant on that path.
+2. **The wave's track deliverables include the §9.M6 back-fill for any non-compliant file touched by the wave.** Same wave, same PR, same merge. Not deferred to "next wave" or "retro."
+3. **Mirror-reviewer brief-time review verifies** the audit happened — the brief should cite the audited paths + the back-fill commits planned.
+
+**Why.** N=8 production bugs across sessions (BUG-C1, D1, D2, D4 from prior sessions + BUG-H1, H2, H3, H4, H5, H6, H7, H8, H9 from session 9) followed the same shape: diagnostic-thrash because the system that should have logged was silent. **In session 9 specifically, six consecutive diagnostic round-trips (BUG-H1 → BUG-H8) each required: hypothesize → add a log → ship → live-test → read log → next hypothesis.** The pattern wasn't "logic was wrong"; it was "logic looked right, live-test produced wrong output, the diagnostic chain ran into silence."
+
+**The back-fill-as-action-item failure mode (session 9 evidence):** lead initially proposed deferring the observability sweep to "next wave + session 9 retro" after BUG-H8 fix landed. User corrected: *"hmm i would have prefered doing it straight away but you seem to prefer doing it after, but if we do it after it must be right after retro, this essentially IS an action item from the retro that we've already decided on."* See `feedback_action_items_dont_defer.md` (session 9 memory). The sweep shipped inline as 3 commits on PR #42 (commits `6079e7b` + `7ee9d30` + `1be88d9`) per gp-sys retro reflection: *"observability is a wave-time gate, not a session-time chore. When a wave is briefed, the brief should enumerate every pre-rule file it touches and verify those files emit §9.M6-compliant logs on the paths the wave exercises. If they don't, fix-up commits in the same wave back-fill them."*
+
+**Mechanical brief-time grep (proposal — automatable):**
+
+```bash
+# In a wave brief-drafting checklist:
+for file in $touched_files; do
+    git grep -nE "(_set_sim|EventBus\.[a-z_]+\.emit|transition_to|^func [a-z_]+)" "$file" | while read -r match; do
+        # Check for adjacent print within 5 lines
+        # ... shell-script-fu, or just visual review of the brief's "touched files" list
+    done
+done
+```
+
+This isn't a lint rule (false-positive risk on legitimate per-tick `_log_diag` debug paths is too high); it IS a mechanical brief-time check that mirror-reviewer runs. The output of the check is a list: "of N modified-file mutation sites, M have no adjacent `print`. M files need back-fill before merge."
+
+**Where reviewers enforce.**
+
+- **Mirror-reviewer brief-time review** runs the mechanical grep against each file the brief proposes to modify. Surface any non-compliant mutation site as a BLOCKER finding.
+- **architecture-reviewer + godot-code-reviewer final pass** verify that any pre-rule file modified in the wave now has §9.M6-compliant logs on the paths the wave touched.
+
+**Where authors apply.**
+
+- **Wave brief authors (lead)** add to the brief's track-deliverables: *"§9.M6 back-fill for `<file_A>`, `<file_B>`, ... — each modified pre-rule file gets log instrumentation on paths exercised by this wave. Mechanical brief-time check: see §9.M6.3."* This makes back-fill scope visible at brief-time, not retro-time.
+- **Implementer agents** treat the back-fill commits as part of the wave's deliverable shape, NOT separate cleanup.
+
+**Volume budget.** Per the canonical example from Wave 3-BD's observability sweep (`7ee9d30` + `1be88d9`): ~5-30 lines per file, ~10-15 files in a major sweep, ~3 commits to ship cleanly. Wave 3-BD sweep was on the larger end because it back-filled 9 BUG-H's worth of latent debt; typical wave back-fills should be smaller.
+
+**Anti-patterns to flag at review.**
+
+- "We'll add the logs when the bug surfaces" — by then it's 5-10× more expensive.
+- "The back-fill is its own wave / next session's problem" — the file gets touched ONCE by this wave; back-fill while the modification context is fresh.
+- A "retro action-item" that defers observability work past the wave-that-exposed-the-need. See §9.M6.3 antibody to that specific failure mode.
+
+**N=8 canonical incident chain.** Prior chain (BUG-C1/D1/D2/D4 from sessions 7-8) lived in `feedback_observability_in_log.md` memory; session-9's BUG-H1..H8 doubled the count. The wave-time-gate framing is the lesson from N=8: codification + back-fill obligation only work if discharged at the wave-touch moment, not at session-time review.
+
+Cites Manifesto Principle 1 (Truth-Seeking) + Principle 6 (Honest-tools-not-magic-tricks) + Principle 9 (Automated Enforcement) + Principle 10 (Feedback Cycle — the BUG-H chain IS the feedback cycle working as designed; the lesson is wave-time gate discharge, not retro deferral).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-28 session-9 close; gp-sys-p3s3 retro reflection + user-verbatim "log everything except camera" refinement (2026-05-27) + N=8 incident count + action-items-don't-defer memory cross-ref → lead codification]
+
+#### M6.4. State-Change-Gated Per-Tick Logging — `_last_X` sentinel pattern for paths that read every tick
+
+**Sub-rule of §9.M6.** Per-tick logging produces noise; no-log loses transition events. The state-change-gated pattern is the canonical middle: cache the last-logged value, log only on transition.
+
+**Actor.** Implementer at moment-of-writing any log-emit that lives inside a per-tick code path. Reviewer (godot-code-reviewer + mirror-reviewer) backstops at brief-time + post-implementation.
+
+**Trigger.** Any of:
+- A `print(...)` line sits inside `_sim_tick`, `_step_idle`, `_step_probing`, `_physics_process`, or any function called from `_on_sim_phase` per-tick branch.
+- A `print(...)` line reads a value (path_state, target, position, stall-reason) that may be identical across many ticks.
+- A debug log fires "every time the same condition is checked" rather than "every time the condition changes."
+
+**Rule.** Cache the last-logged value in a sibling field `_last_X` (where X is the value being logged) and log only on transition:
+
+```gdscript
+# Field declaration alongside related state:
+var _last_X: <type> = <sentinel-value>  # -1 for ints, &"" for StringNames, null for refs, Vector3(INF, INF, INF) for Vector3s
+
+# In the per-tick code path:
+var current_X: <type> = <compute current value>
+if current_X != _last_X:
+    print("[<system>] X_changed prev=%s curr=%s tick=%d" % [str(_last_X), str(current_X), SimClock.tick])
+    _last_X = current_X
+```
+
+**Reset discipline.** `_last_X` must be reset to its sentinel value at any natural lifecycle boundary:
+- **State-machine instance**: in the state's `enter()` so each engagement gets its own logging cadence.
+- **SimNode autoload**: in the autoload's `reset()` so test fixtures don't leak last-logged values across cases.
+- **Component**: in the component's `_ready()` or analogous re-init seam.
+
+**Pitfall #16 co-citation.** When `_last_X` is a ref-typed cache (Node, Variant), the same `is_instance_valid()` guard from Pitfall #16 applies — `_last_X` may point to a freed Object between ticks. Don't cast it without validating. The sentinel-comparison `current_X != _last_X` itself is safe (Variant equality on freed Object compares the pointer + tombstone), but reading properties off `_last_X` is not.
+
+**Canonical sites (5 sites converged this wave).**
+
+| Site | Field | Reset | Reference |
+|---|---|---|---|
+| `TuranController._log_stall_once` | `_last_stall_reason: String = ""` | `reset()` clears to `""` | `turan_controller.gd:303-310` (BUG-H5) |
+| `TuranController._pick_target` | `_last_pick_signature: String = ""` | `reset()` clears to `""` | `turan_controller.gd:380-385` (BUG-H5) |
+| `UnitState_Moving._sim_tick` | `_last_path_state: int = -1` | `enter()` resets to `-1` | `unit_state_moving.gd` (observability sweep) |
+| `UnitState_AttackMove._sim_tick` | `_last_path_state: int = -1` | `enter()` resets to `-1` | `unit_state_attack_move.gd` (observability sweep) |
+| `UnitState_Attacking._sim_tick` | `_last_diag_log_tick: int = -1` + `_last_diag_branch: StringName = &""` | `enter()` resets both | `unit_state_attacking.gd:158-160` (BUG-H7) |
+| `MovementComponent.request_repath` | `_last_logged_repath_target: Vector3 = Vector3(INF, INF, INF)` | NOT reset (sentinel guard) | `movement_component.gd:88` (BUG-H9) |
+
+**Why.** Per-tick log-flood (BUG-H5 explosion: 30 lines/sec/unit, 800KB log in 4 min) destroyed diagnostic signal. State-change-gating is the only way to surface a transition event without per-tick noise. The pattern wasn't codified going in — emerged ad-hoc across 5 fix-up sites in Wave 3-BD. Codification prevents re-discovery cost for the next per-tick log site.
+
+**Hybrid: rate-limited + state-change-gated.** Some sites combine both (e.g., `UnitState_Attacking` logs branch + at-most-once-per-second). The pattern:
+
+```gdscript
+var should_log: bool = (current_branch != _last_diag_branch) \
+    or (_last_diag_log_tick == -1) \
+    or (SimClock.tick - _last_diag_log_tick >= 30)
+if should_log:
+    print("[attacking] ...")
+    _last_diag_log_tick = SimClock.tick
+    _last_diag_branch = current_branch
+```
+
+Use hybrid when the inside-state diagnostic is useful periodically (e.g., monitoring a long walk-toward-target) AND on transition (engage / disengage). Pure state-change-gating is sufficient when transitions are the only interesting event.
+
+**NOT a lint rule.** Mechanical detection of "this print should be state-change-gated" produces false positives on legitimate per-tick debug paths (e.g., test-fixture `_log_diag` calls, dev-mode verbose modes). The discipline lives at code-author + reviewer level.
+
+**Where reviewers enforce.**
+
+- **godot-code-reviewer** flags un-gated `print(...)` inside any function called per-tick (member of any `_sim_tick`, `_step_*`, `_on_sim_phase` chain, etc.) as a SUGGEST → BLOCKER if the rate is high enough to produce log-flood.
+- **mirror-reviewer brief-time review** flags brief prose that adds a new per-tick log site without specifying gating mechanism as a finding.
+
+Cites Manifesto Principle 1 (Truth-Seeking — diagnostic signal preserved through gating) + Principle 6 (Honest-tools-not-magic-tricks — flood-without-signal IS magic-trick log instrumentation) + Pitfall #16 (cached ref discipline).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-05-28 session-9 close; gp-sys-p3s3 retro reflection (5-site convergence) → lead codification]
 
 ---
 

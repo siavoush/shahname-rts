@@ -12,12 +12,59 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-28 (Wave-3-BuildingDestructibility close — all 8 Iran buildings destructible + combat path buildings-aware + §9.M6 observability sweep)
+last_updated: 2026-05-28 (Session 9 close retro — 6 codifications + 3-voice convergence on T&T + headless playtest infrastructure as next-wave candidate)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-05-28 — Phase 3 session 9 close retro: 6 codifications + 3-voice convergence on T&T + SIM_FAST_MODE + late-game-pressure flag
+
+**Branch:** `feat/session-9-close-retro`  **Reflections in (3 of 5 dispatched):** gp-sys-p3s3, shahnameh-loremaster-p3s5, balance-engineer-p3s3. World-builder-p3s3 and ai-engineer-p3s3 inboxes don't exist (phantom inbox; dispatches went unread). The gap is real in the synthesis — scene-side + AI-architecture voices absent.
+
+**6 codifications to STUDIO_PROCESS.md:**
+
+1. **§9.M6.3 — Observability is a wave-time gate, not a session-time chore.** When a wave touches a pre-rule file, the wave is the back-fill discharge moment. Brief enumerates touched files at brief-time + mechanical grep for `_set_sim`/`EventBus.X.emit`/`transition_to` without adjacent `print` = BLOCKER from mirror-reviewer. User-verbatim refinement *"log everything except camera"* expanded the rule from "every NEW system" → "every state mutation + signal emit + state transition + event, except pure-UI/camera." Cites N=8 incident chain (BUG-C1/D1/D2/D4 prior + BUG-H1..H8 session 9).
+
+2. **§9.M6.4 — State-Change-Gated Per-Tick Logging.** `_last_X` sentinel pattern; reset at lifecycle boundaries; Pitfall #16 co-citation for ref-typed caches. 6 canonical sites converged this wave (TuranController._last_stall_reason / _last_pick_signature; UnitState_Moving / UnitState_AttackMove ._last_path_state; UnitState_Attacking ._last_diag_branch + _last_diag_log_tick; MovementComponent ._last_logged_repath_target).
+
+3. **§9.L11.1 — §9.L11 two-actor framing.** Author primary + reviewer backstop. Lead-side self-discipline rules fail under drafting pressure (N=1 violation in N=1 post-codification opportunity at Wave 3-BD v1.0.0). Backstop discipline = architecture-reviewer brief-time balance.tres cross-check. Generalizes: any author-side rule needs reviewer-side backstop. Companion to §9.D11 + §9.B4 + §9.L12 — the brief-time enforcement triad.
+
+4. **§9.B4 — Named track-modes in brief drafting.** `must-ship` / `audit-only` / `verify-existing` as explicit declarations on every Track section. Eliminates the 3-step round-trip (brief proposes work that already exists → reviewer catches → brief patched → no dispatch) when 1 step suffices. Wave 3-BD Track 3 evidence: was initially `must-ship` for `max_hp` entries that already existed at balance.tres:215-464.
+
+5. **§9.D11 — First-Consumer Trace.** Every wave brief includes a §5 section naming the FIRST end-to-end consumer of the wave's surface + first-fire tick + the gate that would prevent first fire. If consumer is "we'll find out at live-test," mirror-reviewer holds the brief. FORWARD-COMPAT marker sub-pattern for surfaces shipping without co-resident consumer. Cites N=3 latent-bug exhibits (BUG-D2 / BUG-H1 / BUG-G1 generalization) as cases where the trace would have surfaced the integration gap at brief-time.
+
+6. **§9.J5 — Side-quest research dispatch (N=2 WATCHLIST).** Loremaster dispatch mode beyond brief-time review + wave-close paste: wave-decoupled, multi-wave-informing, standalone `docs/*_RESEARCH.md` artifact, no timeline pressure. N=2 exhibits: session 6 (5-central-resources research) + session 9 (Trade & Transport thesis cross-check). Awaiting N=3 for graduation. Heuristic for which mode: *"does the research output have to be true by the wave's close, or can it inform multiple waves?"*
+
+**Convergent themes (3-voice signal):**
+
+- **Trade & Transport thesis commits Phase 4+** — loremaster (cultural-fidelity + positioning) + balance-engineer (late-game-pressure structural gap) + user (design instinct from 2026-05-26 conversation). Three independent voices, same lever: upkeep-as-royal-largesse-down-flow is BOTH the culturally-honest framing AND the missing pacing mechanism. Same fix, two angles.
+- **Headless playtest infrastructure is the load-bearing missing piece** — gp-sys (*"user is currently the integration-test harness; that's a missing-CI-stage artifact, not a role-of-the-user artifact"*) + balance-engineer (*"AI-vs-AI unattended runs is the most important balance tool we don't have yet"*). Same gap, two angles. Wave 3-Sim joint task (balance-engineer + engine-architect + qa-engineer) candidate.
+- **Author-side rules need reviewer-side backstops** — gp-sys (mechanical brief-time grep for observability) + balance-engineer (architecture-reviewer balance.tres cross-check). §9.L11.1 codification + §9.D11 + §9.B4 cluster reflects this generalization.
+
+**Small co-resident changes shipped:**
+
+- `SIM_FAST_MODE: bool = false` + `SIM_FAST_PROBE_CADENCE_TICKS: int = 300` constants in `constants.gd`; `TuranController._resolve_probe_cadence` honors override. Live-test quality-of-life: 120s probe-wait → 10s when SIM_FAST_MODE=true. Default false; flip-before-commit discipline. Per balance-engineer-p3s3 reflection 2026-05-28.
+- `QUESTIONS_FOR_DESIGN.md` new entry: late-game economic pressure gap (balance-engineer flag) + T&T commitment question for design chat + Bizhan-Manizheh as canonical caravan-mechanic anchor + Wave 3-Sim batch infrastructure proposal.
+
+**Open follow-ups (NOT shipped in this retro PR, queued for next sessions):**
+
+- `00_SHAHNAMEH_RESEARCH.md` one-paragraph dehqan-compression acknowledgment (loremaster offered paste-ready in <15 min; separate small dispatch).
+- `balance.tres` status tag convention (`; status: placeholder | calibrated | anchored`) per sub_resource entry (balance-engineer proposal; separate balance-engineer micro-wave).
+- Wave 3-Sim brief — headless AI-vs-AI batch runner (joint balance-engineer + engine-architect + qa-engineer task; pre-Phase-4 prerequisite per the 3-voice convergence).
+- §9.J5 N=3 graduation watch — third side-quest dispatch with same shape promotes from watchlist to active rule.
+
+**Reflections still pending (process gap to flag in next session):**
+
+- world-builder-p3s3 — phantom inbox dispatch went unread. Scene-side perspective on Wave 3-BD missing from synthesis. Forward-watch for Phase 4+ Qal'eh and per-building UI architecture decisions.
+- ai-engineer-p3s3 — phantom inbox dispatch went unread. AI-architecture perspective on TuranController evolution missing from synthesis. Forward-watch for Phase 6 real-AI prep work + AI-difficulty schema.
+
+**Cultural / event-cultural-shape gap** (loremaster forward-watch): Wave 3-BD destruction event was correctly skipped per existing §9.J1 rules (J2 clone-check verdict) BUT the destruction-event itself has cultural register (*qaleh-shekani*, fortress-breaking; *qaleh-koshay*, fortress-opener) that the current rules don't surface. Phase 4+ Qal'eh destruction will need event-cultural-shape framing. Refinement candidate; not graduating now.
+
+**Session-N+1 startup hygiene reminder:** read this entry + the §9 codifications (M6.3 / M6.4 / L11.1 / B4 / D11 / J5) before drafting any wave brief.
 
 ---
 

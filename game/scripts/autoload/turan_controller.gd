@@ -315,6 +315,12 @@ func _log_stall_once(reason: String) -> void:
 ## construct TuranController without the full balance chain — mirrors the
 ## same defensive pattern used in `unit.gd:_register_fog_vision_source`.
 func _resolve_probe_cadence() -> int:
+	# SIM_FAST_MODE override (session 9 close retro 2026-05-28; balance-engineer
+	# proposal). When true, compresses cadence 3600 → 300 ticks (120s → 10s)
+	# for live-test quality-of-life. NEVER true on main.
+	if Constants.SIM_FAST_MODE:
+		print("[turan] SIM_FAST_MODE active — cadence overridden to ", Constants.SIM_FAST_PROBE_CADENCE_TICKS)
+		return Constants.SIM_FAST_PROBE_CADENCE_TICKS
 	var path: String = Constants.PATH_BALANCE_DATA
 	if not FileAccess.file_exists(path):
 		return _DEFAULT_PROBE_CADENCE_TICKS
