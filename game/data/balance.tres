@@ -33,6 +33,8 @@
 ; =========================================================================
 
 ; Kargar (worker) — 01_CORE_MECHANICS.md §6
+; status: placeholder — HP/damage are starting-point guesses; no live-test validation
+;   of worker survivability or gather-trip economics under real combat pressure.
 ; Fragile, minimal combat. Gathers resources, constructs buildings, repairs.
 ; HP: low (easily killed — reinforces the -1 Farr penalty when idle workers die).
 ; attack_damage_x100 = 0: workers cannot attack (CombatComponent skips 0-damage units).
@@ -51,6 +53,8 @@ attack_damage_x100 = 0
 attack_speed_per_sec = 1.0
 
 ; Piyade (foot infantry, Iran) — 01_CORE_MECHANICS.md §6
+; status: calibrated — DPS math validated in session-1 combat; RPS multipliers confirmed
+;   in session-2 RPS live-test. Multi-unit scaling not yet AI-vs-AI validated.
 ; Cheap, slow, durable. Spear-and-shield. Strong vs cavalry (> savar in RPS).
 ; Session-1 combat values: 1000 x100 damage = 10 dmg/hit; 6 hits to kill Kargar (60 HP).
 ; Piyade mirror combat: 100 HP ÷ (10 dmg × 1 hit/s) = 10s to resolve Piyade vs Piyade.
@@ -70,6 +74,7 @@ attack_damage_x100 = 1000
 attack_speed_per_sec = 1.0
 
 ; Turan_Piyade (foot infantry, Turan) — mirror of Iran Piyade for Phase 2 session 1.
+; status: calibrated — identical to Iran Piyade; same calibration evidence applies.
 ; Identical stats — RPS effectiveness matrix differentiating unit types ships in session 2.
 ; TODO: add Turan-specific RPS effectiveness in Phase 2 session 2 when full unit roster lands.
 [sub_resource type="Resource" id="unit_turan_piyade"]
@@ -87,6 +92,8 @@ attack_damage_x100 = 1000
 attack_speed_per_sec = 1.0
 
 ; Kamandar (Iran archer) — 01_CORE_MECHANICS.md §6, Phase 2 session 2 wave 1B
+; status: calibrated — DPS math + RPS matchup ratios documented; session-2 RPS
+;   live-test confirmed triangle. AI-vs-AI army composition not yet validated.
 ; Ranged infantry. Glass cannon — high per-hit damage, low HP, slow attack.
 ; RPS role: kamandar > piyade (archers shred infantry at range).
 ;           savar > kamandar (cavalry charges close range gap fast).
@@ -108,6 +115,8 @@ attack_damage_x100 = 1500
 attack_speed_per_sec = 0.7
 
 ; Savar (Iran cavalry) — 01_CORE_MECHANICS.md §6, Phase 2 session 2 wave 1B
+; status: calibrated — DPS math + RPS rationale documented; session-2 live-test
+;   confirmed savar>kamandar decisive charge. AI-vs-AI army mix not yet validated.
 ; Heavy mounted infantry. Tanky, fast, strong per-hit.
 ; RPS role: savar > kamandar (cavalry charge closes range quickly).
 ;           piyade > savar (massed spears stop horses — 0.7× savar vs piyade).
@@ -128,6 +137,8 @@ attack_damage_x100 = 1200
 attack_speed_per_sec = 0.9
 
 ; Asb-savar Kamandar (Iran horse archer) — 01_CORE_MECHANICS.md §6, Phase 2 session 2 wave 1B
+; status: placeholder — "Tier 1-equivalent — rebalanced upward when Tier 2 tech ships
+;   (Phase 4)." Kiting AI not implemented. Stats are starting-point guesses only.
 ; Combined mounted archer. Mobile, ranged, but vulnerable to sustained melee.
 ; RPS role: asb_savar_kamandar has 1.2× vs piyade (kiting); 0.5× vs savar (outrun but can't
 ;           outlast sustained cavalry engagement); neutral vs kamandar foot archers.
@@ -149,6 +160,7 @@ attack_damage_x100 = 1300
 attack_speed_per_sec = 0.6
 
 ; Turan_Kamandar (Turan archer) — mirror of Iran Kamandar for Phase 2 session 2.
+; status: calibrated — mirror of Iran Kamandar; same calibration evidence applies.
 ; RPS folding: combat_matrix lookup strips "turan_" prefix; same matrix row as kamandar.
 ; Separate unit_type key allows visual/color differentiation (Turan-red palette).
 [sub_resource type="Resource" id="unit_turan_kamandar"]
@@ -166,6 +178,7 @@ attack_damage_x100 = 1500
 attack_speed_per_sec = 0.7
 
 ; Turan_Savar (Turan cavalry) — mirror of Iran Savar for Phase 2 session 2.
+; status: calibrated — mirror of Iran Savar; same calibration evidence applies.
 ; RPS folding: combat_matrix strips "turan_" prefix; same matrix row as savar.
 [sub_resource type="Resource" id="unit_turan_savar"]
 script = ExtResource("2_unitstats")
@@ -182,6 +195,7 @@ attack_damage_x100 = 1200
 attack_speed_per_sec = 0.9
 
 ; Turan_Asb_Savar (Turan horse archer) — mirror of Iran Asb-savar Kamandar.
+; status: placeholder — mirror of Iran Asb-savar Kamandar; same placeholder status.
 ; Key is &"turan_asb_savar" (shorter than Iran's compound name).
 ; RPS folding: _resolve_key("turan_asb_savar") → strips prefix → "asb_savar" →
 ;   _turan_base_to_iran_key("asb_savar") → &"asb_savar_kamandar" row.
@@ -207,6 +221,8 @@ attack_speed_per_sec = 0.6
 ; =========================================================================
 
 ; Throne (تخت) — 01_CORE_MECHANICS.md §5
+; status: calibrated — max_hp=2000 is feel-reasoned (2-3 min focused fire for a small
+;   army per session-9 DPS math). Win-condition live-test pending; retune after AI-vs-AI.
 ; Capital building. Pre-placed. Loss = defeat. Spawns workers.
 ; High HP — destroying it ends the match; must require sustained effort.
 ; No farr_per_tick — Throne is not a Farr generator.
@@ -219,6 +235,9 @@ construction_ticks = 0
 farr_per_tick = 0.0
 
 ; Khaneh (house) — 01_CORE_MECHANICS.md §5
+; status: calibrated — max_hp=200 live-tested session-9 (~20s for solo piyade, felt right).
+;   population_capacity=5 anchored to spec (01_CORE_MECHANICS.md §5, §9.L1 session-6 revert).
+;   construction_ticks=90 is a placeholder (3s — originally a dwell-skeleton value).
 ; Population cap +10 per building (placeholder starting point — spec says +5;
 ; Phase 3 session 1 wave 1C kickoff opted for +10 to give workers more
 ; headroom while production queues are pending session 2; balance-engineer
@@ -238,6 +257,9 @@ farr_per_tick = 0.0
 population_capacity = 5
 
 ; Mazra'eh (farm) — 01_CORE_MECHANICS.md §5
+; status: calibrated — cost anchored to spec (60 coin per §5). construction_ticks=540
+;   derived via Phase-3-session-3 open consultation (timing ladder rationale documented).
+;   max_hp=300 calibrated by parity with Ma'dan (soft economy target framing).
 ; Generates grain (via worker-gathered ResourceNode, per RESOURCE_NODE_CONTRACT.md).
 ; "60 coin" per spec. Medium HP — farms should be raidable but not trivially destroyed.
 ; farr_per_tick = 0 — farms don't generate Farr.
@@ -261,6 +283,10 @@ construction_ticks = 540
 farr_per_tick = 0.0
 
 ; Ma'dan (مَعدَن, mine / source) — 01_CORE_MECHANICS.md §5
+; status: calibrated — coin_cost=40 anchored to spec (§5 explicit). modifier_value_x100=150
+;   calibrated (50% yield boost — 2.0× rejected as degenerate, rationale documented).
+;   construction_ticks=660 from timing-ladder open consultation. No live-test of
+;   mine-exploitation economy under real combat pressure yet.
 ; Buff-emitter building. When placed within modifier_radius_m of a MineNode,
 ; registers itself with that mine and multiplies effective coin_yield_per_trip
 ; by modifier_value_x100 / 100 (fixed-point per Sim Contract §1.6).
@@ -314,6 +340,9 @@ modifier_radius_m = 4.0
 modifier_stacks = false
 
 ; Sarbaz-khaneh (barracks) — 01_CORE_MECHANICS.md §5
+; status: calibrated — coin_cost=100 anchored to spec (§5). construction_ticks=780
+;   from timing-ladder open consultation (symmetric 120-tick gaps above Ma'dan and
+;   below Atashkadeh). max_hp=400, training costs all calibrated at Wave 3A.6.
 ; Produces Tier 1 military: Piyade, Kamandar. "100 coin" per spec.
 ; Medium-high HP — not as durable as Atashkadeh (sacred flame) but must
 ; survive a raid long enough for garrisoned units to react.
@@ -367,6 +396,10 @@ train_piyade_cost_grain = 10
 train_piyade_dwell_ticks = 90
 
 ; Atashkadeh (fire temple) — 01_CORE_MECHANICS.md §5
+; status: calibrated — coin_cost=150/grain_cost=50 anchored to spec (§5 SSOT). max_hp=600
+;   spec-wins override (brief suggested 400; §4.3 −5 Farr drain named it qualitatively
+;   distinct). construction_ticks=900 from timing-ladder. farr_per_tick + farr_per_min_x100
+;   anchored to §4.3 (+1 Farr/min). Farr drain rates anchored to Phase-3 open space resolution.
 ; Cost: "150 coin, 50 grain" per §5 Tier-1 table (spec-SSOT; not a suggestion).
 ; Prerequisite for Tier 2 advance (Qal'eh requires Atashkadeh built, per §8).
 ;
@@ -397,6 +430,10 @@ farr_per_tick = 0.000556
 farr_per_min_x100 = 100
 
 ; Sowari-khaneh (سواری‌خانه, cavalry stable) — 01_CORE_MECHANICS.md §5
+; status: calibrated — coin_cost=200 anchored to spec (§5 Tier-2 table). max_hp=750 and
+;   construction_ticks=1080 from Wave 2B open consultation (HP/tick ladder rationale
+;   documented). Training costs from Wave 3A.6 (UnitStats canonical source). Tier-2
+;   consumers deferred to Phase 4.
 ; Produces Savar (cavalry). "200 coin" per §5 Tier-2 table (line 194).
 ; grain_cost = 0: Tier-2 institutional buildings are coin-economy-framed;
 ; only the Tier-2 upgrade itself (Qal'eh) and sacral buildings carry grain.
@@ -441,6 +478,9 @@ train_savar_cost_grain = 20
 train_savar_dwell_ticks = 150
 
 ; Tirandazi (تیراندازی, archery range) — 01_CORE_MECHANICS.md §5
+; status: calibrated — coin_cost=175 anchored to spec (§5 Tier-2 table). max_hp=650 and
+;   construction_ticks=960 from Wave 2B open consultation. Training costs from Wave 3A.6.
+;   Tier-2 consumers deferred to Phase 4.
 ; Produces advanced Kamandar variants (Asb-savar Kamandar / Parthian-shot).
 ; "175 coin" per §5 Tier-2 table (line 195).
 ; grain_cost = 0: same institutional coin-economy framing as Sowari-khaneh.
@@ -482,6 +522,10 @@ train_kamandar_dwell_ticks = 120
 ; FarrConfig sub-resource
 ; =========================================================================
 ; Values from 01_CORE_MECHANICS.md §4 and §9.
+; status: anchored — all thresholds and drain/gain magnitudes derived from
+;   01_CORE_MECHANICS.md §4 + §9 verbatim. Phase-3 drain_rates resolved at
+;   2026-05-13 open space (worker_killed values); forward-compat keys also
+;   anchored to §4 event list. Should only change if spec changes.
 
 [sub_resource type="Resource" id="farr_cfg"]
 script = ExtResource("4_farrconfig")
@@ -522,6 +566,10 @@ drain_rates = {
 ; =========================================================================
 ; CombatMatrix sub-resource
 ; =========================================================================
+; status: calibrated — RPS triangle direction anchored to spec (§6). Multiplier
+;   magnitudes (1.5×, 2.0×, 0.7×, 0.5×) derived from Wave-2B session-2 kickoff
+;   §2 + DPS math comments. "All values are starting points; lead tunes via this
+;   file without code changes." AI-vs-AI army matchup validation pending.
 ; Rock-paper-scissors triangle: piyade > savar > kamandar > piyade
 ; 01_CORE_MECHANICS.md §6: "piyade > savar > kamandar > piyade"
 ;
@@ -589,6 +637,8 @@ effectiveness = {
 ; ResourceNodeConfig sub-resource
 ; =========================================================================
 ; Values from RESOURCE_NODE_CONTRACT.md §7.
+; status: anchored — mine_initial_stock, yield_per_trip, max_workers all derived
+;   from RESOURCE_NODE_CONTRACT.md §7 SSOT. Should only change if RNC §7 changes.
 
 [sub_resource type="Resource" id="res_node_cfg"]
 script = ExtResource("7_resnodeconfig")
@@ -604,6 +654,9 @@ trip_full_load_ticks = 60
 ; =========================================================================
 ; EconomyConfig sub-resource
 ; =========================================================================
+; status: anchored — starting_coin=150 and starting_grain=50 from
+;   01_CORE_MECHANICS.md §3 starting-resource table. Should only change if
+;   spec changes.
 
 [sub_resource type="Resource" id="economy_cfg"]
 script = ExtResource("6_economyconfig")
@@ -615,6 +668,10 @@ resource_nodes = SubResource("res_node_cfg")
 ; AIConfig sub-resource
 ; =========================================================================
 ; Values from docs/AI_DIFFICULTY.md §1.
+; status: calibrated — cadence ticks and army thresholds derived from
+;   AI_DIFFICULTY.md §1 (authored at Wave 3B). normal_wave_cadence_ticks=3600
+;   live-tested session-9 (2-min wait = real-game-feel validated). Easy/Hard
+;   tiers are proportionally scaled starting points; not yet AI-vs-AI validated.
 
 [sub_resource type="Resource" id="ai_cfg"]
 script = ExtResource("8_aiconfig")
@@ -634,6 +691,11 @@ hard_attack_army_threshold = 16
 ; =========================================================================
 ; FogConfig sub-resource
 ; =========================================================================
+; status: anchored — all sight radii derived from FOG_DATA_CONTRACT.md §2.2
+;   canonical table. §9.L1 spec-wins at Wave 3A.0 overrode brief's inflated
+;   values (documented in comments below). Should only change if FOG_DATA_CONTRACT
+;   §2.2 changes. Sowari-khaneh/Tirandazi=2 cells is balance-engineer discretion
+;   (table gap) but treated as anchored for consistency with the §2.2 pattern.
 ; Values from FOG_DATA_CONTRACT.md §2.2 sight-radius table.
 ; All sight radii are integer cell counts at 4m/cell.
 ;
@@ -682,7 +744,7 @@ sight_madan_cells = 0
 
 [resource]
 script = ExtResource("1_balancedata")
-constants_version = "2026-05-23-phase-3-session-7-wave-3a6-training-schema"
+constants_version = "2026-05-29-phase-3-session-9-balance-status-tags"
 units = {
 &"kargar": SubResource("unit_kargar"),
 &"piyade": SubResource("unit_piyade"),
