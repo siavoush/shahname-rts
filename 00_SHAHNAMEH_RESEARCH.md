@@ -19,7 +19,7 @@ ssot_for:
 references: [DECISIONS.md, 01_CORE_MECHANICS.md, 02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, 00b_DIV_RESEARCH.md]
 tags: [research, lore, shahnameh, source-material, art-direction, market]
 created: 2026-04-22
-last_updated: 2026-05-01
+last_updated: 2026-05-28 (dehqan-compression acknowledgment paragraph added per session 9 close retro follow-up; loremaster paste-ready)
 ---
 
 # Shahnameh RTS — Research & Scoping Document
@@ -52,6 +52,14 @@ This is a pivot from an earlier Dune RTS concept. Its technical conclusions (God
 **Abolqasem Ferdowsi** (c. 940–1020 CE) was a Persian poet from Tus, in Khorasan (northeastern Iran). He spent roughly 30 years composing the *Shahnameh*, completing it around 1010 CE. He dedicated the work to Sultan Mahmud of Ghazni, who — by one famous account — underpaid him; Ferdowsi reportedly refused the meager reward and left Ghazni, though the story may be embroidered.
 
 Ferdowsi's achievement is not only literary. He composed the *Shahnameh* in **pure Persian**, deliberately avoiding Arabic loanwords in a conscious act of cultural preservation during a post-conquest era when Arabic dominated learned writing. Iranians credit Ferdowsi with *saving the Persian language itself*. His line — *بسی رنج بردم در این سال سی / عجم زنده کردم بدین پارسی* ("I endured great toil during these thirty years / I revived the Persian people with this Persian") — is a cultural touchstone across the Persianate world.
+
+### Dehqan — Ferdowsi's class, and a deliberate compression in this project's framing
+
+The **dehqan** (دهقان, literally "landed cultivator") is the social-administrative class Ferdowsi himself came from — village-level landed administrators responsible for tax collection, local justice, and the preservation of pre-Islamic Iranian cultural memory across the Islamic centuries. Ferdowsi's own dehqan-stock identity is load-bearing for the *Shahnameh* itself: the opening lines invoke the dehqan tradition of preserving the ancient stories as an act of stewardship, and Ferdowsi composed the epic while his own dehqan lands were taxed away by Ghaznavid pressures. The act of preservation — the farm, the story — as resistance to forces that would uproot them both.
+
+**A deliberate compression worth naming openly.** The dehqan as a specific institutional category is most strongly attested in the **late-Sasanian and early-Islamic periods** (5th-9th centuries CE), not in the Kayanian heroic age the project is set in. The technical institutional form predates the *Shahnameh*'s heroic-age narrative content by centuries; Ferdowsi himself reads the dehqan framing backward into the heroic age, painting the deep past with social texture drawn from his own contemporary understanding. **The project follows Ferdowsi's practice** — citing "dehqan" as a cultural anchor in our cultural-notes (Mazra'eh's farmstead-stewardship register; the dehqan-Throne reciprocity framing across the economy mechanics) where the epic uses it. This is a deliberate-honest compression rather than a strict chronological claim about Kayanian-age institutional reality.
+
+**Forward-compat seam:** an Iranist sanity-check on this compression is queued for Phase 4+ (per `docs/SHAHNAMEH_ECONOMY_RESEARCH.md` §6.3 + §8 confidence-disclosure). If a Shahnameh-khani scholar or specialist consultation refines this framing, downstream cultural-notes inherit the refinement by reference rather than per-file edit. Until that consultation lands, "dehqan" usage in this project follows Ferdowsi's compression as the working framing.
 
 ### The work
 
