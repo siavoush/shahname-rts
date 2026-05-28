@@ -254,3 +254,27 @@ const OVERLAY_KEY_F1: StringName = &"f1_pathfinding"
 const OVERLAY_KEY_F2: StringName = &"f2_farr_log"
 const OVERLAY_KEY_F3: StringName = &"f3_state_machine"
 const OVERLAY_KEY_F4: StringName = &"f4_attack_ranges"
+
+
+# === SIM PACING OVERRIDES (test / live-test quality-of-life) =================
+# Session 9 close retro 2026-05-28 — balance-engineer-p3s3 proposal.
+#
+# Live-test cadence is real wall-clock seconds. The Turan probe fires once
+# every BalanceData.ai.normal_wave_cadence_ticks (3600 ticks = 120s @ 30Hz).
+# At live-test cadence "wait 2 minutes per probe" is wall-clock-expensive.
+#
+# SIM_FAST_MODE = true overrides selected sim-pacing constants with shorter
+# values for live-test iteration speed. TuranController + (forward) other
+# sim-pacing systems read this constant at init. Zero balance.tres changes;
+# zero behavioral change when false.
+#
+# Default: false (normal-game-feel pacing). Toggle to true ONLY for live-test
+# sessions where you want compressed wall-clock to exercise late-game
+# scenarios. NEVER ship to main with true — flip before commit.
+const SIM_FAST_MODE: bool = false
+
+# When SIM_FAST_MODE is true, TuranController._resolve_probe_cadence returns
+# this value instead of BalanceData.ai.normal_wave_cadence_ticks. 300 ticks
+# = 10 seconds at SIM_HZ=30, a comfortable cadence for "probe-fires-quickly"
+# live-test scenarios.
+const SIM_FAST_PROBE_CADENCE_TICKS: int = 300

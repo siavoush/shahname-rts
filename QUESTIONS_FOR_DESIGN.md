@@ -13,7 +13,7 @@ ssot_for:
 references: [01_CORE_MECHANICS.md, DECISIONS.md]
 tags: [log, questions, design-chat, escalations]
 created: 2026-04-23
-last_updated: 2026-05-24 (Shahnameh economy cross-check — 2 refinements + 1 needs-expert-input dehqan-compression flag)
+last_updated: 2026-05-28 (Session 9 close retro — late-game economic pressure gap flagged + 3-voice convergence on T&T thesis commitment)
 ---
 
 # Questions for Design
@@ -37,6 +37,38 @@ Keep entries terse. Long questions fragment the design chat's attention.
 
 ## Open questions
 
+
+## 2026-05-28 — Late-game economic pressure gap (balance-engineer flag, session 9 close retro)
+
+**Context:** Wave 3-BuildingDestructibility (PR #42) closed the last structural blocker for an end-to-end match loop. Combined with the §9 retro convergence across gp-sys + balance-engineer that *"AI-vs-AI unattended runs is the most important balance tool we don't have yet,"* the next-question surfaces: when AI-vs-AI runs land, what will the match-pacing data actually show?
+
+**The gap (balance-engineer-p3s3 retro reflection 2026-05-28):**
+
+> *"The economy curve has no late-game pressure. Coin and grain accumulate indefinitely — no population ceiling pressure on resource consumption, no upkeep cost on units, no research cost. A player or AI that reaches mid-game in stable resource state has unlimited coin/grain and no reason to force engagement. The 'economic tension → forced engagement' loop that drives RTS pacing doesn't exist yet."*
+
+**Why it matters now (not at Phase 4 only):**
+
+- The "15-25 minute match" target from `01_CORE_MECHANICS.md §0` cannot be validated by AI-vs-AI data until the pacing-pressure loop exists. AI-vs-AI runs in Phase 3 will produce match-duration distributions that may misrepresent Phase 4 pacing — AI accumulates indefinitely rather than being forced to engage.
+- The 3-voice convergence on Trade & Transport (loremaster + balance-engineer + user) lands precisely here: **upkeep is the missing pressure mechanism**, AND per loremaster's research, upkeep-as-royal-largesse (down-flow, royal duty) is BOTH the culturally-correct framing AND the structurally-correct pacing fix. Same lever, two angles.
+
+**Design-chat questions:**
+
+1. **Commit to Trade & Transport for Phase 4+ entry?** Loremaster verdict (2026-05-28): SHIP T&T. Cultural-fidelity gain + positioning gain outweigh implementation cost + design-iteration cost. The cultural-authenticity-as-load-bearing rule is the project's stated philosophy; SC2-with-Shahnameh-skin would be the moment shipped reality diverges from stated philosophy. Concrete proposal: ship T&T with **upkeep-as-royal-largesse framing** (not upkeep-as-tax).
+
+2. **Bizhan-Manizheh as canonical caravan-mechanic anchor.** Rostam-disguised-as-caravan-master infiltrating Turan is the mechanic-meets-narrative beat that lets "the mechanic IS the theology" framing extend into Phase 4+. The caravan is both economic primitive AND literary form (cover-for-rescue; bridge-between-kingdoms; site-of-vulnerability-AND-craft).
+
+3. **AI-vs-AI batch infrastructure as Wave 3-Sim (pre-Phase 4 prerequisite).** Joint task: balance-engineer specs result format (match duration, first-engagement tick, army size ratios, end-state resources); engine-architect implements headless batch runner; qa-engineer owns batch script. Wave 3-BD shipped the last structural blocker; the runner is the next missing infrastructure piece.
+
+4. **Royal-largesse design surface (from prior 2026-05-24 entry, still open).** Refinement 2 from `docs/SHAHNAMEH_ECONOMY_RESEARCH.md`: royal largesse / down-flow is canonical and MISSING from current project framing. Where does it land — building-flavored (treasury), event-flavored (largesse-dispensing during festivals), or unit-flavored (royal-gift effects on unit production)?
+
+**Cross-references:**
+- `docs/SHAHNAMEH_ECONOMY_RESEARCH.md` (loremaster side-quest, 2026-05-24).
+- §9.J5 watchlist (session 9 close retro codification of the side-quest dispatch pattern).
+- balance-engineer-p3s3 retro reflection (2026-05-28).
+
+**Status:** Open for design-chat. Lead awaits direction on whether Phase 4+ entry commits to T&T (with upkeep-as-royal-largesse framing) OR ships standard SC2-economy with explicit deferral of T&T to Phase 5+ pending market signal.
+
+---
 
 ## 2026-05-24 — Shahnameh economy cross-check — two refinements + one needs-expert-input flag
 
