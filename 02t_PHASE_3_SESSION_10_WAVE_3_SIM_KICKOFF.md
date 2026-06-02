@@ -1,8 +1,8 @@
 ---
 title: Wave 3-Sim — Headless AI-vs-AI Batch Runner (Session 10 Kickoff)
 type: kickoff
-status: brief-v1.0.1-design-questions-resolved-pending-mirror-review
-version: 1.0.1
+status: brief-v1.0.2-mirror-findings-folded-in-ready-for-track-dispatch
+version: 1.0.2
 owner: lead
 session: phase-3-session-10
 wave: 3-sim
@@ -138,16 +138,16 @@ The Throne's sovereignty-bearing-institutional anchor-category classification co
 
 **Lead lean:** 60,000 ticks (33 minutes @ 30Hz). Buffer above the upper target. Matches that hit timeout are flagged as `outcome=stalemate` with full state captured — this is itself a balance signal (late-game pressure gap empirical evidence).
 
-### Q3: RNG seed strategy — RESOLVED v1.0.1 (user 2026-06-02)
+### Q3: RNG seed strategy — RESOLVED v1.0.1, REFRAMED v1.0.2 (mirror C1.2/C5.2)
 
-**RESOLUTION: Defer GameRNG. Engine-architect (Track 2) inventories existing randomness sources + threads seeds through ad-hoc randomness for MVP.**
+**RESOLUTION: Defer GameRNG. Empirical inventory (lead-side grep at v1.0.2 mirror pass) found NO `randf` / `randi` / `randf_range` / `seed()` call-sites in production code (`game/scripts/`). Q3 is structurally a verify-empty + discipline-rule track-action, not a must-ship inventory deliverable.**
 
 - **Seed-at-batch-level:** master-seed → per-match-seed via deterministic derivation (e.g., `match_seed = master_seed XOR match_index`). Batch is reproducible.
-- **Match-level reproducibility:** seeded ad-hoc randomness (existing `randf` / `randi` / `randf_range` call-sites in production code, called via `seed(match_seed)` at match-start).
-- **NOT in scope:** shipping `GameRNG` autoload as a co-resident deliverable. That's deferred to a later wave when the project has multiple consumers of deterministic randomness + the schema-design cost makes sense.
-- **Engine-architect (Track 2) deliverable:** inventory the randomness sources in production code (`git grep -nE "randf|randi|randf_range|seed\(" game/scripts/`), document them in a comment block in the headless runner source, verify `seed(N)` produces deterministic match-internal randomness. If any randomness source is non-seedable (e.g., wall-clock-derived), flag for ad-hoc fix-up.
+- **Match-level reproducibility today:** trivially achieved — no randomness sources exist in production code yet. Match-internal determinism is currently a free property.
+- **NOT in scope:** shipping `GameRNG` autoload as a co-resident deliverable. That's deferred to a later wave when the project HAS multiple consumers of deterministic randomness + the schema-design cost makes sense.
+- **Engine-architect (Track 2) deliverable (REFRAMED v1.0.2):** **(a) verify-empty grep** — re-run `/usr/bin/grep -rn "randf\\|randi\\|seed(" game/scripts/` excluding tests/ at implementation time; confirm still empty (or surface the call-sites + flag for ad-hoc seed-wiring). **(b) discipline-rule** — add a comment block at the top of `headless_match_runner.gd` documenting: *"This runner assumes deterministic match-internal randomness. If any production code introduces `randf`/`randi`/`randf_range` later, that surface MUST route through `seed(match_seed)` at match-start OR through a future `GameRNG.next_*()` API. Failure to do so silently breaks batch reproducibility."* **(c) seed() call at match-start** — `seed(match_seed)` is called at the top of each match's setup, defensively, even when inventory is empty.
 
-**Why defer GameRNG:** scope-control. Wave 3-Sim is already a 3-track joint task; adding a 4th deliverable (GameRNG autoload schema + tests + integration) puts the wave at risk of over-scoping. The MVP runner doesn't NEED `GameRNG` — it needs deterministic-given-seed match-internal randomness, which `seed()` provides today.
+**Why defer GameRNG:** scope-control. Wave 3-Sim is already a 3-track joint task; adding a 4th deliverable (GameRNG autoload schema + tests + integration) puts the wave at risk of over-scoping. AND the inventory is genuinely empty today — `GameRNG` would be a zero-consumer autoload at ship-time.
 
 **Default seed behavior:** `--seed random` (each match uses a fresh seed) for statistical sampling. `--seed N` flag produces a deterministic match for replay / debugging.
 
@@ -229,8 +229,15 @@ balance-engineer Track 1 owns the canonical signal list — this is a starting p
 2. Classification: which signals are **calibration-relevant** (drive tuning decisions) vs. **diagnostic-only** (useful when investigating an outlier but not for routine analysis).
 3. Aggregation conventions: which signals are summable across matches (e.g., `units_killed_total`); which are distributional (e.g., `duration_ticks` → percentiles); which are binary (e.g., `iran.throne_destroyed`).
 4. Concrete `<example_match.json>` files in the doc.
+5. **Iran build-order affordability check (added v1.0.2 per mirror C5.3).** Cross-check the §3 Q4 build-order schedule against current balance.tres costs:
+   - **Tick 0:** 5 workers gathering coin from nearest mines. Starting coin = `economy.starting_coin` (from balance.tres). Income rate at 5-worker / mine-adjacent = balance.tres `economy.coin_per_tick_per_worker_at_mine` × 5.
+   - **Tick 300 (Khaneh #1):** Cost = `bldg_khaneh.cost_coin` + `bldg_khaneh.cost_grain`. Verify 5-worker × 300-tick income covers this WITH the construction-time worker-loss factor (one worker stops gathering during build). Flag overshoot/undershoot.
+   - **Tick 1200 (Sarbaz-khaneh #1):** Same analysis — verify cumulative income covers Khaneh + Sarbaz-khaneh costs.
+   - **Tick 2400 (Piyade #1 trained):** Verify Sarbaz-khaneh has 1200 ticks of build/produce window to deliver first Piyade by tick 2400. Check `bldg_sarbaz_khaneh.construction_ticks` + `bldg_sarbaz_khaneh.training_ticks_piyade`.
+   - **First Turan probe arrival (~tick 3600 per Wave 3B Normal cadence):** Iran should have ≥1 Piyade defending by then. If the schedule is structurally infeasible (e.g., costs exceed cumulative income at the tick), the build-order is unviable as a reference AI and Track 1 proposes adjustments.
+   - **Output:** "Build-order feasibility table" in the result-format spec doc — one row per build-order step, columns = (tick, action, cost, cumulative-income-by-then, surplus/deficit, feasible y/n). If any row is "feasible: n", balance-engineer proposes either revised tick-schedule OR flags as a balance-tuning gap for a follow-up wave.
 
-**Estimated effort:** 60-90 minutes wall-clock for the spec doc.
+**Estimated effort:** 60-90 minutes wall-clock for the spec doc + ~20 min for the affordability table.
 
 **Coordination:** Tracks 2 + 3 read this spec to implement against. Track 1 should ship FIRST (or at least the schema sketch ships first; iteration on classification happens in parallel).
 
@@ -240,12 +247,16 @@ balance-engineer Track 1 owns the canonical signal list — this is a starting p
 
 **Deliverable:** `game/scripts/sim/headless_match_runner.gd` (autoload OR scene script — engine-architect picks the cleaner shape) + integration with existing autoloads (SimClock, GameState, ResourceSystem, etc.) for clean per-match reset.
 
+**SSOT — relationship to MatchHarness (mirror C1.1, v1.0.2):** A canonical match-run harness already exists at `game/tests/harness/match_harness.gd` (used by `test_match_harness.gd` + Wave 3B + Throne integration tests). `HeadlessMatchRunner` MUST NOT duplicate that orchestration — it MUST wrap or extend `MatchHarness` for the reset-and-tick primitives, and add ON TOP: (i) DummyIranController spawn, (ii) `EventBus.throne_destroyed` subscription for win-condition detection, (iii) NDJSON result-emission, (iv) timeout enforcement, (v) `seed(match_seed)` at match-start. If engine-architect determines `MatchHarness` cannot host headless-runner concerns cleanly, the resolution is **promote `MatchHarness` to a more capable shared harness + use it from HeadlessMatchRunner**, NOT fork a parallel sim-run codepath. Forking creates a multi-SSOT drift surface across `match_harness.gd` and `headless_match_runner.gd` that mirror will block on at next-wave-review.
+
 **Sub-deliverables:**
 1. **Headless boot path.** Godot launch command produces a running sim instance with no UI, exits cleanly when match ends or timeout fires.
 2. **Iran dummy-AI implementation.** Per §3 Q4 spec — a "DummyIranController" autoload (mirroring TuranController structure) that executes the canonical build-order from match-start.
 3. **Match orchestration loop.** Detects win-condition via `EventBus.throne_destroyed`; on match end, captures state from existing autoloads (Game state, Resource state, etc.) and emits the result NDJSON per Track 1's spec.
-4. **Reset discipline.** Verify ALL autoload `reset()` methods are idempotent + complete (no state leaks across consecutive matches in the same Godot process). Existing reset methods at: SimClock, GameState, ResourceSystem, FarrSystem, SpatialIndex, TuranController, FogSystem. Audit pass + extend any that aren't complete.
-5. **GameRNG decision** (per §3 Q3). Either ship GameRNG autoload as co-resident OR document the randomness-source inventory + how seeds propagate today.
+4. **Reset discipline — split into 4a + 4b per mirror C4.1 (v1.0.2):**
+   - **4a. AUDIT-ONLY** (`audit-only` track-mode per §9.B4): verify existing autoload `reset()` methods are idempotent + complete on the following surfaces: `SimClock`, `GameState`, `ResourceSystem`, `SpatialIndex`, `TuranController`, `FarrSystem`. For each, confirm reset() clears all internal state + emits `[<system>] reset` log per §9.M6. Surface gaps in a "RESET AUDIT" comment block in the headless runner; if any are non-trivial, lift to a fix-up wave rather than carrying the fix in this wave.
+   - **4b. MUST-SHIP** (`must-ship` track-mode per §9.B4): write `FogSystem.reset()` — it does not exist today (verified empirically lead-side at v1.0.2 mirror pass). Spec: clear all per-team visibility-cell data, clear vision-source registry, re-load FogConfig from BalanceData if needed, emit `[fog] reset` log. Add unit test `test_fog_system_reset.gd` verifying idempotency + complete state-clear. Same audit-and-must-ship split applies to the 5 additional autoloads enumerated in §6 (CommandPool, FarrDrainDispatcher, SelectionManager, PathSchedulerService, DebugOverlayManager) — each is audit-only IF a reset() already exists, or must-ship-skeletal-reset() IF it does not. Engine-architect's first task is grepping which side of the line each falls on.
+5. **GameRNG decision** (per §3 Q3 reframed v1.0.2): verify-empty grep + add discipline-rule comment block + call `seed(match_seed)` at match-start. NO co-resident GameRNG autoload ships this wave.
 
 **§9.M6 observability:** Runner must emit `[runner]` logs at every state-change (match_start, match_end, throne_destroyed, timeout). State-change-gated discipline per §9.M6.4 — no per-tick spam.
 
@@ -280,18 +291,21 @@ balance-engineer Track 1 owns the canonical signal list — this is a starting p
 
 ## §5 — First-Consumer Trace (per §9.D11)
 
-**First consumer:** balance-engineer's AI-vs-AI tuning cycle, which reads the per-batch aggregated reports to prioritize `placeholder → calibrated` promotions in balance.tres.
+**In-game co-resident first consumer (per §9.D11 strict reading — mirror C2.1, v1.0.2):** `HeadlessMatchRunner._on_throne_destroyed(team_id)` — the runner itself is the IN-CODE consumer of `EventBus.throne_destroyed`, firing IMMEDIATELY on the first match's first throne-fall during the wave's own integration tests. The runner reads the event, captures winner = other_team, emits NDJSON, exits cleanly. This consumer ships co-resident with the producer (the runner subscribes to an event the gameplay code already emits as of Wave 3-BD); the integration test `test_headless_runner_win_condition.gd` fires this consumer within the wave's own test surface, satisfying §9.D11's "co-resident verifiability" requirement.
 
-**First-fire tick:** Not in-game tick. Consumer fires at human-tuning time, immediately after the wave ships — balance-engineer runs the batch (e.g., 50 matches), reads the aggregate report, identifies the top-3 `placeholder` entries by impact, ships balance.tres revisions in a follow-up balance-tuning wave.
+**Downstream human consumer:** balance-engineer's AI-vs-AI tuning cycle, which reads the per-batch aggregated reports to prioritize `placeholder → calibrated` promotions in balance.tres.
+
+**First-fire tick:** In-code consumer fires within ms of `EventBus.throne_destroyed.emit()` during the wave's integration tests. Human consumer fires at human-tuning time, immediately after the wave ships — balance-engineer runs the batch (e.g., 50 matches), reads the aggregate report, identifies the top-3 `placeholder` entries by impact, ships balance.tres revisions in a follow-up balance-tuning wave.
 
 **Gate that would prevent first fire:**
 - Runner doesn't terminate (matches hit timeout indefinitely) → no usable duration data.
 - NDJSON format is parse-error-prone → no aggregation possible.
 - Reset discipline gap (workspace bleed between consecutive matches) → match results corrupted; data unreliable.
+- `EventBus.throne_destroyed` subscription not wired correctly → in-code consumer never fires; runner never exits cleanly on win-condition.
 
-If any of these gates closes the integration loop, the wave's value-prop fails at first-consumer time. Track 2 (engine-architect) owns gate 1 + gate 3; Track 1 (balance-engineer) owns gate 2.
+If any of these gates closes the integration loop, the wave's value-prop fails at first-consumer time. Track 2 (engine-architect) owns gates 1 + 3 + 4; Track 1 (balance-engineer) owns gate 2.
 
-**Co-resident verifiability:** YES — Track 1's tests + Track 3's tests verify the format + reset discipline within the wave itself. balance-engineer's first real consumption happens immediately post-merge; no wait for downstream waves.
+**Co-resident verifiability:** YES — Track 1's tests + Track 3's tests + Track 2's `test_headless_runner_win_condition.gd` verify the format + reset discipline + event-subscription within the wave itself. balance-engineer's first real human consumption happens immediately post-merge; no wait for downstream waves.
 
 ---
 
@@ -308,30 +322,35 @@ Per §9.M6.3, the brief enumerates pre-rule files touched by this wave AND verif
 | `tools/run_ai_vs_ai_batch.sh` | `echo` lines for batch progress; bash-native, no `[<system>]` tag prefix required for shell tools |
 | `tools/aggregate_match_results.py` (or .gd) | Aggregation script — diagnostic only, no per-match logs needed |
 
-**Modified pre-rule files (§9.M6.3 back-fill audit):**
+**Modified pre-rule files (§9.M6.3 back-fill audit) — REVISED v1.0.2 per mirror C3.1 + C3.2:**
 
-| File | Modification | §9.M6 status |
-|---|---|---|
-| `game/scripts/autoload/sim_clock.gd` | Verify `reset()` is complete | EXISTING — verify log on reset event |
-| `game/scripts/autoload/game_state.gd` | Verify `reset()` is complete | EXISTING — verify log on reset event |
-| `game/scripts/autoload/resource_system.gd` | Verify `reset()` is complete | EXISTING — `[resource]` logs added in session 9 sweep; verify reset emits |
-| `game/scripts/autoload/spatial_index.gd` | Verify `reset()` is complete | EXISTING — verify log on reset event |
-| `game/scripts/autoload/turan_controller.gd` | Verify `reset()` is complete | EXISTING — `[turan]` logs solid post-Wave 3-BD; verify reset emits `[turan] reset` |
-| `game/scripts/autoload/fog_system.gd` | Verify `reset()` is complete | EXISTING — `[fog]` logs added in session 9 sweep; verify reset emits |
-| `game/scripts/autoload/farr_system.gd` | Verify `reset()` is complete | EXISTING — verify log on reset event |
-| `game/data/balance.tres` | No modification expected | UNAFFECTED |
-| `game/main.tscn` | May need a headless-mode-toggle | TBD by engine-architect |
+| File | Modification | §9.M6 status | track-mode |
+|---|---|---|---|
+| `game/scripts/autoload/sim_clock.gd` | Verify `reset()` is complete | EXISTING — verify log on reset event | `audit-only` |
+| `game/scripts/autoload/game_state.gd` | Verify `reset()` is complete | EXISTING — verify log on reset event | `audit-only` |
+| `game/scripts/autoload/resource_system.gd` | Verify `reset()` is complete | EXISTING — `[resource]` logs added in session 9 sweep; verify reset emits | `audit-only` |
+| `game/scripts/autoload/spatial_index.gd` | Verify `reset()` is complete | EXISTING — verify log on reset event | `audit-only` |
+| `game/scripts/autoload/turan_controller.gd` | Verify `reset()` is complete | EXISTING — `[turan]` logs solid post-Wave 3-BD; verify reset emits `[turan] reset` | `audit-only` |
+| `game/scripts/autoload/fog_system.gd` | **WRITE new `reset()` method** — NO existing reset() (verified empirically lead-side at v1.0.2) | NEW — must emit `[fog] reset` log on first call | **`must-ship`** |
+| `game/scripts/autoload/farr_system.gd` | Verify `reset()` is complete | EXISTING — verify log on reset event | `audit-only` |
+| `game/scripts/autoload/command_pool.gd` | Audit/write `reset()` — added v1.0.2 per mirror C3.2 | EXISTING-OR-NEW — engine-architect classifies via grep | `audit-only`-or-`must-ship` |
+| `game/scripts/autoload/farr_drain_dispatcher.gd` | Audit/write `reset()` — added v1.0.2 per mirror C3.2 | EXISTING-OR-NEW — engine-architect classifies via grep | `audit-only`-or-`must-ship` |
+| `game/scripts/autoload/selection_manager.gd` | Audit/write `reset()` — added v1.0.2 per mirror C3.2 | EXISTING-OR-NEW — engine-architect classifies via grep | `audit-only`-or-`must-ship` |
+| `game/scripts/autoload/path_scheduler_service.gd` | Audit/write `reset()` — added v1.0.2 per mirror C3.2 | EXISTING-OR-NEW — engine-architect classifies via grep | `audit-only`-or-`must-ship` |
+| `game/scripts/autoload/debug_overlay_manager.gd` | Audit/write `reset()` — added v1.0.2 per mirror C3.2 | EXISTING-OR-NEW — engine-architect classifies via grep | `audit-only`-or-`must-ship` |
+| `game/data/balance.tres` | No modification expected | UNAFFECTED | n/a |
+| `game/main.tscn` | May need a headless-mode-toggle | TBD by engine-architect | n/a |
 
-**Mechanical brief-time grep (per §9.M6.3):**
+**Mechanical brief-time grep (per §9.M6.3) — UPDATED v1.0.2 (FogSystem absent confirmed; 5 newly-enumerated autoloads added):**
 
 ```bash
 # Verify every autoload's reset() emits a log line:
-for autoload in sim_clock game_state resource_system spatial_index turan_controller fog_system farr_system; do
-    grep -A 5 "^func reset" "game/scripts/autoload/${autoload}.gd" | grep -E "print|\\[${autoload%_*}\\]" || echo "MISSING: ${autoload}.gd reset() log"
+for autoload in sim_clock game_state resource_system spatial_index turan_controller fog_system farr_system command_pool farr_drain_dispatcher selection_manager path_scheduler_service debug_overlay_manager; do
+    /usr/bin/grep -A 5 "^func reset" "game/scripts/autoload/${autoload}.gd" | /usr/bin/grep -E "print|\\[${autoload%_*}\\]" || echo "MISSING reset() or log: ${autoload}.gd"
 done
 ```
 
-Track 2 (engine-architect) runs this grep + ships any missing reset() logs as part of the wave's §9.M6 back-fill obligation per §9.M6.3.
+Track 2 (engine-architect) runs this grep + ships any missing reset() methods + reset() logs as part of the wave's §9.M6 back-fill obligation per §9.M6.3. **At brief-time the lead-side grep already confirmed `fog_system.gd` is missing reset() entirely** — that one is locked-in `must-ship`. The other 5 newly-enumerated autoloads may be either audit-only or must-ship depending on what the engineer's grep finds.
 
 ---
 
@@ -393,9 +412,9 @@ The wave closes when:
 
 ## §10 — Brief Metadata + Mirror-Reviewer Review Targets
 
-**Brief version:** v1.0.0 (initial draft pending mirror-reviewer brief-time review per §9.D11 + §9.B4 + §9.M6.3 brief-time discipline triad).
+**Brief version:** v1.0.2 (post-mirror-findings-folded-in, ready for track dispatch).
 
-**Mirror-reviewer findings target v1.0.1.** Expected findings categories:
+**Mirror-reviewer findings landed in v1.0.2.** Empirically-verified findings categories:
 - **C1 (schema / canonical-pattern grep):** Track 2's autoload reset() patterns against canonical project autoload reset() patterns at SimClock / GameState etc.
 - **C2 (consumer trace):** §5 First-Consumer Trace verification.
 - **C3 (observability):** §6 §9.M6 touch list verification + mechanical grep.
@@ -453,8 +472,19 @@ Standing by for [ready] broadcast.
 - **Q4 (Iran build-order):** RESOLVED — lead proposal stands. Balance-engineer latitude to refine in result-format spec if analysis warrants.
 - **Q5 (output format):** RESOLVED — NDJSON proposal stands.
 
-**Pending: v1.0.2 mirror-reviewer brief-time review** per §9.D11 + §9.B4 + §9.M6.3 + §9.M6.4 + §9.L11.1 (the new session-9 retro brief-time discipline triad). Mirror's findings will land v1.0.2. Track dispatch begins post-v1.0.2.
+**v1.0.2 (2026-06-02):** mirror-reviewer brief-time review findings folded in. Verdict: FIX-BRIEF FIRST with 2 BLOCKERS + 2 structural fixes + suggestions. Lead-side empirical verification of each BLOCKER pre-patch.
+
+- **BLOCKER C1.1 (MatchHarness SSOT):** Track 2 §4.2 now explicitly states `HeadlessMatchRunner` MUST wrap or extend `game/tests/harness/match_harness.gd`, NOT fork a parallel sim-run codepath. Forking creates a multi-SSOT drift surface mirror would block on at next-wave-review.
+- **BLOCKER C3.1 (FogSystem missing reset()):** lead-side empirical grep confirmed `fog_system.gd` has NO `reset()` method. §6 row promoted from "EXISTING — verify log on reset" to "NEW — `must-ship`, write reset() + emit `[fog] reset` log". Added unit test `test_fog_system_reset.gd` to Track 2's deliverable list.
+- **STRUCTURAL C3.2 (under-enumerated autoload touch list):** §6 §9.M6.3 touch list extended with 5 additional autoloads: `command_pool.gd`, `farr_drain_dispatcher.gd`, `selection_manager.gd`, `path_scheduler_service.gd`, `debug_overlay_manager.gd`. Each is `audit-only`-or-`must-ship` depending on engineer's brief-implementation-time grep.
+- **STRUCTURAL C4.1 (Track 2 §4.2.4 track-mode split):** reset audit sub-deliverable split into 4a `audit-only` (existing reset() methods at SimClock/GameState/etc.) + 4b `must-ship` (write `FogSystem.reset()` + handle the 5 new autoloads per their grep classification).
+- **SUGGEST C2.1 (in-game co-resident first consumer):** §5 First-Consumer Trace strengthened with `HeadlessMatchRunner._on_throne_destroyed(team_id)` as the in-game co-resident consumer of `EventBus.throne_destroyed`, satisfying §9.D11's strict reading. Downstream human consumer (balance-engineer tuning cycle) retained.
+- **SUGGEST C5.2/C1.2 (Q3 reframing for empty inventory):** §3 Q3 + §4.2 sub-deliverable 5 reframed. Lead-side grep at v1.0.2 mirror pass confirmed NO `randf`/`randi`/`seed()` call-sites in production code (`game/scripts/`). Track 2 (a) verify-empty grep + (b) discipline-rule comment block + (c) seed(match_seed) defensively at match-start. NO co-resident `GameRNG` autoload this wave (would be zero-consumer).
+- **SUGGEST C5.3 (Iran build-order affordability check):** Track 1 §4.1 sub-deliverable 5 added — balance-engineer cross-checks the §3 Q4 build-order schedule against balance.tres costs + worker-income rates, produces "build-order feasibility table" in the result-format spec doc. If schedule is structurally infeasible at any tick, propose adjustments or flag as balance-tuning gap.
+- **META-validation note (mirror finding):** "The new §9 rules worked exactly as designed at this brief-time pass" — empirical confirmation that §9.D11 + §9.B4 + §9.M6.3 + §9.M6.4 + §9.L11.1 surface the right class of issues. This is itself evidence the session-9 retro codifications produce the intended brief-shape feedback loop.
+
+Track dispatch begins post-v1.0.2 (this version).
 
 ---
 
-**End brief v1.0.1.**
+**End brief v1.0.2.**
