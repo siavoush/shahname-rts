@@ -1,8 +1,8 @@
 ---
 title: Wave 3-Sim — Headless AI-vs-AI Batch Runner (Session 10 Kickoff)
 type: kickoff
-status: brief-v1.0.0-draft-pending-mirror-review
-version: 1.0.0
+status: brief-v1.0.1-design-questions-resolved-pending-mirror-review
+version: 1.0.1
 owner: lead
 session: phase-3-session-10
 wave: 3-sim
@@ -110,18 +110,25 @@ The retro identified this as a **Wave 3-Sim joint-task candidate**. Session 10 i
 
 ## §3 — Open Design Questions (resolve at brief-review time)
 
-### Q1: Win-condition resolution
+### Q1: Win-condition resolution — RESOLVED v1.0.1 (loremaster cultural verdict 2026-06-02)
 
 **Current state:** `EventBus.throne_destroyed(team)` fires when a Throne reaches HP=0. No "match end" handler exists.
 
-**Question:** When the runner sees `throne_destroyed(team=X)`, does it:
-- (a) Immediately terminate the match (current Throne-destruction = victory)?
-- (b) Continue until BOTH thrones destroyed (mutual annihilation) or one side has no units?
-- (c) Wait some grace period (e.g., 30 ticks) for the losing side's units to settle before declaring victory?
+**Question (was):** When the runner sees `throne_destroyed(team=X)`, does it: (a) terminate immediately, (b) continue until mutual annihilation, or (c) grace period?
 
-**Lead lean:** (a) — clean termination on first Throne destruction. Mutual annihilation is unlikely given Turan's single-probe cadence; if it surfaces in batch data, deal with it then. Match-end is the cleanest signal for batch-data aggregation.
+**RESOLUTION: (a) immediate termination on first throne destruction.** Winner = the OTHER team. Match ends, runner emits result NDJSON, exits cleanly.
 
-**Track 1 (balance-engineer) confirms or overrides.**
+**Cultural framing (loremaster-p3s5 verdict, dispatched 2026-06-02):** *"Match-level (a) and campaign-level continuation are compatible, not in tension."* The Shahnameh's pattern is throne-falls-but-realm-typically-continues across generations (Iraj → Manuchehr revenge; Siavoush → Kay Khosrow vengeance; Afrasiyab as climactic kingdom-fall conclusion). BUT that continuation is **narrative time** (generations, mission-to-mission, campaign-arc-scale), NOT **match time** (single tick-loop, deterministic, NDJSON-emit-and-exit). The headless runner operates at match time; campaign continuation is Phase 5+ scope.
+
+The Throne's sovereignty-bearing-institutional anchor-category classification commits the project culturally to "destruction = end-of-realm" at the building-class level (per `docs/ANCHOR_CATEGORY_TAXONOMY.md` v1.1.0 §1.5), and (a) ships that semantic at the match-resolution layer.
+
+**Bonus loremaster guidance — engineering grace period is acceptable as polish, not cultural concession.** If engine-architect (Track 2) wants ~30 ticks of grace for animation-settling / deterministic-state-stabilization (last attacks resolving, deaths settling), ship it as engineering discipline, NOT framed as cultural homage. The match-termination signal is still "first throne falls = match end"; the ~30-tick wind-down is just clean-shutdown polish.
+
+**Future-narrative seam (Phase 5+):** When campaign-mode work lands, the Iraj→Manuchehr and Siavoush→Kay Khosrow beats become the canonical narrative anchors for "what happens AFTER a throne falls" — these are mission-to-mission seams, not single-match seams. Forward-watch for Phase 5+ campaign-mode kickoff briefs.
+
+**J4 honest-confidence-disclosure (loremaster):** HIGH confidence on the textual claim (Iraj/Siavoush/Afrasiyab beats are unambiguous in the source). HIGH confidence on the match-time-vs-narrative-time distinction. No lower-confidence flags on this Q.
+
+**Implementation note for Track 2 (engine-architect):** runner subscribes to `EventBus.throne_destroyed`; on first emit, capture winner_team = other_team, optionally wait ≤30 ticks for state-settling, emit NDJSON, exit cleanly. Cultural framing pre-validated; engineering polish at engineer's discretion.
 
 ### Q2: Timeout
 
@@ -131,19 +138,22 @@ The retro identified this as a **Wave 3-Sim joint-task candidate**. Session 10 i
 
 **Lead lean:** 60,000 ticks (33 minutes @ 30Hz). Buffer above the upper target. Matches that hit timeout are flagged as `outcome=stalemate` with full state captured — this is itself a balance signal (late-game pressure gap empirical evidence).
 
-### Q3: RNG seed strategy
+### Q3: RNG seed strategy — RESOLVED v1.0.1 (user 2026-06-02)
 
-**Question:** Is the seed deterministic per-match (reproducible) or random (statistical sampling)?
+**RESOLUTION: Defer GameRNG. Engine-architect (Track 2) inventories existing randomness sources + threads seeds through ad-hoc randomness for MVP.**
 
-**Lead lean:** **both, configurable.** Default = `--seed random` (each match uses a fresh seed); flag `--seed N` produces a deterministic match for replay / debugging. The batch runner generates seeds from a master-seed (also deterministic) so the full N-match batch is reproducible at the batch level.
+- **Seed-at-batch-level:** master-seed → per-match-seed via deterministic derivation (e.g., `match_seed = master_seed XOR match_index`). Batch is reproducible.
+- **Match-level reproducibility:** seeded ad-hoc randomness (existing `randf` / `randi` / `randf_range` call-sites in production code, called via `seed(match_seed)` at match-start).
+- **NOT in scope:** shipping `GameRNG` autoload as a co-resident deliverable. That's deferred to a later wave when the project has multiple consumers of deterministic randomness + the schema-design cost makes sense.
+- **Engine-architect (Track 2) deliverable:** inventory the randomness sources in production code (`git grep -nE "randf|randi|randf_range|seed\(" game/scripts/`), document them in a comment block in the headless runner source, verify `seed(N)` produces deterministic match-internal randomness. If any randomness source is non-seedable (e.g., wall-clock-derived), flag for ad-hoc fix-up.
 
-**Note:** Phase 0 `GameRNG autoload` is currently 📋 Planned per ARCH §2. This wave may need to ship it concurrently OR accept that match-internal randomness routes through whatever ad-hoc mechanisms exist today (e.g., `randf_range` calls in production code). engine-architect (Track 2) makes the call: ship GameRNG as a co-resident deliverable OR document the randomness-source inventory as Phase-N+M debt.
+**Why defer GameRNG:** scope-control. Wave 3-Sim is already a 3-track joint task; adding a 4th deliverable (GameRNG autoload schema + tests + integration) puts the wave at risk of over-scoping. The MVP runner doesn't NEED `GameRNG` — it needs deterministic-given-seed match-internal randomness, which `seed()` provides today.
 
-### Q4: Iran AI build-order (MVP-1)
+**Default seed behavior:** `--seed random` (each match uses a fresh seed) for statistical sampling. `--seed N` flag produces a deterministic match for replay / debugging.
 
-**Question:** What's the canonical Iran build-order the dummy AI plays?
+### Q4: Iran AI build-order (MVP-1) — RESOLVED v1.0.1 (user 2026-06-02)
 
-**Lead proposal (balance-engineer confirms or overrides):**
+**RESOLUTION: Lead proposal stands.** Balance-engineer (Track 1) may refine the tick-schedule in their result-format spec doc if they want; the structural shape is locked.
 
 ```
 Tick 0       : 5 starting workers, send to nearest coin mines
@@ -156,6 +166,8 @@ Tick 4800    : Sarbaz-khaneh produces Piyade #2
 ```
 
 The build-order is mechanical, hardcoded, deterministic-given-seed. The point isn't to be a GOOD AI — the point is to be a REFERENCE AI that produces stable comparisons across batch runs.
+
+**Balance-engineer (Track 1) latitude:** if your result-format spec analysis suggests the schedule above produces unviable matches (e.g., Iran is always overwhelmed by Turan's single-probe before any Piyade trains), propose adjusted tick-schedule + cite the analysis. Lead acknowledges balance-engineer ownership of the canonical reference; this is a starting point, not a contract.
 
 ### Q5: Output format
 
@@ -430,4 +442,19 @@ Standing by for [ready] broadcast.
 
 ---
 
-**End brief v1.0.0.**
+## §13 — Revision History
+
+**v1.0.0 (2026-05-28):** initial draft post-session-9-close. Lead-authored autonomously per user "full authority" directive. Open design questions Q1-Q5 surfaced for resolution at brief-review time.
+
+**v1.0.1 (2026-06-02):** open design questions resolved.
+- **Q1 (win-condition):** RESOLVED (a) immediate termination + optional ≤30-tick engineering grace period for state-settling. Loremaster cultural verdict (2026-06-02): cultural framing maps cleanly to (a) at match time; revenge-arc / succession continuation are campaign-mode (Phase 5+) scope. Future-narrative anchors: Iraj→Manuchehr, Siavoush→Kay Khosrow.
+- **Q2 (timeout):** RESOLVED — 60,000 ticks (33 min @ 30Hz). Lead-default; unchanged.
+- **Q3 (RNG seed):** RESOLVED — defer GameRNG. Engine-architect inventories existing randomness sources + threads seeds through ad-hoc `seed(N)`. Master-seed → per-match-seed deterministic derivation for batch reproducibility.
+- **Q4 (Iran build-order):** RESOLVED — lead proposal stands. Balance-engineer latitude to refine in result-format spec if analysis warrants.
+- **Q5 (output format):** RESOLVED — NDJSON proposal stands.
+
+**Pending: v1.0.2 mirror-reviewer brief-time review** per §9.D11 + §9.B4 + §9.M6.3 + §9.M6.4 + §9.L11.1 (the new session-9 retro brief-time discipline triad). Mirror's findings will land v1.0.2. Track dispatch begins post-v1.0.2.
+
+---
+
+**End brief v1.0.1.**
