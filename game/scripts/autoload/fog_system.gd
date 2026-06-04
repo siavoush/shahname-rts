@@ -271,6 +271,41 @@ func get_scout_candidates(team_id: int, max_results: int) -> Array[Vector3]:
 
 
 # ---------------------------------------------------------------------------
+# Reset — match-to-match state clear (Wave 3-Sim Track 2)
+# ---------------------------------------------------------------------------
+
+## Clear all per-match state to pristine. Called by HeadlessMatchRunner +
+## MatchHarness between consecutive matches to prevent workspace bleed.
+##
+## Idempotent — safe to call multiple times in sequence. The grid resizes to
+## current resolved bounds (re-reading from WorldGrid + BalanceData.fog) so a
+## bounds change between matches (e.g., scenario switch) is honored.
+##
+## Cleared state:
+##   - _currently_visible[team]: all bytes → 0 (re-initialized via _init_grid)
+##   - _ever_seen[team]: all bytes → 0 (re-initialized via _init_grid)
+##   - _sources: emptied (every registered handle is dropped)
+##   - _next_handle: reset to 1
+##   - grid dimensions + origin + cell_size: re-resolved from autoloads
+##
+## Note: vision-source callers (buildings + units via SpatialAgentComponent)
+## hold the integer handle from their original register_vision_source call.
+## After reset(), those handles are stale; the standard pattern is for the
+## caller's tree_exiting (or _ready re-init in a fresh match) to re-register.
+## HeadlessMatchRunner spawns fresh entities per match, so this is automatic.
+##
+## Emits `[fog] reset grid_w=N grid_h=N` per §9.M6.4 state-change discipline.
+func reset() -> void:
+	# _init_grid does all the heavy lifting — it clears + resizes the grid arrays
+	# AND clears _sources AND resets _next_handle. Re-resolving bounds + cell_size
+	# is the only addition needed for cross-match reset (vs the initial _ready path).
+	var bounds: Rect2 = _resolve_map_bounds()
+	var cell_size: float = _resolve_cell_size()
+	_init_grid(bounds, cell_size)
+	print("[fog] reset grid_w=%d grid_h=%d cell_size=%.2f" % [grid_w, grid_h, _cell_size_m])
+
+
+# ---------------------------------------------------------------------------
 # Vision source registration — §2.1 (stubs at 3A.0; 3A.5 implements)
 # ---------------------------------------------------------------------------
 
