@@ -116,6 +116,14 @@ var _connected_throne_destroyed: bool = false
 var _connected_unit_health_zero: bool = false
 var _connected_unit_spawned: bool = false
 
+# Test-only escape: when true, _emit_result_and_quit() short-circuits to
+# field-flips only (no JSON emit, no quit(), no _build_result_dict call).
+# Allows integration tests (Step 5: test_headless_runner_*.gd) to drive
+# the runner's signal handlers + timeout-arithmetic in-process without
+# the runner trying to call get_tree() on a non-running SceneTree.
+# Live runs leave this false (the runtime never sets it).
+var _test_skip_emit: bool = false
+
 
 # ---------------------------------------------------------------------------
 # SceneTree lifecycle — entry point
@@ -319,6 +327,12 @@ func _emit_result_and_quit() -> void:
 		return
 	_match_ended = true
 
+	# Test escape (Step 5 integration tests): skip the parts that touch the
+	# running SceneTree (root, get_tree(), quit()). Field-flips already
+	# happened in the caller (_outcome, _winner_team, _timeout_triggered).
+	if _test_skip_emit:
+		return
+
 	var duration_ticks: int = SimClock.tick - _start_tick
 	# Defensive: ensure duration is at least 1 (avoid /0 in duration_seconds
 	# if the match ends on tick 0 for any reason).
@@ -350,7 +364,17 @@ func _emit_result_and_quit() -> void:
 func _build_result_dict(duration_ticks: int) -> Dictionary:
 	var iran: Dictionary = _capture_team_fields(Constants.TEAM_IRAN)
 	var turan: Dictionary = _capture_team_fields(Constants.TEAM_TURAN)
+	return _assemble_result_dict(duration_ticks, iran, turan)
 
+
+# Assemble the top-level result dict from already-built team dicts. Split out
+# from _build_result_dict so the Step 5 integration tests can verify the
+# canonical AI_VS_AI_RESULT_FORMAT.md §2.1 schema shape without depending on
+# a running SceneTree (which _capture_team_fields requires for group queries).
+func _assemble_result_dict(
+		duration_ticks: int,
+		iran: Dictionary,
+		turan: Dictionary) -> Dictionary:
 	var events: Dictionary = {
 		"turan_probes_fired": _turan_probes_fired,
 		"turan_units_deployed_total": 0,  # deferred; needs counter in TuranController
