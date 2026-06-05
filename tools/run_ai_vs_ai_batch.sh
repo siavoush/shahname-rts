@@ -5,10 +5,16 @@
 # per match to <output_dir>/results.ndjson, then calls the aggregation script
 # to produce <output_dir>/aggregate.json.
 #
+# Launch mode: boots main.tscn normally (autoloads registered) with a
+# --headless-batch flag. main.gd._ready() detects the flag and instantiates
+# HeadlessMatchRunner as a child Node. Each invocation is a fresh process —
+# no cross-match state leak. The runner emits one NDJSON line to stdout on
+# match completion, then calls get_tree().quit(0).
+#
 # Usage:
 #   tools/run_ai_vs_ai_batch.sh <N> [--master-seed <S>] [--output <dir>]
-#                               [--godot <path>] [--runner-script <res-path>]
-#                               [--timeout-ticks <T>] [--dry-run]
+#                               [--godot <path>] [--timeout-ticks <T>]
+#                               [--dry-run]
 #
 # Required:
 #   N                    Number of matches to run (positive integer).
@@ -21,10 +27,8 @@
 #                        Default: /tmp/ai_vs_ai_<timestamp>
 #   --godot <path>       Path to Godot binary.
 #                        Default: /Applications/Godot.app/Contents/MacOS/Godot
-#   --runner-script <r>  res:// path to headless_match_runner.gd entry point.
-#                        Default: res://scripts/sim/headless_match_runner.gd
 #   --timeout-ticks <T>  Hard match timeout in sim ticks (default: 60000).
-#   --dry-run            Write 3 fixture NDJSON lines instead of launching Godot.
+#   --dry-run            Write fixture NDJSON lines instead of launching Godot.
 #                        Used by test_batch_runner_dry_run.gd validation tests.
 #
 # Output layout:
@@ -43,7 +47,6 @@ set -euo pipefail
 # Defaults
 # ---------------------------------------------------------------------------
 GODOT_BIN="/Applications/Godot.app/Contents/MacOS/Godot"
-RUNNER_SCRIPT="res://scripts/sim/headless_match_runner.gd"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 OUTPUT_DIR="/tmp/ai_vs_ai_${TIMESTAMP}"
 MASTER_SEED=""
@@ -61,7 +64,7 @@ AGGREGATE_PY="${SCRIPT_DIR}/aggregate_match_results.py"
 # ---------------------------------------------------------------------------
 if [[ $# -eq 0 ]]; then
     echo "Usage: $0 <N> [--master-seed <S>] [--output <dir>] [--godot <path>]" >&2
-    echo "           [--runner-script <res-path>] [--timeout-ticks <T>] [--dry-run]" >&2
+    echo "           [--timeout-ticks <T>] [--dry-run]" >&2
     exit 1
 fi
 
@@ -76,8 +79,6 @@ while [[ $# -gt 0 ]]; do
             OUTPUT_DIR="$2"; shift 2 ;;
         --godot)
             GODOT_BIN="$2"; shift 2 ;;
-        --runner-script)
-            RUNNER_SCRIPT="$2"; shift 2 ;;
         --timeout-ticks)
             TIMEOUT_TICKS="$2"; shift 2 ;;
         --dry-run)
@@ -129,7 +130,6 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
     echo "  Mode:          DRY-RUN (fixture NDJSON, no Godot invocation)"
 else
     echo "  Godot binary:  ${GODOT_BIN}"
-    echo "  Runner script: ${RUNNER_SCRIPT}"
 fi
 echo ""
 
@@ -217,7 +217,8 @@ for (( i=0; i<N_MATCHES; i++ )); do
     fi
 
     # -----------------------------------------------------------------------
-    # Real run: invoke Godot headless with the match runner script.
+    # Real run: boot Godot normally so autoloads register, then pass
+    # --headless-batch so main.gd tears down cleanly after one match.
     # HeadlessMatchRunner reads --match-id, --seed, --timeout-ticks from argv
     # and emits one NDJSON line to stdout on completion.
     # -----------------------------------------------------------------------
@@ -225,7 +226,8 @@ for (( i=0; i<N_MATCHES; i++ )); do
     "${GODOT_BIN}" \
         --headless \
         --path "${GAME_DIR}" \
-        -s "${RUNNER_SCRIPT}" \
+        -- \
+        --headless-batch \
         --match-id "${MATCH_ID}" \
         --seed "${MATCH_SEED}" \
         --timeout-ticks "${TIMEOUT_TICKS}" \
