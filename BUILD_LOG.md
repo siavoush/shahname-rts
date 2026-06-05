@@ -40,12 +40,24 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 **Mirror-reviewer brief-time review (v1.0.1 → v1.0.2):** verdict FIX-BRIEF-FIRST with 2 BLOCKERS + 2 structural fixes + 3 suggestions. All findings empirically verified lead-side before patching. Mirror's meta-finding: *"the new §9 rules worked exactly as designed at this brief-time pass"* — empirical validation §9.D11 + §9.B4 + §9.M6.3 + §9.M6.4 + §9.L11.1 surface the right class of brief-time issues.
 
+**Integration-time mirror code-pass (post-merge, pre-PR-merge — symmetric to brief-time mirror):** dispatched architecture-reviewer for code-pass on the merged branch. Verdict **FIX-FIRST-THEN-MERGE** with 3 BLOCKERS + 4 RISKs. Critical re-attribution: my smoke's anomalies (iran.coin_x100=15000 stuck, military_at_end fields all 0) which I had attributed to "DummyIranController build-commands deferred per carry-forward" were ACTUAL bugs the integration-time pass surfaced — not deferral artifacts.
+
+**3 fix-up commits closed all findings (qa-engineer + engine-architect + lead in parallel):**
+
+- **qa-engineer `19e2ba0` (BLOCKER C1.1):** schema drift — aggregator + dry-run + dry-run-test used `units_alive_at_end` + `events_summary`; spec + runner emit `combat_units_alive_at_end` + `events`. Every real-run aggregate.json silently zero for half its fields. Three-file fix + 4 completeness fixes + Flow 10 round-trip drift sentinel test (feeds spec §5 Example A through aggregator).
+- **engine-architect `c05ba77` (BLOCKER C1.2 + RISK C2.1 + C2.3 + C2.4):** (a) C1.2 path-(a) — `unit.gd._ready` joins `&"units"` group (mirrors Building's `&"buildings"` pattern); DummyIranController + TuranController + any future controller now share one discovery primitive. Side fix: latent `int(null)` crash at `dummy_iran_controller.gd:211`. (b) C2.1 — declared phantom `EventBus.unit_spawned` signal + emit at `unit.gd._ready` with payload; moved runner spawn BEFORE `_spawn_starting_*` in main.gd._ready so subscriptions latch starting-roster emissions (caught a race the brief framing didn't anticipate). (c) C2.3 — `Engine.physics_ticks_per_second=1800 + max_physics_steps_per_frame=12` at runner spawn; empirically ~26 sim-ticks/wall-sec, bottlenecked by sim work not Godot frame budget; 50-match × 60K-tick batch ≈ 28h overnight cycle (acceptable for first-consumer-trace; sim-cost optimization carry-forward to Phase 4+). (d) C2.4 — both `has_signal/has_method` guards hard-asserted at spawn. **N=5 of the defensive-fallback-masking pattern closed.**
+- **lead `e900a08` (BLOCKER C1.3):** missing ARCH §2 rows per wave-close criteria #6 — added Headless AI-vs-AI Batch Runner + DummyIranController autoload rows with honest carry-forward annotations.
+
+**Final 10-match smoke (`--timeout-ticks 600`, apples-to-apples with originally-failing run):** 10/10 valid NDJSON, aggregate.json full canonical schema. **`iran.coin_x100=19000`** (was 15000 stuck — Iran economy now growing per affordability table; AI structurally live). **`military_at_end.iran_units_alive=14`** (was 0 — capture working + field name fixed). **`events.{...}` block** under canonical key. Wave's first-consumer-trace (balance-engineer's AI-vs-AI tuning cycle) now operates on truthful data.
+
 **Wave-close gates met:**
 - ✅ All 3 tracks ship per §4 brief deliverables.
 - ✅ Pre-commit suite green: 1629 tests, 0 failures, 3 pre-existing pending; sim lint 0 violations L1-L6.
-- ✅ 10-match smoke (`--timeout-ticks 600` to bound wall-clock; default 60000 unmodified): 10/10 valid NDJSON, aggregate.json full schema, all stalemate (expected — DummyIranController build-commands deferred per carry-forward).
+- ✅ 10-match smoke green at `--timeout-ticks 600` (default 60000 unmodified per pacing carry-forward).
 - ✅ ARCHITECTURE.md §6 v0.37.0 entry shipped.
+- ✅ ARCHITECTURE.md §2 rows shipped (HeadlessMatchRunner + DummyIranController).
 - ✅ BUILD_LOG.md dated entry (this).
+- ✅ Integration-time mirror code-pass verdict FIX-FIRST-THEN-MERGE → all 3 BLOCKERS + 4 RISKs closed in fix-up cycle.
 
 **Carry-forwards for future waves (in priority order for next balance-tuning wave):**
 1. Lift the 8-autoload reset chain into MatchHarness (architectural cleanup; scope narrowed post-fix-up — only the in-process reset-discipline test still needs it).
