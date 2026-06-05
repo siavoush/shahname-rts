@@ -37,6 +37,7 @@ SelectionManager="*res://scripts/autoload/selection_manager.gd"
 ControlGroups="*res://scripts/input/control_groups.gd"
 FogSystem="*res://scripts/autoload/fog_system.gd"
 TuranController="*res://scripts/autoload/turan_controller.gd"
+DummyIranController="*res://scripts/autoload/dummy_iran_controller.gd"
 
 [debug]
 

@@ -12,12 +12,72 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-05-28 (Session 9 close retro — 6 codifications + 3-voice convergence on T&T + headless playtest infrastructure as next-wave candidate)
+last_updated: 2026-06-05 (Phase 3 session 10 Wave-3-Sim close — headless AI-vs-AI batch runner + DummyIranController + FogSystem.reset() + result-format spec + Python aggregator)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-06-05 — Phase 3 session 10 Wave-3-Sim close: headless AI-vs-AI batch runner ships; Phase 4+ unblocked
+
+**Branch:** `feat/wave-3-sim-close` (octopus-merging `feat/wave-3-sim-balance-result-format` + `feat/wave-3-sim-batch-runner` + `feat/wave-3-sim-headless-runner`).
+
+**What shipped (3 tracks + 1 fix-up across 4 commits — `381cf1a` / `3d7fc6e` / `e6b6acf+a75b68d+a5f5f21` / `2c27c9c`):**
+
+1. **Track 1 — balance-engineer-p3s3 — `docs/AI_VS_AI_RESULT_FORMAT.md` v1.0.0 (`381cf1a`):** canonical per-match NDJSON schema (37 fields across 3 sub-objects). 12 calibration-relevant signals classified vs 13 diagnostic-only. Aggregation conventions per signal. 3 example NDJSON objects (Iran win / Turan win / stalemate). Build-order affordability table cross-checks §3 Q4 vs balance.tres — FEASIBLE verdict with first Piyade at ~tick 2070 (not 2400). Surfaced 2 mine_node SSOT divergences + 4-Piyade grain cap.
+
+2. **Track 2 — engine-architect-p3s2 — `headless_match_runner.gd` + `dummy_iran_controller.gd` + `FogSystem.reset()` (`e6b6acf` + `a75b68d` Step 5 + `a5f5f21` fix-up):** runner extends Node (NOT SceneTree per fix-up — `-s` script mode doesn't register autoloads); boots via main.tscn + `-- --headless-batch` flag detection in main.gd._ready. NDJSON emit on stdout via single line; exits get_tree().quit(0). DummyIranController autoload mirrors TuranController shape (PHASE_AI filter + sim_phase wiring); build-order checkpoints per Track 1 §6.4; Piyade cap = 4 per Finding C. FogSystem.reset() new must-ship method (mirror C3.1 BLOCKER, lead-verified absent at brief-time). Reset audit (4a) documented MatchHarness covers 5 / 8 autoloads with reset() — mooted by process-per-match isolation post-fix-up. Test surface +44: 7 fog reset + 10 dummy iran + 27 across 4 `test_headless_runner_*` files (one_match/reset_discipline/win_condition/timeout). `_test_skip_emit` + `_assemble_result_dict` extract enable in-process GUT testing per MatchHarness `_test_set_farr` precedent.
+
+3. **Track 3 — qa-engineer-p3s3 — `tools/run_ai_vs_ai_batch.sh` + `tools/aggregate_match_results.py` + `test_batch_runner_dry_run.gd` (`3d7fc6e` + `2c27c9c` CLI fix-up):** bash batch script (N + master-seed + output dir + timeout + dry-run); seed XOR derivation per §3 Q3; NDJSON extraction via last `{`-prefixed line; aggregator produces full schema summary (batch_meta + outcomes + duration percentiles + per-team economy + military + events). 9 GUT dry-run tests via `OS.execute()`. CLI fix-up swapped `-s` invocation for `-- --headless-batch` per Track 2's refactor.
+
+**Fix-up cycle:** 10-match smoke surfaced 3 bugs (engine-architect shipped all in `a5f5f21`):
+- BUG-1: `-s` mode no autoloads → switched to main.tscn + flag detection (path A; net code SHRINK as 8-autoload reset chain became dead under process-per-match).
+- BUG-2: unit-count returned 0 because Unit.gd never joins `&"units"` group → scene-tree recursion + duck-type on `unit_type` field.
+- BUG-3: defensive-fallback-masking — `has_method` guard hid that `get_coin_x100` doesn't exist on ResourceSystem (actual API is `coin_for` returning float). Dropped the guard; call directly + ×100. **N=4 of the defensive-fallback-masking pattern across the project lifetime** (sister to BUG-C1, BUG-D2).
+
+**Mirror-reviewer brief-time review (v1.0.1 → v1.0.2):** verdict FIX-BRIEF-FIRST with 2 BLOCKERS + 2 structural fixes + 3 suggestions. All findings empirically verified lead-side before patching. Mirror's meta-finding: *"the new §9 rules worked exactly as designed at this brief-time pass"* — empirical validation §9.D11 + §9.B4 + §9.M6.3 + §9.M6.4 + §9.L11.1 surface the right class of brief-time issues.
+
+**Integration-time mirror code-pass (post-merge, pre-PR-merge — symmetric to brief-time mirror):** dispatched architecture-reviewer for code-pass on the merged branch. Verdict **FIX-FIRST-THEN-MERGE** with 3 BLOCKERS + 4 RISKs. Critical re-attribution: my smoke's anomalies (iran.coin_x100=15000 stuck, military_at_end fields all 0) which I had attributed to "DummyIranController build-commands deferred per carry-forward" were ACTUAL bugs the integration-time pass surfaced — not deferral artifacts.
+
+**3 fix-up commits closed all findings (qa-engineer + engine-architect + lead in parallel):**
+
+- **qa-engineer `19e2ba0` (BLOCKER C1.1):** schema drift — aggregator + dry-run + dry-run-test used `units_alive_at_end` + `events_summary`; spec + runner emit `combat_units_alive_at_end` + `events`. Every real-run aggregate.json silently zero for half its fields. Three-file fix + 4 completeness fixes + Flow 10 round-trip drift sentinel test (feeds spec §5 Example A through aggregator).
+- **engine-architect `c05ba77` (BLOCKER C1.2 + RISK C2.1 + C2.3 + C2.4):** (a) C1.2 path-(a) — `unit.gd._ready` joins `&"units"` group (mirrors Building's `&"buildings"` pattern); DummyIranController + TuranController + any future controller now share one discovery primitive. Side fix: latent `int(null)` crash at `dummy_iran_controller.gd:211`. (b) C2.1 — declared phantom `EventBus.unit_spawned` signal + emit at `unit.gd._ready` with payload; moved runner spawn BEFORE `_spawn_starting_*` in main.gd._ready so subscriptions latch starting-roster emissions (caught a race the brief framing didn't anticipate). (c) C2.3 — `Engine.physics_ticks_per_second=1800 + max_physics_steps_per_frame=12` at runner spawn; empirically ~26 sim-ticks/wall-sec, bottlenecked by sim work not Godot frame budget; 50-match × 60K-tick batch ≈ 28h overnight cycle (acceptable for first-consumer-trace; sim-cost optimization carry-forward to Phase 4+). (d) C2.4 — both `has_signal/has_method` guards hard-asserted at spawn. **N=5 of the defensive-fallback-masking pattern closed.**
+- **lead `e900a08` (BLOCKER C1.3):** missing ARCH §2 rows per wave-close criteria #6 — added Headless AI-vs-AI Batch Runner + DummyIranController autoload rows with honest carry-forward annotations.
+
+**Final 10-match smoke (`--timeout-ticks 600`, apples-to-apples with originally-failing run):** 10/10 valid NDJSON, aggregate.json full canonical schema. **`iran.coin_x100=19000`** (was 15000 stuck — Iran economy now growing per affordability table; AI structurally live). **`military_at_end.iran_units_alive=14`** (was 0 — capture working + field name fixed). **`events.{...}` block** under canonical key. Wave's first-consumer-trace (balance-engineer's AI-vs-AI tuning cycle) now operates on truthful data.
+
+**Wave-close gates met:**
+- ✅ All 3 tracks ship per §4 brief deliverables.
+- ✅ Pre-commit suite green: 1629 tests, 0 failures, 3 pre-existing pending; sim lint 0 violations L1-L6.
+- ✅ 10-match smoke green at `--timeout-ticks 600` (default 60000 unmodified per pacing carry-forward).
+- ✅ ARCHITECTURE.md §6 v0.37.0 entry shipped.
+- ✅ ARCHITECTURE.md §2 rows shipped (HeadlessMatchRunner + DummyIranController).
+- ✅ BUILD_LOG.md dated entry (this).
+- ✅ Integration-time mirror code-pass verdict FIX-FIRST-THEN-MERGE → all 3 BLOCKERS + 4 RISKs closed in fix-up cycle.
+
+**Carry-forwards for future waves (in priority order for next balance-tuning wave):**
+1. Lift the 8-autoload reset chain into MatchHarness (architectural cleanup; scope narrowed post-fix-up — only the in-process reset-discipline test still needs it).
+2. DummyIranController build commands via COMMAND_BUILD (Khaneh + Sarbaz-khaneh placement) — currently checkpoint-logged only.
+3. Headless runner real-time pacing — bump `Engine.physics_ticks_per_second` in headless mode (smoke timeout reduced from 60000 → 600 ticks as workaround).
+4. Mine-depletion retargeting per Track 1 Finding A.
+5. Mazra'eh-step interleave to break Piyade grain cap (Track 1 Finding C).
+6. `mine_node.gd` SSOT divergences from balance.tres (reserves: 100 vs 1500; max_slots: 1 vs 2 — Track 1's Findings A+B, deferred per pathspec discipline).
+
+**Process payoffs that landed in this wave:**
+- §9.D11 First-Consumer Trace strict reading worked: `HeadlessMatchRunner._on_throne_destroyed` verified in-test as the in-game co-resident consumer.
+- §9.B4 named track-modes: all 3 tracks declared `must-ship`; §6 touch list used `audit-only-or-must-ship` for the 5 grep-classified autoloads.
+- §9.M6.3 brief-time observability gate: lead-side grep at brief-time confirmed FogSystem absent reset() **before** track dispatch.
+- §9.M6.4 state-change-gated logging: runner emits `[runner]` logs at boundaries only; no per-tick spam.
+- §9.L11.1 two-actor framing: balance-engineer's affordability table (Track 1) functioned as reviewer backstop for engine-architect's runner schema (Track 2) — surfaced the 2 mine_node SSOT divergences pre-implementation.
+- Action-items-don't-defer (feedback memory): engine-architect's Step 5 override on the "accepted deferral" of the 4 integration tests — found `_test_skip_emit` testability seam, shipped before wave-close rather than carrying as follow-up.
+
+**Inbox-routing N=2 incident codified into memory (`feedback_lead_sendmessage_routing.md` updated):** initial Track 2 dispatch went to phantom inbox `engine-architect-p3s3`; actual addressable was `engine-architect-p3s2` (birth-session-2, persisting). ~82min stall before user surfaced the routing failure via inbox-list screenshot. Memory refined: the `-p<N>s<M>` suffix tracks **birth-session**, not current-session. Track 1 (`balance-engineer-p3s3`) + Track 3 (`qa-engineer-p3s3`) succeeded because their birth-session-3 suffix happened to match my naive guess.
+
+**Phase 4+ unlock:** balance-engineer's first AI-vs-AI tuning cycle becomes runnable (the brief's first-consumer trace). The user-as-integration-test-harness gap (gp-sys retro reflection) and the AI-vs-AI-balance-tool gap (balance-engineer retro reflection) both fill. `placeholder → calibrated` promotion path on balance.tres now has empirical data input.
 
 ---
 

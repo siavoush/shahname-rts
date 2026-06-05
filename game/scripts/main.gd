@@ -49,6 +49,11 @@ const _TuranAsbSavarScene: PackedScene = preload("res://scenes/units/turan_asb_s
 # which is the same window where the Unit class_name may not yet be
 # resolvable. Used only for the static reset_id_counter() helper.
 const _UnitScript: Script = preload("res://scripts/units/unit.gd")
+# Wave-3-Sim — HeadlessMatchRunner is spawned under --headless-batch (see
+# _ready + _spawn_headless_match_runner below). Path-string preload for
+# parity with _UnitScript above.
+const _HeadlessMatchRunnerScript: Script = preload(
+	"res://scripts/sim/headless_match_runner.gd")
 
 
 @onready var _status_label: Label = $StatusLabel
@@ -213,6 +218,22 @@ func _ready() -> void:
 		Engine.get_version_info().get("string", "unknown"),
 		SimClock.SIM_HZ,
 	])
+
+	# Wave-3-Sim mirror C2.1 follow-up — under `--headless-batch`,
+	# instantiate HeadlessMatchRunner BEFORE _spawn_starting_* so the
+	# runner's signal subscriptions (EventBus.unit_spawned in particular)
+	# latch the very first unit emissions. Previously the runner was
+	# spawned after, missing every starting-roster `unit_spawned`. The
+	# runner is a plain Node + its _ready fires before add_child returns
+	# control to this function.
+	#
+	# Args land in OS.get_cmdline_user_args() (everything after the `--`
+	# separator). OS.get_cmdline_args() returns the FULL argv including
+	# engine-consumed args like `--headless` / `--path`; user_args is
+	# the cleaner seam + mirrors the runner's _parse_args.
+	if OS.get_cmdline_user_args().has("--headless-batch"):
+		_spawn_headless_match_runner()
+
 	# Wave-3-Throne — Thrones spawn BEFORE units so workers can deposit at
 	# them from tick 0 (no race where the first gather cycle completes
 	# before any Throne exists). Each Throne joins the &"thrones" SceneTree
@@ -221,6 +242,17 @@ func _ready() -> void:
 	_spawn_starting_buildings()
 	_spawn_starting_units()
 	_spawn_starting_resources()
+
+
+# Wave-3-Sim Track 2 — boot the HeadlessMatchRunner under --headless-batch.
+# The runner is a plain Node; main.tscn's autoloads (SimClock, EventBus,
+# ResourceSystem, FarrSystem, TuranController, DummyIranController, ...)
+# boot first via project.godot's [autoload] block, so by the time the
+# runner's _ready fires every identifier it references is resolvable.
+func _spawn_headless_match_runner() -> void:
+	var runner: Node = _HeadlessMatchRunnerScript.new()
+	runner.name = &"HeadlessMatchRunner"
+	add_child(runner)
 
 
 # Wave-3-Throne — spawn one Throne per faction at match start. Iran's

@@ -41,6 +41,15 @@ signal unit_health_zero(unit_id: int)
 @warning_ignore("unused_signal")
 signal unit_state_changed(unit_id: int, from_id: StringName, to_id: StringName, tick: int)
 
+# Emitted by Unit._ready immediately after the unit's id assignment + group
+# registration. Payload is a Dictionary so future fields can extend without
+# breaking subscribers: currently {unit_type: StringName, team: int, unit_id: int,
+# position: Vector3}. Wave 3-Sim mirror C2.1 fix — HeadlessMatchRunner is the
+# first co-resident consumer (latches `iran_first_piyade_tick`); UI sound-FX
+# + tutorial cues are Phase 5+ consumers.
+@warning_ignore("unused_signal")
+signal unit_spawned(payload: Dictionary)
+
 # Death event with the full payload future systems need: the dying unit's
 # id, the killer's unit_id (-1 sentinel when no source — death-by-attrition,
 # Farr drain, scripted event), a StringName cause for the F2 overlay /
