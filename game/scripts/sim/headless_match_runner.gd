@@ -1,15 +1,24 @@
-extends SceneTree
+extends Node
 ##
 ## HeadlessMatchRunner — Wave 3-Sim Track 2 deliverable.
 ##
-## Entry point invoked by `tools/run_ai_vs_ai_batch.sh` per the CLI contract
-## documented at that script (lines 235-247):
+## Boot model (post-fix-up, see Wave 3-Sim BUG):
+##   The runner is NOT a `-s` SceneTree entry-point — that boot mode does
+##   NOT register project autoloads, which broke every `SimClock` /
+##   `EventBus` / `Constants` / `BalanceData` identifier at compile time.
+##   Instead: `tools/run_ai_vs_ai_batch.sh` launches `main.tscn` normally
+##   (autoloads boot first per project.godot's [autoload] block), and
+##   `main.gd._ready()` detects `--headless-batch` in `OS.get_cmdline_args()`
+##   and instantiates this runner as a Node child of itself.
 ##
-##   ${GODOT_BIN} --headless --path ${GAME_DIR} -s ${RUNNER_SCRIPT} \
-##       --match-id ${MATCH_ID} --seed ${MATCH_SEED} \
+## Entry point invoked by `tools/run_ai_vs_ai_batch.sh`:
+##
+##   ${GODOT_BIN} --headless --path ${GAME_DIR} -- \
+##       --headless-batch --match-id ${MATCH_ID} --seed ${MATCH_SEED} \
 ##       --timeout-ticks ${TIMEOUT_TICKS}
 ##
-## Args (per Wave 3-Sim brief §4.3 + batch script):
+## Args (per Wave 3-Sim brief §4.3):
+##   --headless-batch        Sentinel that tells main.gd to spawn the runner.
 ##   --match-id <string>     Zero-padded match identifier ("match_NNNN").
 ##   --seed <int>            Per-match deterministic seed.
 ##   --timeout-ticks <int>   Max ticks before forcing stalemate (default 60000).
@@ -17,19 +26,21 @@ extends SceneTree
 ## Output:
 ##   - Single-line NDJSON to stdout at match completion (extracted by batch
 ##     script via `rg --no-line-number '^\{' ... | tail -1`).
-##   - Exit code 0 on clean completion (win OR stalemate).
+##   - Exit code 0 on clean completion (win OR stalemate) via
+##     `get_tree().quit(0)`.
 ##
 ## SSOT — relationship to MatchHarness (per brief §4.2 v1.0.2 mirror C1.1):
-##   This runner WRAPS MatchHarness's reset+tick primitives — it does NOT
-##   fork a parallel sim-run codepath. MatchHarness is the canonical
-##   match-fixture surface (used by Wave 3B + Throne integration tests);
-##   adding a sim_run path here would create multi-SSOT drift. The runner's
-##   ON-TOP responsibilities are exactly the five enumerated in C1.1:
-##     (i) DummyIranController spawn (autoload — registered in project.godot)
-##     (ii) EventBus.throne_destroyed subscription for win-condition detection
-##     (iii) NDJSON result emission (this file's _emit_result)
-##     (iv) Timeout enforcement (_check_timeout in _process)
-##     (v) seed(match_seed) at match-start (in _initialize)
+##   This runner is NOT a fork of MatchHarness — it operates on the LIVE
+##   main.tscn scene flow which boots all autoloads at start. The runner's
+##   responsibilities are:
+##     (i) EventBus.throne_destroyed subscription for win-condition detection
+##     (ii) NDJSON result emission (_emit_result_and_quit)
+##     (iii) Timeout enforcement (_process check against SimClock.tick)
+##     (iv) seed(match_seed) at match-start (in _ready)
+##
+##   Per-match RESET is handled implicitly by the process model: each batch
+##   invocation is a fresh Godot process, so autoloads boot pristine.
+##   No cross-match leak is possible across the process boundary.
 ##
 ## §9.M6.4 state-change-gated logging:
 ##   - `[runner] match_start match_id=X seed=N timeout=N`
@@ -39,52 +50,16 @@ extends SceneTree
 ##   No per-tick spam — duration counter is computed inside _emit_result, not
 ##   logged each tick.
 ##
-## RESET AUDIT (sub-deliverable 4a per brief §4.2):
-##
-##   This runner does NOT call autoload reset() methods directly. It uses
-##   MatchHarness.start_match() / teardown() which performs the canonical
-##   reset sequence (sim_clock, game_state, farr_system, spatial_index,
-##   path_scheduler_service — see match_harness.gd:77-103).
-##
-##   Audit results (engine-architect-p3s2, Wave 3-Sim Track 2, 2026-06-04):
-##
-##     Autoload                  | reset() exists | reset() in MatchHarness? | gap
-##     ------------------------- | -------------- | ------------------------ | ---
-##     SimClock                  | YES (sim_clock.gd:99)        | YES (harness:79)  | none
-##     GameState                 | YES (game_state.gd)          | YES (harness:80)  | none
-##     FarrSystem                | YES (farr_system.gd)         | YES (harness:81)  | none
-##     SpatialIndex              | YES (spatial_index.gd)       | YES (harness:82)  | none
-##     PathSchedulerService      | YES (path_scheduler_svc.gd)  | YES (harness:83)  | none
-##     ResourceSystem            | YES (resource_system.gd)     | NO (gap!)         | FOLLOW-UP
-##     TuranController           | YES (turan_controller.gd:158)| NO (gap!)         | FOLLOW-UP
-##     FogSystem                 | YES (this Track 2 added it!) | NO (gap!)         | FOLLOW-UP
-##     CommandPool               | YES (command_pool.gd)        | NO (gap!)         | FOLLOW-UP
-##     FarrDrainDispatcher       | YES                          | NO (gap!)         | FOLLOW-UP
-##     SelectionManager          | YES                          | NO (gap!)         | FOLLOW-UP
-##     DebugOverlayManager       | YES                          | NO (gap!)         | FOLLOW-UP
-##     DummyIranController       | YES (this Track 2 added it!) | NO (gap!)         | FOLLOW-UP
-##
-##   The 8 gap-flagged autoloads each have a working reset() method but
-##   MatchHarness.start_match()/teardown() does NOT call them. This is a
-##   pre-existing gap (predates Wave 3-Sim) — the affected autoloads were
-##   added to the project AFTER MatchHarness shipped at Phase 0. The
-##   HeadlessMatchRunner calls those reset()s EXPLICITLY in _setup_match()
-##   below to close the gap for AI-vs-AI sim correctness. The follow-up
-##   architectural cleanup (lift the explicit reset chain into MatchHarness)
-##   is captured as Wave 3-Sim carry-forward — see ARCHITECTURE.md §7
-##   LATER on session-10 close. Per brief §4.2: "if any are non-trivial,
-##   lift to a fix-up wave rather than carrying the fix in this wave."
-##   The fix is one MatchHarness commit (add the 8 reset calls to _setup
-##   and teardown) — qualifies as trivial; deferred for SSOT discipline.
-##
-## Pitfall #17 test-discipline:
-##   This runner is invoked once-per-Godot-launch; there's no concept of
-##   per-test SimClock leakage. Pitfall #17 doesn't apply at runtime here.
-##   The integration tests (Step 5) follow Pitfall #17 + the standard
-##   test-discipline patterns.
-
-const _MatchHarnessScript: Script = preload(
-	"res://tests/harness/match_harness.gd")
+## §9.D9 Q3 RNG discipline (per brief §3 Q3 v1.0.2):
+##   Verify-empty grep at 2026-06-04 + 2026-06-05 implementation passes
+##   confirmed ZERO `randf`/`randi`/`seed()` call-sites in production
+##   `game/scripts/` (only a comment hit in `build_menu.gd`). This runner
+##   calls `seed(match_seed)` defensively at match-start. If future
+##   production code introduces randomness via the global RNG, this seed()
+##   ensures batch reproducibility. If a future GameRNG autoload ships,
+##   the discipline stays: seed the global RNG here for backwards-compat
+##   + add GameRNG.seed_match(_match_seed) at that point. Failure to do
+##   so silently breaks batch reproducibility.
 
 # ---------------------------------------------------------------------------
 # Argv-parsed match parameters
@@ -98,8 +73,6 @@ var _timeout_ticks: int = 60000
 # Match state
 # ---------------------------------------------------------------------------
 
-var _harness: Variant = null
-var _match_started: bool = false
 var _match_ended: bool = false
 var _start_tick: int = 0  # SimClock.tick at match-start (typically 0)
 var _winner_team: int = Constants.TEAM_NEUTRAL  # -1 sentinel = stalemate
@@ -117,53 +90,44 @@ var _connected_unit_health_zero: bool = false
 var _connected_unit_spawned: bool = false
 
 # Test-only escape: when true, _emit_result_and_quit() short-circuits to
-# field-flips only (no JSON emit, no quit(), no _build_result_dict call).
+# field-flips only (no JSON emit, no _build_result_dict call, no quit()).
 # Allows integration tests (Step 5: test_headless_runner_*.gd) to drive
 # the runner's signal handlers + timeout-arithmetic in-process without
-# the runner trying to call get_tree() on a non-running SceneTree.
-# Live runs leave this false (the runtime never sets it).
+# the runner trying to call get_tree().quit() (which would terminate the
+# GUT runner) or _capture_team_fields (which would scan the test-fixture
+# tree). Live runs leave this false (the runtime never sets it).
 var _test_skip_emit: bool = false
 
 
 # ---------------------------------------------------------------------------
-# SceneTree lifecycle — entry point
+# Node lifecycle — entry point
 # ---------------------------------------------------------------------------
 
-# Called once when the SceneTree starts. Argv is available via OS.get_cmdline_args().
-func _initialize() -> void:
+# Called by Godot once when the runner is added to the SceneTree by
+# main.gd._ready (under --headless-batch). At this point all autoloads
+# have been registered + main.tscn's _spawn_starting_* methods have run
+# (or are running this same frame).
+func _ready() -> void:
 	_parse_args()
 	print("[runner] match_start match_id=%s seed=%d timeout=%d" % [
 		_match_id, _match_seed, _timeout_ticks,
 	])
 
-	# Q3 RNG discipline (per brief §3 Q3 v1.0.2):
-	#   (a) verify-empty grep: re-run at implementation time below
-	#   (b) discipline-rule comment block: see file header
-	#   (c) seed() defensively at match-start, even with empty inventory
-	#
-	# As of 2026-06-04 verify-empty: `grep -rn "randf\|randi\|seed(" game/scripts/`
-	# (excluding tests/) returns ZERO randf/randi/seed() call-sites in production
-	# code. This runner SEEDS DEFENSIVELY — if any production code later
-	# introduces randomness via the global RNG, this seed() ensures batch
-	# reproducibility. If a future GameRNG autoload ships, the discipline
-	# stays: seed the global RNG here for backwards-compat + call
-	# GameRNG.seed_match(_match_seed) at that point. Failure to do so
-	# silently breaks batch reproducibility.
+	# §9.D9 Q3 RNG discipline — seed defensively (see file header).
 	seed(_match_seed)
 
-	_setup_match()
+	_start_tick = SimClock.tick
 	_subscribe_signals()
 
 
-# Per-process tick — runs every render-frame. Returns true to keep running,
-# false to quit. We check timeout here + let SimClock._physics_process drive
-# the actual sim ticks (it runs independently as an autoload).
-func _process(_dt: float) -> bool:
+# Per-frame tick. Checks timeout against SimClock.tick. We do NOT drive
+# sim-ticks here — SimClock._physics_process is the canonical driver
+# (Sim Contract §6.1) and runs as a co-resident autoload.
+func _process(_dt: float) -> void:
 	if _match_ended:
-		return true  # _emit_result already called quit(); next _process won't fire
+		return
 
-	# Timeout check — fires once at the timeout boundary; subsequent ticks
-	# already-ended path above short-circuits.
+	# Timeout boundary check.
 	if SimClock.tick - _start_tick >= _timeout_ticks:
 		_timeout_triggered = true
 		_outcome = "stalemate"
@@ -172,9 +136,6 @@ func _process(_dt: float) -> bool:
 			_match_id, SimClock.tick - _start_tick,
 		])
 		_emit_result_and_quit()
-		return true
-
-	return true
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +143,10 @@ func _process(_dt: float) -> bool:
 # ---------------------------------------------------------------------------
 
 func _parse_args() -> void:
-	var args: PackedStringArray = OS.get_cmdline_args()
+	# Args land in OS.get_cmdline_user_args() (everything after the `--`
+	# separator on the godot CLI). Per main.gd's flag-detect, --headless-batch
+	# is in the same set; consistency is the discipline here.
+	var args: PackedStringArray = OS.get_cmdline_user_args()
 	var i: int = 0
 	while i < args.size():
 		var arg: String = args[i]
@@ -205,47 +169,6 @@ func _parse_args() -> void:
 			_:
 				pass
 		i += 1
-
-
-# ---------------------------------------------------------------------------
-# Match setup — MatchHarness wrap + explicit reset chain for autoloads not
-# covered by MatchHarness.start_match (see RESET AUDIT in file header).
-# ---------------------------------------------------------------------------
-
-func _setup_match() -> void:
-	# Step 1: MatchHarness handles the canonical reset chain — sim_clock,
-	# game_state, farr_system, spatial_index, path_scheduler_service.
-	# Per match_harness.gd:77-103.
-	_harness = _MatchHarnessScript.new()
-	_harness.start_match(_match_seed, &"empty")
-
-	# Step 2: Explicit reset chain for autoloads NOT in MatchHarness (see
-	# RESET AUDIT in file header for the gap classification). Each call is
-	# wrapped in a presence check (`has_method`) for defensiveness against
-	# test-fixture configurations where an autoload may be missing.
-	for autoload_name: StringName in [
-			&"ResourceSystem", &"TuranController", &"FogSystem",
-			&"CommandPool", &"FarrDrainDispatcher", &"SelectionManager",
-			&"DebugOverlayManager", &"DummyIranController"]:
-		var autoload: Node = root.get_node_or_null(NodePath(autoload_name))
-		if autoload != null and autoload.has_method(&"reset"):
-			autoload.call(&"reset")
-
-	# Step 3: Load main.tscn as the runtime scene. This is where Thrones,
-	# Kargars, mines, and the entire AI-vs-AI playfield live.
-	var main_scene: PackedScene = load("res://scenes/main.tscn") as PackedScene
-	if main_scene == null:
-		push_error("[runner] FATAL: could not load res://scenes/main.tscn")
-		_outcome = "stalemate"
-		_winner_team = -1
-		_emit_result_and_quit()
-		return
-
-	var main_node: Node = main_scene.instantiate()
-	root.add_child(main_node)
-
-	_start_tick = SimClock.tick
-	_match_started = true
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +242,7 @@ func _on_unit_spawned(payload: Variant) -> void:
 
 
 # ---------------------------------------------------------------------------
-# Result emission — NDJSON to stdout, then quit(0)
+# Result emission — NDJSON to stdout, then get_tree().quit(0)
 # ---------------------------------------------------------------------------
 
 func _emit_result_and_quit() -> void:
@@ -328,8 +251,8 @@ func _emit_result_and_quit() -> void:
 	_match_ended = true
 
 	# Test escape (Step 5 integration tests): skip the parts that touch the
-	# running SceneTree (root, get_tree(), quit()). Field-flips already
-	# happened in the caller (_outcome, _winner_team, _timeout_triggered).
+	# scene tree (group queries via _build_result_dict + get_tree().quit()).
+	# Field-flips already happened in the caller.
 	if _test_skip_emit:
 		return
 
@@ -350,13 +273,8 @@ func _emit_result_and_quit() -> void:
 	])
 	print(ndjson)
 
-	# Clean up signal connections + harness before quit.
 	_disconnect_signals()
-	if _harness != null:
-		_harness.teardown()
-		_harness = null
-
-	quit(0)
+	get_tree().quit(0)
 
 
 # Build the result Dictionary matching AI_VS_AI_RESULT_FORMAT.md §2.1
@@ -404,6 +322,11 @@ func _assemble_result_dict(
 # Capture per-team end-state. Per AI_VS_AI_RESULT_FORMAT §7.1 field-capture
 # map + §7.3 Turan-field notes (Turan has no economy at MVP — emit zeros
 # for symmetry).
+#
+# Group inventory: only Building.gd joins &"buildings" + Throne.gd joins
+# &"thrones" (verified at runner fix-up time). Unit.gd does NOT join any
+# group, so unit-count capture uses scene-tree recursion + duck-typing on
+# `unit_type` field.
 func _capture_team_fields(team_id: int) -> Dictionary:
 	var workers: int = 0
 	var combat_units: int = 0
@@ -411,20 +334,37 @@ func _capture_team_fields(team_id: int) -> Dictionary:
 	var throne_destroyed: bool = true  # default-pessimistic; flip false if found
 	var throne_hp_pct: float = 0.0
 
-	# Iterate units group with Pitfall #16 safety.
-	for node: Node in root.get_tree().get_nodes_in_group(&"units"):
+	var st: SceneTree = get_tree()
+
+	# Unit recursion: scene-tree walk filtered by `unit_type` field. The
+	# field is declared on Unit (game/scripts/units/unit.gd:111), so any
+	# concrete Unit subclass exposes it. Pitfall #16 — is_instance_valid
+	# guard on every iteration.
+	var unit_stack: Array[Node] = [st.root]
+	while not unit_stack.is_empty():
+		var node: Node = unit_stack.pop_back()
 		if not is_instance_valid(node):
 			continue
-		if int(node.get(&"team")) != team_id:
+		for child: Node in node.get_children():
+			unit_stack.push_back(child)
+		# Duck-type: a Unit instance exposes a non-empty unit_type StringName.
+		var ut_v: Variant = node.get(&"unit_type")
+		if ut_v == null:
 			continue
-		var kind: StringName = StringName(node.get(&"unit_type"))
+		var kind: StringName = StringName(ut_v)
+		if kind == &"":
+			continue
+		# Filter by team.
+		var team_v: Variant = node.get(&"team")
+		if team_v == null or int(team_v) != team_id:
+			continue
 		if kind == &"kargar":
 			workers += 1
 		else:
 			combat_units += 1
 
 	# Iterate buildings group (excluding Thrones — Thrones captured separately).
-	for node: Node in root.get_tree().get_nodes_in_group(&"buildings"):
+	for node: Node in st.get_nodes_in_group(&"buildings"):
 		if not is_instance_valid(node):
 			continue
 		if int(node.get(&"team")) != team_id:
@@ -435,7 +375,7 @@ func _capture_team_fields(team_id: int) -> Dictionary:
 		buildings += 1
 
 	# Iterate thrones group separately.
-	for node: Node in root.get_tree().get_nodes_in_group(&"thrones"):
+	for node: Node in st.get_nodes_in_group(&"thrones"):
 		if not is_instance_valid(node):
 			continue
 		if int(node.get(&"team")) != team_id:
@@ -454,24 +394,20 @@ func _capture_team_fields(team_id: int) -> Dictionary:
 		break  # one throne per team
 
 	# Resource state — only Iran uses ResourceSystem at MVP per §7.3.
+	# ResourceSystem exposes coin_for/grain_for returning float; the
+	# RESULT_FORMAT schema field is x100 fixed-point, so multiply on read.
 	var coin_x100: int = 0
 	var grain_x100: int = 0
 	if team_id == Constants.TEAM_IRAN:
-		var rs: Node = root.get_node_or_null(NodePath(&"ResourceSystem"))
-		if rs != null:
-			if rs.has_method(&"get_coin_x100"):
-				coin_x100 = int(rs.call(&"get_coin_x100", team_id))
-			if rs.has_method(&"get_grain_x100"):
-				grain_x100 = int(rs.call(&"get_grain_x100", team_id))
+		coin_x100 = roundi(ResourceSystem.coin_for(team_id) * 100.0)
+		grain_x100 = roundi(ResourceSystem.grain_for(team_id) * 100.0)
 
 	# Farr — single value at MVP per §7.3; emit FarrSystem's current value
 	# for both teams (Turan-Farr separate per-team is Phase 5 work).
 	var farr_x100: int = 0
-	var fs: Node = root.get_node_or_null(NodePath(&"FarrSystem"))
-	if fs != null:
-		var farr_x100_v: Variant = fs.get(&"_farr_x100")
-		if farr_x100_v != null:
-			farr_x100 = int(farr_x100_v)
+	var farr_x100_v: Variant = FarrSystem.get(&"_farr_x100")
+	if farr_x100_v != null:
+		farr_x100 = int(farr_x100_v)
 
 	return {
 		"throne_destroyed": throne_destroyed,
