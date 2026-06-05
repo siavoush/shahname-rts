@@ -49,6 +49,11 @@ const _TuranAsbSavarScene: PackedScene = preload("res://scenes/units/turan_asb_s
 # which is the same window where the Unit class_name may not yet be
 # resolvable. Used only for the static reset_id_counter() helper.
 const _UnitScript: Script = preload("res://scripts/units/unit.gd")
+# Wave-3-Sim — HeadlessMatchRunner is spawned under --headless-batch (see
+# _ready + _spawn_headless_match_runner below). Path-string preload for
+# parity with _UnitScript above.
+const _HeadlessMatchRunnerScript: Script = preload(
+	"res://scripts/sim/headless_match_runner.gd")
 
 
 @onready var _status_label: Label = $StatusLabel
@@ -221,6 +226,32 @@ func _ready() -> void:
 	_spawn_starting_buildings()
 	_spawn_starting_units()
 	_spawn_starting_resources()
+
+	# Wave-3-Sim — under `--headless-batch` (the AI-vs-AI batch runner),
+	# instantiate HeadlessMatchRunner as a child of self so it can observe
+	# the match end-to-end (EventBus.throne_destroyed subscription +
+	# timeout watchdog + NDJSON emit + get_tree().quit(0)). The runner is
+	# spawned AFTER _spawn_starting_buildings/units so all starting Thrones,
+	# Kargars, etc. exist before signal subscription latches first events.
+	#
+	# Args land in OS.get_cmdline_user_args() (everything after the `--`
+	# separator). OS.get_cmdline_args() returns the FULL argv including
+	# engine-consumed args like `--headless` / `--path`, which would also
+	# work for has("--headless-batch") but we standardize on user_args
+	# for clarity + to mirror the runner's _parse_args.
+	if OS.get_cmdline_user_args().has("--headless-batch"):
+		_spawn_headless_match_runner()
+
+
+# Wave-3-Sim Track 2 — boot the HeadlessMatchRunner under --headless-batch.
+# The runner is a plain Node; main.tscn's autoloads (SimClock, EventBus,
+# ResourceSystem, FarrSystem, TuranController, DummyIranController, ...)
+# boot first via project.godot's [autoload] block, so by the time the
+# runner's _ready fires every identifier it references is resolvable.
+func _spawn_headless_match_runner() -> void:
+	var runner: Node = _HeadlessMatchRunnerScript.new()
+	runner.name = &"HeadlessMatchRunner"
+	add_child(runner)
 
 
 # Wave-3-Throne — spawn one Throne per faction at match start. Iran's

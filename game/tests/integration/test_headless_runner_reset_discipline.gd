@@ -1,24 +1,32 @@
-# Integration test — HeadlessMatchRunner reset discipline across N=3
-# consecutive matches.
+# Integration test — autoload reset discipline across N=3 simulated matches.
 #
 # Per 02t_PHASE_3_SESSION_10_WAVE_3_SIM_KICKOFF.md §7 Track 2 second bullet:
 # "test_headless_runner_reset_discipline.gd — run N=3 matches consecutively,
 #  verify no state leak (e.g., SimClock.tick reset to 0 each match;
 #  ResourceSystem coin starts at canonical starting value each match)."
 #
-# Exercises the canonical reset chain the runner runs in _setup_match:
-#   Step 1: MatchHarness.start_match — resets SimClock, GameState, FarrSystem,
-#           SpatialIndex, PathSchedulerService (5 autoloads).
-#   Step 2: Explicit reset() calls on 8 additional autoloads NOT covered by
-#           MatchHarness (see headless_match_runner.gd RESET AUDIT in header):
-#               ResourceSystem, TuranController, FogSystem, CommandPool,
-#               FarrDrainDispatcher, SelectionManager, DebugOverlayManager,
-#               DummyIranController.
+# RELATIONSHIP TO PRODUCTION BOOT MODEL (post Wave 3-Sim BUG fix-up):
+#   The live HeadlessMatchRunner under `--headless-batch` does NOT run an
+#   in-process reset chain — each batch invocation is a FRESH Godot process,
+#   so autoloads boot pristine via project.godot's [autoload] block. No
+#   cross-match leak is possible across the process boundary.
 #
-# The N=3 iteration models the batch-runner pattern: each batch invocation
-# spawns a fresh process per match, but the in-process test exercises the
-# same reset semantics across 3 sequential simulated matches. State leak
-# would manifest as: tick != 0 at match start, coin != starting_coin,
+#   This test exercises the same reset semantics IN-PROCESS via:
+#     Step 1: MatchHarness.start_match — resets SimClock, GameState, FarrSystem,
+#             SpatialIndex, PathSchedulerService (5 autoloads).
+#     Step 2: Explicit reset() calls on 8 additional autoloads NOT covered by
+#             MatchHarness:
+#                 ResourceSystem, TuranController, FogSystem, CommandPool,
+#                 FarrDrainDispatcher, SelectionManager, DebugOverlayManager,
+#                 DummyIranController.
+#
+#   This is valuable as a regression guard: if any autoload grows new fields
+#   that reset() forgets to clear, in-process N=3 cycles will catch the leak.
+#   When a future wave lifts the 8-autoload reset chain into MatchHarness
+#   itself (Wave 3-Sim Track 2 carry-forward), this test continues to
+#   exercise the harness's expanded reset() coverage.
+#
+# State leak would manifest as: tick != 0 at match start, coin != starting_coin,
 # Farr != 50.0, TuranController state != idle, DummyIranController state
 # != awaiting_start.
 extends GutTest
@@ -28,9 +36,12 @@ const MatchHarnessScript: Script = preload(
 	"res://tests/harness/match_harness.gd")
 
 
-# Autoloads with reset() that MatchHarness does NOT call. The runner's
-# _setup_match runs these explicitly. Source-of-truth: file header RESET
-# AUDIT in headless_match_runner.gd.
+# Autoloads with reset() that MatchHarness does NOT call. Pre Wave-3-Sim
+# BUG fix-up, the in-process runner ran these explicitly via _setup_match;
+# post-fix-up the live runner relies on process-per-match isolation and
+# does not call them. This list remains the canonical regression-guard
+# inventory + the target list for the carry-forward "lift the reset chain
+# into MatchHarness" cleanup.
 const _RUNNER_EXTRA_RESET_AUTOLOADS: Array[StringName] = [
 	&"ResourceSystem",
 	&"TuranController",
@@ -63,9 +74,11 @@ func after_each() -> void:
 		DummyIranController.reset()
 
 
-# Simulates the runner's per-match reset chain: MatchHarness.start_match
-# (Step 1) + explicit autoload-reset call sweep (Step 2). Mirrors
-# headless_match_runner.gd:207-225 exactly.
+# Performs an in-process simulated reset chain mirroring what the runner
+# WOULD do in a hypothetical multi-match-per-process world: MatchHarness
+# (Step 1) + explicit autoload-reset call sweep (Step 2). The live runner
+# now relies on process-per-match isolation instead, but this in-process
+# variant is the regression guard for the autoloads' reset() methods.
 func _runner_style_setup_match(match_seed: int) -> void:
 	# Step 1 — MatchHarness reset chain.
 	_harness = MatchHarnessScript.new()
@@ -208,7 +221,7 @@ func test_runner_extra_reset_autoloads_each_have_reset_method() -> void:
 			"autoload '%s' must exist (registered in project.godot)"
 				% autoload_name)
 		assert_true(autoload.has_method(&"reset"),
-			"autoload '%s' must expose a reset() method per runner RESET AUDIT"
+			"autoload '%s' must expose a reset() method (Wave 3-Sim Track 2 inventory)"
 				% autoload_name)
 
 
