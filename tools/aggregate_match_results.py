@@ -54,7 +54,7 @@ Output schema (aggregate.json):
       "iran_buildings_alive":  {"median": float, "mean": float},
       "turan_buildings_alive": {"median": float, "mean": float}
     },
-    "events_summary": {
+    "events": {
       "turan_probes_fired":       {"median": float, "mean": float, "total": int},
       "buildings_destroyed_total": {"median": float, "mean": float, "total": int},
       "units_killed_total":       {"median": float, "mean": float, "total": int}
@@ -191,17 +191,17 @@ def aggregate(ndjson_path: Path) -> dict:
         iran_coin.append(int(iran.get("coin_x100_at_end", 0)))
         iran_grain.append(int(iran.get("grain_x100_at_end", 0)))
         iran_farr.append(int(iran.get("farr_x100_at_end", 0)))
-        iran_units.append(int(iran.get("units_alive_at_end", 0)))
+        iran_units.append(int(iran.get("combat_units_alive_at_end", 0)))
         iran_bldgs.append(int(iran.get("buildings_alive_at_end", 0)))
 
         turan = r.get("turan", {})
         turan_coin.append(int(turan.get("coin_x100_at_end", 0)))
         turan_grain.append(int(turan.get("grain_x100_at_end", 0)))
         turan_farr.append(int(turan.get("farr_x100_at_end", 0)))
-        turan_units.append(int(turan.get("units_alive_at_end", 0)))
+        turan_units.append(int(turan.get("combat_units_alive_at_end", 0)))
         turan_bldgs.append(int(turan.get("buildings_alive_at_end", 0)))
 
-        ev = r.get("events_summary", {})
+        ev = r.get("events", {})
         probes_vals.append(int(ev.get("turan_probes_fired", 0)))
         bldgs_destroyed_vals.append(int(ev.get("buildings_destroyed_total", 0)))
         units_killed_vals.append(int(ev.get("units_killed_total", 0)))
@@ -245,7 +245,7 @@ def aggregate(ndjson_path: Path) -> dict:
             "iran_buildings_alive":  _military_stats(iran_bldgs),
             "turan_buildings_alive": _military_stats(turan_bldgs),
         },
-        "events_summary": {
+        "events": {
             "turan_probes_fired":        _event_stats(probes_vals),
             "buildings_destroyed_total": _event_stats(bldgs_destroyed_vals),
             "units_killed_total":        _event_stats(units_killed_vals),

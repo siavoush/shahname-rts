@@ -7,7 +7,7 @@
 #   4. Outcomes are one of: iran_win / turan_win / stalemate.
 #   5. tools/aggregate_match_results.py produces valid aggregate.json.
 #   6. Aggregate has expected shape: batch_meta, outcomes, duration_ticks,
-#      iran_economy_at_end, turan_economy_at_end, military_at_end, events_summary.
+#      iran_economy_at_end, turan_economy_at_end, military_at_end, events.
 #   7. Seed derivation is deterministic: match_seed = master_seed XOR match_index.
 #
 # These tests run entirely via OS.execute() (shell-out) — they do not launch a
@@ -23,13 +23,14 @@ const _MASTER_SEED: int = 12345
 const _N_MATCHES: int = 3
 const _REQUIRED_MATCH_FIELDS: Array[String] = [
 	"match_id", "seed", "outcome", "winner_team",
-	"duration_ticks", "duration_seconds", "first_engagement_tick",
-	"iran", "turan", "events_summary",
+	"duration_ticks", "duration_seconds", "first_engagement_tick", "timeout",
+	"iran", "turan", "events",
 ]
 const _REQUIRED_FACTION_FIELDS: Array[String] = [
 	"throne_destroyed", "throne_hp_pct_at_end",
-	"workers_alive_at_end", "units_alive_at_end", "buildings_alive_at_end",
+	"workers_alive_at_end", "combat_units_alive_at_end", "buildings_alive_at_end",
 	"buildings_destroyed", "coin_x100_at_end", "grain_x100_at_end", "farr_x100_at_end",
+	"units_produced_total", "buildings_constructed_total",
 ]
 const _VALID_OUTCOMES: Array[String] = ["iran_win", "turan_win", "stalemate"]
 
@@ -242,7 +243,7 @@ func test_aggregate_json_has_required_keys() -> void:
 	for key: String in ["batch_meta", "outcomes", "duration_ticks",
 			"duration_seconds", "first_engagement_tick",
 			"iran_economy_at_end", "turan_economy_at_end",
-			"military_at_end", "events_summary"]:
+			"military_at_end", "events"]:
 		assert_true(agg.has(key),
 			"aggregate.json missing top-level key '%s'" % key)
 
@@ -306,3 +307,86 @@ func test_aggregate_outcomes_sum_to_n() -> void:
 	)
 	assert_eq(total, _N_MATCHES,
 		"outcomes iran_win + turan_win + stalemate must sum to %d, got %d" % [_N_MATCHES, total])
+
+
+# ---------------------------------------------------------------------------
+# Flow 10 — Round-trip: canonical NDJSON → aggregate_match_results.py → no
+# zero-fallback collapses on key fields.
+#
+# Feeds the §5 Example A line from AI_VS_AI_RESULT_FORMAT.md directly through
+# the aggregator (bypassing the batch script). Asserts that the aggregator reads
+# canonical field names (combat_units_alive_at_end, events.*) correctly —
+# values must match the fixture, not fall back to 0.
+#
+# This is the test that would have caught C1.1. Any future drift between spec
+# field names and aggregator field names will fail here.
+# ---------------------------------------------------------------------------
+func test_round_trip_canonical_ndjson_through_aggregator() -> void:
+	# Spec §5 Example A — Iran decisive win. Field names are canonical per v1.0.0.
+	const SPEC_EXAMPLE_A: String = '{"match_id":"match_0001","seed":987654321,"outcome":"iran_win","winner_team":1,"duration_ticks":22140,"duration_seconds":738.0,"first_engagement_tick":3598,"timeout":false,"iran":{"throne_destroyed":false,"throne_hp_pct_at_end":91.2,"workers_alive_at_end":4,"combat_units_alive_at_end":6,"buildings_alive_at_end":4,"buildings_destroyed":0,"coin_x100_at_end":18400,"grain_x100_at_end":9500,"farr_x100_at_end":4820,"units_produced_total":8,"buildings_constructed_total":4},"turan":{"throne_destroyed":true,"throne_hp_pct_at_end":0.0,"workers_alive_at_end":0,"combat_units_alive_at_end":0,"buildings_alive_at_end":0,"buildings_destroyed":1,"coin_x100_at_end":0,"grain_x100_at_end":0,"farr_x100_at_end":1100,"units_produced_total":0,"buildings_constructed_total":0},"events":{"turan_probes_fired":6,"turan_units_deployed_total":30,"buildings_destroyed_total":1,"units_killed_total":28,"farr_drain_events_total":9,"kaveh_event_triggered":false,"iran_first_piyade_tick":2401}}'
+
+	# Write as a 1-line NDJSON file.
+	var ndjson_path: String = _output_dir.path_join("round_trip.ndjson")
+	var agg_path: String = _output_dir.path_join("round_trip_agg.json")
+	DirAccess.make_dir_recursive_absolute(_output_dir)
+
+	var f: FileAccess = FileAccess.open(ndjson_path, FileAccess.WRITE)
+	if f == null:
+		fail_test("Could not write round-trip NDJSON fixture to: " + ndjson_path)
+		return
+	f.store_string(SPEC_EXAMPLE_A + "\n")
+	f.close()
+
+	# Run aggregator directly (no batch script involved).
+	var cmd: String = '"%s" "%s" "%s" --output "%s"' % [
+		"python3", _aggregate_script, ndjson_path, agg_path
+	]
+	var output: Array[String] = []
+	var exit_code: int = OS.execute("/bin/bash", ["-c", cmd], output, true)
+	assert_eq(exit_code, 0, "aggregate_match_results.py must exit 0 on canonical NDJSON. Output: " + str(output))
+
+	if exit_code != 0:
+		return
+
+	var af: FileAccess = FileAccess.open(agg_path, FileAccess.READ)
+	if af == null:
+		fail_test("Could not open round-trip aggregate.json at: " + agg_path)
+		return
+	var raw: String = af.get_as_text()
+	af.close()
+
+	var agg: Variant = JSON.parse_string(raw)
+	assert_true(agg is Dictionary, "round-trip aggregate.json must parse as JSON object")
+	if not agg is Dictionary:
+		return
+	var d: Dictionary = agg as Dictionary
+
+	# iran.combat_units_alive_at_end = 6 → military_at_end.iran_units_alive median must be 6.0, not 0.0
+	var mil: Variant = d.get("military_at_end", null)
+	assert_true(mil is Dictionary, "military_at_end must be a Dictionary")
+	if mil is Dictionary:
+		var iran_units: Variant = (mil as Dictionary).get("iran_units_alive", null)
+		assert_true(iran_units is Dictionary, "military_at_end.iran_units_alive must be a Dictionary")
+		if iran_units is Dictionary:
+			var median: float = float((iran_units as Dictionary).get("median", 0.0))
+			assert_eq(median, 6.0,
+				"military_at_end.iran_units_alive.median must be 6.0 (from combat_units_alive_at_end=6), not " + str(median))
+
+	# events.turan_probes_fired = 6 → events.turan_probes_fired.total must be 6, not 0
+	var ev_agg: Variant = d.get("events", null)
+	assert_true(ev_agg is Dictionary, "aggregate events key must exist")
+	if ev_agg is Dictionary:
+		var probes: Variant = (ev_agg as Dictionary).get("turan_probes_fired", null)
+		assert_true(probes is Dictionary, "events.turan_probes_fired must be a Dictionary")
+		if probes is Dictionary:
+			var total_probes: int = int((probes as Dictionary).get("total", 0))
+			assert_eq(total_probes, 6,
+				"events.turan_probes_fired.total must be 6 (from events.turan_probes_fired=6), not " + str(total_probes))
+
+	# events.units_killed_total = 28 → events.units_killed_total.total must be 28, not 0
+	if ev_agg is Dictionary:
+		var kills: Variant = (ev_agg as Dictionary).get("units_killed_total", null)
+		if kills is Dictionary:
+			var total_kills: int = int((kills as Dictionary).get("total", 0))
+			assert_eq(total_kills, 28,
+				"events.units_killed_total.total must be 28 (from events.units_killed_total=28), not " + str(total_kills))
