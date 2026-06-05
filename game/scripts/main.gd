@@ -218,6 +218,22 @@ func _ready() -> void:
 		Engine.get_version_info().get("string", "unknown"),
 		SimClock.SIM_HZ,
 	])
+
+	# Wave-3-Sim mirror C2.1 follow-up — under `--headless-batch`,
+	# instantiate HeadlessMatchRunner BEFORE _spawn_starting_* so the
+	# runner's signal subscriptions (EventBus.unit_spawned in particular)
+	# latch the very first unit emissions. Previously the runner was
+	# spawned after, missing every starting-roster `unit_spawned`. The
+	# runner is a plain Node + its _ready fires before add_child returns
+	# control to this function.
+	#
+	# Args land in OS.get_cmdline_user_args() (everything after the `--`
+	# separator). OS.get_cmdline_args() returns the FULL argv including
+	# engine-consumed args like `--headless` / `--path`; user_args is
+	# the cleaner seam + mirrors the runner's _parse_args.
+	if OS.get_cmdline_user_args().has("--headless-batch"):
+		_spawn_headless_match_runner()
+
 	# Wave-3-Throne — Thrones spawn BEFORE units so workers can deposit at
 	# them from tick 0 (no race where the first gather cycle completes
 	# before any Throne exists). Each Throne joins the &"thrones" SceneTree
@@ -226,21 +242,6 @@ func _ready() -> void:
 	_spawn_starting_buildings()
 	_spawn_starting_units()
 	_spawn_starting_resources()
-
-	# Wave-3-Sim — under `--headless-batch` (the AI-vs-AI batch runner),
-	# instantiate HeadlessMatchRunner as a child of self so it can observe
-	# the match end-to-end (EventBus.throne_destroyed subscription +
-	# timeout watchdog + NDJSON emit + get_tree().quit(0)). The runner is
-	# spawned AFTER _spawn_starting_buildings/units so all starting Thrones,
-	# Kargars, etc. exist before signal subscription latches first events.
-	#
-	# Args land in OS.get_cmdline_user_args() (everything after the `--`
-	# separator). OS.get_cmdline_args() returns the FULL argv including
-	# engine-consumed args like `--headless` / `--path`, which would also
-	# work for has("--headless-batch") but we standardize on user_args
-	# for clarity + to mirror the runner's _parse_args.
-	if OS.get_cmdline_user_args().has("--headless-batch"):
-		_spawn_headless_match_runner()
 
 
 # Wave-3-Sim Track 2 — boot the HeadlessMatchRunner under --headless-batch.

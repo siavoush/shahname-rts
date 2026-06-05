@@ -173,32 +173,41 @@ for (( i=0; i<N_MATCHES; i++ )); do
   "duration_ticks": %d,
   "duration_seconds": %s,
   "first_engagement_tick": %d,
+  "timeout": false,
   "iran": {
     "throne_destroyed": %s,
     "throne_hp_pct_at_end": %s,
     "workers_alive_at_end": 4,
-    "units_alive_at_end": 6,
+    "combat_units_alive_at_end": 6,
     "buildings_alive_at_end": 4,
     "buildings_destroyed": 0,
     "coin_x100_at_end": 18000,
     "grain_x100_at_end": 9000,
-    "farr_x100_at_end": 4500
+    "farr_x100_at_end": 4500,
+    "units_produced_total": 8,
+    "buildings_constructed_total": 4
   },
   "turan": {
     "throne_destroyed": %s,
     "throne_hp_pct_at_end": %s,
-    "workers_alive_at_end": 2,
-    "units_alive_at_end": 3,
+    "workers_alive_at_end": 0,
+    "combat_units_alive_at_end": 3,
     "buildings_alive_at_end": 1,
     "buildings_destroyed": 1,
-    "coin_x100_at_end": 8000,
-    "grain_x100_at_end": 4000,
-    "farr_x100_at_end": 2000
+    "coin_x100_at_end": 0,
+    "grain_x100_at_end": 0,
+    "farr_x100_at_end": 2000,
+    "units_produced_total": 0,
+    "buildings_constructed_total": 0
   },
-  "events_summary": {
+  "events": {
     "turan_probes_fired": %d,
+    "turan_units_deployed_total": 5,
     "buildings_destroyed_total": 1,
-    "units_killed_total": 12
+    "units_killed_total": 12,
+    "farr_drain_events_total": 4,
+    "kaveh_event_triggered": false,
+    "iran_first_piyade_tick": 2401
   }
 }\n' \
             "${MATCH_ID}" "${MATCH_SEED}" "${OUTCOME}" "${WINNER_TEAM}" \
