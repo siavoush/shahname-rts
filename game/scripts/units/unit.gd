@@ -258,6 +258,15 @@ func _ready() -> void:
 		unit_id = _next_unit_id
 		_next_unit_id += 1
 
+	# Wave 3-Sim mirror C1.2 fix — join the canonical &"units" SceneTree
+	# group so DummyIranController + HeadlessMatchRunner + any future
+	# discovery consumer share one primitive. Mirrors Building._ready which
+	# joins &"buildings" at building.gd:358. Pre-fix, Unit was the only
+	# major class lacking a group, which silently inerted DummyIran's
+	# Kargar-dispatch (it queried &"units" but found nothing — Iran's
+	# economy never started, Iran always stalemated).
+	add_to_group(&"units")
+
 	# Mirror the team to the SpatialAgentComponent so spatial queries
 	# filter correctly. The SpatialAgentComponent has its own @export for
 	# team, but the Unit owns the canonical team value (set by spawn code).
@@ -361,6 +370,18 @@ func _ready() -> void:
 	# take over deterministic ordering when it ships.
 	if not EventBus.sim_phase.is_connected(_on_sim_phase):
 		EventBus.sim_phase.connect(_on_sim_phase)
+
+	# Wave 3-Sim mirror C2.1 — emit unit_spawned for end-of-_ready latching
+	# consumers (HeadlessMatchRunner's iran_first_piyade_tick; Phase 5+
+	# sound-FX + tutorial cues). Payload is a Dictionary so future fields
+	# extend without breaking subscribers; current keys are documented at
+	# the signal declaration in event_bus.gd.
+	EventBus.unit_spawned.emit({
+		&"unit_type": unit_type,
+		&"team": team,
+		&"unit_id": unit_id,
+		&"position": global_position,
+	})
 
 
 # Disconnect on tree exit so a freed unit's FSM doesn't keep ticking after

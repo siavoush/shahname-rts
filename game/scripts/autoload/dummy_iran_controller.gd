@@ -203,12 +203,16 @@ func _dispatch_workers_to_mines() -> void:
 		return
 
 	# Find resource_nodes group; if empty, log and return (the runner's
-	# scene may not have mines in fixture cases).
+	# scene may not have mines in fixture cases). Mines don't all expose a
+	# `team` field — coin mines are neutral via *absence* of team rather
+	# than TEAM_NEUTRAL literal. Treat null/missing team as neutral.
 	var mines: Array[Node] = []
 	for node: Node in get_tree().get_nodes_in_group(&"resource_nodes"):
 		if not is_instance_valid(node):
 			continue
-		if int(node.get(&"team")) == Constants.TEAM_NEUTRAL:
+		var team_v: Variant = node.get(&"team")
+		var team_int: int = int(team_v) if team_v != null else Constants.TEAM_NEUTRAL
+		if team_int == Constants.TEAM_NEUTRAL:
 			mines.append(node)
 	if mines.is_empty():
 		# Silent no-op — same rationale as kargars.is_empty() above.

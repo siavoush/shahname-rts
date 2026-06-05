@@ -116,6 +116,24 @@ func _ready() -> void:
 	# §9.D9 Q3 RNG discipline — seed defensively (see file header).
 	seed(_match_seed)
 
+	# Wave 3-Sim mirror C2.3 — accelerate wall-clock pacing. Default Godot
+	# physics_ticks_per_second is 60. Raise it + max_physics_steps_per_frame
+	# so the engine can fire multiple physics frames per render frame, and
+	# SimClock's accumulator can drain all pending ticks per frame. The hard
+	# upper bound is the CPU cost of one sim tick (spatial queries +
+	# pathfinding + fog updates + per-unit FSM ticking). On a 14-combat-unit
+	# starting roster the empirical sim-cost-per-tick limits us to ~25-30
+	# sim-ticks/wall-sec regardless of the configured physics rate; further
+	# speedup requires sim-level optimization (Phase 4+ scope: spatial
+	# culling for AI scans, batched pathfinding, etc.). At ~30
+	# sim-ticks/wall-sec a 60K-tick worst-case match is ~33 wall-min;
+	# balance-engineer's 50-match calibration cycle is ~28h. Configured
+	# aggressively to extract whatever speedup the engine can give without
+	# changing simulation semantics. SimClock correctness (sim_phase order,
+	# on-tick assertion, fixed-point math) is invariant under these knobs.
+	Engine.physics_ticks_per_second = 1800
+	Engine.max_physics_steps_per_frame = 12
+
 	_start_tick = SimClock.tick
 	_subscribe_signals()
 
@@ -190,11 +208,12 @@ func _subscribe_signals() -> void:
 		_connected_unit_health_zero = true
 
 	# iran_first_piyade_tick latch: subscribe to unit_spawned per
-	# AI_VS_AI_RESULT_FORMAT §7.1.
-	if EventBus.has_signal(&"unit_spawned"):
-		if not EventBus.unit_spawned.is_connected(_on_unit_spawned):
-			EventBus.unit_spawned.connect(_on_unit_spawned)
-			_connected_unit_spawned = true
+	# AI_VS_AI_RESULT_FORMAT §7.1. Wave 3-Sim mirror C2.1 — the signal is
+	# declared in event_bus.gd (no longer guarded by has_signal which would
+	# mask the spec-vs-EventBus drift the original code shipped with).
+	if not EventBus.unit_spawned.is_connected(_on_unit_spawned):
+		EventBus.unit_spawned.connect(_on_unit_spawned)
+		_connected_unit_spawned = true
 
 
 # Win-condition handler. team_id = the team WHOSE Throne fell. Winner is
@@ -374,23 +393,30 @@ func _capture_team_fields(team_id: int) -> Dictionary:
 			continue  # accounted in throne-block below
 		buildings += 1
 
-	# Iterate thrones group separately.
+	# Iterate thrones group separately. Wave 3-Sim mirror C2.4 — the
+	# `has_method(&"get_health")` guard was a stale relic; every Throne
+	# has a HealthComponent post-Wave 3-BD. Asserting catches future
+	# regression at runner_ready time instead of producing a silently-zero
+	# throne_hp_pct field. Same memory pattern as BUG-C1, BUG-D2, and the
+	# `coin_for` vs `get_coin_x100` case fixed in a5f5f21.
 	for node: Node in st.get_nodes_in_group(&"thrones"):
 		if not is_instance_valid(node):
 			continue
 		if int(node.get(&"team")) != team_id:
 			continue
 		throne_destroyed = false
-		# Read HealthComponent if exposed; defensive against schema variants.
-		if node.has_method(&"get_health"):
-			var hc: Variant = node.call(&"get_health")
-			if hc != null and is_instance_valid(hc):
-				var hp_x100_v: Variant = hc.get(&"hp_x100")
-				var max_hp_x100_v: Variant = hc.get(&"max_hp_x100")
-				if hp_x100_v != null and max_hp_x100_v != null:
-					var max_x100: int = int(max_hp_x100_v)
-					if max_x100 > 0:
-						throne_hp_pct = 100.0 * float(int(hp_x100_v)) / float(max_x100)
+		assert(node.has_method(&"get_health"),
+			"throne lacks get_health() — Wave 3-BD contract regressed")
+		var hc: Variant = node.call(&"get_health")
+		assert(hc != null and is_instance_valid(hc),
+			"throne.get_health() returned null/freed — HC schema regressed")
+		var hp_x100_v: Variant = hc.get(&"hp_x100")
+		var max_hp_x100_v: Variant = hc.get(&"max_hp_x100")
+		assert(hp_x100_v != null and max_hp_x100_v != null,
+			"HealthComponent.hp_x100/max_hp_x100 fields missing — HC schema regressed")
+		var max_x100: int = int(max_hp_x100_v)
+		if max_x100 > 0:
+			throne_hp_pct = 100.0 * float(int(hp_x100_v)) / float(max_x100)
 		break  # one throne per team
 
 	# Resource state — only Iran uses ResourceSystem at MVP per §7.3.
@@ -435,7 +461,7 @@ func _disconnect_signals() -> void:
 		if EventBus.unit_health_zero.is_connected(_on_unit_health_zero):
 			EventBus.unit_health_zero.disconnect(_on_unit_health_zero)
 		_connected_unit_health_zero = false
-	if _connected_unit_spawned and EventBus.has_signal(&"unit_spawned"):
+	if _connected_unit_spawned:
 		if EventBus.unit_spawned.is_connected(_on_unit_spawned):
 			EventBus.unit_spawned.disconnect(_on_unit_spawned)
 		_connected_unit_spawned = false
