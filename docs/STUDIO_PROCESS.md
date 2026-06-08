@@ -422,6 +422,68 @@ Cites Manifesto Principle 4 (Lean Iteration — eliminate the 3-step round-trip 
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-28 session-9 close; balance-engineer-p3s3 retro reflection → lead codification]
 
+#### B5. Tractability-probe before deferral acceptance — claimed-deferred items owe a 15-min probe OR a "what I tried" disclosure before lead accepts the deferral
+
+**Rule.** When a track agent declares "X is deferred to follow-up wave / carry-forward / next session," the deferral acceptance requires either:
+1. **"What I tried" disclosure**: 1-2 sentence summary of the investigation that led to the deferral judgment, OR
+2. **Disclosure of non-investigation**: explicit "I didn't probe tractability" admission, in which case the agent owes a 15-minute tractability probe BEFORE the deferral becomes binding.
+
+The probe outcome gets logged in the deferral note: "probed — confirmed deferral / probed — found tractable seam X / probed — unclear, deferring for now with re-check trigger Y."
+
+**Actor.** Track agent at deferral-declaration time. Lead at deferral-acceptance time.
+
+**Trigger.** Any of:
+- Track agent commit message includes "deferred to" / "carry-forward" / "Phase X+" / "follow-up wave."
+- Track agent's [ready] broadcast names an item as out-of-scope-for-this-wave.
+- Brief proposes a deliverable that lands as "deferred" in the wave-close summary.
+
+**Why (N=2 session-10 evidence):**
+
+1. **Wave 3-Sim Step 5 (4 integration tests, fix-up-1 `a5f5f21`).** engine-architect-p3s2 initially shipped runner without 4 originally-spec'd integration tests, citing in commit message: *"the runner extends SceneTree; testing it from inside GUT requires subprocess invocation (no idiomatic in-process path). Track 3's `test_batch_runner_dry_run.gd` handles the end-to-end smoke. My focused tests cover the load-bearing surfaces without subprocess overhead."* Lead read the framing as confident-and-investigated, accepted the deferral.
+
+   The framing was framed-as-investigated but the investigation hadn't actually found the seam. ~15 minutes later (at `a75b68d`), engine-architect went back, found the testability seam (`_test_skip_emit` + `_assemble_result_dict` extract, mirroring MatchHarness `_test_set_farr` precedent), and shipped all 27 tests. The deferral was framed-as-genuine but was actually accept-pressure-driven; the probe revealed the seam in minutes.
+
+2. **Wave 3-Sim BLOCKER C1.2 (Path A vs Path B reasoning).** engine-architect-p3s2's path-A vs path-B analysis on the DummyIranController unit-discovery fix (counted 61 autoload references for path B; identified path A as net SHRINK) IS the canonical example of the F7 reasoning chain working as designed. This is the GOOD version: explicit cost/benefit accounting before picking. F6 (the Step 5 deferral) is the FAILURE version where the cost/benefit wasn't done.
+
+**The "deferrals get locked in by acceptance pressure" failure mode (engine-architect-p3s2 retro framing).** A track agent reads scope pressure, frames an item as deferred with confident reasoning, and submits. Lead reads the confident framing + judges it reasonable + accepts. Now the deferred item carries lead-blessing, making it psychologically harder for the agent to revisit. The Step 5 case escaped the lock-in because explicit dispatch directive forced re-evaluation; the rule prevents the lock-in upstream by requiring evidence-of-investigation at deferral-declaration time.
+
+**Distinguishes from `feedback_action_items_dont_defer.md` (lead memory).** That memory addresses retro action items going stale (deferred-from-retro items not getting picked up in subsequent sessions). B5 addresses deferred-from-wave items getting locked-in by acceptance pressure at wave-close. Different failure modes, sibling discipline.
+
+**Operational form (track agent at deferral-declaration).** In commit message OR [ready] broadcast, include:
+
+```
+DEFERRAL — <item>:
+  Probe outcome: [investigated 15 min — found <seam X> | investigated 15 min — confirmed truly deferred | did not probe — deferral is convenience-framed, lead may override]
+  Reasoning: <1-2 sentences>
+  Re-check trigger: <condition that would re-open the question, e.g., "if Track Y ships before this wave closes" / "if smoke surfaces gap"> 
+```
+
+**Operational form (lead at deferral-acceptance).** Lead reads the probe-outcome line:
+- "investigated — found seam X" → genuine deferral, accept with carry-forward note.
+- "investigated — confirmed deferred" → accept.
+- "did not probe" → reply with explicit dispatch directive to probe OR override the deferral with lead-judgment.
+
+**Where reviewers enforce.**
+
+- **Lead at wave-close**: deferred items without probe-outcome line in commit/broadcast = reply requesting the probe before accepting.
+- **Mirror-reviewer integration-time**: deferrals that masked actual bugs (Wave 3-Sim's "DummyIranController build-commands deferred" framing masked the C1.2 unit-discovery bug) surface as findings.
+
+**Where authors apply.**
+
+- **Track agents** at deferral-declaration time: write the probe-outcome line as part of the commit-message template. The line is the agent's contract with the lead about evidence-of-investigation.
+- **Lead** at wave-close: scan for deferral language; verify each has a probe-outcome line; reply with directive if missing.
+
+**Anti-patterns to flag.**
+
+- "Deferred for scope-control" (no probe) — convenience framing; demand the probe.
+- "Deferred to follow-up wave" (no probe + no re-check trigger) — locks in indefinitely; demand the trigger condition.
+- "I considered it but it seemed hard" — that's "didn't probe"; demand the actual 15-min investigation.
+- "Other agents are blocked on something else; I'll defer this" — different failure mode (blocking), not a deferral; surface the actual blocker explicitly.
+
+Cites Manifesto Principle 1 (Truth-Seeking — investigated-and-deferred is honest; presumed-and-deferred is not) + Principle 6 (Honest-tools-not-magic-tricks — "deferral framing as a magic trick that papers over not-investigating") + Principle 10 (Feedback Cycle — the probe IS the feedback before commitment, not after).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-06-08 session-10 close; engine-architect-p3s2 retro reflection (drafted rule + Step 5 self-flag as evidence) → lead codification. Sister discipline to `feedback_action_items_dont_defer.md` memory (covers retro action-item deferral); together they cover both upstream + downstream deferral-lock-in failure modes.]
+
 ---
 
 ### §9.C — SSOT Discipline
@@ -850,6 +912,66 @@ Cites Manifesto Principle 10 (Feedback Cycle — surface the integration questio
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-28 session-9 close; gp-sys-p3s3 retro reflection N=3 latent-bug exhibits (BUG-D2 + BUG-H1 + BUG-G1 generalization) → lead codification]
 
+#### D12. Canonical-spec-pin in dispatch — parallel-worktree tracks MUST cite the canonical spec doc by path + commit SHA in the dispatch message; track's first [ready] broadcast MUST acknowledge read-against-canonical
+
+**Rule.** When a wave has 2+ parallel-worktree tracks sharing a data contract (NDJSON schema, signal payload, autoload API, file format), the lead's dispatch message to each track MUST include:
+1. **Canonical spec source line**: `Canonical schema: <doc_path> @ <git_sha>` — the exact path + commit SHA at dispatch time.
+2. **Read-before-write requirement**: explicit "read this doc before writing any field/signal/method references" prereq.
+
+Each track's first `[ready]` broadcast MUST acknowledge the canonical-read by quoting the schema SHA they wrote against.
+
+**Actor.** Lead at dispatch-time. Track agents at first [ready] broadcast.
+
+**Trigger.** Brief declares 2+ tracks AND any of:
+- One track produces data the other track(s) consume.
+- Multiple tracks reference the same schema doc, signal contract, or autoload API.
+- The brief contains an inline schema example (the brief's example is implicitly a contract).
+
+**Why (N=1 session-10 evidence + retroactive applicability):**
+
+Wave 3-Sim BLOCKER C1.1 (session 10 integration-time mirror finding): qa-engineer's Track 3 wrote `units_alive_at_end` / `events_summary` against the brief's §3 Q5 starting-proposal NDJSON; engine-architect's Track 2 + balance-engineer's Track 1 spec used `combat_units_alive_at_end` / `events` per the canonical doc that superseded Q5. Track 3's dry-run tests passed because their wrong-name fixture matched their wrong-name assertions (self-consistent within Track 3, divergent from Track 1 spec). Mirror caught only at integration-time by cross-checking against the canonical doc. Three-agent retro convergence (balance-engineer + engine-architect + qa-engineer all independently flagged this exact root cause) made the structural fix obvious.
+
+**Why the dispatch-time pin matters.** Multiple plausible-looking sources of the schema exist in any non-trivial wave: the brief's §X starting proposal, the spec doc the wave produces, the brief's inline example, prior-wave conventions. Without an explicit "this doc at this SHA is canonical" stamp, each track agent picks the most-recently-read or most-locally-accessible source. The brief's starting proposal is read first; if the canonical spec evolves during the wave, the track-3-style drift is the default failure mode.
+
+**Operational form (lead dispatch template addition):**
+
+```
+Canonical schema: docs/AI_VS_AI_RESULT_FORMAT.md @ 381cf1a
+Read this doc before writing any field references in your track.
+Your first [ready] broadcast MUST confirm you wrote against this SHA.
+```
+
+**Operational form (track [ready] broadcast addition):**
+
+```
+[ready] <track-name> wave-<X> at <commit>
+Canonical schema confirmed: docs/AI_VS_AI_RESULT_FORMAT.md @ 381cf1a (read before write).
+<rest of broadcast...>
+```
+
+**Tracks that don't share a data contract.** When tracks are genuinely independent surfaces (e.g., Wave 2B's gp-sys Track 1 + world-builder Track 2 + balance-engineer Track 3 — different files, no shared schema), the pin is unnecessary. The rule fires only when track-coupling exists. Lead judgment at dispatch-drafting time: is there a single doc whose field/method names appear in two or more tracks' deliverables? If yes, pin it.
+
+**Distinguishes from §9.D11 (First-Consumer Trace).** D11 names the consumer of the wave's output. D12 names the source of the wave's contract. Both fire at brief-time / dispatch-time; both are mirror-reviewer-backstop-eligible.
+
+**Where reviewers enforce.**
+
+- **Mirror-reviewer brief-time review** verifies every multi-track brief's dispatch templates carry the canonical-schema pin. Brief without pin on a multi-track wave = SUGGEST → BLOCKER if the tracks have schema-sharing surface (NDJSON, signal payload, autoload API).
+- **Mirror-reviewer integration-time review** verifies the round-trip (§9.M8): if a track's deliverable references field names diverging from the canonical, find the missing pin acknowledgment in the [ready] broadcast as the upstream gap.
+
+**Where authors apply.**
+
+- **Lead (dispatch author)**: for 2+ track waves, add Canonical-schema line to each dispatch message; verify in the canonical doc's frontmatter that `ssot_for` lists the schema explicitly.
+- **Track implementers**: at start-of-implementation, open the cited doc at the cited SHA; do the field-by-field diff against your track's surface; confirm the read in your [ready] broadcast.
+
+**Two-actor framing (per §9.L11.1 pattern).** Lead's dispatch pin (primary discipline) + track's [ready] confirmation (acknowledgment) + mirror-reviewer integration-time round-trip (backstop). Each actor catches a different failure mode:
+- Pin missing in dispatch → mirror-reviewer brief-time finding.
+- Pin present, track ignored it → mirror-reviewer integration-time round-trip catches the drift.
+- Both present and honored → no drift surfaces.
+
+Cites Manifesto Principle 7 (SSOT — canonical doc IS the truth; multiple plausible-looking sources create the drift surface) + Principle 1 (Truth-Seeking — name the canonical source explicitly; don't hope agents pick the right one) + Principle 9 (Automated Enforcement — round-trip test sentinel from §9.M8 is the after-the-fact backstop; pin is the before-the-fact prevention).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-06-08 session-10 close; balance-engineer-p3s3 + engine-architect-p3s2 + qa-engineer-p3s3 three-agent retro convergence (each independently flagged the same root cause for BLOCKER C1.1) → lead codification. Sister rule to §9.M8 (real-data round-trip — the after-the-fact sentinel for what D12 prevents at dispatch-time).]
+
 ---
 
 ### §9.E — Wave-Mode & Worktree
@@ -1033,6 +1155,64 @@ The pattern in both incidents: tests exercised the producer's internals, not the
 Cites Manifesto Principle 1 (Truth-Seeking — test the wiring path, not the function body) + Principle 9 (Automated Enforcement — the gap that makes it to live-test was already detectable in tests). See also §9.H3 (dormant-schema first-exercise call-out), §9.D7(b) (cross-track diagnostic), §9.F3 (behavioral-vs-structural discipline).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-24 session-8 close — BUG-D1/D2 root-cause codification, world-builder-p3s2 origination]
+
+#### F6. Integration-time mirror review — hard rule for waves with 2+ tracks; pre-PR-merge gate
+
+**Rule.** For any wave with 2+ parallel-worktree tracks, lead dispatches mirror-reviewer for an **integration-time code-pass on the merged branch BEFORE PR-merge**. This is in addition to the brief-time mirror review (which fires at brief v1.0 → v1.x finalization). Single-track waves may skip integration-time mirror at lead discretion.
+
+**Actor.** Lead at wave-close time. Mirror-reviewer (architecture-reviewer subagent) at integration-time code-pass.
+
+**Trigger.** Wave-close PR opened on a multi-track integration branch; suite green; smoke green (per §8 wave-close criteria). Mirror dispatch fires BEFORE the merge button.
+
+**Why (session-10 evidence + structural argument):**
+
+Two mirror passes on Wave 3-Sim caught complementary failure classes:
+- **Brief-time mirror (v1.0.1 → v1.0.2)** caught 2 BLOCKERS + 2 structural fixes + 3 suggestions. Findings observable from the brief: SSOT drift risk (MatchHarness fork — C1.1), missing infra in touch list (FogSystem.reset() never existed — C3.1), track-mode declaration gaps (C4.1). All catchable by reading the brief + greping the repo. None required running the code.
+
+- **Integration-time mirror (post-merge-pre-PR-merge)** caught 3 BLOCKERS + 4 RISKs. Findings catchable only against the merged-and-running system: schema drift between Track 3 aggregator and Track 1 spec (C1.1 — see §9.M8 + §9.D12), DummyIranController structurally inert because Unit.gd doesn't join &"units" group (C1.2), missing ARCH §2 row (C1.3), real-time pacing impact (C2.3 — value-prop fails at first-consumer time). These are **emergent properties of cross-track integration** that brief-time review couldn't see.
+
+The two windows do two distinct review-jobs:
+- **Brief-time** = contract-correctness review (does the brief specify a buildable thing?).
+- **Integration-time** = integrated-system-correctness review (does the merged thing produce truthful outputs?).
+
+Compressing both into one window loses half the value either way. The cost of an integration-time pass is 1 mirror invocation. The cost of integration bugs landing in main is what Wave 3-Sim post-merge-pre-PR-merge fix-up cycle just lived through: 3 BLOCKERS that would have shipped silently producing wrong numbers.
+
+**Operational form.** After wave-close PR is opened (per §8 criteria), BEFORE merging:
+
+```
+1. Lead dispatches architecture-reviewer (subagent) with:
+   - Branch + PR URL + worktree path.
+   - Brief reference + canonical spec docs.
+   - Integration-time focus areas: cross-track integration surfaces, smoke anomalies,
+     SSOT seams between tracks, mirror's pre-PR-merge concerns.
+   - Output format: BLOCKER / RISK / SUGGEST + verdict (MERGE-AS-IS, FIX-FIRST-THEN-MERGE, FIX-IN-FOLLOW-UP-PR).
+2. Mirror returns review.
+3. BLOCKERS fix-up cycle (parallel agent dispatches if multiple tracks affected).
+4. Re-merge fix-ups + re-run smoke + verify against mirror's findings.
+5. THEN merge PR.
+```
+
+**The "2+ tracks" threshold matters.** Single-track waves (e.g., a fix-wave landing one bug, a single-agent surface refactor) don't need integration-time mirror — the brief-time mirror review already saw the full surface. Multi-track waves create cross-track-integration surface that emerges only at merge time; that's the surface integration-time mirror exists to catch.
+
+**Anti-pattern: skipping integration-time mirror to "save time."** The session-10 Wave 3-Sim case is the empirical evidence: 3 fix-up commits across qa-engineer + engine-architect + lead were needed to close BLOCKERS the integration-time mirror surfaced. Skipping the review would have shipped all 3 BLOCKERS to main with silent zero-fallback aggregate.json output. The "time saved" is illusory — the bugs land in main and cost more to diagnose downstream.
+
+**Distinguishes from §8 wave-close criteria.** §8 names the deliverable checklist (suite green, smoke green, ARCH + BUILD_LOG updated, PR opened). F6 adds the gate AFTER §8's checklist passes but BEFORE merge: mirror-reviewer integration-time pass.
+
+**Where reviewers enforce.**
+
+- **Lead self-discipline at wave-close**: for any wave with parallel-worktrees mode + 2+ tracks, dispatch integration-time mirror as part of wave-close. Don't merge until findings are resolved or explicitly deferred.
+- **Mirror-reviewer (subagent)** runs the integration-time pass when dispatched. Produces structured BLOCKER/RISK/SUGGEST output with verdict line.
+
+**Where authors apply.**
+
+- **Lead (wave-close author)**: §8 checklist + F6 dispatch is the canonical sequence. Treat the integration-time mirror as part of the wave's wave-close work, not an optional polish step.
+- **Track agents**: aware that integration-time mirror will catch cross-track gaps the brief-time mirror couldn't see. The Track 1 spec ↔ Track 2 runner ↔ Track 3 consumer alignment IS the surface integration-time mirror reviews.
+
+**Cost framing.** Integration-time mirror takes ~10-20 minutes of agent time per wave. Brief-time mirror takes ~10-20 minutes. Combined ~30-40 minutes of mirror time per multi-track wave. Wave 3-Sim's fix-up cycle (post-integration-time-mirror findings) was ~2 hours wall-clock. Without the review, the same bugs land in main and cost N hours to diagnose post-fact when a downstream consumer surfaces them. ROI is overwhelming.
+
+Cites Manifesto Principle 1 (Truth-Seeking — integration-time review reads the actual truth, not the planned truth) + Principle 9 (Automated Enforcement — mirror is the mechanical second-tier net) + Principle 10 (Feedback Cycle — integration-time mirror IS the feedback cycle at wave-close).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-06-08 session-10 close; engine-architect-p3s2 retro reflection (drafted rule + ROI argument) + Wave 3-Sim mirror-driven 3-commit fix-up cycle as empirical evidence → lead codification. Sister rule to §9.D12 (canonical-spec-pin at dispatch) + §9.M8 (real-data round-trip) — together form the integration-failure-mode triad.]
 
 ---
 
@@ -1394,6 +1574,62 @@ Cites Manifesto Principle 4 (Lean Iteration — parallel research without timeli
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-28 session-9 close; loremaster-p3s5 retro reflection (N=2 watchlist proposal) + N=2 exhibits → lead codification as watchlist entry]
 
+#### J6. Loremaster-light wave routing — brief-time fire IF AND ONLY IF the brief contains a cultural-shape-question; implementation + retro dispatch skipped
+
+**Rule.** For waves that are predominantly plumbing / infrastructure / refactor (no new building shipped, no new unit shipped, no Farr/Kaveh/narrative event triggered, no anchor-category-classifiable surface), loremaster dispatch routes as follows:
+- **Brief-time:** fire loremaster IFF the brief contains a cultural-shape-question (e.g., "how should X resolve culturally?", "what's the canonical Shahnameh stance on Y?", "does Z map to a documented loremaster taxonomy entry?"). One question is sufficient to trigger; zero questions = skip.
+- **Implementation-time:** skip (no cultural surface for loremaster to engage with).
+- **Retro-time:** skip OR light-touch (~10-20 min single-question reflection rather than the full multi-prompt format). Light-touch is performative if there's no signal; honest "no signal this session" is fine.
+
+**Actor.** Lead at brief-dispatch and retro-dispatch decision points.
+
+**Trigger.** Brief is "loremaster-light" by composition:
+- No new Building subclass (anchor-category J2 trigger absent).
+- No new Unit subclass (cultural-anchor-classification trigger absent).
+- No new Farr / Kaveh / narrative-event mechanic.
+- No new contract requiring J4 intent-vs-implementation triple.
+
+OR the brief contains a single cultural-shape-question and otherwise no cultural surface.
+
+**Why (Wave 3-Sim, session 10):**
+
+Wave 3-Sim was 95% plumbing (headless runner + batch script + Python aggregator + NDJSON schema). The ONLY cultural touchpoint was the Q1 win-condition cultural-shape-question (match-time vs narrative-time framing for throne-destruction). Loremaster fire at brief-time was warranted (Q1 needed the Shahnameh-canonical answer). Loremaster fire at implementation-time would have been performative (nothing to engage with). Loremaster fire at retro-time would have produced "no signal this session" reflections if forced full-format; the light-touch retro dispatch (3-prompt, ~10-20 min, "answer what you have signal on, skip the rest") was the right shape.
+
+Loremaster-p3s5's session-10 retro reflection confirmed: *"Plumbing waves like Wave 3-Sim shouldn't dispatch loremaster at implementation-time or retro-time — that would be performative; nothing to reflect on past the brief-time verdict. But the dispatch you sent for Q1 was correct — brief-time loremaster fire was warranted there, even on a plumbing wave, because the cultural question (when does a kingdom end?) was load-bearing for the implementation choice. The pattern that fits: brief-time loremaster fire when a plumbing wave has cultural-shape-question, even one question; skip implementation + retro otherwise."*
+
+**Distinguishes from J1 (brief-time review formalization).** J1 specifies WHEN loremaster brief-time review fires for cultural-anchor waves (new Building / Unit / Farr surface). J6 covers the LEFT-OUT case: plumbing waves with a SINGLE cultural-shape-question. J1 + J6 together cover the full triage matrix:
+- **Cultural-anchor wave** (J1 fires): brief-time + maybe implementation + retro.
+- **Plumbing wave with cultural-shape-question** (J6 fires): brief-time only (sized to the question).
+- **Pure-plumbing wave** (neither fires): skip all loremaster dispatch.
+
+**The "cultural-shape-question" trigger.** A question whose answer requires Shahnameh-canonical knowledge, not engineering judgment. Examples:
+- "When does a kingdom end? (immediate throne-fall vs narrative succession-continuation)" — Wave 3-Sim Q1.
+- "Should X map to a documented J2 anchor-category, and which?"
+- "Does the player's Y action have a Shahnameh precedent we should preserve?"
+- "What's the canonical-Persian-term mapping for concept Z?" (When the brief proposes a Persian term without citation.)
+
+Engineering questions ("which data structure for the unit list?") and balance questions ("how much HP should X have?") are NOT cultural-shape-questions, even if they have downstream cultural-feel impact.
+
+**Where reviewers enforce.**
+
+- **Lead at brief-drafting**: explicit triage — is this a cultural-anchor wave (J1), a plumbing-with-cultural-question wave (J6), or pure-plumbing (skip)? Brief should make the determination visible.
+- **Mirror-reviewer brief-time review**: verifies the triage is honest. Brief that skips loremaster but contains a cultural-shape-question = SUGGEST. Brief that fires loremaster on pure-plumbing = SUGGEST (performative dispatch is its own anti-pattern; specialist time is finite).
+
+**Where authors apply.**
+
+- **Lead (brief author + retro dispatcher)**: applies the triage; sizes loremaster dispatch to the actual signal.
+- **Loremaster (recipient)**: empowered to respond with "no signal this session" if the dispatch was performative. Honesty over volume.
+
+**Anti-patterns to flag.**
+
+- "Loremaster has been in every retro so we should dispatch them this time too" — performative consistency vs. signal-driven dispatch. The point of the role is signal-quality, not consistent participation count.
+- "We might miss something cultural if we don't dispatch" — if there's no cultural surface, the miss is impossible. Trust the triage.
+- "Better to dispatch and let loremaster decide" — that pushes the triage burden onto the loremaster; the lead is the dispatch-decision actor.
+
+Cites Manifesto Principle 1 (Truth-Seeking — performative dispatch produces performative reflection; honest "no signal" is better) + Principle 4 (Lean Iteration — specialist time is finite; spend it where there's signal) + Principle 6 (Honest-tools-not-magic-tricks — "I dispatched everyone for completeness" is the magic-trick framing).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-06-08 session-10 close; loremaster-p3s5 retro reflection (light-touch wave-routing pattern + cultural-shape-question trigger) → lead codification. Companion to J1 (brief-time fire formalization for cultural-anchor waves).]
+
 ---
 
 ### §9.K — Retro Practice
@@ -1748,6 +1984,63 @@ For each numeric value V proposed in the brief:
 Cites Manifesto Principle 9 (Automated Enforcement — backstop IS the enforcement) + Principle 6 (Honest-tools-not-magic-tricks — admitting "self-discipline fails under drafting pressure" is more honest than "we codified it, problem solved"). N=1 post-codification violation (Wave 3-BD v1.0.0 max_hp); N=1 post-codification backstop catch (architecture-reviewer Wave 3-BD v1.0.0 → v1.0.1 correction).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-28 session-9 close; balance-engineer-p3s3 retro reflection (2-actor refinement) + lead self-discipline failure (Wave 3-BD v1.0.0) → codification]
+
+#### L11.2. Consumption-path tracing — affordability / reviewer-backstop checks MUST trace at least one production-code consumption path per field used in the analysis
+
+**Refinement of §9.L11.1.** L11 + L11.1 codified that lead's brief-time numeric values get cross-checked against `balance.tres`. L11.2 sharpens scope: checking balance.tres at face value is insufficient when the production code that CONSUMES the .tres value may diverge from it. Reviewer-backstop discipline MUST trace consumption paths for any field load-bearing in the analysis.
+
+**Actor.** Balance-engineer (or any agent doing reviewer-backstop work) at brief-time review.
+
+**Trigger.** Any of:
+- Affordability analysis cross-checking a brief's build-order or income claims.
+- Schema-vs-implementation reviewer-backstop on a balance.tres field.
+- Numeric-value verification where the value is consumed by ≥1 production-code site.
+
+**Rule.** For each field referenced in the analysis, the reviewer:
+1. Confirms the value exists in balance.tres at the cited line.
+2. Greps for ≥1 production-code consumption site (`git grep "<field_key>" game/scripts/`).
+3. Verifies the production code uses the value as expected (no hardcoded override, no stale name, no divergent fallback).
+
+If step 3 surfaces a divergence: surface as a finding (mine_node SSOT divergence pattern) for the wave or next-balance-tuning-wave to address.
+
+**Why (N=2 mine_node session-10):**
+
+Wave 3-Sim Track 1 balance-engineer affordability table flagged 2 production-code SSOT divergences from balance.tres:
+- `mine_node.gd` hardcoded `reserves = 100` vs balance.tres declaring `1500` (`_WAVE_1A_RESERVES_X100 = 10000` hardcode predating the .tres value).
+- `mine_node.gd` hardcoded `max_slots = 1` vs balance.tres declaring `mine_max_workers = 2` (Phase 3 simplification predating .tres consumption).
+
+Both were latent — the .tres values existed and looked authoritative; the hardcodes were in mine_node.gd unread. Without the consumption-path trace, the affordability table would have produced predictions assuming reserves=1500 / max_slots=2; the batch runner would have produced contradicting data; diagnosing why would have required another cycle.
+
+**Distinguishes from §9.L11.** L11 checks "does this value exist in balance.tres" (numeric authority). L11.2 checks "does the production code actually consume the balance.tres value" (numeric realization). Both are necessary; L11.2 is the load-bearing check when the analysis depends on the value being real, not just declared.
+
+**Operational form.** One grep per key claim:
+
+```bash
+# For each field F referenced in the affordability analysis:
+git grep "<F_key>" game/scripts/ | grep -v tests/
+# Confirm:
+#   ≥1 production read site, OR
+#   Surface as "field declared in .tres but no consumer" finding
+```
+
+**Generalizes beyond balance.tres.** Same pattern applies to:
+- BalanceData sub-resource fields (`bldg_<kind>.train_<unit>_<field>` access patterns — see BUG-C1).
+- FogConfig / EconomyConfig / AIConfig field consumption paths.
+- Constants.gd values referenced in brief prose (verify production-code consumes the canonical Constants reference, not a hardcoded duplicate).
+
+**Where reviewers enforce.**
+
+- **Mirror-reviewer brief-time review** runs the consumption-path grep against any field load-bearing in the brief's numeric claims. Brief that cites a balance.tres value without a consumer is a finding (the value is non-load-bearing — flag the brief for honesty about that, OR surface the missing consumer as the wave's responsibility).
+- **Architecture-reviewer brief-time review** verifies any reviewer-backstop check (affordability table, schema cross-check) explicitly cites consumption paths, not just the .tres values.
+
+**Where authors apply.**
+
+- **Balance-engineer** running any affordability table OR pre-implementation schema check adds ≥1 grep-per-field-claim to the analysis. The grep result IS part of the analysis output.
+- **Brief authors (lead)** when proposing numeric values, run the consumption-path grep first — surfaces "this field is declared but unconsumed" gaps before the brief ships.
+
+Cites Manifesto Principle 1 (Truth-Seeking — `balance.tres` declares; production code realizes; reviewer-backstop must verify both) + Principle 7 (SSOT — a value's authority requires both declaration AND consumption). Sister rule to §9.L11.1 (two-actor framing); the consumption-path grep is the load-bearing scope-correction.
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-06-08 session-10 close; balance-engineer-p3s3 retro reflection (mine_node N=2 evidence + tightening proposal) → lead codification. L11 + L11.1 + L11.2 form the three-layer balance-engineer brief-time backstop chain.]
 
 #### L12. Brief-time canonical-pattern grep — lead-side §9.L10 extension
 
@@ -2134,6 +2427,138 @@ Use hybrid when the inside-state diagnostic is useful periodically (e.g., monito
 Cites Manifesto Principle 1 (Truth-Seeking — diagnostic signal preserved through gating) + Principle 6 (Honest-tools-not-magic-tricks — flood-without-signal IS magic-trick log instrumentation) + Pitfall #16 (cached ref discipline).
 
 [History → STUDIO_PROCESS_HISTORY.md §9 2026-05-28 session-9 close; gp-sys-p3s3 retro reflection (5-site convergence) → lead codification]
+
+#### M7. Defensive-fallback-masking — production code MUST NOT guard contract-promised members with has_method / has_signal / has_property
+
+**Rule.** When a spec, contract doc, or canonical pattern promises that member X exists on type T, production code MUST access X directly. Defensive guards — `if X.has_method(&"Y"):`, `if X.has_signal(&"Z"):`, `if X.has(&"K"):` (Dictionary key probe), `if X.get(&"K", default) != default:` — are FORBIDDEN at the module-scope of production code outside a documented allowlist. Test fixtures and forward-compat scaffolding are the only sanctioned exceptions, and each must carry a one-line comment explaining WHY the guard exists.
+
+**Actor.** Implementer at moment-of-writing. Reviewer (godot-code-reviewer + mirror-reviewer) backstops at brief-time + code-time.
+
+**Trigger.** Any `has_method` / `has_signal` / `has_property` / `Dictionary.has(key)` / `Dictionary.get(key, default-then-discriminate)` call inside `game/scripts/` (excluding `game/scripts/.../tests/` test surfaces).
+
+**Why (N=5 across project lifetime):**
+
+1. **BUG-C1 (Wave 3A.6, session 7).** Building schema's `bldg_<kind>` access used `Dictionary.get(&"K", null)` returning null-discriminated; null-fallback silently zeroed all cost lookups; affordability gate trivially passed; deduction skipped; training spawned for free in live-test. Fix at `0679630`.
+
+2. **BUG-D2 (Wave 3A.5 retroactive, session 8).** `FogSystem._validate_team_bounds()` defensively returned `false` for out-of-bounds team_id; TURAN team_id passed actual bounds but was masked by an off-by-one; vision sources for Turan never registered; AI vision broken silently. Fix-wave at session 8 close.
+
+3. **BUG-3 of fix-up-1 (Wave 3-Sim Track 2 `a5f5f21`, session 10).** `HeadlessMatchRunner` called `ResourceSystem.get_coin_x100(team)` guarded by `has_method`. `get_coin_x100` does not exist on ResourceSystem (actual API: `coin_for(team)` returning float). Guard returned zero-fallback; every match's `iran.coin_x100_at_end` was 0 regardless of actual economy. Surfaced at integration-time mirror review.
+
+4. **`has_signal(&"unit_spawned")` (Wave 3-Sim Track 2 `c05ba77`, session 10).** Runner subscribed to `EventBus.unit_spawned` defensively; the signal didn't exist in EventBus; `iran_first_piyade_tick` was hardcoded to -1 in every match. Hard-asserted at runner spawn after RISK C2.1.
+
+5. **`has_method(&"get_health")` (Wave 3-Sim Track 2 `c05ba77`, session 10).** Throne capture guarded `target.get_health()` with has_method; the guard was a stale relic — post-Wave-3-BD, every Throne has a HealthComponent by contract. Hard-asserted at runner spawn after RISK C2.4.
+
+**The common failure shape.** Spec says X exists. Production code defensively guards X with has_X. X never lands (forgotten in implementation) OR X has a different name than the spec promised. Guard returns the false-branch silently. Production code's downstream behavior runs against a zero-fallback / null-fallback / unconditionally-skipped path. The bug surfaces only when output is examined for correctness, NOT when code runs or tests pass.
+
+**The defensive guard is functionally equivalent to silent error suppression.** It converts a contract violation (member X promised, X missing) into a zero/null output the consuming code can't distinguish from a real-zero result. The mechanical fix is hard-assert at the call site:
+
+```gdscript
+# WRONG (defensive-fallback-masking):
+if ResourceSystem.has_method(&"get_coin_x100"):
+    coin_x100 = ResourceSystem.get_coin_x100(team)
+# else: coin_x100 stays at default 0 silently
+
+# RIGHT (hard-assert; fails loudly on contract regression):
+assert(ResourceSystem.has_method(&"coin_for"), "ResourceSystem must expose coin_for(team) — see RNC §X")
+coin_x100 = int(ResourceSystem.coin_for(team) * 100)
+```
+
+The assert is the documentation of the contract dependency. Future contract regression crashes loudly at the call site with the assert's message, not silently miscomputes downstream values.
+
+**Mechanical lint candidate (L7).** Pattern-detection of forbidden guards is mechanizable:
+
+```
+FORBID at production-code module-level (game/scripts/ excluding /tests/):
+  - if X.has_method(&"Y"):
+  - if X.has_signal(&"Y"):
+  - if X.has_property(&"Y"):
+  - if X.has(&"Y"):  # Dictionary key probe
+  - if X.get(&"Y", default) != default:  # null-discrimination pattern
+EXCEPT entries in tools/L7_allowlist.txt with one-line WHY comment.
+```
+
+Allowlist seed (engine-architect to enumerate at L7 implementation time):
+- Tests/fixtures (exempt by path).
+- Forward-compat scaffolding (e.g., FarrSystem.register_emitter seam pre-Phase-5; documented with "this guard exists because X ships Phase Y").
+- Truly cross-Phase-compat code (rare; require approval).
+
+**Where reviewers enforce.**
+
+- **godot-code-reviewer brief-time + code-time** flags any new `has_method` / `has_signal` / `has_property` / `Dictionary.has` guard outside the allowlist. Without a WHY-comment + allowlist entry, the finding is BLOCKER.
+- **mirror-reviewer integration-time** runs an extra pass against new code looking for newly-introduced defensive guards. Mirror's session-10 catch of the two stale guards in HeadlessMatchRunner is the canonical evidence the pattern is detectable at code review.
+
+**Where authors apply.**
+
+- **Implementer agents** treat the "if has_X then call X else fallback" pattern as a red flag during writing. The 5-second self-check: *"Is X promised by a contract / spec / canonical pattern? If yes, hard-assert. If no, why is the code referencing X at all?"*
+- **L7 implementation** (carry-forward for next QA wave): qa-engineer adds the lint pattern + allowlist seed; CI fails on un-documented guards.
+
+**Anti-patterns to flag.**
+
+- "Defensive coding is good practice" — yes for inputs at trust boundaries (user input, external APIs), no for in-project method/signal/property existence where the contract is the boundary.
+- "The guard makes the code more resilient" — it makes the code more silent. Resilience-via-silent-fallback is the opposite of resilience for diagnostic purposes.
+- "We might want X to be optional in the future" — then make the spec say so. If the spec is silent on optionality, code must treat X as required.
+
+Cites Manifesto Principle 1 (Truth-Seeking — silent zero is a lie about state) + Principle 6 (Honest-tools-not-magic-tricks — defensive guard IS the magic-trick that papers over contract drift) + Principle 9 (Automated Enforcement — L7 lint converts the manual rule into mechanical check).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-06-08 session-10 close; engine-architect-p3s2 retro reflection (drafted rule + lint seed) + N=5 incident chain across BUG-C1 / BUG-D2 / Wave 3-Sim fix-ups → lead codification. Promotes Task #214 from "retro candidate" to shipped §9 rule.]
+
+#### M8. Real-data round-trip — any consumer using mock/fixture for a producer's output MUST include a test piping the real producer's canonical output through the consumer
+
+**Rule.** A consumer (aggregator, parser, downstream system) that uses a mock/fixture/dry-run substitute for a real producer's output is permitted ONLY when paired with at least one test that:
+1. Pipes a sample of the real producer's canonical output (or the spec's example output) through the consumer **without the mock/dry-run path**.
+2. Asserts on concrete values (not just type/shape/parse-success).
+3. Is named to identify its role as the drift sentinel (e.g., `test_round_trip_canonical_X_through_Y`).
+
+The sibling real-data test is the structural drift sentinel. Mock-based tests verify the consumer's logic; real-data tests verify the consumer reads the producer's actual schema. Without the latter, mock-based tests certify nothing about the canonical contract.
+
+**Actor.** Implementer at moment-of-writing the consumer. Reviewer (qa-engineer + mirror-reviewer at integration-time) backstops.
+
+**Trigger.** Any of:
+- A test imports a hand-crafted Dictionary literal as a stand-in for a real system's output.
+- A `--dry-run` / mock fixture is the sole input to a consumer's tests.
+- A bash/Python tool reads NDJSON / JSON / signal-payload and the corresponding test uses a static fixture file rather than a real-producer-emit.
+
+**Why (N=2, session 10):**
+
+1. **F4 / BLOCKER C1.1 (Wave 3-Sim Track 3, session 10).** `tools/run_ai_vs_ai_batch.sh --dry-run` injected rotating fixture NDJSON; `test_batch_runner_dry_run.gd` 9 flows asserted against that fixture; both sides used `units_alive_at_end` / `events_summary` while spec + runner emitted `combat_units_alive_at_end` / `events`. Tests passed because fixture and assertions were self-consistent; aggregate.json from real runs would silently zero every drifted field. Mirror caught it only by cross-checking against the spec doc. qa-engineer's fix-up at `19e2ba0` added Flow 10 round-trip test feeding spec §5 Example A through `aggregate_match_results.py` and asserting on concrete values (e.g., `iran_units_alive.median == 6.0`, `turan_probes_fired.total == 6`). Both would have been 0 before the fix.
+
+2. **F4-sibling: turan.farr_x100_at_end semantic drift (Wave 3-Sim spec v1.0.0).** balance-engineer's spec emitted Iran's Farr value in the Turan slot as a forward-compat placeholder. Self-consistent within the spec, semantically wrong per the spec's own §7.3 notes. A real-data round-trip test reading `turan.farr_x100_at_end` and asserting it represents Turan state (not Iran proxy) would have caught the drift at spec-write time.
+
+**Rule's specific shape.** The round-trip test should:
+- Load the canonical spec's example output verbatim (NDJSON / JSON / Dict literal copied from the spec doc itself).
+- Pipe it through the consumer using the real (non-mock, non-dry-run) code path.
+- Assert on per-field concrete values that the consumer should preserve (not just `result != null` or `result.has(field)`).
+- Be named with a sentinel-pattern suffix (`test_*_canonical_*` / `test_*_round_trip_*` / `test_*_spec_example_*`).
+
+**Schema-drift fix-up template (qa-engineer addition).** When a field-name drift is dispatched as a fix, assignee MUST do a full spec §-by-§ field enumeration cross-check against the consumer's read paths, not only the named drifts. Mirror catches load-bearing drifts that show in test output; non-load-bearing drifts go silent until they become load-bearing. The 5-minute mechanical diff is cheap relative to half-repaired fixtures.
+
+Operational form:
+1. Open canonical spec section side-by-side with the consumer's read paths (file + line numbers).
+2. Diff field-by-field: every spec-promised field must have a corresponding consumer read; every consumer read must reference a spec-promised field.
+3. Add to the round-trip test any field-pair that wasn't already asserted on.
+
+**Distinguishes from §9.M6.4 state-change-gated logging.** M6.4 is about log noise / signal preservation in production code. M8 is about test-surface drift between producer and consumer. Both share the "silent failure mode" theme but operate at different layers.
+
+**Where reviewers enforce.**
+
+- **qa-engineer brief-time review** flags any new mock/fixture/dry-run code path in a Track's deliverable that lacks a sibling round-trip test as a SUGGEST → BLOCKER if the producer's spec is non-trivial (5+ fields).
+- **mirror-reviewer integration-time review** cross-checks consumer test files against canonical spec docs (the M8 BLOCKER pattern at session-10 close was caught exactly here).
+- **architecture-reviewer** flags new schema-bearing contracts (e.g., NDJSON spec, signal payload spec) that lack a stated round-trip-test requirement in the doc itself.
+
+**Where authors apply.**
+
+- **Implementer agents** writing a mock/fixture path treat the sibling round-trip test as part of the deliverable, not a nice-to-have. The dispatch template should explicitly include "ship `--dry-run` test + sibling round-trip test against spec example" as the qa-engineer deliverable shape.
+- **Spec doc authors (balance-engineer)** include at least one concrete example output (NDJSON line, JSON object) in the spec's §5 / Examples section. The example IS the round-trip-test input.
+
+**Anti-patterns to flag.**
+
+- "The fixture matches the spec, so the test verifies the spec" — only if the fixture was generated FROM the spec, not from memory or another test.
+- "The dry-run path is fast, so it's the only test path we need" — fast tests against the wrong thing are worse than slow tests against the right thing.
+- "Round-trip tests are integration tests; we have unit tests already" — unit tests verify component logic; round-trip tests verify contract conformance. Different jobs, different surfaces.
+
+Cites Manifesto Principle 1 (Truth-Seeking — round-trip test asserts the consumer reads the producer's actual output) + Principle 7 (SSOT — spec doc IS the canonical source; round-trip test verifies the consumer reads it) + Principle 9 (Automated Enforcement — the round-trip test is the mechanical drift-detection seam).
+
+[History → STUDIO_PROCESS_HISTORY.md §9 2026-06-08 session-10 close; qa-engineer-p3s3 retro reflection (drafted rule + schema-drift fix-up template) + balance-engineer-p3s3 retro reflection (turan.farr semantic-drift sibling N=2) + Flow 10 precedent from `19e2ba0` → lead codification.]
 
 ---
 

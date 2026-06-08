@@ -12,12 +12,63 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-06-05 (Phase 3 session 10 Wave-3-Sim close — headless AI-vs-AI batch runner + DummyIranController + FogSystem.reset() + result-format spec + Python aggregator)
+last_updated: 2026-06-08 (Phase 3 session 10 close retro — 7 codifications shipped: §9.M7 defensive-fallback-masking + §9.M8 real-data round-trip + §9.L11.2 consumption-path tracing + §9.D12 canonical-spec-pin + §9.F6 integration-time mirror + §9.B5 tractability-probe + §9.J6 loremaster-light routing)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-06-08 — Phase 3 session 10 close retro: 7 codifications + 4-agent retro convergence
+
+**Branch:** `feat/session-10-close-retro`.
+
+**Retro shape:** 4 reflections from session-10 participants (engine-architect-p3s2 + balance-engineer-p3s3 + qa-engineer-p3s3 heavy; shahnameh-loremaster-p3s5 light per the loremaster-light-wave pattern). Per `feedback_retro_facts_not_diagnosis` discipline, lead surfaced incidents as FACTS without diagnosis — agents drew their own conclusions. Strong three-agent convergence on the F4 (field-name drift) root cause and prevention pattern.
+
+**7 codifications to STUDIO_PROCESS.md (§9):**
+
+1. **§9.M7 — Defensive-fallback-masking** (engine-architect-p3s2 retro-drafted). Production code MUST NOT guard contract-promised members with `has_method` / `has_signal` / `has_property` / `Dictionary.has` outside a documented allowlist with WHY-comment. N=5 incident chain across project lifetime: BUG-C1 (Wave 3A.6) + BUG-D2 (Wave 3A.5 retroactive) + 3 fix-up-1 bugs in `a5f5f21` + 2 stale guards hard-asserted in `c05ba77`. The defensive guard is functionally equivalent to silent error suppression. Lint candidate (L7) seeded for next QA wave. Promotes Task #214 from retro candidate to shipped rule.
+
+2. **§9.M8 — Real-data round-trip for mock consumers** (qa-engineer-p3s3 retro-drafted). Any consumer using mock/fixture/dry-run substitute for a real producer's output MUST include test piping the real producer's canonical output (or spec example) through the consumer, asserting on concrete values. Schema-drift fix-up template added as sub-rule: when a field-name drift is dispatched, assignee MUST do full spec field enumeration. Flow 10 round-trip test (added by qa-engineer at `19e2ba0`) is the canonical precedent. N=2: BLOCKER C1.1 schema drift + balance-engineer's `turan.farr_x100_at_end` semantic-drift sibling.
+
+3. **§9.L11.2 — Consumption-path tracing** (balance-engineer-p3s3 retro-drafted). Affordability/reviewer-backstop checks MUST trace ≥1 production-code consumption path per field used in the analysis, not just verify the .tres value. N=2 mine_node SSOT divergences (reserves: 100 hardcode vs 1500 declared; max_slots: 1 hardcode vs mine_max_workers=2 declared) are the evidence. L11 + L11.1 + L11.2 form the three-layer balance-engineer brief-time backstop chain.
+
+4. **§9.D12 — Canonical-spec-pin in dispatch** (three-agent convergence: balance-engineer + engine-architect + qa-engineer independently flagged the same root cause). Parallel-worktree tracks with shared data contract MUST cite canonical spec doc by path + commit SHA in dispatch; each track's first [ready] broadcast MUST acknowledge read-against-canonical. Sister rule to §9.M8 (after-the-fact sentinel) + §9.F6 (integration-time mirror) — together form the integration-failure-mode triad.
+
+5. **§9.F6 — Integration-time mirror as hard rule for 2+ track waves** (engine-architect-p3s2 retro-drafted). Brief-time mirror catches contract-correctness issues (observable from brief); integration-time mirror catches integrated-system-correctness issues (only observable post-merge). Two distinct review-jobs. Single-track waves stay lead-discretion. Wave 3-Sim's integration-time mirror caught 3 BLOCKERS + 4 RISKs the brief-time pass couldn't see; without F6, all 3 would have shipped to main.
+
+6. **§9.B5 — Tractability-probe before deferral acceptance** (engine-architect-p3s2 retro-drafted). When a track agent declares an item as deferred, they owe either "what I tried" disclosure OR a 15-min tractability probe before deferral is binding. The "deferrals get locked in by acceptance pressure" failure mode is named. Sister discipline to `feedback_action_items_dont_defer.md` memory (which covers retro action-item deferral); B5 covers upstream wave-deliverable deferral.
+
+7. **§9.J6 — Loremaster-light wave routing** (shahnameh-loremaster-p3s5 retro-drafted). Plumbing waves dispatch loremaster at brief-time IFF the brief contains a cultural-shape-question (one question is sufficient to trigger); skip implementation + retro otherwise. Wave 3-Sim's Q1 win-condition was the canonical evidence: warranted brief-time fire on otherwise pure-plumbing wave. Companion to J1 (formal cultural-anchor wave fire).
+
+**Three-agent convergence note.** The F4 field-name drift root cause was independently identified by balance-engineer + engine-architect + qa-engineer as "canonical spec doc had no explicit pin at dispatch time; Track 3 wrote against a stale snapshot of the brief's §3 Q5 starting proposal instead of against Track 1's evolving canonical doc." Three independent agents converging on the same prevention pattern (§9.D12) made the codification structurally clear.
+
+**Observed-but-not-yet-codified surfaces (watchlist):**
+
+- **Value-semantic drift** (qa-engineer flag, N=2 across project): Turan fields with plausible-looking but semantically-wrong values (workers=2/coin=8000 vs spec §7.3 = 0) + balance-engineer's `turan.farr_x100_at_end = Iran's Farr proxy`. Distinct failure class from field-name drift. Threshold for codification: N=3.
+- **"Memory lives in lead's framing" risk** (engine-architect-p3s2 retro POV b). Dispatch-time framing dominates agent epistemics; agents mirror back the lead's analytical voice. Lands as §9-watchlist; codification pending more N.
+- **Subprocess-smoke test gap** (engine-architect-p3s2 retro POV a). Track 2's runner tests don't exercise actual `--headless-batch` boot; smoke was the first test of the real code path. `test_batch_runner_subprocess_smoke.gd` is a concrete carry-forward task for next QA wave.
+- **Roster-as-knob for faster iteration** (engine-architect-p3s2 retro POV c). 14-combat-unit starting roster is the sim-cost bottleneck for batch wall-clock. Treating it as a flag rather than a constant unlocks shorter cycles before the sim-cost-optimization carry-forward ships. Adds to the carry-forward list for sim-cost wave.
+
+**Carry-forwards for next sessions (priority order):**
+
+1. **Phase 4+ entry: balance-tuning wave** — balance-engineer's tuning loop sequence is (a) outcome distribution + stalemate rate, (b) duration p50, (c) iran_first_piyade_tick p95, (d) RPS calibration. DummyIranController COMMAND_BUILD wiring is the prerequisite (currently structurally inert beyond worker dispatch + attack-move sweeps).
+2. **DummyIranController COMMAND_BUILD wiring wave** — Khaneh + Sarbaz-khaneh placement; unblocks balance-engineer's first AI-vs-AI tuning cycle.
+3. **Sim-cost optimization wave** — spatial culling for AI scans + batched pathfinding + per-team FSM batching (engine-architect's C2.3 carry-forwards). Combined with roster-as-knob flag for faster iteration in the interim.
+4. **mine_node.gd SSOT fix-up** — reserves 100→1500, max_slots 1→2 (Track 1 Findings A+B; deferred per Path b in Wave 3-Sim).
+5. **AI_VS_AI_RESULT_FORMAT.md v1.1.0** — balance-engineer self-flagged semantic bug in `turan.farr_x100_at_end` (currently emits Iran's Farr as proxy; should be null/-1 until Turan Farr is separately tracked). Standalone spec PR.
+6. **L7 lint implementation** — qa-engineer wave to implement §9.M7's mechanical guard + allowlist seed.
+
+**Process payoffs that landed in this retro:**
+
+- Heavy three-agent convergence on F4 root cause produced one codification (§9.D12) that prevents the bug class at dispatch time + one that catches it after-the-fact (§9.M8) + one that catches what slips through both (§9.F6). The three rules form a defense-in-depth triad.
+- §9.B5 tractability-probe addresses a meta-failure mode (deferral lock-in by acceptance pressure) that operates orthogonal to the §9 rules but compounds with them. engine-architect-p3s2's self-flag (Step 5 deferral that they later overrode) was the key evidence.
+- Loremaster-light-wave routing (§9.J6) closes a discipline gap that wasn't previously explicit: when to NOT dispatch loremaster. Honest "no signal" > performative participation.
+- N=5 of the defensive-fallback-masking pattern + the lead-side memory `feedback_lead_sendmessage_routing.md` refinement (birth-session-vs-current-session inbox naming) are now codified into permanent rules + memory respectively.
+
+**Phase 3 status post-retro:** session 10 closed. Phase 4+ work has 4 named entry-points (balance-tuning / DummyIran build commands / sim-cost optimization / mine_node SSOT). Next session lead decision: which entry-point opens session 11.
 
 ---
 
