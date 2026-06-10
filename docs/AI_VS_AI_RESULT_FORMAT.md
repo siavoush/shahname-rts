@@ -1,11 +1,13 @@
 ---
 title: AI-vs-AI Match Result Format
 type: contract
-status: v1.0.0
-version: 1.0.0
+status: v1.1.0
+version: 1.1.0
 owner: balance-engineer
 authored: 2026-06-03
 authored_by: balance-engineer-wave-3sim
+revised: 2026-06-10
+revised_by: engine-architect-wave-b2
 audience: engine-architect (Track 2 implementer), qa-engineer (Track 3 aggregator), balance-engineer (first human consumer)
 read_when: before implementing HeadlessMatchRunner result emission; before writing aggregation scripts; before reading batch output
 prerequisites: [02t_PHASE_3_SESSION_10_WAVE_3_SIM_KICKOFF.md §3 Q5, §4.1, §5]
@@ -66,7 +68,7 @@ One JSON object per line (NDJSON). Fields are grouped by category.
     "buildings_destroyed": 1,
     "coin_x100_at_end": 8200,
     "grain_x100_at_end": 4100,
-    "farr_x100_at_end": 1200,
+    "farr_x100_at_end": -1,
     "units_produced_total": 0,
     "buildings_constructed_total": 0
   },
@@ -92,10 +94,10 @@ One JSON object per line (NDJSON). Fields are grouped by category.
 | `seed` | int | any | The seed used for this match (`seed(match_seed)` at match-start). |
 | `outcome` | string | `"iran_win"`, `"turan_win"`, `"stalemate"` | `stalemate` = hit the 60,000-tick timeout without a throne falling. |
 | `winner_team` | int | `1`, `2`, `-1` | `1` = Iran, `2` = Turan, `-1` = stalemate. Matches `Constants.TEAM_IRAN` / `Constants.TEAM_TURAN`. |
-| `duration_ticks` | int | 1 – 60,000 | Ticks from match-start to throne-fall (or timeout). |
-| `duration_seconds` | float | 0.0 – 2000.0 | `duration_ticks / 30.0`. Convenience field — derivable, but saves aggregation effort. |
+| `duration_ticks` | int | 1 – 60,000 | Ticks from match-start to **throne-fall** (or timeout). **v1.1.0:** the runner keeps the process alive for a post-throne-fall grace window (§2.3) so trailing events are counted, but `duration_ticks` records the THRONE-FALL tick — grace ticks are EXCLUDED. Pacing signals (§3.1) stay pure. |
+| `duration_seconds` | float | 0.0 – 2000.0 | `duration_ticks / 30.0`. Convenience field — derivable, but saves aggregation effort. Inherits the grace-exclusion semantics of `duration_ticks`. |
 | `first_engagement_tick` | int | 0 – 60,000; `-1` if none | First tick where any combat unit dealt damage to any other unit. `-1` if no combat occurred (stalemate with no contact). |
-| `timeout` | bool | | `true` if match exited via the 60,000-tick ceiling. Redundant with `outcome == "stalemate"` but explicit — makes filter queries simpler. |
+| `timeout` | bool | | `true` if match exited via the 60,000-tick ceiling. Redundant with `outcome == "stalemate"` but explicit — makes filter queries simpler. **v1.1.0:** the timeout boundary is checked in the tick-driven cleanup-phase path (§2.3), so the recorded boundary tick is run-reproducible (DET-3). |
 
 #### Per-team fields (`iran.*` and `turan.*`)
 
@@ -111,7 +113,7 @@ Both teams emit identical field shapes. Turan fields reflect the AI's state, not
 | `buildings_destroyed` | int | Buildings destroyed during this match (not counting Throne — Throne is the win-condition). |
 | `coin_x100_at_end` | int | `ResourceSystem` coin balance at match end in x100 fixed-point (per Sim Contract §1.6). |
 | `grain_x100_at_end` | int | `ResourceSystem` grain balance at match end in x100 fixed-point. |
-| `farr_x100_at_end` | int | `FarrSystem` Farr value at match end in x100 fixed-point. Starting Farr = 5000 (50.0 × 100). |
+| `farr_x100_at_end` | int | `FarrSystem` Farr value at match end in x100 fixed-point. Starting Farr = 5000 (50.0 × 100). **v1.1.0:** `FarrSystem` tracks IRAN's single civilization meter only; `turan.farr_x100_at_end` emits the **`-1` sentinel** ("not separately tracked") — NOT Iran's value. Aggregators MUST exclude `-1` from Turan Farr statistics (a self-consistent-but-wrong proxy produces confident wrong conclusions — balance-engineer self-flag). |
 | `units_produced_total` | int | Total units spawned from production buildings this match. Workers spawned at match-start are excluded (those are structural, not produced). |
 | `buildings_constructed_total` | int | Total buildings completed (construction_finalized signal emitted) this match. Throne is excluded (pre-placed, not constructed). |
 
@@ -121,13 +123,28 @@ Both teams emit identical field shapes. Turan fields reflect the AI's state, not
 
 | Field | Type | Description |
 |---|---|---|
-| `turan_probes_fired` | int | Number of times TuranController's probe FSM transitioned from `probing → idle` (one full wave dispatched). |
-| `turan_units_deployed_total` | int | Total Turan combat units spawned across all probe waves. |
-| `buildings_destroyed_total` | int | Sum across both teams of `buildings_destroyed`. |
-| `units_killed_total` | int | Total units that reached HP=0 across both teams. |
-| `farr_drain_events_total` | int | Number of `apply_farr_change()` calls with negative amount during the match. |
-| `kaveh_event_triggered` | bool | Whether `FarrSystem` entered the Kaveh Event state (`farr < kaveh_trigger_threshold = 15` for `kaveh_grace_ticks = 900`). |
+| `turan_probes_fired` | int | **v1.1.0:** number of probe waves LAUNCHED — TuranController FSM `idle → probing` transitions, read at match end via the documented `TuranController.get_probes_fired_total()` accessor. A probe still in flight when the match ends counts as fired. (v1.0.0 said `probing → idle` resolutions; the launch edge is what the `floor(duration_ticks / cadence)` diagnostic in §3.2 actually predicts.) |
+| `turan_units_deployed_total` | int | Total Turan units that entered the match, counted via `unit_spawned` emits with `team == TEAM_TURAN`. **v1.1.0 semantic note:** the current TuranController COMMANDS pre-spawned roster units rather than spawning probe waves, so today this equals the Turan starting roster plus any future wave spawns. When Phase 6 Turan production lands, wave spawns flow through the same channel with no schema change. |
+| `buildings_destroyed_total` | int | Sum across both teams of `buildings_destroyed`. **v1.1.0:** aggregated live from `EventBus.building_destroyed` (Throne kind excluded — the Throne is the win-condition, not a destruction stat). |
+| `units_killed_total` | int | Total units that reached HP=0 across both teams. **v1.1.0:** aggregated live from `EventBus.unit_died` (post-ARCH-1 this channel is UNIT-only — building deaths are not units). |
+| `farr_drain_events_total` | int | Number of `apply_farr_change()` calls with negative EFFECTIVE (post-clamp) delta during the match, counted via `EventBus.farr_changed`. A drain requested while Farr sits at the floor reports a 0.0 effective delta and is not counted. |
+| `kaveh_event_triggered` | bool | Whether `FarrSystem` entered the Kaveh Event state (`farr < kaveh_trigger_threshold = 15` for `kaveh_grace_ticks = 900`). **Still deferred at v1.1.0** — FarrSystem has no Kaveh state to read (Phase 5); always `false`. |
 | `iran_first_piyade_tick` | int | Tick when the first Iran Piyade was spawned from Sarbaz-khaneh. `-1` if no Piyade was produced. Key signal for build-order affordability validation. |
+
+### §2.3 Match-End Semantics: Throne-Fall Grace Window + Tick-Driven Timeout (v1.1.0)
+
+**Grace window.** With the event counters wired (v1.1.0), an immediate exit on `throne_destroyed` would drop same-tick and trailing events that fire after the runner's handler (death cascades, drain emits — the §9.B5 probe's concerns, empirically real once counters aggregate). The runner therefore:
+
+1. On the FIRST `throne_destroyed`: latches `winner_team` / `outcome` / `duration_ticks` (= the throne-fall tick) and arms `grace_end_tick = SimClock.tick + Constants.SIM_THRONE_GRACE_TICKS` (structural constant, 30 ticks = 1s @ 30Hz).
+2. Keeps ALL event subscriptions live through the grace — events during the grace window ARE counted in the `events` block and per-team `buildings_destroyed`.
+3. Emits the NDJSON + quits from the sim_phase `&"cleanup"` handler on the first tick where `SimClock.tick >= grace_end_tick`.
+
+Consequences for consumers:
+- `duration_ticks` / `duration_seconds` record the **throne-fall tick** — grace ticks are excluded (pacing-signal purity). Wall-clock match length is `duration_ticks + ≤30` ticks; no field records the emit tick.
+- Counter fields (`units_killed_total`, `buildings_destroyed*`, `farr_drain_events_total`, ...) include events from up to `SIM_THRONE_GRACE_TICKS` ticks after the throne fell. Alive-at-end fields (`*_alive_at_end`, `throne_hp_pct_at_end`, resources, Farr) are captured at grace-end — combat usually quiets within the 1s window, but a kill landing during grace IS reflected.
+- A second `throne_destroyed` during the grace does NOT flip the result (first-throne-wins); it is logged as `throne_destroyed_during_grace` for match-shape forensics.
+
+**Tick-driven timeout (DET-3).** The 60,000-tick timeout is checked in the same sim_phase `&"cleanup"` path (not `_process`), so the stalemate boundary tick is a function of `SimClock.tick` alone and identical across reruns of the same seed. Timeout exits take NO grace window — nothing decisive happened that trailing events would disambiguate.
 
 ---
 
@@ -213,13 +230,13 @@ Report median separately for Iran-win vs Turan-win matches:
 ### Example A: Iran decisive win
 
 ```json
-{"match_id":"match_0001","seed":987654321,"outcome":"iran_win","winner_team":1,"duration_ticks":22140,"duration_seconds":738.0,"first_engagement_tick":3598,"timeout":false,"iran":{"throne_destroyed":false,"throne_hp_pct_at_end":91.2,"workers_alive_at_end":4,"combat_units_alive_at_end":6,"buildings_alive_at_end":4,"buildings_destroyed":0,"coin_x100_at_end":18400,"grain_x100_at_end":9500,"farr_x100_at_end":4820,"units_produced_total":8,"buildings_constructed_total":4},"turan":{"throne_destroyed":true,"throne_hp_pct_at_end":0.0,"workers_alive_at_end":0,"combat_units_alive_at_end":0,"buildings_alive_at_end":0,"buildings_destroyed":1,"coin_x100_at_end":0,"grain_x100_at_end":0,"farr_x100_at_end":1100,"units_produced_total":0,"buildings_constructed_total":0},"events":{"turan_probes_fired":6,"turan_units_deployed_total":30,"buildings_destroyed_total":1,"units_killed_total":28,"farr_drain_events_total":9,"kaveh_event_triggered":false,"iran_first_piyade_tick":2401}}
+{"match_id":"match_0001","seed":987654321,"outcome":"iran_win","winner_team":1,"duration_ticks":22140,"duration_seconds":738.0,"first_engagement_tick":3598,"timeout":false,"iran":{"throne_destroyed":false,"throne_hp_pct_at_end":91.2,"workers_alive_at_end":4,"combat_units_alive_at_end":6,"buildings_alive_at_end":4,"buildings_destroyed":0,"coin_x100_at_end":18400,"grain_x100_at_end":9500,"farr_x100_at_end":4820,"units_produced_total":8,"buildings_constructed_total":4},"turan":{"throne_destroyed":true,"throne_hp_pct_at_end":0.0,"workers_alive_at_end":0,"combat_units_alive_at_end":0,"buildings_alive_at_end":0,"buildings_destroyed":1,"coin_x100_at_end":0,"grain_x100_at_end":0,"farr_x100_at_end":-1,"units_produced_total":0,"buildings_constructed_total":0},"events":{"turan_probes_fired":6,"turan_units_deployed_total":30,"buildings_destroyed_total":1,"units_killed_total":28,"farr_drain_events_total":9,"kaveh_event_triggered":false,"iran_first_piyade_tick":2401}}
 ```
 
 ### Example B: Turan win (Iran overwhelmed)
 
 ```json
-{"match_id":"match_0003","seed":111222333,"outcome":"turan_win","winner_team":2,"duration_ticks":8720,"duration_seconds":290.7,"first_engagement_tick":3601,"timeout":false,"iran":{"throne_destroyed":true,"throne_hp_pct_at_end":0.0,"workers_alive_at_end":0,"combat_units_alive_at_end":0,"buildings_alive_at_end":0,"buildings_destroyed":3,"coin_x100_at_end":2200,"grain_x100_at_end":0,"farr_x100_at_end":800,"units_produced_total":1,"buildings_constructed_total":2},"turan":{"throne_destroyed":false,"throne_hp_pct_at_end":100.0,"workers_alive_at_end":0,"combat_units_alive_at_end":4,"buildings_alive_at_end":0,"buildings_destroyed":0,"coin_x100_at_end":0,"grain_x100_at_end":0,"farr_x100_at_end":2800,"units_produced_total":0,"buildings_constructed_total":0},"events":{"turan_probes_fired":2,"turan_units_deployed_total":10,"buildings_destroyed_total":3,"units_killed_total":8,"farr_drain_events_total":14,"kaveh_event_triggered":true,"iran_first_piyade_tick":-1}}
+{"match_id":"match_0003","seed":111222333,"outcome":"turan_win","winner_team":2,"duration_ticks":8720,"duration_seconds":290.7,"first_engagement_tick":3601,"timeout":false,"iran":{"throne_destroyed":true,"throne_hp_pct_at_end":0.0,"workers_alive_at_end":0,"combat_units_alive_at_end":0,"buildings_alive_at_end":0,"buildings_destroyed":3,"coin_x100_at_end":2200,"grain_x100_at_end":0,"farr_x100_at_end":800,"units_produced_total":1,"buildings_constructed_total":2},"turan":{"throne_destroyed":false,"throne_hp_pct_at_end":100.0,"workers_alive_at_end":0,"combat_units_alive_at_end":4,"buildings_alive_at_end":0,"buildings_destroyed":0,"coin_x100_at_end":0,"grain_x100_at_end":0,"farr_x100_at_end":-1,"units_produced_total":0,"buildings_constructed_total":0},"events":{"turan_probes_fired":2,"turan_units_deployed_total":10,"buildings_destroyed_total":3,"units_killed_total":8,"farr_drain_events_total":14,"kaveh_event_triggered":true,"iran_first_piyade_tick":-1}}
 ```
 
 **Diagnostic read on Example B:** `iran_first_piyade_tick = -1` — Iran never produced a Piyade before losing. This is the build-order infeasibility scenario the affordability table (§6) is designed to predict. If the schedule is structurally feasible, this should rarely occur.
@@ -227,7 +244,7 @@ Report median separately for Iran-win vs Turan-win matches:
 ### Example C: Stalemate (timeout)
 
 ```json
-{"match_id":"match_0007","seed":555666777,"outcome":"stalemate","winner_team":-1,"duration_ticks":60000,"duration_seconds":2000.0,"first_engagement_tick":3602,"timeout":true,"iran":{"throne_destroyed":false,"throne_hp_pct_at_end":62.0,"workers_alive_at_end":3,"combat_units_alive_at_end":5,"buildings_alive_at_end":2,"buildings_destroyed":2,"coin_x100_at_end":44200,"grain_x100_at_end":28000,"farr_x100_at_end":3600,"units_produced_total":22,"buildings_constructed_total":4},"turan":{"throne_destroyed":false,"throne_hp_pct_at_end":45.0,"workers_alive_at_end":0,"combat_units_alive_at_end":3,"buildings_alive_at_end":0,"buildings_destroyed":0,"coin_x100_at_end":0,"grain_x100_at_end":0,"farr_x100_at_end":1800,"units_produced_total":0,"buildings_constructed_total":0},"events":{"turan_probes_fired":16,"turan_units_deployed_total":80,"buildings_destroyed_total":2,"units_killed_total":72,"farr_drain_events_total":38,"kaveh_event_triggered":false,"iran_first_piyade_tick":2402}}
+{"match_id":"match_0007","seed":555666777,"outcome":"stalemate","winner_team":-1,"duration_ticks":60000,"duration_seconds":2000.0,"first_engagement_tick":3602,"timeout":true,"iran":{"throne_destroyed":false,"throne_hp_pct_at_end":62.0,"workers_alive_at_end":3,"combat_units_alive_at_end":5,"buildings_alive_at_end":2,"buildings_destroyed":2,"coin_x100_at_end":44200,"grain_x100_at_end":28000,"farr_x100_at_end":3600,"units_produced_total":22,"buildings_constructed_total":4},"turan":{"throne_destroyed":false,"throne_hp_pct_at_end":45.0,"workers_alive_at_end":0,"combat_units_alive_at_end":3,"buildings_alive_at_end":0,"buildings_destroyed":0,"coin_x100_at_end":0,"grain_x100_at_end":0,"farr_x100_at_end":-1,"units_produced_total":0,"buildings_constructed_total":0},"events":{"turan_probes_fired":16,"turan_units_deployed_total":80,"buildings_destroyed_total":2,"units_killed_total":72,"farr_drain_events_total":38,"kaveh_event_triggered":false,"iran_first_piyade_tick":2402}}
 ```
 
 **Diagnostic read on Example C:** `coin_x100_at_end = 44200` (442 coin banked) with no win = late-game economic stagnation. Iran accumulated coin but the Turan AI kept the Throne at 45% without a decisive push. This is the "late-game economic pressure gap" open design question from `QUESTIONS_FOR_DESIGN.md` 2026-05-28 entry made concrete.
@@ -329,14 +346,18 @@ The brief's `tick 2400 = "Piyade #1"` annotation can remain in the brief as a co
 
 | Field | Where to capture |
 |---|---|
-| `duration_ticks` | `SimClock.tick` at `EventBus.throne_destroyed` or timeout |
+| `duration_ticks` | `SimClock.tick` at `EventBus.throne_destroyed` (latched at throne-fall — grace ticks excluded, §2.3) or at the tick-driven timeout boundary |
 | `first_engagement_tick` | Subscribe to `EventBus.unit_health_zero` or CombatComponent first-hit event; latch on first emission |
 | `iran.throne_hp_pct_at_end` | Read from Iran Throne node's HealthComponent at match end |
 | `iran.coin_x100_at_end` | `ResourceSystem.get_coin_x100(Constants.TEAM_IRAN)` |
 | `iran.grain_x100_at_end` | `ResourceSystem.get_grain_x100(Constants.TEAM_IRAN)` |
-| `iran.farr_x100_at_end` | `FarrSystem.get_farr_x100()` (single Farr value for Iran) |
-| `events.turan_probes_fired` | Count `TuranController` FSM transitions `probing → idle` |
-| `events.kaveh_event_triggered` | Subscribe to FarrSystem Kaveh-trigger signal (or poll `FarrSystem.kaveh_active` at match end) |
+| `iran.farr_x100_at_end` | `FarrSystem.get_farr_x100()` (single Farr value for Iran). `turan.farr_x100_at_end` = `-1` sentinel, §7.3 |
+| `iran.buildings_destroyed` / `turan.buildings_destroyed` | Count `EventBus.building_destroyed` emits per team, Throne kind excluded (v1.1.0) |
+| `events.units_killed_total` | Count `EventBus.unit_died` emits (UNIT-only channel post-ARCH-1) (v1.1.0) |
+| `events.farr_drain_events_total` | Count `EventBus.farr_changed` emits with negative effective delta (v1.1.0) |
+| `events.turan_units_deployed_total` | Count `EventBus.unit_spawned` emits with `team == Constants.TEAM_TURAN` (v1.1.0; see §2.2 semantic note) |
+| `events.turan_probes_fired` | Read `TuranController.get_probes_fired_total()` at match end (documented accessor; counts `idle → probing` launches) (v1.1.0) |
+| `events.kaveh_event_triggered` | Deferred — FarrSystem has no Kaveh state to read until Phase 5; emit `false` |
 | `events.iran_first_piyade_tick` | Subscribe to `EventBus.unit_spawned` (or equivalent) and latch first emission with `unit_type == &"piyade"` and `team == Constants.TEAM_IRAN` |
 
 ### §7.2 Fixed-point convention
@@ -347,7 +368,7 @@ All `_x100` fields follow the Sim Contract §1.6 fixed-point convention: the int
 
 `turan.coin_x100_at_end`, `turan.grain_x100_at_end`: set to `0` — TuranController does not use `ResourceSystem`. Emit `0` rather than omitting the field (schema symmetry matters for aggregation scripts that assume identical field sets for both teams).
 
-`turan.farr_x100_at_end`: currently `FarrSystem` tracks a single Farr value for Iran. Turan Farr is not separately tracked. Emit Iran's Farr value here for now with a `// TODO: separate per-team Farr when Phase 5 campaign adds Turan Farr drain` comment in the runner. This is a known schema forward-compat gap.
+`turan.farr_x100_at_end`: `FarrSystem` tracks a single Farr value for Iran; Turan Farr is not separately tracked. **v1.1.0:** emit the **`-1` sentinel** ("not separately tracked"). The v1.0.0 instruction to emit Iran's value as a proxy is REVOKED per balance-engineer's self-flag: self-consistent-but-wrong proxy data produces confident wrong conclusions (e.g., "Turan Farr correlates with Iran wins" — trivially true when it IS Iran's Farr). Aggregation scripts MUST exclude `-1` from Turan Farr statistics. The `// TODO: separate per-team Farr when Phase 5 campaign adds Turan Farr drain` comment stays in the runner.
 
 ---
 
@@ -357,10 +378,21 @@ All `_x100` fields follow the Sim Contract §1.6 fixed-point convention: the int
 |---|---|---|
 | `mine_node.gd` uses hardcoded reserves (100 coin) not balance.tres value (1500 coin) | Income model is correct for current implementation but diverges from spec intent | Resolve when MineNode's wave-1B TODO lands; at that point the feasibility table in §6 should be re-run |
 | `mine_node.gd max_slots = 1` vs. `balance.tres mine_max_workers = 2` | 5 workers compete for 1 slot per mine; effective parallelism is mine-count-limited, not worker-count-limited | Resolve when max_slots reads from BalanceData; re-run affordability analysis |
-| Turan Farr not separately tracked | `turan.farr_x100_at_end` is a proxy for Iran Farr | Revisit at Phase 5+ campaign design |
+| Turan Farr not separately tracked | `turan.farr_x100_at_end` emits the `-1` sentinel (v1.1.0; the v1.0.0 Iran-value proxy is revoked) | Revisit at Phase 5+ campaign design |
+| `kaveh_event_triggered` always `false` | FarrSystem has no Kaveh state to read | Wire when the Kaveh Event ships (Phase 5) |
+| `units_produced_total` / `buildings_constructed_total` always `0` | `unit_spawned` payload carries no production-source discrimination (match-start roster vs trained); no construction-finalized counter channel wired | Add a `source` field to the `unit_spawned` payload (or a dedicated `unit_trained` signal) when production telemetry is needed |
 | No `grain_yield` signals in current per-match output | Grain economy is invisible in batch data | Add `iran.grain_gathered_total` as a future field if grain bottlenecks emerge in batch data |
 | `first_engagement_tick` requires a "first damage" event | No current `first_hit` signal on EventBus | Engine-architect may need to add a latch inside CombatComponent or subscribe to `unit_health_zero` as a proxy (first HP-zero may lag first-hit by several ticks) |
 
 ---
 
-*End of AI_VS_AI_RESULT_FORMAT.md v1.0.0*
+## §9 — Revision History
+
+| Version | Date | Author | Changes |
+|---|---|---|---|
+| 1.0.0 | 2026-06-03 | balance-engineer | Initial contract: NDJSON schema, signal classification, aggregation conventions, affordability table. |
+| 1.1.0 | 2026-06-10 | engine-architect (Track B2) | Event counters wired live (review finding GP-6): `units_killed_total` (unit_died), per-team `buildings_destroyed` + total (building_destroyed, Throne excluded), `farr_drain_events_total` (farr_changed negative delta), `turan_units_deployed_total` (unit_spawned team==TURAN), `turan_probes_fired` (TuranController accessor; semantics changed probing→idle ⇒ idle→probing launch edge). `turan.farr_x100_at_end` ⇒ `-1` sentinel (balance-engineer farr-proxy self-flag; v1.0.0 Iran-value proxy revoked; aggregator excludes `-1`). New §2.3: throne-fall grace window (`Constants.SIM_THRONE_GRACE_TICKS` = 30 ticks; `duration_ticks` records throne-fall tick, grace excluded) + tick-driven timeout (DET-3). §5 examples updated to match. |
+
+---
+
+*End of AI_VS_AI_RESULT_FORMAT.md v1.1.0*

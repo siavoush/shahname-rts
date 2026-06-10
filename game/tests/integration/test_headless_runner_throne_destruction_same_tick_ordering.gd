@@ -1,4 +1,5 @@
-# Integration test — §9.B5 probe: throne-destruction same-tick event ordering.
+# Integration test — §9.B5 probe RESOLUTION: throne-destruction grace window
+# + live event-counter aggregation (result-format v1.1.0, Track B2).
 #
 # Provenance: Wave 3-Sim grace-period question. Loremaster (p3s5) flagged
 # three engineering-side risks against the immediate-exit-on-throne_destroyed
@@ -8,65 +9,35 @@
 #      complete.
 #   2. NDJSON event ordering — same-tick events (death emits, last damage)
 #      that fire AFTER the runner's _on_throne_destroyed handler may or may
-#      not be visible in the captured state, depending on signal-handler
-#      connection order.
+#      not be visible in the captured state.
 #   3. Behavioral-tuning signal — different match-end shapes (champion duel
 #      vs unit-flood vs simultaneous-death) produce different downstream
 #      cultural-mechanic implications; the trailing same-tick events
 #      disambiguate which scenario actually ended the match.
 #
-# §9.B5 (tractability-probe-before-defer): probe with a test before deciding
-# whether to ship the ~30-tick grace-period option (c). If this test surfaces
-# observable issues, the grace becomes empirically motivated. If not,
-# defer-with-confidence + close the question.
+# PROBE HISTORY (PR #54): engine-architect's probe found the three concerns
+# "SEMANTICALLY REAL but EMPIRICALLY NEUTRAL while the event counters are
+# hardcoded 0". The probe's pinned conclusion: "when the deferred counters
+# (units_killed_total, buildings_destroyed_total) get wired in a follow-up
+# wave, that wave SHOULD ship the grace-period alongside." The original
+# test_event_counters_are_deferred_not_aggregated existed to FAIL when the
+# counters got wired, forcing this re-evaluation.
 #
-# OBSERVATIONS (test outcomes):
-#   - Per the runner's `_subscribe_signals` ordering, the throne-destroyed
-#     handler runs synchronously (GDScript signals are synchronous emit-and-
-#     return). _emit_result_and_quit is called BEFORE the throne_destroyed
-#     emit returns control to the emitter. _capture_team_fields snapshots
-#     state at that exact synchronous moment.
-#   - Other handlers connected to throne_destroyed AFTER the runner's
-#     subscription would still fire (signal emit doesn't short-circuit on
-#     get_tree().quit() — quit is queued to end-of-frame). However,
-#     get_tree().quit() means subsequent ticks don't run, so any handler
-#     that scheduled work for the NEXT tick would lose it.
-#   - Same-tick unit-deaths emit unit_health_zero / unit_died on their own
-#     handlers. The runner's _on_unit_health_zero only latches first-
-#     engagement-tick (doesn't aggregate counts), so post-throne-destroyed
-#     deaths in the same tick wouldn't affect the captured state's
-#     event-summary counters even WITHOUT the quit — the counters aren't
-#     wired (units_killed_total is hardcoded to 0 in _assemble_result_dict
-#     per the deferred-counter pattern).
-#
-# CONCLUSION (recorded for the §9.B5 outcome line):
-#   The three concerns are SEMANTICALLY REAL at the contract level but
-#   EMPIRICALLY NEUTRAL at the current implementation level. Each concern
-#   would require a downstream counter / aggregator to be observable:
-#     1. Mid-tick state — only matters if _capture_team_fields reads a
-#        field that another in-tick handler would have updated. Today's
-#        captured fields (workers/combat/buildings counts, throne HP,
-#        coin/grain/farr) are all stable across the within-tick handler
-#        chain because they're not mutated by throne_destroyed itself
-#        OR by any same-tick signal cascade.
-#     2. Event ordering — only matters if NDJSON event counters are wired
-#        to aggregate same-tick events. They aren't (counters deferred);
-#        immediate-quit drops nothing that's currently emitted.
-#     3. Behavioral-tuning signal — only matters once same-tick death
-#        emits are aggregated AND the aggregator distinguishes
-#        pre-throne-fall deaths from post-throne-fall deaths. Neither
-#        condition holds in the current implementation.
-#
-# THEREFORE: grace-period option (c) is correct INSURANCE for a future state
-# of the code where same-tick counter aggregation lands, but for THE
-# IMPLEMENTATION SHIPPED IN PR #52, the immediate-exit path produces
-# correct NDJSON. Defer with empirical confidence: when the deferred
-# counters (units_killed_total, buildings_destroyed_total) get wired in a
-# follow-up wave, that wave SHOULD ship the grace-period alongside.
-#
-# This test pins the empirical findings as regression guards so the
-# grace-period decision is revisited automatically when the assumptions
-# change.
+# RE-EVALUATION (result-format v1.1.0, this file's current state): the
+# counters ARE wired (EventBus.unit_died / building_destroyed / farr_changed
+# / unit_spawned aggregation in the runner), so the concerns became real and
+# the pinned resolution shipped: a deterministic grace window of
+# Constants.SIM_THRONE_GRACE_TICKS sim ticks. On the first throne_destroyed
+# the runner latches winner/outcome/duration_ticks (throne-fall tick) and
+# keeps every subscription alive; the NDJSON emit + quit happen in the
+# sim_phase &"cleanup" handler on the first tick where
+# SimClock.tick >= grace_end_tick. The tests below REPLACE the deferred-
+# counter pins with the new invariants:
+#   - counters aggregate from live EventBus emits
+#   - same-tick + during-grace events ARE counted
+#   - the emit fires exactly at grace_end_tick (tick-deterministic)
+#   - duration_ticks records the throne-fall tick, grace excluded
+#   - second throne_destroyed during grace cannot flip the latched result
 extends GutTest
 
 
@@ -79,122 +50,218 @@ var _runner: Variant = null
 
 func before_each() -> void:
 	SimClock.reset()
+	TuranController.reset()
 	_runner = RunnerScript.new()
 	_runner.set(&"_test_skip_emit", true)
-	if not EventBus.throne_destroyed.is_connected(_runner._on_throne_destroyed):
-		EventBus.throne_destroyed.connect(_runner._on_throne_destroyed)
-	if not EventBus.unit_health_zero.is_connected(_runner._on_unit_health_zero):
-		EventBus.unit_health_zero.connect(_runner._on_unit_health_zero)
+	# Full wiring fidelity (BUG-D1 discipline): use the runner's own
+	# _subscribe_signals so the tests exercise the REAL connection set —
+	# throne_destroyed, unit_health_zero, unit_spawned, unit_died,
+	# building_destroyed, farr_changed, sim_phase.
+	_runner.call(&"_subscribe_signals")
 
 
 func after_each() -> void:
 	if _runner != null:
-		if EventBus.throne_destroyed.is_connected(_runner._on_throne_destroyed):
-			EventBus.throne_destroyed.disconnect(_runner._on_throne_destroyed)
-		if EventBus.unit_health_zero.is_connected(_runner._on_unit_health_zero):
-			EventBus.unit_health_zero.disconnect(_runner._on_unit_health_zero)
+		_runner.call(&"_disconnect_signals")
 		_runner.free()
 		_runner = null
 	SimClock.reset()
+	TuranController.reset()
+
+
+# Helper: advance SimClock by n ticks via the canonical Sim Contract §6.1
+# test path. Because the runner's _on_sim_phase is genuinely connected,
+# every advanced tick drives the grace/timeout boundary checks exactly as
+# a live run would.
+func _advance_ticks(n: int) -> void:
+	for _i in range(n):
+		SimClock._test_run_tick()
 
 
 # ---------------------------------------------------------------------------
-# Probe Q1: When throne_destroyed fires, what's the synchronous handler-
-# return contract? Same-tick subsequent emits — do they still propagate?
+# Invariant 1: throne_destroyed latches the result + arms the grace window
+# synchronously — it does NOT end the match.
 # ---------------------------------------------------------------------------
 
-func test_throne_destroyed_handler_returns_synchronously_before_emit_returns() -> void:
-	# After throne_destroyed.emit returns, _match_ended must be true.
-	# This pins the synchronous-handler-return shape: the emit doesn't
-	# return until all connected handlers have run.
+func test_throne_destroyed_latches_grace_synchronously() -> void:
+	_advance_ticks(5)
+	EventBus.throne_destroyed.emit(Constants.TEAM_IRAN)
+	assert_true(bool(_runner.get(&"_grace_active")),
+		"throne_destroyed must arm the grace window synchronously")
 	assert_false(bool(_runner.get(&"_match_ended")),
-		"pre-emit: _match_ended must be false")
+		"throne_destroyed must NOT end the match — emit happens at grace end")
+	assert_eq(_runner.get(&"_outcome"), "turan_win",
+		"winner must be latched at throne fall")
+	assert_eq(int(_runner.get(&"_grace_end_tick")),
+		SimClock.tick + Constants.SIM_THRONE_GRACE_TICKS,
+		"grace_end_tick must be throne-fall tick + SIM_THRONE_GRACE_TICKS")
+	assert_eq(int(_runner.get(&"_result_duration_ticks")), 5,
+		"duration_ticks must be latched at the throne-fall tick")
+
+
+# ---------------------------------------------------------------------------
+# Invariant 2: events firing AFTER throne_destroyed (same tick or during the
+# grace window) ARE counted — subscriptions stay live until the emit.
+# ---------------------------------------------------------------------------
+
+func test_same_tick_events_after_throne_destroyed_are_counted() -> void:
+	_advance_ticks(5)
 	EventBus.throne_destroyed.emit(Constants.TEAM_IRAN)
+	assert_eq(int(_runner.get(&"_units_killed_total")), 0,
+		"pre-cascade: no kills counted yet")
+	# Same-tick cascade: the defender that landed the killing blow dies to a
+	# counter-attack; a building collapses; a Farr drain lands.
+	EventBus.unit_died.emit(99, 12, &"melee_attack", Vector3.ZERO)
+	EventBus.building_destroyed.emit(Constants.TEAM_IRAN, &"khaneh", 201)
+	EventBus.farr_changed.emit(-1.0, "worker_killed_idle", 99, 49.0, SimClock.tick)
+	assert_eq(int(_runner.get(&"_units_killed_total")), 1,
+		"unit_died after throne fall must still be counted (grace live)")
+	assert_eq(int(_runner.get(&"_buildings_destroyed_iran")), 1,
+		"building_destroyed after throne fall must still be counted")
+	assert_eq(int(_runner.get(&"_farr_drain_events_total")), 1,
+		"negative farr_changed after throne fall must still be counted")
+	assert_false(bool(_runner.get(&"_match_ended")),
+		"match must still be open inside the grace window")
+
+
+func test_events_during_grace_ticks_are_counted() -> void:
+	_advance_ticks(5)
+	EventBus.throne_destroyed.emit(Constants.TEAM_IRAN)
+	# Trailing events several ticks INTO the grace window.
+	_advance_ticks(3)
+	EventBus.unit_died.emit(42, -1, &"farr_drain", Vector3.ZERO)
+	EventBus.unit_died.emit(43, -1, &"farr_drain", Vector3.ZERO)
+	assert_eq(int(_runner.get(&"_units_killed_total")), 2,
+		"deaths during grace ticks must be counted")
+	assert_false(bool(_runner.get(&"_match_ended")),
+		"grace window must still be open at fall_tick + 3")
+
+
+# ---------------------------------------------------------------------------
+# Invariant 3: counters aggregate from live EventBus emits and surface in
+# the assembled result dict (events block + per-team buildings_destroyed).
+# ---------------------------------------------------------------------------
+
+func test_event_counters_aggregate_into_result_dict() -> void:
+	_advance_ticks(1)
+	# Kills: unit-only channel.
+	EventBus.unit_died.emit(10, 20, &"melee_attack", Vector3.ZERO)
+	EventBus.unit_died.emit(11, 21, &"melee_attack", Vector3.ZERO)
+	# Buildings: one per team + a Throne (excluded per schema §2.2).
+	EventBus.building_destroyed.emit(Constants.TEAM_IRAN, &"khaneh", 201)
+	EventBus.building_destroyed.emit(Constants.TEAM_TURAN, &"sarbaz_khaneh", 202)
+	EventBus.building_destroyed.emit(Constants.TEAM_IRAN, &"throne", 203)
+	# Farr: 3 drains, 1 generation (only drains count), 1 zero-delta clamp.
+	EventBus.farr_changed.emit(-1.0, "worker_killed_idle", 10, 49.0, SimClock.tick)
+	EventBus.farr_changed.emit(-0.5, "worker_killed_during_gather", 11, 48.5, SimClock.tick)
+	EventBus.farr_changed.emit(-2.0, "snowball_drain", -1, 46.5, SimClock.tick)
+	EventBus.farr_changed.emit(2.0, "atashkadeh_generation", -1, 48.5, SimClock.tick)
+	EventBus.farr_changed.emit(0.0, "drain_clamped_at_floor", -1, 0.0, SimClock.tick)
+	# Turan deployments via unit_spawned (Iran spawn must not count).
+	EventBus.unit_spawned.emit({&"unit_type": &"piyade",
+		&"team": Constants.TEAM_TURAN, &"unit_id": 50, &"position": Vector3.ZERO})
+	EventBus.unit_spawned.emit({&"unit_type": &"savar",
+		&"team": Constants.TEAM_TURAN, &"unit_id": 51, &"position": Vector3.ZERO})
+	EventBus.unit_spawned.emit({&"unit_type": &"piyade",
+		&"team": Constants.TEAM_IRAN, &"unit_id": 52, &"position": Vector3.ZERO})
+
+	assert_eq(int(_runner.get(&"_units_killed_total")), 2)
+	assert_eq(int(_runner.get(&"_buildings_destroyed_iran")), 1,
+		"Iran khaneh counted; Iran THRONE excluded (win-condition, not stat)")
+	assert_eq(int(_runner.get(&"_buildings_destroyed_turan")), 1)
+	assert_eq(int(_runner.get(&"_farr_drain_events_total")), 3,
+		"only negative effective deltas count (not generation, not 0.0 clamp)")
+	assert_eq(int(_runner.get(&"_turan_units_deployed_total")), 2,
+		"only team==TURAN unit_spawned emits count")
+
+	# Round the counters through _assemble_result_dict — the events block
+	# must surface them, and buildings_destroyed_total must equal the sum
+	# of the per-team counters carried in the team dicts.
+	var iran: Dictionary = _team_fixture(int(_runner.get(&"_buildings_destroyed_iran")))
+	var turan: Dictionary = _team_fixture(int(_runner.get(&"_buildings_destroyed_turan")))
+	var result: Dictionary = _runner.call(&"_assemble_result_dict", 100, iran, turan)
+	var events: Dictionary = result.get("events")
+	assert_eq(int(events.get("units_killed_total")), 2,
+		"events.units_killed_total must surface the aggregated counter")
+	assert_eq(int(events.get("buildings_destroyed_total")), 2,
+		"events.buildings_destroyed_total must sum per-team counters")
+	assert_eq(int(events.get("farr_drain_events_total")), 3,
+		"events.farr_drain_events_total must surface the aggregated counter")
+	assert_eq(int(events.get("turan_units_deployed_total")), 2,
+		"events.turan_units_deployed_total must surface the aggregated counter")
+
+
+# ---------------------------------------------------------------------------
+# Invariant 4: the NDJSON emit happens exactly at grace_end_tick — tick-
+# deterministic, independent of frame pacing.
+# ---------------------------------------------------------------------------
+
+func test_emit_happens_exactly_at_grace_end_tick() -> void:
+	_advance_ticks(5)
+	EventBus.throne_destroyed.emit(Constants.TEAM_TURAN)
+	var grace_end: int = int(_runner.get(&"_grace_end_tick"))
+	assert_eq(grace_end, 5 + Constants.SIM_THRONE_GRACE_TICKS)
+	# Advance one tick at a time; record the tick DURING which the runner
+	# sealed the match. The cleanup handler fires while SimClock.tick is
+	# still the running tick's index (increment happens at tick end).
+	var sealed_during_tick: int = -1
+	for _i in range(Constants.SIM_THRONE_GRACE_TICKS + 5):
+		var tick_being_run: int = SimClock.tick
+		SimClock._test_run_tick()
+		if bool(_runner.get(&"_match_ended")):
+			sealed_during_tick = tick_being_run
+			break
+	assert_eq(sealed_during_tick, grace_end,
+		"runner must seal the match during the tick where SimClock.tick == "
+		+ "grace_end_tick — no earlier, no later")
+
+
+func test_duration_records_throne_fall_tick_not_emit_tick() -> void:
+	_advance_ticks(5)
+	EventBus.throne_destroyed.emit(Constants.TEAM_TURAN)
+	_advance_ticks(Constants.SIM_THRONE_GRACE_TICKS + 2)
 	assert_true(bool(_runner.get(&"_match_ended")),
-		"post-emit synchronously: _match_ended must be true (handler ran)")
+		"grace must have elapsed by fall_tick + GRACE + 2")
+	assert_eq(int(_runner.get(&"_result_duration_ticks")), 5,
+		"duration_ticks must record the THRONE-FALL tick (grace excluded) — "
+		+ "pacing-signal purity per AI_VS_AI_RESULT_FORMAT §2.2 v1.1.0")
 
 
 # ---------------------------------------------------------------------------
-# Probe Q2: Same-tick events that fire AFTER throne_destroyed — do they
-# reach the runner's other handlers (e.g., unit_health_zero)?
+# Invariant 5: a second throne_destroyed during the grace window cannot flip
+# the latched result (first-throne-wins).
 # ---------------------------------------------------------------------------
 
-func test_same_tick_unit_health_zero_after_throne_destroyed_still_handled() -> void:
-	# Sequence: throne falls at tick N → same-tick unit dies (e.g., the
-	# defender that landed the killing blow takes a counter-attack). Does
-	# the runner's unit_health_zero handler still fire?
-	#
-	# In the current implementation _emit_result_and_quit short-circuits
-	# under _test_skip_emit but in a live run it calls _disconnect_signals
-	# before get_tree().quit(0). So in the live path, post-throne_destroyed
-	# unit_health_zero emits would NOT reach the runner because the
-	# subscription was already torn down.
-	#
-	# Under _test_skip_emit=true, the disconnect path is also skipped, so
-	# this test verifies the handler-still-connected branch (relevant when
-	# we WOULD want a grace period: keep the handler alive for ~30 ticks
-	# to capture trailing emits).
+func test_second_throne_destroyed_during_grace_is_ignored() -> void:
+	_advance_ticks(5)
 	EventBus.throne_destroyed.emit(Constants.TEAM_IRAN)
-	assert_eq(int(_runner.get(&"_first_engagement_tick")), -1,
-		"pre-same-tick-death: no engagement latched yet")
-	EventBus.unit_health_zero.emit(99)  # synthetic same-tick death
-	# In a live run with grace=0 this emit would arrive AFTER
-	# _disconnect_signals + get_tree().quit() — runner would not see it.
-	# Under _test_skip_emit the handler is still connected, so it DOES see
-	# the emit. This is the empirical observation: the immediate-quit path
-	# DROPS post-throne-destroyed same-tick emits in live runs.
-	assert_ne(int(_runner.get(&"_first_engagement_tick")), -1,
-		"under _test_skip_emit the handler stays connected — emit IS captured "
-		+ "(documents the asymmetry vs the live immediate-quit path)")
+	assert_eq(_runner.get(&"_outcome"), "turan_win")
+	# Mutual-destruction cascade: the other throne falls inside the grace.
+	_advance_ticks(2)
+	EventBus.throne_destroyed.emit(Constants.TEAM_TURAN)
+	assert_eq(_runner.get(&"_outcome"), "turan_win",
+		"second throne fall during grace must NOT flip the latched outcome")
+	assert_eq(int(_runner.get(&"_winner_team")), Constants.TEAM_TURAN,
+		"second throne fall during grace must NOT flip the latched winner")
+	assert_eq(int(_runner.get(&"_result_duration_ticks")), 5,
+		"second throne fall during grace must NOT re-latch duration")
 
 
 # ---------------------------------------------------------------------------
-# Probe Q3: Captured-state fields (`_capture_team_fields` etc.) — are any
-# of them mutable by within-tick handlers that run AFTER throne_destroyed?
+# Probe Q3 (retained from PR #54): captured-state fields are primitives —
+# no in-tick mutation surface for sibling handlers.
 # ---------------------------------------------------------------------------
 
 func test_captured_field_set_is_stable_within_one_tick() -> void:
-	# The captured field set in _assemble_result_dict is:
-	#   workers_alive_at_end, combat_units_alive_at_end, buildings_alive_at_end,
-	#   throne_destroyed, throne_hp_pct_at_end, coin_x100_at_end,
-	#   grain_x100_at_end, farr_x100_at_end.
-	#
-	# None of these fields are written by ANY handler subscribed to
-	# throne_destroyed (verified by grep at probe time). The fields are
-	# updated by their own systems' tick paths:
-	#   - workers/combat/buildings counts: only change on Unit/Building
-	#     _ready (joins group) + _exit_tree (leaves group). No throne_destroyed
-	#     consumer mutates group membership.
-	#   - throne_hp_pct: read from HealthComponent.hp_x100, only written
-	#     by HealthComponent.set_hp on damage events.
-	#   - coin/grain: written by ResourceSystem.change_resource which has
-	#     its own on-tick assertion; no throne_destroyed consumer writes
-	#     resources.
-	#   - farr: written by FarrSystem.apply_farr_change; no throne_destroyed
-	#     consumer mutates Farr.
-	#
-	# So even if more handlers fire AFTER the runner's _on_throne_destroyed
-	# within the same emit chain, the captured field set is invariant.
-	# This is the load-bearing empirical observation that justifies the
-	# immediate-quit path's correctness AT THE CURRENT FIELD SCHEMA.
-	var iran: Dictionary = {
-		"throne_destroyed": false,
-		"throne_hp_pct_at_end": 100.0,
-		"workers_alive_at_end": 5,
-		"combat_units_alive_at_end": 14,
-		"buildings_alive_at_end": 0,
-		"buildings_destroyed": 0,
-		"coin_x100_at_end": 15000,
-		"grain_x100_at_end": 5000,
-		"farr_x100_at_end": 5000,
-		"units_produced_total": 0,
-		"buildings_constructed_total": 0,
-	}
+	# The captured per-team fields are all primitives (int/float/bool); even
+	# if more handlers fire AFTER the runner's within the same emit chain,
+	# the captured field set is invariant. With the grace window the capture
+	# now happens at grace-end cleanup — strictly LATER than every same-tick
+	# gameplay emit, which strengthens the original finding.
+	var iran: Dictionary = _team_fixture(0)
 	var turan: Dictionary = iran.duplicate()
 	var result: Dictionary = _runner.call(
 		&"_assemble_result_dict", 100, iran, turan)
-	# Every field is a primitive (int/float/bool) — no in-tick mutation
-	# possible by sibling handlers.
 	for field: String in [
 			"workers_alive_at_end", "combat_units_alive_at_end",
 			"buildings_alive_at_end", "throne_destroyed",
@@ -206,76 +273,43 @@ func test_captured_field_set_is_stable_within_one_tick() -> void:
 
 
 # ---------------------------------------------------------------------------
-# Probe Q4: events.units_killed_total + events.buildings_destroyed_total —
-# wired? If yes, immediate-quit would drop same-tick events.
-# ---------------------------------------------------------------------------
-
-func test_event_counters_are_deferred_not_aggregated() -> void:
-	# The event-summary counters are HARDCODED to 0 in _assemble_result_dict
-	# (per the deferred-counter pattern documented in commit e6b6acf body).
-	# Therefore same-tick death emits arriving after throne_destroyed cannot
-	# affect these counters — they would be 0 either way under the current
-	# implementation.
-	#
-	# If a future wave wires the counters via EventBus.unit_died /
-	# building_destroyed aggregation in the runner, the grace-period
-	# becomes EMPIRICALLY MOTIVATED at that point. This test pins the
-	# current "counters deferred" state so the grace-period question
-	# automatically re-surfaces when the assumption changes.
-	var iran: Dictionary = _runner.call(&"_capture_team_fields", Constants.TEAM_IRAN) \
-		if false else {
-			"throne_destroyed": false, "throne_hp_pct_at_end": 100.0,
-			"workers_alive_at_end": 0, "combat_units_alive_at_end": 0,
-			"buildings_alive_at_end": 0, "buildings_destroyed": 0,
-			"coin_x100_at_end": 0, "grain_x100_at_end": 0,
-			"farr_x100_at_end": 0, "units_produced_total": 0,
-			"buildings_constructed_total": 0,
-		}
-	var turan: Dictionary = iran.duplicate()
-	var result: Dictionary = _runner.call(&"_assemble_result_dict", 1, iran, turan)
-	var events: Dictionary = result.events
-	assert_eq(int(events.get("units_killed_total")), 0,
-		"units_killed_total must be 0 (deferred — counter not wired)")
-	assert_eq(int(events.get("turan_units_deployed_total")), 0,
-		"turan_units_deployed_total must be 0 (deferred)")
-	assert_eq(int(events.get("farr_drain_events_total")), 0,
-		"farr_drain_events_total must be 0 (deferred)")
-	# When a future wave wires any of these counters AND aggregates
-	# same-tick emits, this test will need an update + the grace-period
-	# question must be revisited.
-
-
-# ---------------------------------------------------------------------------
-# Probe Q5: Connection-order asymmetry — runner subscribes during its
-# _ready, BEFORE main.gd._spawn_starting_units adds other potential
-# subscribers. Does the runner reliably fire FIRST in the handler chain?
+# Probe Q5 (retained, updated): runner subscribes first in the
+# throne_destroyed handler chain; emit doesn't short-circuit late handlers.
 # ---------------------------------------------------------------------------
 
 func test_runner_subscribes_first_in_throne_destroyed_handler_chain() -> void:
 	# By construction (main.gd._ready spawns the runner BEFORE
-	# _spawn_starting_buildings/_spawn_starting_units per the fix-up-2 fix),
-	# the runner's throne_destroyed subscription connects first. In a future
-	# wave that adds OTHER throne_destroyed subscribers (e.g., a Phase 8
-	# win-screen system that consumes the same signal), they would
-	# connect later and fire later.
-	#
-	# This test pins the runner-first ordering as a regression guard. If
-	# a future contributor moves the runner spawn back AFTER
-	# _spawn_starting_*, this test fails — and the question of whether
-	# the runner needs the grace-period to capture trailing handler
-	# state changes is forced to surface.
+	# _spawn_starting_buildings/_spawn_starting_units), the runner's
+	# throne_destroyed subscription connects first. Late subscribers still
+	# fire — and with the grace window they fire while the match is still
+	# OPEN, so any state they mutate is captured at grace-end.
 	var late_handler_called: Array[bool] = [false]
 	var late_handler: Callable = func(_team: int) -> void:
 		late_handler_called[0] = true
 	EventBus.throne_destroyed.connect(late_handler)
-	# Fresh runner to avoid the before_each's already-subscribed state.
-	_runner.set(&"_match_ended", false)
-	_runner.set(&"_outcome", "unknown")
 	EventBus.throne_destroyed.emit(Constants.TEAM_IRAN)
-	# Both handlers fire synchronously; the runner's runs first (subscribed
-	# first in before_each).
-	assert_true(bool(_runner.get(&"_match_ended")),
-		"runner's _on_throne_destroyed must have run")
+	assert_true(bool(_runner.get(&"_grace_active")),
+		"runner's _on_throne_destroyed must have run (grace armed)")
 	assert_true(late_handler_called[0],
 		"late-subscribed handler must STILL run — emit doesn't short-circuit")
 	EventBus.throne_destroyed.disconnect(late_handler)
+
+
+# ---------------------------------------------------------------------------
+# Fixture helper — canonical per-team dict shape (schema §2.1).
+# ---------------------------------------------------------------------------
+
+func _team_fixture(buildings_destroyed: int) -> Dictionary:
+	return {
+		"throne_destroyed": false,
+		"throne_hp_pct_at_end": 100.0,
+		"workers_alive_at_end": 5,
+		"combat_units_alive_at_end": 14,
+		"buildings_alive_at_end": 0,
+		"buildings_destroyed": buildings_destroyed,
+		"coin_x100_at_end": 15000,
+		"grain_x100_at_end": 5000,
+		"farr_x100_at_end": 5000,
+		"units_produced_total": 0,
+		"buildings_constructed_total": 0,
+	}

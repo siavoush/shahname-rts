@@ -46,7 +46,13 @@ Output schema (aggregate.json):
     "turan_economy_at_end": {
       "coin_x100": {"median": float, "mean": float, "min": int, "max": int},
       "grain_x100": {"median": float, "mean": float, "min": int, "max": int},
-      "farr_x100":  {"median": float, "mean": float, "min": int, "max": int}
+      "farr_x100":  {"median": float, "mean": float, "min": int, "max": int,
+                     "samples": int}
+      # farr_x100: per AI_VS_AI_RESULT_FORMAT.md §7.3 v1.1.0, the runner
+      # emits -1 ("not separately tracked") for turan.farr_x100_at_end.
+      # -1 sentinels are EXCLUDED from these stats (averaging a sentinel
+      # into Farr statistics would fabricate a signal); "samples" counts
+      # the non-sentinel records that contributed.
     },
     "military_at_end": {
       "iran_units_alive":  {"median": float, "mean": float},
@@ -55,11 +61,17 @@ Output schema (aggregate.json):
       "turan_buildings_alive": {"median": float, "mean": float}
     },
     "events": {
-      "turan_probes_fired":       {"median": float, "mean": float, "total": int},
-      "buildings_destroyed_total": {"median": float, "mean": float, "total": int},
-      "units_killed_total":       {"median": float, "mean": float, "total": int}
+      "turan_probes_fired":         {"median": float, "mean": float, "total": int},
+      "turan_units_deployed_total": {"median": float, "mean": float, "total": int},
+      "buildings_destroyed_total":  {"median": float, "mean": float, "total": int},
+      "units_killed_total":         {"median": float, "mean": float, "total": int},
+      "farr_drain_events_total":    {"median": float, "mean": float, "total": int}
     }
   }
+
+Schema reference: docs/AI_VS_AI_RESULT_FORMAT.md v1.1.0 (§4 aggregation
+conventions; §2.3 grace-window semantics — duration_ticks records the
+throne-fall tick, grace excluded, so no adjustment is needed here).
 """
 
 import argparse
@@ -121,6 +133,21 @@ def _economy_stats(values: list) -> dict:
     }
 
 
+def _sentinel_excluded_stats(values: list, sentinel: int = -1) -> dict:
+    """Economy stats over values with sentinel records EXCLUDED.
+
+    Used for turan.farr_x100_at_end where -1 means "not separately tracked"
+    (AI_VS_AI_RESULT_FORMAT.md §7.3 v1.1.0). Averaging the sentinel into the
+    stats would fabricate a Farr signal out of a placeholder. "samples"
+    reports how many non-sentinel records contributed (0 = every record was
+    the sentinel — the stats are then all zeros and carry no signal).
+    """
+    real = [v for v in values if v != sentinel]
+    stats = _economy_stats(real)
+    stats["samples"] = len(real)
+    return stats
+
+
 def _military_stats(values: list) -> dict:
     if not values:
         return {"median": 0.0, "mean": 0.0}
@@ -173,6 +200,7 @@ def aggregate(ndjson_path: Path) -> dict:
     iran_units, turan_units = [], []
     iran_bldgs, turan_bldgs = [], []
     probes_vals, bldgs_destroyed_vals, units_killed_vals = [], [], []
+    deployed_vals, farr_drain_vals = [], []
 
     for r in records:
         oc = r.get("outcome", "stalemate")
@@ -205,6 +233,8 @@ def aggregate(ndjson_path: Path) -> dict:
         probes_vals.append(int(ev.get("turan_probes_fired", 0)))
         bldgs_destroyed_vals.append(int(ev.get("buildings_destroyed_total", 0)))
         units_killed_vals.append(int(ev.get("units_killed_total", 0)))
+        deployed_vals.append(int(ev.get("turan_units_deployed_total", 0)))
+        farr_drain_vals.append(int(ev.get("farr_drain_events_total", 0)))
 
     def pct(n: int) -> float:
         if valid == 0:
@@ -237,7 +267,9 @@ def aggregate(ndjson_path: Path) -> dict:
         "turan_economy_at_end": {
             "coin_x100":  _economy_stats(turan_coin),
             "grain_x100": _economy_stats(turan_grain),
-            "farr_x100":  _economy_stats(turan_farr),
+            # -1 = "not separately tracked" sentinel (RESULT_FORMAT §7.3
+            # v1.1.0) — excluded, never averaged in.
+            "farr_x100":  _sentinel_excluded_stats(turan_farr),
         },
         "military_at_end": {
             "iran_units_alive":      _military_stats(iran_units),
@@ -246,9 +278,11 @@ def aggregate(ndjson_path: Path) -> dict:
             "turan_buildings_alive": _military_stats(turan_bldgs),
         },
         "events": {
-            "turan_probes_fired":        _event_stats(probes_vals),
-            "buildings_destroyed_total": _event_stats(bldgs_destroyed_vals),
-            "units_killed_total":        _event_stats(units_killed_vals),
+            "turan_probes_fired":         _event_stats(probes_vals),
+            "turan_units_deployed_total": _event_stats(deployed_vals),
+            "buildings_destroyed_total":  _event_stats(bldgs_destroyed_vals),
+            "units_killed_total":         _event_stats(units_killed_vals),
+            "farr_drain_events_total":    _event_stats(farr_drain_vals),
         },
     }
 
