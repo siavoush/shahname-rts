@@ -2,7 +2,7 @@
 title: AI-vs-AI Match Result Format
 type: contract
 status: v1.1.0
-version: 1.1.0
+version: 1.1.1
 owner: balance-engineer
 authored: 2026-06-03
 authored_by: balance-engineer-wave-3sim
@@ -402,7 +402,8 @@ All `_x100` fields follow the Sim Contract §1.6 fixed-point convention: the int
 |---|---|---|---|
 | 1.0.0 | 2026-06-03 | balance-engineer | Initial contract: NDJSON schema, signal classification, aggregation conventions, affordability table. |
 | 1.1.0 | 2026-06-10 | engine-architect (Track B2) | Event counters wired live (review finding GP-6): `units_killed_total` (unit_died), per-team `buildings_destroyed` + total (building_destroyed, Throne excluded), `farr_drain_events_total` (farr_changed negative delta), `turan_units_deployed_total` (unit_spawned team==TURAN), `turan_probes_fired` (TuranController accessor; semantics changed probing→idle ⇒ idle→probing launch edge). `turan.farr_x100_at_end` ⇒ `-1` sentinel (balance-engineer farr-proxy self-flag; v1.0.0 Iran-value proxy revoked; aggregator excludes `-1`). New §2.3: throne-fall grace window (`Constants.SIM_THRONE_GRACE_TICKS` = 30 ticks; `duration_ticks` records throne-fall tick, grace excluded) + tick-driven timeout (DET-3). §5 examples updated to match. |
+| 1.1.1 | 2026-06-08 | lead (wave-B integration fix-up) | Last two GP-6 zero-fields wired live: `units_produced_total` ← `unit_spawned` with **SimClock.tick > 0** as the production-source discriminator (tick-0 roster spawns are structural, per the §2.2 definition that always required this); `buildings_constructed_total` ← new typed `EventBus.building_constructed(team, kind, unit_id)` Stage-2 completion channel (mirrors `building_destroyed` shape; emitted by UnitState_Constructing after the local `construction_finalized`). Same tick>0 rule now guards the `iran_first_piyade_tick` latch — observation smoke showed it latching pre-spawned roster piyades at tick 0, making the build-order-validation signal dead-at-0 every match. Also noted: post-ARCH-1 the `first_engagement_tick` proxy is Unit-namespace only (building-only engagements don't move the latch — closer to the §2.2 "combat unit dealt damage" semantic). |
 
 ---
 
-*End of AI_VS_AI_RESULT_FORMAT.md v1.1.0*
+*End of AI_VS_AI_RESULT_FORMAT.md v1.1.1*

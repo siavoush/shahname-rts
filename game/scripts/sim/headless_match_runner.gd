@@ -151,12 +151,30 @@ var _buildings_destroyed_turan: int = 0
 var _turan_units_deployed_total: int = 0
 var _farr_drain_events_total: int = 0
 
+# Production counters (session-11 integration fix-up — closed the last two
+# always-zero schema fields from GP-6):
+#   _units_produced_*       — unit_spawned with SimClock.tick > 0. The
+#                             match-start roster spawns at tick 0, so the
+#                             tick is the production-source discriminator
+#                             the v1.1.0 probe note said was missing:
+#                             tick 0 = structural spawn (excluded per
+#                             schema §2.2), tick > 0 = produced.
+#   _buildings_constructed_* — EventBus.building_constructed (Stage-2
+#                             completion channel; the schema's
+#                             "construction_finalized emitted" semantic).
+#                             Throne never traverses construction.
+var _units_produced_iran: int = 0
+var _units_produced_turan: int = 0
+var _buildings_constructed_iran: int = 0
+var _buildings_constructed_turan: int = 0
+
 # Held connections so we can disconnect cleanly on match end.
 var _connected_throne_destroyed: bool = false
 var _connected_unit_health_zero: bool = false
 var _connected_unit_spawned: bool = false
 var _connected_unit_died: bool = false
 var _connected_building_destroyed: bool = false
+var _connected_building_constructed: bool = false
 var _connected_farr_changed: bool = false
 var _connected_sim_phase: bool = false
 
@@ -323,6 +341,13 @@ func _subscribe_signals() -> void:
 		EventBus.building_destroyed.connect(_on_building_destroyed)
 		_connected_building_destroyed = true
 
+	# buildings_constructed per-team counters: Stage-2 completion channel
+	# (session-11 integration fix-up — the schema's "construction_finalized
+	# emitted" semantic). Throne never traverses construction.
+	if not EventBus.building_constructed.is_connected(_on_building_constructed):
+		EventBus.building_constructed.connect(_on_building_constructed)
+		_connected_building_constructed = true
+
 	# farr_drain_events_total counter: every apply_farr_change flows through
 	# the FarrSystem chokepoint which emits farr_changed (CLAUDE.md mandate),
 	# so counting negative-delta emits == counting drain events.
@@ -400,10 +425,21 @@ func _on_unit_spawned(payload: Variant) -> void:
 	var team: int = int(d.get(&"team", -1))
 	if team == Constants.TEAM_TURAN:
 		_turan_units_deployed_total += 1
-	if _iran_first_piyade_tick == -1 \
-			and StringName(d.get(&"unit_type", &"")) == &"piyade" \
-			and team == Constants.TEAM_IRAN:
-		_iran_first_piyade_tick = SimClock.tick
+	# tick > 0 = production-source discriminator (session-11 integration
+	# fix-up): the match-start roster spawns at tick 0; anything later is
+	# produced by a building. Also guards the first-piyade latch — the
+	# observation smoke showed it latching the PRE-SPAWNED roster piyades
+	# at tick 0, which is dead-at-0 every match and useless as the
+	# build-order-validation signal the spec defines it to be.
+	if SimClock.tick > 0:
+		if team == Constants.TEAM_IRAN:
+			_units_produced_iran += 1
+		elif team == Constants.TEAM_TURAN:
+			_units_produced_turan += 1
+		if _iran_first_piyade_tick == -1 \
+				and StringName(d.get(&"unit_type", &"")) == &"piyade" \
+				and team == Constants.TEAM_IRAN:
+			_iran_first_piyade_tick = SimClock.tick
 
 
 # Count unit deaths (result-format v1.1.0). The producing HealthComponent
@@ -417,6 +453,14 @@ func _on_unit_died(_unit_id: int, _killer_unit_id: int, _cause: StringName,
 # Count building destructions per team (result-format v1.1.0). Throne kind
 # excluded — the Throne is the win-condition, captured by throne_destroyed /
 # throne_hp_pct_at_end, not a `buildings_destroyed` stat (schema §2.2).
+func _on_building_constructed(team_id: int, _kind: StringName,
+		_unit_id: int) -> void:
+	if team_id == Constants.TEAM_IRAN:
+		_buildings_constructed_iran += 1
+	elif team_id == Constants.TEAM_TURAN:
+		_buildings_constructed_turan += 1
+
+
 func _on_building_destroyed(team_id: int, kind: StringName, _unit_id: int) -> void:
 	if kind == &"throne":
 		return
@@ -653,12 +697,14 @@ func _capture_team_fields(team_id: int) -> Dictionary:
 		"coin_x100_at_end": coin_x100,
 		"grain_x100_at_end": grain_x100,
 		"farr_x100_at_end": farr_x100,
-		# Deferred (probed at v1.1.0): unit_spawned's payload carries no
-		# production-source discrimination (match-start roster vs trained-
-		# at-building), and no construction_finalized counter channel is in
-		# B2 scope. Stays 0 until a production-source field lands.
-		"units_produced_total": 0,
-		"buildings_constructed_total": 0,
+		# Session-11 integration fix-up: B2's probed deferral resolved —
+		# production-source discriminator is SimClock.tick > 0 (roster
+		# spawns at tick 0), and building_constructed is the new typed
+		# Stage-2 completion channel. Last two GP-6 zero-fields closed.
+		"units_produced_total": _units_produced_iran \
+			if team_id == Constants.TEAM_IRAN else _units_produced_turan,
+		"buildings_constructed_total": _buildings_constructed_iran \
+			if team_id == Constants.TEAM_IRAN else _buildings_constructed_turan,
 	}
 
 
@@ -685,6 +731,10 @@ func _disconnect_signals() -> void:
 		if EventBus.building_destroyed.is_connected(_on_building_destroyed):
 			EventBus.building_destroyed.disconnect(_on_building_destroyed)
 		_connected_building_destroyed = false
+	if _connected_building_constructed:
+		if EventBus.building_constructed.is_connected(_on_building_constructed):
+			EventBus.building_constructed.disconnect(_on_building_constructed)
+		_connected_building_constructed = false
 	if _connected_farr_changed:
 		if EventBus.farr_changed.is_connected(_on_farr_changed):
 			EventBus.farr_changed.disconnect(_on_farr_changed)

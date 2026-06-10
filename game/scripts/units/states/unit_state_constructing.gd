@@ -370,6 +370,16 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 		if is_instance_valid(_building_ref):
 			_building_ref.emit_signal(
 				&"construction_finalized", placer_unit_id)
+		# Session-11 data-validity wave: global completion channel for
+		# telemetry counters (runner buildings_constructed_total per
+		# AI_VS_AI_RESULT_FORMAT §2.2). AFTER the local signal so global
+		# consumers observe fully-finalized state. Throne never passes
+		# here (pre-placed, never constructed).
+		if is_instance_valid(_building_ref):
+			EventBus.building_constructed.emit(
+				int(_building_ref.get(&"team")),
+				StringName(_building_ref.get(&"kind")),
+				int(_building_ref.get(&"unit_id")))
 	_operationally_complete = true
 	_request_idle(ctx)
 

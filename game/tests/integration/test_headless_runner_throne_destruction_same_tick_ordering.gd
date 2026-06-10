@@ -192,6 +192,63 @@ func test_event_counters_aggregate_into_result_dict() -> void:
 
 
 # ---------------------------------------------------------------------------
+# Invariant 3b (session-11 integration fix-up): production counters — the
+# last two GP-6 zero-fields. tick > 0 is the production-source
+# discriminator; building_constructed is the Stage-2 completion channel.
+# ---------------------------------------------------------------------------
+
+func test_production_counters_discriminate_roster_from_produced() -> void:
+	# Tick 0: match-start roster spawns — must NOT count as produced and
+	# must NOT latch first_piyade (observation-smoke regression: the latch
+	# caught pre-spawned roster piyades at tick 0, dead-at-0 every match).
+	EventBus.unit_spawned.emit({&"unit_type": &"piyade",
+		&"team": Constants.TEAM_IRAN, &"unit_id": 60, &"position": Vector3.ZERO})
+	EventBus.unit_spawned.emit({&"unit_type": &"kargar",
+		&"team": Constants.TEAM_IRAN, &"unit_id": 61, &"position": Vector3.ZERO})
+	assert_eq(int(_runner.get(&"_units_produced_iran")), 0,
+		"tick-0 roster spawns are structural, not produced (schema §2.2)")
+	assert_eq(int(_runner.get(&"_iran_first_piyade_tick")), -1,
+		"tick-0 roster piyade must NOT latch first_piyade — the field "
+		+ "validates BUILD-ORDER production timing, not match-start spawns")
+
+	# Tick > 0: produced units count + latch fires with the real tick.
+	_advance_ticks(7)
+	EventBus.unit_spawned.emit({&"unit_type": &"piyade",
+		&"team": Constants.TEAM_IRAN, &"unit_id": 62, &"position": Vector3.ZERO})
+	EventBus.unit_spawned.emit({&"unit_type": &"savar",
+		&"team": Constants.TEAM_TURAN, &"unit_id": 63, &"position": Vector3.ZERO})
+	assert_eq(int(_runner.get(&"_units_produced_iran")), 1,
+		"tick>0 Iran spawn counts as produced")
+	assert_eq(int(_runner.get(&"_units_produced_turan")), 1,
+		"tick>0 Turan spawn counts as produced")
+	assert_eq(int(_runner.get(&"_iran_first_piyade_tick")), 7,
+		"first TRAINED piyade latches at its spawn tick")
+
+	# Stage-2 completions count per team; surfaces in the team dicts.
+	EventBus.building_constructed.emit(Constants.TEAM_IRAN, &"khaneh", 301)
+	EventBus.building_constructed.emit(Constants.TEAM_IRAN, &"mazraeh", 302)
+	EventBus.building_constructed.emit(Constants.TEAM_TURAN, &"khaneh", 303)
+	assert_eq(int(_runner.get(&"_buildings_constructed_iran")), 2)
+	assert_eq(int(_runner.get(&"_buildings_constructed_turan")), 1)
+
+	# The live surfacing seam is _capture_team_fields (NOT _assemble's
+	# verbatim pass-through) — call it directly and assert the two
+	# formerly-hardcoded-0 keys now carry the per-team counters.
+	var iran_captured: Dictionary = _runner.call(
+		&"_capture_team_fields", Constants.TEAM_IRAN)
+	var turan_captured: Dictionary = _runner.call(
+		&"_capture_team_fields", Constants.TEAM_TURAN)
+	assert_eq(int(iran_captured.get("units_produced_total")), 1,
+		"iran.units_produced_total must surface the per-team counter "
+		+ "(was hardcoded 0 — GP-6)")
+	assert_eq(int(iran_captured.get("buildings_constructed_total")), 2,
+		"iran.buildings_constructed_total must surface the per-team counter "
+		+ "(was hardcoded 0 — GP-6)")
+	assert_eq(int(turan_captured.get("buildings_constructed_total")), 1,
+		"turan.buildings_constructed_total must surface the per-team counter")
+
+
+# ---------------------------------------------------------------------------
 # Invariant 4: the NDJSON emit happens exactly at grace_end_tick — tick-
 # deterministic, independent of frame pacing.
 # ---------------------------------------------------------------------------
