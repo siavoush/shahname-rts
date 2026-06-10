@@ -1,7 +1,7 @@
 ---
 name: qa-engineer
 description: QA and testing engineer — GUT test suites, integration tests, automated match simulations, regression testing, build verification.
-model: sonnet
+model: opus
 tools: Read, Write, Edit, Glob, Grep, Bash, Agent, SendMessage, TaskCreate, TaskUpdate, TaskGet, TaskList
 ---
 
