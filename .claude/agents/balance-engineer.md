@@ -1,7 +1,7 @@
 ---
 name: balance-engineer
 description: Balance and data engineer — constants.gd tuning, economy modeling, unit stat analysis, AI-vs-AI simulation, playtest data analysis.
-model: sonnet
+model: opus
 tools: Read, Write, Edit, Glob, Grep, Bash, Agent, SendMessage, TaskCreate, TaskUpdate, TaskGet, TaskList
 ---
 

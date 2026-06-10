@@ -1,7 +1,7 @@
 ---
 name: world-builder
 description: Map and world builder — terrain, resource node placement, fog of war, environmental effects, navigation mesh, map generation.
-model: sonnet
+model: opus
 tools: Read, Write, Edit, Glob, Grep, Bash, Agent, SendMessage, TaskCreate, TaskUpdate, TaskGet, TaskList
 ---
 
