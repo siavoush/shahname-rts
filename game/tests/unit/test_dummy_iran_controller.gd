@@ -44,12 +44,19 @@ func after_each() -> void:
 func test_controller_boots_disabled_without_headless_batch_flag() -> void:
 	# The GUT process was launched WITHOUT --headless-batch, so the
 	# autoload's _ready must have left the gate closed. before_each
-	# force-enabled it for the other tests; assert the BOOT decision by
-	# re-deriving it from the same source _ready used.
+	# force-enables `enabled` for the other tests, so we assert the
+	# immutable _boot_enabled snapshot — the controller's ACTUAL boot
+	# decision (review-panel fix: re-deriving the flag here was
+	# tautological; a regression to `enabled = true` at boot would have
+	# passed).
 	assert_false(OS.get_cmdline_user_args().has("--headless-batch"),
 		"ARCH-2 precondition: GUT process must not carry the headless-batch "
 		+ "flag — if it ever does, the boot-disabled invariant is untestable "
 		+ "here and this test must move to a subprocess harness")
+	assert_false(bool(DummyIranController._boot_enabled),
+		"ARCH-2: the controller's _ready boot decision must be DISABLED "
+		+ "without --headless-batch — live player games must never have "
+		+ "the dummy AI active")
 
 
 func test_disabled_controller_is_inert_on_sim_phase() -> void:

@@ -55,8 +55,10 @@ class_name HealthComponent
 ## `EventBus.building_destroyed(team, kind, unit_id)` channel emitted by
 ## Building._on_health_zero. Units leave this true. Known accepted edge:
 ## the headless runner's first_engagement_tick latch (which proxies on
-## unit_health_zero) no longer sees building-only engagements — already a
-## documented proxy divergence in AI_VS_AI_RESULT_FORMAT §8.
+## unit_health_zero) no longer sees building-only engagements. This
+## actually moves the proxy CLOSER to the spec'd semantic ("first tick a
+## combat UNIT dealt damage", AI_VS_AI_RESULT_FORMAT §2); the §8 gap
+## table gets its row in the v1.1.0 doc revision (data-validity wave).
 @export var emit_global_death_signals: bool = true
 
 ## Local death signal — emitted BEFORE the global EventBus.unit_health_zero.

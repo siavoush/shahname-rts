@@ -116,6 +116,14 @@ var _last_acked_build_step: int = -1
 ## boot-scoped, not match-scoped.
 var enabled: bool = false
 
+## The _ready-computed boot decision, preserved immutably so tests can
+## observe what the gate DECIDED at boot even after before_each flips
+## `enabled` for test convenience (review-panel finding: without this,
+## the boot-disabled regression test was tautological — a regression to
+## `enabled = true` at boot would have passed all gate tests). Written
+## ONCE in _ready; never by reset() or tests.
+var _boot_enabled: bool = false
+
 
 # ---------------------------------------------------------------------------
 # Lifecycle
@@ -126,7 +134,8 @@ func _ready() -> void:
 	# player game the controller stays connected but inert (early-return
 	# in _on_sim_phase) so the wiring path is identical in both modes and
 	# tests can flip `enabled` without re-wiring (BUG-D1 lesson).
-	enabled = OS.get_cmdline_user_args().has("--headless-batch")
+	_boot_enabled = OS.get_cmdline_user_args().has("--headless-batch")
+	enabled = _boot_enabled
 	print("[dummy-iran] DummyIranController._ready enabled=%s" % str(enabled))
 	# Canonical pattern (per turan_controller.gd:140): subscribe to
 	# EventBus.sim_phase + filter to PHASE_AI inside the handler.

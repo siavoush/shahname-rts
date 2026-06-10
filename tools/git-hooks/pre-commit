@@ -36,9 +36,15 @@ echo "--- Pre-commit gate ---"
 # docs/, .claude/, codex/) cannot break lint or tests — skip the ~42s gate.
 # Any staged file outside those patterns runs the full gate as before.
 # ---------------------------------------------------------------------------
-STAGED_FILES="$(git diff --cached --name-only)"
-if [ -n "${STAGED_FILES}" ] && \
-   ! printf '%s\n' "${STAGED_FILES}" | grep -qvE '(\.(md|txt)$|^docs/|^\.claude/|^codex/)'; then
+# --no-renames: a staged rename of a code file INTO a skip-listed path
+# must surface the old code path (as a delete) so the gate still runs
+# (review-panel rename-bypass finding). Count-based check instead of
+# `grep -qv` (review-panel: -q -v early-exit semantics differ across
+# grep implementations; a wrong grep on PATH would silently invert the
+# check into a permanent gate bypass).
+STAGED_FILES="$(git diff --cached --name-only --no-renames)"
+NON_DOC_COUNT="$(printf '%s\n' "${STAGED_FILES}" | grep -cvE '(\.(md|txt)$|^docs/|^\.claude/|^codex/)' || true)"
+if [ -n "${STAGED_FILES}" ] && [ "${NON_DOC_COUNT}" -eq 0 ]; then
   echo "Docs-only commit detected — skipping lint + GUT suite."
   echo "--- Pre-commit gate: OK (docs-only) ---"
   exit 0

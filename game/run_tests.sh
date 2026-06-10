@@ -23,8 +23,10 @@ fi
 
 cd "${GAME_DIR}"
 
-# Capture output so we can both stream it and parse the totals line.
-# `|| GUT_EXIT=$?` keeps set -e from short-circuiting before we print.
+# Capture output to parse the totals line; printed in full AFTER the run
+# (buffered, not streamed — acceptable for the ~60s gate; switch to tee
+# if live progress ever matters). `|| GUT_EXIT=$?` keeps set -e from
+# short-circuiting before we print.
 GUT_EXIT=0
 OUTPUT="$("${GODOT_BIN}" --headless --path "${GAME_DIR}" -s addons/gut/gut_cmdln.gd \
   -gconfig=res://.gutconfig.json \
@@ -37,8 +39,11 @@ if [ "${GUT_EXIT}" -ne 0 ]; then
 fi
 
 # Cold-start false-green guard: GUT prints a totals block ending in
-# "Tests             <N>". Zero or missing => the suite did not actually
-# run (most likely a fresh worktree missing the import pass).
+# "Tests             <N>". Missing/zero => the suite did not actually
+# run (most likely a fresh worktree missing the import pass). Note:
+# GUT 9.4.0 renders a zero count as the literal "none", so the cold
+# case normally trips the -z branch; the -eq 0 arm is kept defensively
+# against future GUT formatting changes.
 TESTS_RUN="$(printf '%s\n' "${OUTPUT}" | sed -n 's/^Tests[[:space:]]\{1,\}\([0-9]\{1,\}\).*/\1/p' | tail -1)"
 if [ -z "${TESTS_RUN}" ] || [ "${TESTS_RUN}" -eq 0 ]; then
   echo "" >&2

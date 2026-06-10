@@ -980,8 +980,10 @@ func _init_health_from_balance_data() -> void:
 	var max_hp: float = _resolve_max_hp()
 	if hc.has_method(&"init_max_hp"):
 		hc.call(&"init_max_hp", max_hp)
-	if hc.has_method(&"set"):
-		hc.set(&"unit_id", unit_id)
+	# (Review-panel M7 cleanup: the former `if hc.has_method(&"set")`
+	# guard was vacuous — every Object has set(); it could only mask a
+	# wrong-property silent no-op. Direct assignment per §9.M7.)
+	hc.set(&"unit_id", unit_id)
 	# Session-11 hotfix (review ARCH-1) — unit_id collision ROOT fix.
 	# Building ids and Unit ids collide in the same int space; suppress the
 	# global unit_health_zero / unit_died emits for Building HCs so a razed
