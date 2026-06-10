@@ -37,6 +37,7 @@ Keep entries terse. Long questions fragment the design chat's attention.
 
 ## Open questions
 
+> **2026-06-08 — DECISION PACKET AVAILABLE.** All open entries below (plus the 5 codex-lane questions, the plan-§10 index, and 4 housekeeping requests) are consolidated into **`DECISION_PACKET_2026-06-08.md`** at repo root — each with options, implementation-side recommendation, and cost-of-delay, ordered so one design-chat sitting (~1h) clears the whole backlog. Read the packet instead of the raw entries; the entries below remain the canonical full-context record.
 
 ## 2026-05-28 — Late-game economic pressure gap (balance-engineer flag, session 9 close retro)
 
