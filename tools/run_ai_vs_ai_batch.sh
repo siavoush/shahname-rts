@@ -155,6 +155,8 @@ for (( i=0; i<N_MATCHES; i++ )); do
         # Dry-run: emit a fixture NDJSON line with deterministic values.
         # The fixture encodes the match_index so tests can verify ordering.
         # Outcome rotates: iran_win / turan_win / stalemate for indices 0/1/2+.
+        # Schema: AI_VS_AI_RESULT_FORMAT.md v1.1.0 — turan.farr_x100_at_end
+        # is the -1 "not separately tracked" sentinel, per §7.3.
         # -----------------------------------------------------------------------
         case $(( i % 3 )) in
             0) OUTCOME="iran_win";   WINNER_TEAM=1; IRAN_THRONE_DEAD="false"; TURAN_THRONE_DEAD="true"  ;;
@@ -196,7 +198,7 @@ for (( i=0; i<N_MATCHES; i++ )); do
     "buildings_destroyed": 1,
     "coin_x100_at_end": 0,
     "grain_x100_at_end": 0,
-    "farr_x100_at_end": 2000,
+    "farr_x100_at_end": -1,
     "units_produced_total": 0,
     "buildings_constructed_total": 0
   },

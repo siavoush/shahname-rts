@@ -82,8 +82,12 @@ extends "res://scripts/world/buildings/building.gd"
 ##     does not deplete. Building destruction lifecycle (HP/HealthComponent)
 ##     ships in session-2 wave 1C — until then, deregistration on destruction
 ##     is a forward-compat hook that cannot fire.
-##   - extract_ticks = 90 (3s at SIM_HZ=30 — cultural long-dwell).
-##   - grain_yield_per_trip_x100 = 200 (2 Grain/trip at BalanceData default).
+##   - extract_ticks = 90 (3s at SIM_HZ=30 — cultural long-dwell; deliberate
+##     hardcode, see _ROOM_A_EXTRACT_TICKS deferral comment).
+##   - yield_per_trip_x100 + max_slots read from BalanceData.economy.
+##     resource_nodes (grain_yield_per_trip × 100 / farm_max_workers) at
+##     _ready — wave/b1-mine-ssot SSOT fix. Room A's 2-Grain/trip value
+##     lives in data/balance.tres, not here.
 ##   - _on_placement_complete: register with ResourceSystem as a gather target.
 ##   - Fertile-tile placement validation: is_valid_placement() class method
 ##     that checks TerrainSystem.is_fertile_tile(world_pos) — the build menu
@@ -154,9 +158,29 @@ var _fog_handle: int = -1
 ## Sim Contract §1.6 (x100 scale; same as ResourceSystem._coin_x100 etc.).
 var _local_stock_x100: int = 0
 
-# Wave-1A hardcoded tunables. TODO(phase-3-wave-1B): read from BalanceData
-# once FogConfig + economy sub-resources ship.
-const _WAVE_1A_EXTRACT_TICKS: int = 90  # 3s dwell (cultural long-dwell, Room A)
+# Dwell ticks — DELIBERATE hardcode (wave/b1-mine-ssot probe outcome,
+# 2026-06-08): Room A (02g §2.4, ratified 2026-05-14) fixed Mazra'eh's dwell
+# at 90 ticks (3s) explicitly DISTINCT from MineNode's 60 — the dehqan
+# "stewardship of the land" cultural texture is per-kind. The only existing
+# BalanceData schema field, economy.resource_nodes.trip_full_load_ticks
+# (= 60, RNC §7: "Both use trip_full_load_ticks"), is SHARED by mine and
+# farm and cannot express the ratified per-kind split; wiring it here would
+# either erase the 3s cultural dwell or retime the mine. A farm-specific
+# schema field would fix this, but inventing schema fields is out of scope
+# for the SSOT-fix track — deferred to balance-engineer's next schema pass.
+const _ROOM_A_EXTRACT_TICKS: int = 90  # 3s dwell (cultural long-dwell, Room A)
+
+# §9.L9 visible-fallback values for the BalanceData-driven tunables below —
+# used ONLY when the _ready read fails (file missing / schema mismatch).
+# Values match the Room A resolution so a fallback farm still behaves as
+# designed; the "[mazraeh] balance_config_missing" log is the visibility
+# signal (fallback-by-failure-visibility-shape).
+const _FALLBACK_YIELD_PER_TRIP_X100: int = 200  # 2 Grain/trip (Room A R1-α)
+const _FALLBACK_MAX_SLOTS: int = 1              # tend-the-field model (RNC §7)
+
+# Fixed-point scale per Sim Contract §1.6: BalanceData resource-node keys
+# are whole-unit ints (RNC §7); the gather payload is x100 ints.
+const _X100: int = 100
 
 # === Duck-typed ResourceNode schema fields ===================================
 #
@@ -177,8 +201,12 @@ const _WAVE_1A_EXTRACT_TICKS: int = 90  # 3s dwell (cultural long-dwell, Room A)
 var is_gatherable: bool = false
 var resource_kind: StringName = Constants.KIND_GRAIN
 var reserves_x100: int = -1   # -1 sentinel = infinite (never depletes)
-var max_slots: int = 1         # single-slot for wave 1A
-var yield_per_trip_x100: int = 200  # 2 Grain per trip (Room A R1-α)
+# max_slots + yield_per_trip_x100 resolve from BalanceData.economy.
+# resource_nodes (farm_max_workers / grain_yield_per_trip) in _ready —
+# wave/b1-mine-ssot SSOT fix (review GP-3). Initializers are the §9.L9
+# visible fallbacks; they only survive when the BalanceData read fails.
+var max_slots: int = _FALLBACK_MAX_SLOTS
+var yield_per_trip_x100: int = _FALLBACK_YIELD_PER_TRIP_X100
 
 
 func _init() -> void:
@@ -194,8 +222,62 @@ func _ready() -> void:
 	# (throne.gd:_ready) + RNC §5.2 group-iteration anti-misuse warning
 	# (mirror C1.2: buildings use SceneTree groups, not SpatialIndex).
 	add_to_group(GRAIN_DEPOTS_GROUP)
+	_resolve_balance_config()
 	print("[mazraeh] _ready team=%d position=%s unit_id=%d joined=%s" % [
 		team, str(global_position), unit_id, str(GRAIN_DEPOTS_GROUP)])
+
+
+# Read the BalanceData-backed gather tunables (grain_yield_per_trip,
+# farm_max_workers) from economy.resource_nodes via the canonical defensive
+# lookup chain (BUG-C1 + §9.L11; mirrors _resolve_fog_sight_cells below and
+# MineNode._resolve_balance_config). wave/b1-mine-ssot SSOT fix: pre-fix,
+# these were hardcoded and designer edits to the .tres keys silently did
+# nothing (review GP-3). extract_ticks deliberately NOT wired — see the
+# _ROOM_A_EXTRACT_TICKS deferral comment.
+func _resolve_balance_config() -> void:
+	var cfg: Resource = _resource_node_config_or_null()
+	if cfg == null:
+		# §9.L9 visible fallback — loud log so a misconfigured BalanceData
+		# is diagnosable from the scroll, never silent.
+		print("[mazraeh] balance_config_missing — using visible fallbacks "
+			+ "max_slots=%d yield_per_trip_x100=%d" % [max_slots, yield_per_trip_x100])
+		return
+	yield_per_trip_x100 = _cfg_int(cfg, &"grain_yield_per_trip",
+		_FALLBACK_YIELD_PER_TRIP_X100 / _X100) * _X100
+	max_slots = _cfg_int(cfg, &"farm_max_workers", _FALLBACK_MAX_SLOTS)
+	print("[mazraeh] config_resolved source=balance_data max_slots=%d "
+		% max_slots
+		+ "yield_per_trip_x100=%d extract_ticks=%d(hardcode, Room A)"
+		% [yield_per_trip_x100, extract_ticks])
+
+
+# Defensive chain to the ResourceNodeConfig sub-resource. Returns null on
+# any failure step (caller falls back loudly per §9.L9).
+func _resource_node_config_or_null() -> Resource:
+	var path: String = Constants.PATH_BALANCE_DATA
+	if not FileAccess.file_exists(path):
+		return null
+	var bd: Resource = load(path)
+	if bd == null:
+		return null
+	var econ: Variant = bd.get(&"economy")
+	if econ == null or not (econ is Resource):
+		return null
+	var cfg: Variant = (econ as Resource).get(&"resource_nodes")
+	if cfg == null or not (cfg is Resource):
+		return null
+	return cfg as Resource
+
+
+# Typed field read with per-field fallback — same terminal-step shape as
+# building.gd::_resolve_max_hp (typeof check before cast).
+func _cfg_int(cfg: Resource, field: StringName, fallback: int) -> int:
+	var v: Variant = cfg.get(field)
+	if typeof(v) != TYPE_INT and typeof(v) != TYPE_FLOAT:
+		print("[mazraeh] balance_field_missing field=%s — using fallback %d"
+			% [field, fallback])
+		return fallback
+	return int(v)
 
 
 # === Autoload helper =========================================================
@@ -309,8 +391,10 @@ func complete_extract(unit_id: int) -> Dictionary:
 ## The UnitState_Gathering state reads extract_ticks at slot-grant time
 ## (L210: `_dwell_remaining_ticks = int(_target_node.extract_ticks)`).
 ## Expose it as a field so the state's property read works without
-## has_method branching.
-var extract_ticks: int = _WAVE_1A_EXTRACT_TICKS
+## has_method branching. Deliberately NOT BalanceData-wired — see the
+## _ROOM_A_EXTRACT_TICKS deferral comment (per-kind dwell has no schema
+## field; trip_full_load_ticks is shared with MineNode).
+var extract_ticks: int = _ROOM_A_EXTRACT_TICKS
 
 
 ## Convenience accessor: how many slots are currently occupied.

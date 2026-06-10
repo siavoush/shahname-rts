@@ -35,8 +35,26 @@ extends Node
 ##   responsibilities are:
 ##     (i) EventBus.throne_destroyed subscription for win-condition detection
 ##     (ii) NDJSON result emission (_emit_result_and_quit)
-##     (iii) Timeout enforcement (_process check against SimClock.tick)
+##     (iii) Timeout enforcement (tick-driven sim_phase cleanup check — DET-3:
+##           the original _process check was frame-dependent, so stalemate
+##           records were not run-reproducible; moved to the same tick-driven
+##           path as the grace check, result-format v1.1.0)
 ##     (iv) seed(match_seed) at match-start (in _ready)
+##     (v) Event-counter aggregation (unit_died / building_destroyed /
+##         farr_changed / unit_spawned subscriptions; result-format v1.1.0)
+##
+## Throne-destruction GRACE WINDOW (result-format v1.1.0, Track B2):
+##   On the FIRST throne_destroyed the runner latches winner + outcome +
+##   duration_ticks (the throne-fall tick — pacing-signal purity per
+##   AI_VS_AI_RESULT_FORMAT.md §2.2 v1.1.0) and arms a deterministic grace:
+##   grace_end_tick = SimClock.tick + Constants.SIM_THRONE_GRACE_TICKS.
+##   All subscriptions stay live through the grace so same-tick and trailing
+##   events (death cascades, drain emits) are still counted. The NDJSON is
+##   emitted + the process quits from the sim_phase &"cleanup" handler on the
+##   first tick where SimClock.tick >= grace_end_tick. This resolves the
+##   §9.B5 probe (test_headless_runner_throne_destruction_same_tick_ordering)
+##   whose pinned conclusion was "grace becomes empirically motivated when
+##   the deferred counters get wired" — they are wired in this same change.
 ##
 ##   Per-match RESET is handled implicitly by the process model: each batch
 ##   invocation is a fresh Godot process, so autoloads boot pristine.
@@ -44,11 +62,18 @@ extends Node
 ##
 ## §9.M6.4 state-change-gated logging:
 ##   - `[runner] match_start match_id=X seed=N timeout=N`
-##   - `[runner] match_end outcome=X winner=N duration_ticks=N`
+##   - `[runner] match_end outcome=X winner=N duration_ticks=N kills=N ...`
 ##   - `[runner] timeout match_id=X duration_ticks=N`
 ##   - `[runner] throne_destroyed team_id=N tick=N` (consumer event log)
-##   No per-tick spam — duration counter is computed inside _emit_result, not
-##   logged each tick.
+##   - `[runner] grace_started winner=N grace_end_tick=N tick=N` (once, at
+##     first throne fall)
+##   - `[runner] grace_elapsed tick=N` (once, at NDJSON emit)
+##   - `[runner] throne_destroyed_during_grace team_id=N tick=N` (rare —
+##     second throne falls inside the grace; winner already latched)
+##   No per-tick spam — the sim_phase cleanup handler checks boundaries every
+##   tick but logs only on the state CHANGES above. Counter increments are
+##   not logged here (the producing systems already log each death /
+##   destruction / drain); the final totals surface in the match_end line.
 ##
 ## §9.D9 Q3 RNG discipline (per brief §3 Q3 v1.0.2):
 ##   Verify-empty grep at 2026-06-04 + 2026-06-05 implementation passes
@@ -79,15 +104,61 @@ var _winner_team: int = Constants.TEAM_NEUTRAL  # -1 sentinel = stalemate
 var _outcome: String = "unknown"  # "iran_win" | "turan_win" | "stalemate"
 var _timeout_triggered: bool = false
 
+# Throne-destruction grace window (result-format v1.1.0). Armed by the FIRST
+# throne_destroyed; the sim_phase cleanup handler emits + quits when
+# SimClock.tick >= _grace_end_tick. Winner/outcome are latched at arm time —
+# a second throne falling inside the grace does NOT flip the result.
+var _grace_active: bool = false
+var _grace_end_tick: int = 0
+
+# Latched duration for the NDJSON `duration_ticks` field. For win outcomes
+# this is the THRONE-FALL tick minus _start_tick (grace ticks excluded —
+# pacing-signal purity per AI_VS_AI_RESULT_FORMAT.md §2.2 v1.1.0); for
+# timeout it is the timeout tick minus _start_tick.
+var _result_duration_ticks: int = 0
+
 # Latched signal data (collected during the match)
 var _first_engagement_tick: int = -1  # -1 if no combat occurred
 var _iran_first_piyade_tick: int = -1
 var _turan_probes_fired: int = 0
 
+# Event counters (result-format v1.1.0 — previously hardcoded 0 per the
+# deferred-counter pattern; now aggregated live from EventBus):
+#   _units_killed_total          — EventBus.unit_died emits. Post-ARCH-1
+#                                  hotfix this channel is UNIT-only (Building
+#                                  HCs do not emit unit_died), which matches
+#                                  the spec semantic "units that reached HP=0".
+#   _buildings_destroyed_iran /  — EventBus.building_destroyed emits, split
+#   _buildings_destroyed_turan     per team. Throne kind excluded (the Throne
+#                                  is the win-condition, not a `buildings_
+#                                  destroyed` stat, per schema §2.2).
+#   _turan_units_deployed_total  — EventBus.unit_spawned emits with
+#                                  team == TEAM_TURAN. NOTE: the current
+#                                  TuranController COMMANDS pre-spawned roster
+#                                  units rather than spawning probe waves, so
+#                                  today this counts every Turan unit that
+#                                  entered the match (starting roster included).
+#                                  When Phase 6 Turan production lands, wave
+#                                  spawns flow through the same channel.
+#   _farr_drain_events_total     — EventBus.farr_changed emits with negative
+#                                  effective delta. Drains clamped to a 0.0
+#                                  effective delta (Farr already at floor) are
+#                                  NOT counted — the signal reports post-clamp
+#                                  movement and the meter did not move.
+var _units_killed_total: int = 0
+var _buildings_destroyed_iran: int = 0
+var _buildings_destroyed_turan: int = 0
+var _turan_units_deployed_total: int = 0
+var _farr_drain_events_total: int = 0
+
 # Held connections so we can disconnect cleanly on match end.
 var _connected_throne_destroyed: bool = false
 var _connected_unit_health_zero: bool = false
 var _connected_unit_spawned: bool = false
+var _connected_unit_died: bool = false
+var _connected_building_destroyed: bool = false
+var _connected_farr_changed: bool = false
+var _connected_sim_phase: bool = false
 
 # Test-only escape: when true, _emit_result_and_quit() short-circuits to
 # field-flips only (no JSON emit, no _build_result_dict call, no quit()).
@@ -138,20 +209,43 @@ func _ready() -> void:
 	_subscribe_signals()
 
 
-# Per-frame tick. Checks timeout against SimClock.tick. We do NOT drive
-# sim-ticks here — SimClock._physics_process is the canonical driver
-# (Sim Contract §6.1) and runs as a co-resident autoload.
-func _process(_dt: float) -> void:
+# Tick-driven end-of-match checks (grace expiry + timeout). Runs on the
+# sim_phase &"cleanup" emit — the LAST phase of every tick, so all of the
+# tick's gameplay events (combat deaths, destruction emits, Farr drains)
+# have already fired and been counted before we decide to seal the result.
+#
+# DET-3 fix (result-format v1.1.0): the timeout check previously lived in
+# _process, which is frame-dependent — under variable frame pacing the
+# stalemate could be detected 0..N sim-ticks after the boundary, making
+# stalemate NDJSON records not run-reproducible. Checking on the cleanup
+# phase makes both the timeout tick and the grace-emit tick functions of
+# SimClock.tick alone.
+#
+# We do NOT drive sim-ticks here — SimClock._physics_process is the
+# canonical driver (Sim Contract §6.1) and runs as a co-resident autoload.
+func _on_sim_phase(phase: StringName, _tick: int) -> void:
+	if phase != Constants.PHASE_CLEANUP:
+		return
 	if _match_ended:
 		return
 
-	# Timeout boundary check.
+	# Grace expiry: a throne already fell; emit once the deterministic
+	# grace window has elapsed. Checked BEFORE the timeout so a throne-fall
+	# near the timeout boundary still resolves as a win, not a stalemate.
+	if _grace_active:
+		if SimClock.tick >= _grace_end_tick:
+			print("[runner] grace_elapsed tick=%d" % SimClock.tick)
+			_emit_result_and_quit()
+		return
+
+	# Timeout boundary check (tick-deterministic).
 	if SimClock.tick - _start_tick >= _timeout_ticks:
 		_timeout_triggered = true
 		_outcome = "stalemate"
 		_winner_team = -1  # stalemate sentinel
+		_result_duration_ticks = SimClock.tick - _start_tick
 		print("[runner] timeout match_id=%s duration_ticks=%d" % [
-			_match_id, SimClock.tick - _start_tick,
+			_match_id, _result_duration_ticks,
 		])
 		_emit_result_and_quit()
 
@@ -207,21 +301,63 @@ func _subscribe_signals() -> void:
 		EventBus.unit_health_zero.connect(_on_unit_health_zero)
 		_connected_unit_health_zero = true
 
-	# iran_first_piyade_tick latch: subscribe to unit_spawned per
-	# AI_VS_AI_RESULT_FORMAT §7.1. Wave 3-Sim mirror C2.1 — the signal is
-	# declared in event_bus.gd (no longer guarded by has_signal which would
-	# mask the spec-vs-EventBus drift the original code shipped with).
+	# iran_first_piyade_tick latch + turan_units_deployed_total counter:
+	# subscribe to unit_spawned per AI_VS_AI_RESULT_FORMAT §7.1. Wave 3-Sim
+	# mirror C2.1 — the signal is declared in event_bus.gd (no longer guarded
+	# by has_signal which would mask the spec-vs-EventBus drift the original
+	# code shipped with).
 	if not EventBus.unit_spawned.is_connected(_on_unit_spawned):
 		EventBus.unit_spawned.connect(_on_unit_spawned)
 		_connected_unit_spawned = true
+
+	# units_killed_total counter: unit_died is the UNIT-only death channel
+	# (post-ARCH-1 hotfix Building HCs do not emit it) — exactly the schema
+	# §2.2 semantic "total units that reached HP=0 across both teams".
+	if not EventBus.unit_died.is_connected(_on_unit_died):
+		EventBus.unit_died.connect(_on_unit_died)
+		_connected_unit_died = true
+
+	# buildings_destroyed per-team counters: generic destruction channel
+	# (Wave 3-BD). Throne kind filtered in the handler per schema §2.2.
+	if not EventBus.building_destroyed.is_connected(_on_building_destroyed):
+		EventBus.building_destroyed.connect(_on_building_destroyed)
+		_connected_building_destroyed = true
+
+	# farr_drain_events_total counter: every apply_farr_change flows through
+	# the FarrSystem chokepoint which emits farr_changed (CLAUDE.md mandate),
+	# so counting negative-delta emits == counting drain events.
+	if not EventBus.farr_changed.is_connected(_on_farr_changed):
+		EventBus.farr_changed.connect(_on_farr_changed)
+		_connected_farr_changed = true
+
+	# Tick-driven end-of-match checks (grace expiry + DET-3 timeout) ride
+	# the canonical sim_phase channel, filtered to PHASE_CLEANUP.
+	if not EventBus.sim_phase.is_connected(_on_sim_phase):
+		EventBus.sim_phase.connect(_on_sim_phase)
+		_connected_sim_phase = true
 
 
 # Win-condition handler. team_id = the team WHOSE Throne fell. Winner is
 # the OTHER team. Per AI_VS_AI_RESULT_FORMAT §2.2 winner_team mapping:
 #   Iran win = winner_team=1; Turan win = winner_team=2.
+#
+# Result-format v1.1.0: this handler no longer emits immediately. It latches
+# winner/outcome/duration and ARMS the grace window; the NDJSON emit + quit
+# happen in _on_sim_phase once SimClock.tick >= _grace_end_tick. Subscriptions
+# stay live so same-tick + trailing events keep counting (the §9.B5 probe's
+# concern (b), now empirically real with wired counters).
 func _on_throne_destroyed(team_id: int) -> void:
 	if _match_ended:
 		return  # already concluded; ignore duplicate (shouldn't happen)
+	if _grace_active:
+		# Second throne falling inside the grace window (e.g., mutual
+		# destruction cascade). First-throne-wins: the result is already
+		# latched; log the event for the behavioral-tuning signal trail
+		# (probe concern (3)) and keep counting.
+		print("[runner] throne_destroyed_during_grace team_id=%d tick=%d" % [
+			team_id, SimClock.tick,
+		])
+		return
 	print("[runner] throne_destroyed team_id=%d tick=%d" % [
 		team_id, SimClock.tick,
 	])
@@ -235,7 +371,14 @@ func _on_throne_destroyed(team_id: int) -> void:
 		# Defensive: unexpected team_id — treat as stalemate.
 		_outcome = "stalemate"
 		_winner_team = -1
-	_emit_result_and_quit()
+	# duration_ticks records the THRONE-FALL tick (grace excluded) per
+	# AI_VS_AI_RESULT_FORMAT §2.2 v1.1.0 — pacing-signal purity.
+	_result_duration_ticks = SimClock.tick - _start_tick
+	_grace_active = true
+	_grace_end_tick = SimClock.tick + Constants.SIM_THRONE_GRACE_TICKS
+	print("[runner] grace_started winner=%d grace_end_tick=%d tick=%d" % [
+		_winner_team, _grace_end_tick, SimClock.tick,
+	])
 
 
 # Latch the first combat event. unit_health_zero proxies first-damage
@@ -245,19 +388,52 @@ func _on_unit_health_zero(_unit_id: int) -> void:
 		_first_engagement_tick = SimClock.tick
 
 
-# Latch first Iran Piyade spawn (per AI_VS_AI_RESULT_FORMAT §7.1).
+# Latch first Iran Piyade spawn (per AI_VS_AI_RESULT_FORMAT §7.1) + count
+# Turan deployments (result-format v1.1.0 — see counter block comment for
+# the "starting roster included" semantic note).
 # Note: the unit_spawned signal payload shape is not currently locked at
 # this branch state — use defensive untyped Variant + has-key checks.
 func _on_unit_spawned(payload: Variant) -> void:
-	if _iran_first_piyade_tick != -1:
-		return  # already latched
-	# Payload shape may vary. Defensive read: accept (unit_id) or a
-	# Dictionary with {unit_type, team} fields.
-	if payload is Dictionary:
-		var d: Dictionary = payload
-		if StringName(d.get(&"unit_type", &"")) == &"piyade" and \
-				int(d.get(&"team", -1)) == Constants.TEAM_IRAN:
-			_iran_first_piyade_tick = SimClock.tick
+	if not (payload is Dictionary):
+		return
+	var d: Dictionary = payload
+	var team: int = int(d.get(&"team", -1))
+	if team == Constants.TEAM_TURAN:
+		_turan_units_deployed_total += 1
+	if _iran_first_piyade_tick == -1 \
+			and StringName(d.get(&"unit_type", &"")) == &"piyade" \
+			and team == Constants.TEAM_IRAN:
+		_iran_first_piyade_tick = SimClock.tick
+
+
+# Count unit deaths (result-format v1.1.0). The producing HealthComponent
+# already logs each death event (§9.M6 lives at the producer); the runner
+# only aggregates. Totals surface in the match_end log line.
+func _on_unit_died(_unit_id: int, _killer_unit_id: int, _cause: StringName,
+		_position: Vector3) -> void:
+	_units_killed_total += 1
+
+
+# Count building destructions per team (result-format v1.1.0). Throne kind
+# excluded — the Throne is the win-condition, captured by throne_destroyed /
+# throne_hp_pct_at_end, not a `buildings_destroyed` stat (schema §2.2).
+func _on_building_destroyed(team_id: int, kind: StringName, _unit_id: int) -> void:
+	if kind == &"throne":
+		return
+	if team_id == Constants.TEAM_IRAN:
+		_buildings_destroyed_iran += 1
+	elif team_id == Constants.TEAM_TURAN:
+		_buildings_destroyed_turan += 1
+
+
+# Count Farr drain events (result-format v1.1.0). `amount` is the EFFECTIVE
+# post-clamp delta per the farr_changed contract — a drain requested while
+# Farr sits at the floor reports 0.0 and is intentionally not counted (the
+# meter did not move).
+func _on_farr_changed(amount: float, _reason: String, _source_unit_id: int,
+		_farr_after: float, _tick: int) -> void:
+	if amount < 0.0:
+		_farr_drain_events_total += 1
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +451,11 @@ func _emit_result_and_quit() -> void:
 	if _test_skip_emit:
 		return
 
-	var duration_ticks: int = SimClock.tick - _start_tick
+	# duration_ticks was latched at throne-fall (win paths) or at the timeout
+	# boundary (stalemate path) — NOT recomputed here, because by emit time
+	# SimClock.tick has advanced through the grace window and the NDJSON
+	# duration must exclude grace ticks (AI_VS_AI_RESULT_FORMAT §2.2 v1.1.0).
+	var duration_ticks: int = _result_duration_ticks
 	# Defensive: ensure duration is at least 1 (avoid /0 in duration_seconds
 	# if the match ends on tick 0 for any reason).
 	if duration_ticks < 1:
@@ -286,9 +466,15 @@ func _emit_result_and_quit() -> void:
 
 	# Final state-change log BEFORE the NDJSON, so the batch script's
 	# `rg '^{'` extraction finds the LAST single-line {...} which is the
-	# JSON, not a log line.
-	print("[runner] match_end outcome=%s winner=%d duration_ticks=%d" % [
+	# JSON, not a log line. Counter totals surface here (§9.M6 — the
+	# per-event logs live at the producers; this is the aggregate seal).
+	print(("[runner] match_end outcome=%s winner=%d duration_ticks=%d "
+			+ "kills=%d bldgs_destroyed=%d probes=%d deployed=%d farr_drains=%d") % [
 		_outcome, _winner_team, duration_ticks,
+		_units_killed_total,
+		_buildings_destroyed_iran + _buildings_destroyed_turan,
+		_turan_probes_fired, _turan_units_deployed_total,
+		_farr_drain_events_total,
 	])
 	print(ndjson)
 
@@ -299,6 +485,11 @@ func _emit_result_and_quit() -> void:
 # Build the result Dictionary matching AI_VS_AI_RESULT_FORMAT.md §2.1
 # schema. All per-team fields read from the live autoloads at match-end.
 func _build_result_dict(duration_ticks: int) -> Dictionary:
+	# Probe count: TuranController exposes no per-probe signal; the documented
+	# match-end accessor is the observable surface (result-format v1.1.0 —
+	# §9.M7: direct call, no has_method guard; the accessor is contract-
+	# promised on the autoload).
+	_turan_probes_fired = TuranController.get_probes_fired_total()
 	var iran: Dictionary = _capture_team_fields(Constants.TEAM_IRAN)
 	var turan: Dictionary = _capture_team_fields(Constants.TEAM_TURAN)
 	return _assemble_result_dict(duration_ticks, iran, turan)
@@ -314,12 +505,15 @@ func _assemble_result_dict(
 		turan: Dictionary) -> Dictionary:
 	var events: Dictionary = {
 		"turan_probes_fired": _turan_probes_fired,
-		"turan_units_deployed_total": 0,  # deferred; needs counter in TuranController
+		"turan_units_deployed_total": _turan_units_deployed_total,
 		"buildings_destroyed_total": int(iran.get("buildings_destroyed", 0))
 			+ int(turan.get("buildings_destroyed", 0)),
-		"units_killed_total": 0,  # deferred; would need EventBus.unit_health_zero counter
-		"farr_drain_events_total": 0,  # deferred; needs FarrSystem counter
-		"kaveh_event_triggered": false,  # deferred; FarrSystem doesn't expose this yet
+		"units_killed_total": _units_killed_total,
+		"farr_drain_events_total": _farr_drain_events_total,
+		# Deferred (probed at v1.1.0): FarrSystem has no Kaveh state or
+		# trigger signal at this branch (Kaveh Event = Phase 5 per
+		# 01_CORE_MECHANICS.md §9); nothing exists to wire. Stays false.
+		"kaveh_event_triggered": false,
 		"iran_first_piyade_tick": _iran_first_piyade_tick,
 	}
 
@@ -428,12 +622,26 @@ func _capture_team_fields(team_id: int) -> Dictionary:
 		coin_x100 = roundi(ResourceSystem.coin_for(team_id) * 100.0)
 		grain_x100 = roundi(ResourceSystem.grain_for(team_id) * 100.0)
 
-	# Farr — single value at MVP per §7.3; emit FarrSystem's current value
-	# for both teams (Turan-Farr separate per-team is Phase 5 work).
-	var farr_x100: int = 0
-	var farr_x100_v: Variant = FarrSystem.get(&"_farr_x100")
-	if farr_x100_v != null:
-		farr_x100 = int(farr_x100_v)
+	# Farr — FarrSystem tracks IRAN's single civilization meter at MVP.
+	# Result-format v1.1.0 / §7.3: Turan emits the -1 SENTINEL ("not
+	# separately tracked"), NOT Iran's value. Per balance-engineer's
+	# self-flag: a self-consistent-but-wrong proxy (Iran's Farr labeled as
+	# Turan's) produces confident wrong conclusions in batch analysis; an
+	# explicit sentinel forces the aggregator to exclude it.
+	# TODO: separate per-team Farr when Phase 5 campaign adds Turan Farr drain.
+	var farr_x100: int = -1
+	if team_id == Constants.TEAM_IRAN:
+		var farr_x100_v: Variant = FarrSystem.get(&"_farr_x100")
+		if farr_x100_v != null:
+			farr_x100 = int(farr_x100_v)
+
+	# Per-team destruction counter aggregated live from
+	# EventBus.building_destroyed (result-format v1.1.0; Throne excluded).
+	var destroyed: int = 0
+	if team_id == Constants.TEAM_IRAN:
+		destroyed = _buildings_destroyed_iran
+	elif team_id == Constants.TEAM_TURAN:
+		destroyed = _buildings_destroyed_turan
 
 	return {
 		"throne_destroyed": throne_destroyed,
@@ -441,12 +649,16 @@ func _capture_team_fields(team_id: int) -> Dictionary:
 		"workers_alive_at_end": workers,
 		"combat_units_alive_at_end": combat_units,
 		"buildings_alive_at_end": buildings,
-		"buildings_destroyed": 0,  # deferred; needs EventBus counter
+		"buildings_destroyed": destroyed,
 		"coin_x100_at_end": coin_x100,
 		"grain_x100_at_end": grain_x100,
 		"farr_x100_at_end": farr_x100,
-		"units_produced_total": 0,  # deferred; needs unit_spawned counter
-		"buildings_constructed_total": 0,  # deferred; needs construction_finalized counter
+		# Deferred (probed at v1.1.0): unit_spawned's payload carries no
+		# production-source discrimination (match-start roster vs trained-
+		# at-building), and no construction_finalized counter channel is in
+		# B2 scope. Stays 0 until a production-source field lands.
+		"units_produced_total": 0,
+		"buildings_constructed_total": 0,
 	}
 
 
@@ -465,3 +677,19 @@ func _disconnect_signals() -> void:
 		if EventBus.unit_spawned.is_connected(_on_unit_spawned):
 			EventBus.unit_spawned.disconnect(_on_unit_spawned)
 		_connected_unit_spawned = false
+	if _connected_unit_died:
+		if EventBus.unit_died.is_connected(_on_unit_died):
+			EventBus.unit_died.disconnect(_on_unit_died)
+		_connected_unit_died = false
+	if _connected_building_destroyed:
+		if EventBus.building_destroyed.is_connected(_on_building_destroyed):
+			EventBus.building_destroyed.disconnect(_on_building_destroyed)
+		_connected_building_destroyed = false
+	if _connected_farr_changed:
+		if EventBus.farr_changed.is_connected(_on_farr_changed):
+			EventBus.farr_changed.disconnect(_on_farr_changed)
+		_connected_farr_changed = false
+	if _connected_sim_phase:
+		if EventBus.sim_phase.is_connected(_on_sim_phase):
+			EventBus.sim_phase.disconnect(_on_sim_phase)
+		_connected_sim_phase = false

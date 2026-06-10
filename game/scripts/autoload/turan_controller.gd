@@ -118,6 +118,15 @@ var _last_stall_reason: String = ""
 ## Same rationale as _last_stall_reason: prevent per-tick spam.
 var _last_pick_signature: String = ""
 
+## Total probes LAUNCHED this match (idle→probing transitions). Monotonic;
+## reset() clears it. Wave 3-Sim result-format v1.1.0 (Track B2): this is
+## the observable surface HeadlessMatchRunner reads at match end for the
+## NDJSON `events.turan_probes_fired` field (AI_VS_AI_RESULT_FORMAT.md §2.2).
+## Counting the LAUNCH edge (not probing→idle resolution) means a probe
+## still in flight when the match ends counts as fired — the semantics the
+## diagnostic check `probes ≈ floor(duration_ticks / cadence)` expects.
+var _probes_fired_total: int = 0
+
 
 # ---------------------------------------------------------------------------
 # Lifecycle
@@ -162,6 +171,7 @@ func reset() -> void:
 	_current_probe_unit = null
 	_last_stall_reason = ""
 	_last_pick_signature = ""
+	_probes_fired_total = 0
 
 
 ## Public read-only snapshot of FSM state for tests + the future F3 debug
@@ -179,6 +189,15 @@ func get_ticks_since_last_probe() -> int:
 ## read landed (= 3600 at Normal default).
 func get_probe_cadence_ticks() -> int:
 	return _probe_cadence_ticks
+
+
+## Public read-only total of probes launched this match (idle→probing
+## transitions). HeadlessMatchRunner reads this at match end for the NDJSON
+## `events.turan_probes_fired` field. Documented accessor per Wave 3-Sim
+## result-format v1.1.0 — TuranController declares no per-probe signal, so
+## a match-end read of this monotonic counter is the cleanest surface.
+func get_probes_fired_total() -> int:
+	return _probes_fired_total
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +285,9 @@ func _step_idle() -> void:
 	_current_probe_unit = commanded
 	_state = &"probing"
 	_ticks_since_last_probe = 0
+	# Result-format v1.1.0 (Track B2): count the launch edge. The PROBE
+	# FIRING print above is the §9.M6 event log for this mutation.
+	_probes_fired_total += 1
 
 
 ## Probing step: monitor the current probe. Transition back to idle when

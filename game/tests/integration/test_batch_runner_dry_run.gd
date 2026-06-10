@@ -322,8 +322,11 @@ func test_aggregate_outcomes_sum_to_n() -> void:
 # field names and aggregator field names will fail here.
 # ---------------------------------------------------------------------------
 func test_round_trip_canonical_ndjson_through_aggregator() -> void:
-	# Spec §5 Example A — Iran decisive win. Field names are canonical per v1.0.0.
-	const SPEC_EXAMPLE_A: String = '{"match_id":"match_0001","seed":987654321,"outcome":"iran_win","winner_team":1,"duration_ticks":22140,"duration_seconds":738.0,"first_engagement_tick":3598,"timeout":false,"iran":{"throne_destroyed":false,"throne_hp_pct_at_end":91.2,"workers_alive_at_end":4,"combat_units_alive_at_end":6,"buildings_alive_at_end":4,"buildings_destroyed":0,"coin_x100_at_end":18400,"grain_x100_at_end":9500,"farr_x100_at_end":4820,"units_produced_total":8,"buildings_constructed_total":4},"turan":{"throne_destroyed":true,"throne_hp_pct_at_end":0.0,"workers_alive_at_end":0,"combat_units_alive_at_end":0,"buildings_alive_at_end":0,"buildings_destroyed":1,"coin_x100_at_end":0,"grain_x100_at_end":0,"farr_x100_at_end":1100,"units_produced_total":0,"buildings_constructed_total":0},"events":{"turan_probes_fired":6,"turan_units_deployed_total":30,"buildings_destroyed_total":1,"units_killed_total":28,"farr_drain_events_total":9,"kaveh_event_triggered":false,"iran_first_piyade_tick":2401}}'
+	# Spec §5 Example A — Iran decisive win. Field names are canonical per
+	# v1.1.0 (§9.M8 fixture-sync: this string MUST stay byte-identical to the
+	# Example A line in docs/AI_VS_AI_RESULT_FORMAT.md §5 — update both
+	# together). v1.1.0: turan.farr_x100_at_end is the -1 sentinel.
+	const SPEC_EXAMPLE_A: String = '{"match_id":"match_0001","seed":987654321,"outcome":"iran_win","winner_team":1,"duration_ticks":22140,"duration_seconds":738.0,"first_engagement_tick":3598,"timeout":false,"iran":{"throne_destroyed":false,"throne_hp_pct_at_end":91.2,"workers_alive_at_end":4,"combat_units_alive_at_end":6,"buildings_alive_at_end":4,"buildings_destroyed":0,"coin_x100_at_end":18400,"grain_x100_at_end":9500,"farr_x100_at_end":4820,"units_produced_total":8,"buildings_constructed_total":4},"turan":{"throne_destroyed":true,"throne_hp_pct_at_end":0.0,"workers_alive_at_end":0,"combat_units_alive_at_end":0,"buildings_alive_at_end":0,"buildings_destroyed":1,"coin_x100_at_end":0,"grain_x100_at_end":0,"farr_x100_at_end":-1,"units_produced_total":0,"buildings_constructed_total":0},"events":{"turan_probes_fired":6,"turan_units_deployed_total":30,"buildings_destroyed_total":1,"units_killed_total":28,"farr_drain_events_total":9,"kaveh_event_triggered":false,"iran_first_piyade_tick":2401}}'
 
 	# Write as a 1-line NDJSON file.
 	var ndjson_path: String = _output_dir.path_join("round_trip.ndjson")
@@ -390,3 +393,30 @@ func test_round_trip_canonical_ndjson_through_aggregator() -> void:
 			var total_kills: int = int((kills as Dictionary).get("total", 0))
 			assert_eq(total_kills, 28,
 				"events.units_killed_total.total must be 28 (from events.units_killed_total=28), not " + str(total_kills))
+
+	# v1.1.0 — events.farr_drain_events_total = 9 must aggregate (new field
+	# in the events stats block).
+	if ev_agg is Dictionary:
+		var drains: Variant = (ev_agg as Dictionary).get("farr_drain_events_total", null)
+		assert_true(drains is Dictionary,
+			"events.farr_drain_events_total must be aggregated (v1.1.0)")
+		if drains is Dictionary:
+			assert_eq(int((drains as Dictionary).get("total", 0)), 9,
+				"events.farr_drain_events_total.total must be 9")
+
+	# v1.1.0 — turan.farr_x100_at_end = -1 sentinel must be EXCLUDED from
+	# Turan Farr stats, not averaged in (RESULT_FORMAT §7.3). With this
+	# single-record fixture every Turan record is the sentinel → samples=0
+	# and the stats collapse to zeros, NOT to -1.
+	var turan_econ: Variant = d.get("turan_economy_at_end", null)
+	assert_true(turan_econ is Dictionary, "turan_economy_at_end must be a Dictionary")
+	if turan_econ is Dictionary:
+		var t_farr: Variant = (turan_econ as Dictionary).get("farr_x100", null)
+		assert_true(t_farr is Dictionary, "turan_economy_at_end.farr_x100 must be a Dictionary")
+		if t_farr is Dictionary:
+			assert_eq(int((t_farr as Dictionary).get("samples", -99)), 0,
+				"turan farr_x100 samples must be 0 — every record carried the -1 sentinel")
+			assert_eq(float((t_farr as Dictionary).get("median", -99.0)), 0.0,
+				"turan farr_x100 median must be 0.0 (no samples), NOT -1 averaged in")
+			assert_eq(float((t_farr as Dictionary).get("mean", -99.0)), 0.0,
+				"turan farr_x100 mean must be 0.0 (no samples), NOT -1 averaged in")

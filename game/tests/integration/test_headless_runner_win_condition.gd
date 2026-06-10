@@ -11,10 +11,14 @@
 #   team_id=neutral    → _outcome="stalemate" + _winner_team=-1
 #
 # _test_skip_emit=true short-circuits the SceneTree-touching emit path so
-# the runner's signal handler is testable in-process. Per the runner's
-# Q1 resolution (01_CORE_MECHANICS.md §0 + 02t §3 Q1 loremaster verdict):
-# match terminates immediately on first throne destruction; winner = the
-# OTHER team.
+# the runner's signal handler is testable in-process.
+#
+# Result-format v1.1.0 (Track B2): throne_destroyed no longer ends the match
+# immediately — it LATCHES the result and arms the deterministic grace window
+# (Constants.SIM_THRONE_GRACE_TICKS); the NDJSON emit happens at grace-end in
+# the sim_phase cleanup handler. These tests therefore assert the LATCH
+# semantics (_grace_active + outcome/winner); the grace-window mechanics are
+# pinned in test_headless_runner_throne_destruction_same_tick_ordering.gd.
 extends GutTest
 
 
@@ -55,8 +59,9 @@ func test_iran_throne_destroyed_routes_to_turan_win() -> void:
 		"Iran throne destruction must flip outcome to turan_win")
 	assert_eq(int(_runner.get(&"_winner_team")), Constants.TEAM_TURAN,
 		"Iran throne destruction must set winner_team=TEAM_TURAN")
-	assert_true(bool(_runner.get(&"_match_ended")),
-		"throne_destroyed must mark the match ended (via emit-and-quit)")
+	assert_true(bool(_runner.get(&"_grace_active")),
+		"throne_destroyed must arm the grace window (result latched; emit "
+		+ "happens at grace_end_tick per result-format v1.1.0)")
 
 
 # ---------------------------------------------------------------------------
@@ -69,8 +74,9 @@ func test_turan_throne_destroyed_routes_to_iran_win() -> void:
 		"Turan throne destruction must flip outcome to iran_win")
 	assert_eq(int(_runner.get(&"_winner_team")), Constants.TEAM_IRAN,
 		"Turan throne destruction must set winner_team=TEAM_IRAN")
-	assert_true(bool(_runner.get(&"_match_ended")),
-		"throne_destroyed must mark the match ended (via emit-and-quit)")
+	assert_true(bool(_runner.get(&"_grace_active")),
+		"throne_destroyed must arm the grace window (result latched; emit "
+		+ "happens at grace_end_tick per result-format v1.1.0)")
 
 
 # ---------------------------------------------------------------------------
@@ -88,17 +94,18 @@ func test_unknown_team_throne_destroyed_routes_to_stalemate() -> void:
 
 
 # ---------------------------------------------------------------------------
-# Idempotency: second throne_destroyed after match-end is a no-op
+# Idempotency: second throne_destroyed after the first is a no-op
 # ---------------------------------------------------------------------------
 
 func test_second_throne_destroyed_is_ignored_after_match_end() -> void:
-	# First emit ends the match.
+	# First emit latches the result + arms the grace window.
 	EventBus.throne_destroyed.emit(Constants.TEAM_IRAN)
 	var first_outcome: String = String(_runner.get(&"_outcome"))
 	var first_winner: int = int(_runner.get(&"_winner_team"))
 	# Second emit on the OTHER team must NOT flip fields — the runner
-	# short-circuits via the _match_ended guard. Without this guard the
-	# runner would overwrite the result and the NDJSON line would lie.
+	# short-circuits via the _grace_active guard (first-throne-wins).
+	# Without this guard the runner would overwrite the result and the
+	# NDJSON line would lie.
 	EventBus.throne_destroyed.emit(Constants.TEAM_TURAN)
 	assert_eq(_runner.get(&"_outcome"), first_outcome,
 		"second throne_destroyed must NOT overwrite outcome")
@@ -121,6 +128,12 @@ func test_subscribe_signals_connects_throne_destroyed_handler() -> void:
 	assert_true(
 		EventBus.throne_destroyed.is_connected(fresh._on_throne_destroyed),
 		"post-subscribe: handler must be connected")
-	# Cleanup.
-	EventBus.throne_destroyed.disconnect(fresh._on_throne_destroyed)
+	# Result-format v1.1.0 — the counter + tick-check subscriptions ride the
+	# same _subscribe_signals call; spot-check the new connections.
+	assert_true(EventBus.unit_died.is_connected(fresh._on_unit_died),
+		"post-subscribe: unit_died counter handler must be connected")
+	assert_true(EventBus.sim_phase.is_connected(fresh._on_sim_phase),
+		"post-subscribe: sim_phase end-check handler must be connected")
+	# Cleanup — symmetric teardown of the full connection set.
+	fresh.call(&"_disconnect_signals")
 	fresh.free()

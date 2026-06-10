@@ -12,13 +12,17 @@ extends "res://scripts/world/resource_nodes/resource_node.gd"
 ## Sassanid era). For Iran, coin-mining mines on the map are the player's
 ## first economic anchor — Tier 1 of the game's currency loop.
 ##
-## Wave 1A scope:
-##   - Hardcoded reserves (100 Coin × 100 fixed-point = 10000 x100 units).
-##     Wave 1B reads this from BalanceData; for wave 1A, the value lives in
-##     this script with a TODO citing wave 1B.
-##   - Single slot per mine (Phase 3 simplification per kickoff §3). The
-##     contract §1.3 allows 2 long-term; balance-engineer raises after
-##     playtest.
+## Config source (wave/b1-mine-ssot SSOT fix, 2026-06-08 — review ARCH-5/GP-3):
+##   - All four tunables (reserves, max_slots, yield per trip, dwell ticks)
+##     are read from BalanceData.economy.resource_nodes at _ready via the
+##     canonical defensive lookup chain (BUG-C1 pattern; mirrors
+##     building.gd::_resolve_max_hp). RNC §7 is the schema SSOT:
+##     mine_initial_stock=1500, mine_max_workers=2, coin_yield_per_trip=10,
+##     trip_full_load_ticks=60. Designer tunes data/balance.tres; this script
+##     holds no live gameplay numbers — only §9.L9 visible fallbacks.
+##   - Pre-fix history: wave 1A hardcoded 100-Coin reserves + 1 slot "with a
+##     TODO citing wave 1B"; the TODO was never executed, so designer edits
+##     to the .tres keys silently did nothing (Track-1 Findings A+B).
 ##   - On depletion: queue_free.call_deferred() per Known Pitfall #8 — we're
 ##     inside complete_extract which runs inside the worker's _sim_tick (a
 ##     tree-mutating context); the deferred form is the canonical path. Tests
@@ -43,39 +47,99 @@ extends "res://scripts/world/resource_nodes/resource_node.gd"
 ## extends sidesteps the race entirely. Wave 1B's Mazra'eh follows the same
 ## pattern.
 
-# Wave-1A hardcoded reserves. TODO(phase-3-wave-1B): read from
-# BalanceData.economy.resource_nodes.mine_initial_stock once the autoload +
-# config sub-resource ship. Per RESOURCE_NODE_CONTRACT §7: 1500 is the
-# starting point balance-engineer drafted; for wave 1A we use a smaller
-# round-trippable number (100 Coin per mine, 10000 x100) so depletion is
-# easily observable in playtest within a single match minute.
-const _WAVE_1A_RESERVES_X100: int = 10000  # 100 Coin per mine
+# §9.L9 visible-fallback values — used ONLY when the BalanceData read in
+# _ready fails (file missing / null load / schema-shape mismatch). These
+# are deliberately the small wave-1A numbers, NOT the production RNC §7
+# values: a fallback mine holds 100 Coin and depletes in 10 trips — fast
+# enough to be DIAGNOSABLE in any playtest minute, never silently "fine"
+# (fallback-by-failure-visibility-shape). The "[mine] balance_config_missing"
+# log line in _resolve_balance_config is the companion signal.
+const _FALLBACK_RESERVES_X100: int = 10000        # 100 Coin — depletes in 10 trips
+const _FALLBACK_YIELD_PER_TRIP_X100: int = 1000   # 10 Coin per trip
+const _FALLBACK_EXTRACT_TICKS: int = 60           # 2s dwell at SIM_HZ=30
+const _FALLBACK_MAX_SLOTS: int = 1
 
-# Per-trip carry size. TODO(phase-3-wave-1B): read from
-# BalanceData.economy.resource_nodes.coin_yield_per_trip. Default 10 Coin
-# per trip = 1000 x100. Means 10 trips per mine before depletion at the
-# wave-1A reserve level — observable in lead's first live-test loop.
-const _WAVE_1A_YIELD_PER_TRIP_X100: int = 1000  # 10 Coin per trip
-
-# Per-trip dwell time in sim ticks. TODO(phase-3-wave-1B): read from
-# BalanceData.economy.resource_nodes.trip_full_load_ticks. 60 ticks at
-# SIM_HZ=30 = 2 seconds dwell at the node — feels like "the worker is
-# actually doing something" without being so long that the lead loses
-# attention mid-trip during the first live test.
-const _WAVE_1A_EXTRACT_TICKS: int = 60
+# Fixed-point scale per Sim Contract §1.6: BalanceData resource-node keys
+# are whole-unit ints (RNC §7); sim-side reserves/yield are x100 ints.
+const _X100: int = 100
 
 
 func _init() -> void:
 	# Configure the schema fields BEFORE _ready so the base class sees the
 	# right values. The unit.gd / kargar.gd dual-init pattern (set in _init
 	# AND _ready) is overkill here — MineNode has no @export field the scene
-	# could clobber between _init and _ready. Set once.
+	# could clobber between _init and _ready. Set once; _ready overwrites
+	# from BalanceData (the fallbacks only survive when that read fails).
 	kind = Constants.KIND_COIN
-	reserves_x100 = _WAVE_1A_RESERVES_X100
-	yield_per_trip_x100 = _WAVE_1A_YIELD_PER_TRIP_X100
-	extract_ticks = _WAVE_1A_EXTRACT_TICKS
-	max_slots = 1  # Phase 3 simplification per kickoff §3
+	reserves_x100 = _FALLBACK_RESERVES_X100
+	yield_per_trip_x100 = _FALLBACK_YIELD_PER_TRIP_X100
+	extract_ticks = _FALLBACK_EXTRACT_TICKS
+	max_slots = _FALLBACK_MAX_SLOTS
 	is_gatherable = true
+
+
+func _ready() -> void:
+	super._ready()  # &"resource_nodes" group join (Ma'dan adjacency seam)
+	_resolve_balance_config()
+
+
+# Read the four mine tunables from BalanceData.economy.resource_nodes via
+# the canonical defensive Variant lookup chain (BUG-C1 + §9.L11; mirrors
+# building.gd::_resolve_max_hp and mazraeh.gd::_resolve_fog_sight_cells).
+# Schema SSOT: RNC §7 ("MineNode._ready() reads its starting stock from
+# BalanceData.economy.resource_nodes.mine_initial_stock").
+#
+# Whole-unit keys (mine_initial_stock, coin_yield_per_trip) convert to x100
+# fixed-point here; tick/slot keys are used as-is. One config_resolved log
+# per node per §9.M6 (single _ready-time mutation, not a per-tick path).
+func _resolve_balance_config() -> void:
+	var cfg: Resource = _resource_node_config_or_null()
+	if cfg == null:
+		# §9.L9 visible fallback — loud log so a misconfigured BalanceData
+		# is diagnosable from the scroll, never silent.
+		print("[mine] balance_config_missing — using visible fallbacks "
+			+ "reserves_x100=%d max_slots=%d yield_per_trip_x100=%d extract_ticks=%d"
+			% [reserves_x100, max_slots, yield_per_trip_x100, extract_ticks])
+		return
+	reserves_x100 = _cfg_int(cfg, &"mine_initial_stock",
+		_FALLBACK_RESERVES_X100 / _X100) * _X100
+	yield_per_trip_x100 = _cfg_int(cfg, &"coin_yield_per_trip",
+		_FALLBACK_YIELD_PER_TRIP_X100 / _X100) * _X100
+	extract_ticks = _cfg_int(cfg, &"trip_full_load_ticks", _FALLBACK_EXTRACT_TICKS)
+	max_slots = _cfg_int(cfg, &"mine_max_workers", _FALLBACK_MAX_SLOTS)
+	print("[mine] config_resolved source=balance_data reserves_x100=%d "
+		% reserves_x100
+		+ "max_slots=%d yield_per_trip_x100=%d extract_ticks=%d"
+		% [max_slots, yield_per_trip_x100, extract_ticks])
+
+
+# Defensive chain to the ResourceNodeConfig sub-resource. Returns null on
+# any failure step (caller falls back loudly per §9.L9).
+func _resource_node_config_or_null() -> Resource:
+	var path: String = Constants.PATH_BALANCE_DATA
+	if not FileAccess.file_exists(path):
+		return null
+	var bd: Resource = load(path)
+	if bd == null:
+		return null
+	var econ: Variant = bd.get(&"economy")
+	if econ == null or not (econ is Resource):
+		return null
+	var cfg: Variant = (econ as Resource).get(&"resource_nodes")
+	if cfg == null or not (cfg is Resource):
+		return null
+	return cfg as Resource
+
+
+# Typed field read with per-field fallback — same shape as the terminal
+# step of building.gd::_resolve_max_hp (typeof check before cast).
+func _cfg_int(cfg: Resource, field: StringName, fallback: int) -> int:
+	var v: Variant = cfg.get(field)
+	if typeof(v) != TYPE_INT and typeof(v) != TYPE_FLOAT:
+		print("[mine] balance_field_missing field=%s — using fallback %d"
+			% [field, fallback])
+		return fallback
+	return int(v)
 
 
 # Pitfall #8 awareness — call_deferred form because we're running inside
