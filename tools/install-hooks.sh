@@ -19,7 +19,11 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOOKS_SRC="${REPO_ROOT}/tools/git-hooks"
-HOOKS_DST="${REPO_ROOT}/.git/hooks"
+# Worktree-safe destination (session-11 hotfix, review TOOL-2): in a
+# linked worktree, ${REPO_ROOT}/.git is a FILE pointing at the worktree's
+# private gitdir, and hooks actually live in the SHARED common dir. Ask
+# git for the truth instead of assuming the layout.
+HOOKS_DST="$(cd "${REPO_ROOT}" && git rev-parse --git-common-dir)/hooks"
 
 if [[ ! -d "${HOOKS_DST}" ]]; then
   echo "ERROR: ${HOOKS_DST} does not exist. Are you in a git repository?" >&2

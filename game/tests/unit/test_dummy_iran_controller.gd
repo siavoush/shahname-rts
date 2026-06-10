@@ -26,10 +26,58 @@ func before_each() -> void:
 	# because the autoload's state persists across tests in the same
 	# Godot process.
 	DummyIranController.reset()
+	# Session-11 hotfix (ARCH-2): the controller boots disabled outside
+	# --headless-batch (the GUT process has no such flag). Tests opt in
+	# explicitly; reset() deliberately preserves `enabled`.
+	DummyIranController.enabled = true
 
 
 func after_each() -> void:
 	DummyIranController.reset()
+	DummyIranController.enabled = false
+
+
+# ---------------------------------------------------------------------------
+# ARCH-2 gate regression (session-11 hotfix)
+# ---------------------------------------------------------------------------
+
+func test_controller_boots_disabled_without_headless_batch_flag() -> void:
+	# The GUT process was launched WITHOUT --headless-batch, so the
+	# autoload's _ready must have left the gate closed. before_each
+	# force-enables `enabled` for the other tests, so we assert the
+	# immutable _boot_enabled snapshot — the controller's ACTUAL boot
+	# decision (review-panel fix: re-deriving the flag here was
+	# tautological; a regression to `enabled = true` at boot would have
+	# passed).
+	assert_false(OS.get_cmdline_user_args().has("--headless-batch"),
+		"ARCH-2 precondition: GUT process must not carry the headless-batch "
+		+ "flag — if it ever does, the boot-disabled invariant is untestable "
+		+ "here and this test must move to a subprocess harness")
+	assert_false(bool(DummyIranController._boot_enabled),
+		"ARCH-2: the controller's _ready boot decision must be DISABLED "
+		+ "without --headless-batch — live player games must never have "
+		+ "the dummy AI active")
+
+
+func test_disabled_controller_is_inert_on_sim_phase() -> void:
+	# With the gate closed, AI-phase ticks must not advance the FSM —
+	# the live-game safety invariant. Wiring-path discipline: drive via
+	# EventBus.sim_phase.emit (BUG-D1 lesson).
+	DummyIranController.enabled = false
+	EventBus.sim_phase.emit(Constants.PHASE_AI, 0)
+	assert_eq(DummyIranController.get_state(), &"awaiting_start",
+		"ARCH-2: disabled controller must not run the tick-0 gather "
+		+ "dispatch (state must stay awaiting_start)")
+
+
+func test_reset_preserves_enabled_flag() -> void:
+	# Enablement is boot-scoped, not match-scoped: HeadlessMatchRunner
+	# calls reset() between matches and the controller must stay active.
+	DummyIranController.enabled = true
+	DummyIranController.reset()
+	assert_true(DummyIranController.enabled,
+		"reset() must not clear the boot-scoped enabled gate "
+		+ "(per-match reset happens inside an enabled headless boot)")
 
 
 # ---------------------------------------------------------------------------

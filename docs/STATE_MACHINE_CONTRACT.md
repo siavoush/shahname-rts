@@ -219,6 +219,8 @@ Death is a one-tick force-transition that bypasses the normal transition machine
 
 `HealthComponent` emits `EventBus.unit_health_zero(unit_id)` from its `_sim_tick` the moment HP reaches 0 (during the `combat` phase). It does not call `queue_free` or schedule cleanup directly.
 
+**Unit-namespace scope (session-11 ARCH-1 amendment, 2026-06-08).** The global `unit_health_zero` / `unit_died` channels are the **Unit** id-namespace only. Building-hosted HealthComponents suppress the global emits via `emit_global_death_signals = false` (set by `Building._init_health_from_balance_data`) because Building and Unit id counters collide in the same int space — a building death on the global channel could death-preempt a same-id healthy Unit. Building death surfaces are the LOCAL `health_zero` signal (per-instance subscription, BUG-G1 pattern) plus the typed `EventBus.building_destroyed(team, kind, unit_id)`. Implementers adding new destructible entity classes must choose a namespace: Unit-namespace entities leave the flag true; everything else suppresses and provides its own typed death channel.
+
 ### 4.2 The handler
 
 Each `StateMachine` connects to `EventBus.unit_health_zero` at construction:
