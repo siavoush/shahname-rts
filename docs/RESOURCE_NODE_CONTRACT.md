@@ -634,7 +634,7 @@ class_name ResourceNodeConfig extends Resource
 @export var mine_max_workers: int = 2                # MineNode.max_workers
 @export var coin_yield_per_trip: int = 10            # carried per full load
 @export var coin_yield_per_tick: int = 1             # decrement applied during tick_extract
-@export var grain_yield_per_trip: int = 8            # carried per full load (Mazra'eh)
+@export var grain_yield_per_trip: int = 8            # carried per full load (Mazra'eh). SUPERSEDED: Room A ratified 2 Grain/trip (02g §2.4, 2026-05-14, postdates this draft); balance.tres carries the ratified 2 since the 2026-06-08 SSOT wiring (wave B1). The .tres is authoritative per this section's own "numbers are starting points" rule.
 @export var grain_yield_per_tick: int = 1            # accumulated per tick of gathering
 @export var farm_max_workers: int = 1                # Mazra'eh.max_workers (default 1: tend the field; balance-engineer tunable)
 @export var trip_full_load_ticks: int = 60           # 2s at 30Hz; capacity equivalent

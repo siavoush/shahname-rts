@@ -205,6 +205,20 @@ signal throne_destroyed(team_id: int)
 @warning_ignore("unused_signal")
 signal building_destroyed(team_id: int, kind: StringName, unit_id: int)
 
+# Stage-2 construction completion (operational activation) — emitted by
+# UnitState_Constructing after the Building's _on_construction_complete
+# virtual + local construction_finalized signal have fired. Mirrors
+# building_destroyed's typed-channel shape. First consumer: the headless
+# match runner's buildings_constructed_total counter (AI_VS_AI_RESULT_
+# FORMAT §2.2 — "construction_finalized signal emitted" semantic). The
+# Throne never passes through here (pre-placed at match start, never
+# constructed). Session-11 data-validity wave (2026-06-08).
+#
+# Sink-tracked — completion events are write-shaped gameplay-state
+# mutations; replay determinism + telemetry both care.
+@warning_ignore("unused_signal")
+signal building_constructed(team_id: int, kind: StringName, unit_id: int)
+
 
 # ---- Build-placement UI signals (read-shaped) ------------------------------
 # Emitted by the build menu when the player clicks a building button — the
@@ -268,6 +282,9 @@ const _SINK_SIGNALS: Array[StringName] = [
 	# write-shaped gameplay-state mutations; sinks track them for replay
 	# determinism + telemetry.
 	&"building_destroyed",
+	# Session-11 data-validity wave — Stage-2 completion events, same
+	# write-shaped rationale as building_destroyed.
+	&"building_constructed",
 	# Extend as new write-shaped signals are added. Order is not significant.
 	# `selection_changed` and `build_placement_started` are read-shaped (UI
 	# side-effects only) and intentionally NOT in the sink registry.
@@ -343,6 +360,9 @@ func _make_forwarder(sig: StringName, sink: Callable) -> Callable:
 					position: Vector3) -> void:
 				sink.call(sig, [unit_id, kind, team, position])
 		&"building_destroyed":
+			return func(team_id: int, kind: StringName, unit_id: int) -> void:
+				sink.call(sig, [team_id, kind, unit_id])
+		&"building_constructed":
 			return func(team_id: int, kind: StringName, unit_id: int) -> void:
 				sink.call(sig, [team_id, kind, unit_id])
 		_:

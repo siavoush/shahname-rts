@@ -447,7 +447,28 @@ func _is_placement_valid_at(pos: Vector3) -> bool:
 # at BUG-B2 fix-wave (2026-05-22) so the composite function above can
 # combine geometry with affordability cleanly. Behavior is unchanged from
 # the pre-fix-wave implementation (Task #143 + earlier).
+#
+# Wave-B3 (review finding GP-5): the body moved verbatim into the static
+# is_placement_geometry_valid below so DummyIranController's AI build
+# placement validates against the SAME rules the player flow uses (the
+# sim must not distinguish AI-issued from player-issued construction).
+# This instance method is the player-flow entry point; it delegates.
 func _is_geometric_placement_valid_at(pos: Vector3) -> bool:
+	return is_placement_geometry_valid(get_tree(), pos)
+
+
+## Shared geometric placement-validity rule — the single source of truth
+## for "can a building footprint legally land at pos". Consumers:
+##   - the player flow (ghost color + confirm-click) via
+##     _is_geometric_placement_valid_at above;
+##   - DummyIranController (Wave-B3, review finding GP-5) — the reference
+##     AI's deterministic build placement validates each offset candidate
+##     against this exact rule before issuing COMMAND_CONSTRUCT.
+## Static + tree-parameterized (no instance state is read) so non-input
+## consumers don't need a live BuildPlacementHandler node.
+static func is_placement_geometry_valid(tree: SceneTree, pos: Vector3) -> bool:
+	if tree == null:
+		return false
 	# Off-map / clearly out of range — terrain plane is Y=0, allow some
 	# tolerance for raycast slop.
 	if pos.y > 1.0 or pos.y < -1.0:
@@ -463,7 +484,7 @@ func _is_geometric_placement_valid_at(pos: Vector3) -> bool:
 	const _OVERLAP_THRESHOLD_SQ: float = _OVERLAP_THRESHOLD * _OVERLAP_THRESHOLD
 	# Overlap check against placed buildings. Use the &"buildings"
 	# group (every Building joins it on _ready per deliverable 1).
-	for b: Node in get_tree().get_nodes_in_group(&"buildings"):
+	for b: Node in tree.get_nodes_in_group(&"buildings"):
 		if not is_instance_valid(b):
 			continue
 		if not (b is Node3D):
@@ -477,7 +498,7 @@ func _is_geometric_placement_valid_at(pos: Vector3) -> bool:
 	# grain deposits / quarries). ResourceNode._ready joins
 	# &"resource_nodes" (resource_node.gd:133). Task #143 — live-test
 	# surfaced a Ma'dan placed directly on a mine deposit.
-	for r: Node in get_tree().get_nodes_in_group(&"resource_nodes"):
+	for r: Node in tree.get_nodes_in_group(&"resource_nodes"):
 		if not is_instance_valid(r):
 			continue
 		if not (r is Node3D):

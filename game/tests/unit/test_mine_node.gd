@@ -32,6 +32,21 @@ func _spawn_mine() -> Variant:
 	return m
 
 
+# Load the REAL balance.tres ResourceNodeConfig — the SSOT the mine must
+# mirror (wave/b1-mine-ssot, review ARCH-5). Expected values are READ from
+# the resource, never re-hardcoded here: a designer retune of the .tres
+# keys must keep these tests green without edits (§9.M8 real-data
+# round-trip — no mock/fixture config in this file).
+func _resource_node_cfg() -> Resource:
+	var bd: Resource = load(Constants.PATH_BALANCE_DATA)
+	assert_not_null(bd, "balance.tres must load for SSOT expectations")
+	var econ: Resource = bd.get(&"economy")
+	assert_not_null(econ, "balance.tres must carry an economy sub-resource")
+	var cfg: Resource = econ.get(&"resource_nodes")
+	assert_not_null(cfg, "economy must carry a resource_nodes sub-resource")
+	return cfg
+
+
 # ---------------------------------------------------------------------------
 # Scene smoke + schema
 # ---------------------------------------------------------------------------
@@ -53,22 +68,54 @@ func test_mine_node_kind_is_coin() -> void:
 
 
 func test_initial_reserves_positive() -> void:
-	# Wave 1A hardcodes a reserves value (BalanceData wire-up is wave 1B's
-	# domain). The exact number is documented in the source; we assert
-	# positivity so a freshly-spawned mine is gatherable.
+	# SSOT fix (wave/b1-mine-ssot): reserves come from balance.tres
+	# economy.resource_nodes.mine_initial_stock at _ready. Positivity keeps
+	# a freshly-spawned mine gatherable; equality lives in the dedicated
+	# SSOT-wiring regression test below.
 	_node = _spawn_mine()
 	assert_true(_node.reserves_x100 > 0,
-		"MineNode spawns with positive reserves (hardcoded for wave 1A)")
+		"MineNode spawns with positive reserves (from balance.tres)")
 	assert_true(_node.is_gatherable,
 		"MineNode is gatherable from spawn")
 
 
-func test_max_slots_is_one_phase_3_simplification() -> void:
-	# Per kickoff §3 wave-1A — Phase 3 simplification: 1 slot per mine.
-	# Contract §1.3 allows 2 long-term; revisit if playtest needs it.
+func test_max_slots_matches_balance_data_mine_max_workers() -> void:
+	# SSOT fix (wave/b1-mine-ssot, review ARCH-5): pre-fix this test pinned
+	# the wave-1A hardcode (1 slot); MineNode now reads mine_max_workers
+	# from balance.tres (RNC §1.3: "two kargar can share a mine"). Expected
+	# value is read from the .tres, not re-pinned, so designer retunes stay
+	# green.
 	_node = _spawn_mine()
-	assert_eq(_node.max_slots, 1,
-		"MineNode.max_slots is 1 (Phase 3 simplification)")
+	var cfg: Resource = _resource_node_cfg()
+	assert_eq(_node.max_slots, int(cfg.get(&"mine_max_workers")),
+		"MineNode.max_slots must equal balance.tres "
+		+ "economy.resource_nodes.mine_max_workers (SSOT wiring)")
+
+
+# ---------------------------------------------------------------------------
+# SSOT-wiring regression — review ARCH-5 / GP-3 (Track-1 Findings A+B).
+# Pre-fix, mine_node.gd hardcoded reserves (100 Coin) + max_slots (1) while
+# balance.tres declared mine_initial_stock=1500 / mine_max_workers=2 —
+# designer tuning of those keys silently did nothing. This test locks the
+# wiring: every mine tunable must round-trip from the REAL balance.tres
+# (§9.M8 — no fixture config; the live resource is the expectation source).
+# ---------------------------------------------------------------------------
+
+func test_mine_config_matches_balance_tres_ssot() -> void:
+	_node = _spawn_mine()
+	var cfg: Resource = _resource_node_cfg()
+	assert_eq(_node.reserves_x100, int(cfg.get(&"mine_initial_stock")) * 100,
+		"MineNode.reserves_x100 must equal mine_initial_stock x100 "
+		+ "(SSOT: balance.tres economy.resource_nodes — review ARCH-5)")
+	assert_eq(_node.max_slots, int(cfg.get(&"mine_max_workers")),
+		"MineNode.max_slots must equal mine_max_workers "
+		+ "(SSOT: balance.tres economy.resource_nodes — review ARCH-5)")
+	assert_eq(_node.yield_per_trip_x100, int(cfg.get(&"coin_yield_per_trip")) * 100,
+		"MineNode.yield_per_trip_x100 must equal coin_yield_per_trip x100 "
+		+ "(SSOT: balance.tres economy.resource_nodes)")
+	assert_eq(_node.extract_ticks, int(cfg.get(&"trip_full_load_ticks")),
+		"MineNode.extract_ticks must equal trip_full_load_ticks "
+		+ "(SSOT: balance.tres economy.resource_nodes)")
 
 
 # ---------------------------------------------------------------------------

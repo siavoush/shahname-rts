@@ -278,3 +278,23 @@ const SIM_FAST_MODE: bool = false
 # = 10 seconds at SIM_HZ=30, a comfortable cadence for "probe-fires-quickly"
 # live-test scenarios.
 const SIM_FAST_PROBE_CADENCE_TICKS: int = 300
+
+
+# === HEADLESS RUNNER — THRONE-DESTRUCTION GRACE WINDOW =======================
+# Wave 3-Sim result-format v1.1.0 (Track B2) — resolution of the grace-period
+# question probed in test_headless_runner_throne_destruction_same_tick_ordering.gd
+# (§9.B5 probe, PR #54). While the NDJSON event counters were hardcoded 0 the
+# immediate-exit-on-throne_destroyed path was empirically neutral; with the
+# counters wired (units_killed_total, buildings_destroyed_total, ...) same-tick
+# and trailing events fired AFTER the runner's throne_destroyed handler would
+# be silently dropped by an immediate quit. The grace window keeps the runner's
+# subscriptions alive for a deterministic number of SIM TICKS after the first
+# throne falls, then emits the NDJSON and quits.
+#
+# Structural, not tunable: the value bounds result-capture completeness, not
+# game feel — a designer never tunes it in a playtest cycle (CLAUDE.md split
+# rule). 30 ticks = 1 second @ SIM_HZ=30, comfortably covering same-tick death
+# cascades + next-tick cleanup emits while adding negligible batch wall-time.
+# duration_ticks in the NDJSON records the THRONE-FALL tick (grace excluded)
+# per AI_VS_AI_RESULT_FORMAT.md §2.2 v1.1.0 — pacing signals stay pure.
+const SIM_THRONE_GRACE_TICKS: int = 30

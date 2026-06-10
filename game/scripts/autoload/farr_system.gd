@@ -50,6 +50,15 @@ var value_farr: float:
 		return _farr_x100 / 100.0
 
 
+## Fixed-point read accessor for telemetry consumers that must avoid the
+## float boundary (headless runner NDJSON capture per AI_VS_AI_RESULT_FORMAT
+## §7.1). Session-11 data-validity wave — integration mirror C5.3: the doc
+## promised this accessor while the runner reflected into the private
+## _farr_x100; shipping the accessor makes doc + code agree.
+func get_farr_x100() -> int:
+	return _farr_x100
+
+
 # -- Lifecycle ---------------------------------------------------------------
 
 func _ready() -> void:
