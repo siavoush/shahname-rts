@@ -982,6 +982,14 @@ func _init_health_from_balance_data() -> void:
 		hc.call(&"init_max_hp", max_hp)
 	if hc.has_method(&"set"):
 		hc.set(&"unit_id", unit_id)
+	# Session-11 hotfix (review ARCH-1) — unit_id collision ROOT fix.
+	# Building ids and Unit ids collide in the same int space; suppress the
+	# global unit_health_zero / unit_died emits for Building HCs so a razed
+	# building can never death-preempt (and free) a same-id healthy Unit or
+	# misfire a worker-death Farr drain. Building death surfaces via the
+	# LOCAL hc.health_zero subscription above (BUG-G1 pattern) + the typed
+	# EventBus.building_destroyed emit in _on_health_zero.
+	hc.set(&"emit_global_death_signals", false)
 
 
 ## Read max_hp from BalanceData.buildings[<kind>].max_hp via the

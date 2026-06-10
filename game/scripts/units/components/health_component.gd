@@ -42,6 +42,23 @@ class_name HealthComponent
 # constructed orphan component does not falsely claim unit_id 0.
 @export var unit_id: int = -1
 
+## Session-11 hotfix (review ARCH-1) — unit_id collision ROOT fix.
+## Units and Buildings keep SEPARATE id counters that collide in the same
+## int space (unit.gd `_next_unit_id` and building.gd `_next_building_id`
+## both start at 1). Until now, Building HCs emitted on the GLOBAL
+## `unit_health_zero` / `unit_died` channels, so razing building id 3
+## death-preempted (and queue_free'd) the healthy UNIT with unit_id 3, and
+## FarrDrainDispatcher could apply worker-death drains for a building death.
+## Buildings now suppress the global emits (Building._init_health_from_
+## balance_data sets this false); their death surface is the LOCAL
+## `health_zero` signal (BUG-G1 per-instance pattern) plus the typed
+## `EventBus.building_destroyed(team, kind, unit_id)` channel emitted by
+## Building._on_health_zero. Units leave this true. Known accepted edge:
+## the headless runner's first_engagement_tick latch (which proxies on
+## unit_health_zero) no longer sees building-only engagements — already a
+## documented proxy divergence in AI_VS_AI_RESULT_FORMAT §8.
+@export var emit_global_death_signals: bool = true
+
 ## Local death signal — emitted BEFORE the global EventBus.unit_health_zero.
 ## Subscribers that need source-identification (Building subclasses whose
 ## unit_id namespace collides with Unit's — Throne, future Qal'eh / Dadgah)
@@ -281,8 +298,12 @@ func _apply_damage_x100(amount_x100: int, source: Node, cause: StringName) -> vo
 	#      is_instance_valid each frame, but a unit_died-driven prune is a
 	#      LATER optimization).
 	health_zero.emit(unit_id)
-	EventBus.unit_health_zero.emit(unit_id)
-	EventBus.unit_died.emit(unit_id, killer_unit_id, augmented_cause, death_pos)
+	# Session-11 hotfix (ARCH-1): Building HCs set emit_global_death_signals
+	# false at init — the global channels are the UNIT namespace; building
+	# deaths surface via the local signal above + EventBus.building_destroyed.
+	if emit_global_death_signals:
+		EventBus.unit_health_zero.emit(unit_id)
+		EventBus.unit_died.emit(unit_id, killer_unit_id, augmented_cause, death_pos)
 
 
 ## Apply healing. Increases hp by `amount`, clamped to max_hp_x100.

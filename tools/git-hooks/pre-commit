@@ -31,6 +31,20 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 echo "--- Pre-commit gate ---"
 
 # ---------------------------------------------------------------------------
+# Step 0: Docs-only short-circuit (session-11 hotfix, review HOOK-1).
+# Commits that touch ONLY documentation / process surfaces (markdown, txt,
+# docs/, .claude/, codex/) cannot break lint or tests — skip the ~42s gate.
+# Any staged file outside those patterns runs the full gate as before.
+# ---------------------------------------------------------------------------
+STAGED_FILES="$(git diff --cached --name-only)"
+if [ -n "${STAGED_FILES}" ] && \
+   ! printf '%s\n' "${STAGED_FILES}" | grep -qvE '(\.(md|txt)$|^docs/|^\.claude/|^codex/)'; then
+  echo "Docs-only commit detected — skipping lint + GUT suite."
+  echo "--- Pre-commit gate: OK (docs-only) ---"
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
 # Step 1: Simulation lint (Sim Contract §1.4 — 5 ripgrep rules)
 # ---------------------------------------------------------------------------
 echo "[1/2] Running simulation lint..."

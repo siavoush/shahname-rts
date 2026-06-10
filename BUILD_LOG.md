@@ -12,12 +12,36 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-06-08 (Phase 3 session 10 close retro — 7 codifications shipped: §9.M7 defensive-fallback-masking + §9.M8 real-data round-trip + §9.L11.2 consumption-path tracing + §9.D12 canonical-spec-pin + §9.F6 integration-time mirror + §9.B5 tractability-probe + §9.J6 loremaster-light routing)
+last_updated: 2026-06-08 (Session 11 hotfix wave — 2 review BLOCKERs + 2 gate-integrity fixes from the Fable-5-era full review)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-06-08 — Session 11 hotfix wave: full-review BLOCKERs ARCH-1 + ARCH-2 + gate-integrity TEST-2/HOOK-1
+
+**Context:** A comprehensive Fable-5-era review (29-agent workflow: planning / architecture / code-core / code-gameplay / tests / agentic dimensions, every BLOCKER+HIGH finding adversarially verified — 2 findings *refuted* by verifiers running live engine repro scripts) returned overall grade B− with 2 confirmed code BLOCKERs. This wave fixes them plus the two cheapest gate-integrity HIGHs. Lead-implemented per the review's own insourcing recommendation (small fix-ups move into the lead in the Fable-5 era).
+
+**Branch:** `fix/session-11-hotfixes`.
+
+**Fixes:**
+
+1. **ARCH-2 (BLOCKER) — DummyIranController was an ungated always-on autoload.** In any live player game it would have seized the player's workers at tick 0 and clobbered commands with attack-move sweeps every 900 ticks (latent since `c05ba77` activated unit-discovery; the §2 row still claimed "structurally inert"). Fix: `enabled` gate set in `_ready` from the same `--headless-batch` cmdline-user-args sentinel main.gd uses for HeadlessMatchRunner; `_on_sim_phase` early-returns when disabled; `reset()` preserves the gate (boot-scoped). +3 regression tests (boot-disabled-without-flag, inert-when-disabled, reset-preserves-gate).
+
+2. **ARCH-1 (BLOCKER) — Unit/Building unit_id collision fixed at the EMITTER root.** Units and Buildings keep separate id counters colliding in one int space; Building HCs emitted global `unit_health_zero`/`unit_died`, so razing building id N could death-preempt (queue_free!) the healthy unit with unit_id N and misfire worker-death Farr drains. Three consumer-side workarounds existed (BUG-G1 local-subscription, BUG-H8 target_node threading); the root stayed open. Fix: `HealthComponent.emit_global_death_signals` (default true = unit semantics); `Building._init_health_from_balance_data` sets it false. Building deaths now surface ONLY via the local `health_zero` signal (BUG-G1 pattern) + typed `EventBus.building_destroyed`. Known accepted edge: the runner's `first_engagement_tick` latch no longer sees building-only engagements (already a documented proxy divergence). New `test_unit_building_id_collision.gd` (5 tests): global-silence on building death, same-id unit untouched, unit emits unaffected, default-flag semantics, real-scene wiring (Ma'dan canonical).
+
+3. **TEST-2 (HIGH) — run_tests.sh cold-start false-green.** On a fresh worktree without a Godot import pass, GUT collects zero tests and exits 0 — the pre-commit gate passed vacuously (survived all 10 Phase-3 sessions). Fix: parse GUT's own totals line; fail loudly with an import-pass hint when 0/no tests ran.
+
+4. **HOOK-1 (MEDIUM, QoL) — docs-only pre-commit short-circuit.** Commits touching only `*.md`/`*.txt`/`docs/`/`.claude/`/`codex/` skip the ~42s lint+GUT gate; any staged game/tools file still runs the full gate.
+
+**Docs:** ARCHITECTURE.md §2 rows 120-121 truth-fixed (stale "structurally inert" + "unit_spawned does not exist" claims corrected to post-`c05ba77` + post-hotfix reality; DummyIran ownership annotated → gameplay-systems per AGENT_REGISTRY v2.0.0).
+
+**Suite:** 1643 tests (+8), 0 failures, lint clean.
+
+**Companion PRs this session:** #55 (Fable-5 agent model policy + generational reboot + handoff archive). Data-validity wave (mine SSOT + result-format v1.1.0 + COMMAND_BUILD + event counters) and the design-chat decision packet follow as separate workstreams.
 
 ---
 

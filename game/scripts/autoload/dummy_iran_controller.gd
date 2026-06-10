@@ -105,13 +105,29 @@ var _next_attack_sweep_tick: int = _ATTACK_MOVE_CADENCE_TICKS
 ## log emit to state-change boundaries — no per-tick spam per §9.M6.4.
 var _last_acked_build_step: int = -1
 
+## Session-11 hotfix (review ARCH-2) — headless-batch gate. This controller
+## is an autoload and therefore boots in EVERY game, including live player
+## sessions, where an active dummy AI would seize the player's workers at
+## tick 0 and clobber their commands with attack-move sweeps every 900
+## ticks. `enabled` gates the sim_phase handler; it is true ONLY under the
+## `--headless-batch` boot (the same cmdline-user-args sentinel main.gd
+## uses to spawn HeadlessMatchRunner). Tests set `enabled = true`
+## explicitly. reset() deliberately does NOT touch it — enablement is
+## boot-scoped, not match-scoped.
+var enabled: bool = false
+
 
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
 
 func _ready() -> void:
-	print("[dummy-iran] DummyIranController._ready")
+	# ARCH-2 gate: active ONLY under the headless-batch boot. In a live
+	# player game the controller stays connected but inert (early-return
+	# in _on_sim_phase) so the wiring path is identical in both modes and
+	# tests can flip `enabled` without re-wiring (BUG-D1 lesson).
+	enabled = OS.get_cmdline_user_args().has("--headless-batch")
+	print("[dummy-iran] DummyIranController._ready enabled=%s" % str(enabled))
 	# Canonical pattern (per turan_controller.gd:140): subscribe to
 	# EventBus.sim_phase + filter to PHASE_AI inside the handler.
 	# SimClock does NOT declare per-phase signals; the bus is the seam.
@@ -155,6 +171,10 @@ func get_state() -> StringName:
 ## discipline: tests drive via `EventBus.sim_phase.emit(&"ai", tick)`, NOT
 ## by calling `_on_sim_phase` directly (BUG-D1 lesson).
 func _on_sim_phase(phase: StringName, tick: int) -> void:
+	# ARCH-2 gate — inert outside --headless-batch boots (live player
+	# games must never have the dummy AI fighting the player for control).
+	if not enabled:
+		return
 	if phase != Constants.PHASE_AI:
 		return
 
