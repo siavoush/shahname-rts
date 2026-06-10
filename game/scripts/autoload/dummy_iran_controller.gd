@@ -500,20 +500,36 @@ func _can_afford_building(kind: StringName) -> bool:
 # WHOLE units (not _x100) — callers multiply by 100 to compare against
 # ResourceSystem's fixed-point accessors.
 func _resolve_building_stat_int(kind: StringName, field: StringName) -> int:
+	# Mirror C5.2 (§9.L9 loud-fallback shape, matching B1's _cfg_int):
+	# every defensive-chain failure logs before returning 0. A silent 0
+	# would flip _can_afford_building permissive — the BUG-C1 shape —
+	# though UnitState_Constructing re-checks + deducts authoritatively
+	# downstream, so the blast radius is over-eager AI build attempts,
+	# not free buildings.
 	var path: String = Constants.PATH_BALANCE_DATA
 	if not FileAccess.file_exists(path):
+		print("[dummy-iran] balance_field_missing kind=%s field=%s reason=no_balance_file"
+			% [str(kind), str(field)])
 		return 0
 	var bd: Resource = load(path)
 	if bd == null:
+		print("[dummy-iran] balance_field_missing kind=%s field=%s reason=load_failed"
+			% [str(kind), str(field)])
 		return 0
 	var bldgs: Variant = bd.get(&"buildings")
 	if typeof(bldgs) != TYPE_DICTIONARY:
+		print("[dummy-iran] balance_field_missing kind=%s field=%s reason=no_buildings_dict"
+			% [str(kind), str(field)])
 		return 0
 	var stats: Variant = (bldgs as Dictionary).get(kind, null)
 	if stats == null or not (stats is Resource):
+		print("[dummy-iran] balance_field_missing kind=%s field=%s reason=no_kind_entry"
+			% [str(kind), str(field)])
 		return 0
 	var v: Variant = (stats as Resource).get(field)
 	if typeof(v) != TYPE_INT and typeof(v) != TYPE_FLOAT:
+		print("[dummy-iran] balance_field_missing kind=%s field=%s reason=bad_type"
+			% [str(kind), str(field)])
 		return 0
 	return int(v)
 

@@ -21,6 +21,26 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ---
 
+## 2026-06-08 — Data-validity wave close: the reference AI plays, the data is truthful (wave aggregate — B1/B2/B3 + integration fix-up + §9.F6 mirror)
+
+**Branch:** `feat/data-validity-wave` (octopus of `wave/b1-mine-ssot` + `wave/b2-result-format-v11` + `wave/b3-command-build` onto `fix/session-11-hotfixes`).
+
+**Wave shape:** 3 parallel worktree tracks via Workflow-orchestrated Fable-5-inheriting agents (the first wave of the post-reboot generation), + lead integration fix-up, + §9.F6 integration-time mirror (architecture-reviewer fresh-spawn, **first dispatch under the inherit-model policy**), + mirror fix-up. Per-track narratives: B1's own entry below; B2/B3 full narratives live in their commit messages (`a05215f` / `b4d0835`) per the parallel-track BUILD_LOG conflict-avoidance discipline.
+
+**What the wave delivers (one sentence each):**
+- **B1:** mine + mazraeh tunables genuinely read balance.tres (1500 reserves / 2 slots live-verified; designer dials now connected).
+- **B2:** every NDJSON event counter aggregates live; `turan.farr` honest `-1` sentinel; 30-tick throne-fall grace (the §9.B5 probe's re-evaluation trigger fired by design and was resolved as pinned); timeout tick-deterministic (DET-3).
+- **B3:** DummyIranController executes the real build-order through the player's own command path — Khaneh / Sarbaz-khaneh / Mazra'eh placement, Piyade training with grain-cap → Mazra'eh lift, one shared placement-legality SSOT.
+- **Integration fix-up:** last two always-zero schema fields closed (tick>0 production discriminator + new `EventBus.building_constructed` typed channel); first-piyade latch fixed (was latching tick-0 roster spawns); `FarrSystem.get_farr_x100()` accessor ships.
+
+**Empirical close (single 6000-tick observation match, seed 777):** the AI built all three buildings, produced 5 units, and `first_piyade_tick=2149` landed inside the affordability table's 2070-2400 prediction band — a forecast written before any of this code existed. Suite 1659 / 0 failures; 10-match pipeline smoke green.
+
+**§9.F6 mirror verdict:** FIX-FIRST-THEN-MERGE — zero code blockers; all fix-first items docs-only (schema-doc §8 self-contradiction, ARCH §2 staleness, RNC §7 supersession note, this entry) and closed in the wave-close docs commit. Three POSITIVE integration verifications: Flow 10 fixture byte-identical through the 3-track merge; B1's balance.tres judgment call citation-verified; B3↔B1 economics interaction safe by construction.
+
+**Phase 4 status:** batch calibration is now genuinely runnable — truthful data about an AI that actually plays. The remaining pre-calibration items are the affordability-table re-run (balance-engineer) and optionally the sim-cost/roster-knob work for faster batch wall-clock.
+
+---
+
 ## 2026-06-08 — Track B1: mine_node + mazraeh BalanceData SSOT fix (review ARCH-5 / GP-3, Track-1 Findings A+B)
 
 **Branch:** `wave/b1-mine-ssot` (base `ff6407c`).

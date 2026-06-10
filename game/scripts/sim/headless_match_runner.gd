@@ -422,7 +422,11 @@ func _on_unit_spawned(payload: Variant) -> void:
 	if not (payload is Dictionary):
 		return
 	var d: Dictionary = payload
-	var team: int = int(d.get(&"team", -1))
+	# Direct index (mirror C5.1, §9.M7): team + unit_type are
+	# contract-promised payload keys (event_bus.gd unit_spawned
+	# declaration) — a producer key-rename must fail loudly here, not
+	# silently zero three counters + the latch.
+	var team: int = int(d[&"team"])
 	if team == Constants.TEAM_TURAN:
 		_turan_units_deployed_total += 1
 	# tick > 0 = production-source discriminator (session-11 integration
@@ -437,7 +441,7 @@ func _on_unit_spawned(payload: Variant) -> void:
 		elif team == Constants.TEAM_TURAN:
 			_units_produced_turan += 1
 		if _iran_first_piyade_tick == -1 \
-				and StringName(d.get(&"unit_type", &"")) == &"piyade" \
+				and StringName(d[&"unit_type"]) == &"piyade" \
 				and team == Constants.TEAM_IRAN:
 			_iran_first_piyade_tick = SimClock.tick
 
@@ -675,9 +679,9 @@ func _capture_team_fields(team_id: int) -> Dictionary:
 	# TODO: separate per-team Farr when Phase 5 campaign adds Turan Farr drain.
 	var farr_x100: int = -1
 	if team_id == Constants.TEAM_IRAN:
-		var farr_x100_v: Variant = FarrSystem.get(&"_farr_x100")
-		if farr_x100_v != null:
-			farr_x100 = int(farr_x100_v)
+		# Public fixed-point accessor (mirror C5.3) — replaces the prior
+		# private-field reflection; doc §7.1 and code now agree.
+		farr_x100 = FarrSystem.get_farr_x100()
 
 	# Per-team destruction counter aggregated live from
 	# EventBus.building_destroyed (result-format v1.1.0; Throne excluded).
