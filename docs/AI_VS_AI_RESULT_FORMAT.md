@@ -321,6 +321,16 @@ Tick 4800    : Continue Piyade production (Piyade #3 or #4 in queue)
 
 The brief's `tick 2400 = "Piyade #1"` annotation can remain in the brief as a conservative worst-case checkpoint; DummyIranController may produce the unit earlier.
 
+### §6.5 — 2026-06-08 SSOT fix note
+
+**Status of §6.1–§6.4 above: income model now conservative/stale.** The `wave/b1-mine-ssot` fix (review ARCH-5 / GP-3, Track-1 Findings A+B) wired MineNode to `balance.tres economy.resource_nodes.*` — the wave-1A hardcodes this table was built on are gone:
+
+- **Mine reserves: 100 → 1500 coin per mine** (`mine_initial_stock` is now live). The §6.3 finding 4 "mines hold 100 coin / exhaust in 10 trips / depleted in ~3-4 minutes" math no longer applies — a mine now sustains 150 trips at 10 coin/trip.
+- **Worker slots per mine: 1 → 2** (`mine_max_workers` is now live). The §6.1 "1 worker slot per mine (not 2)" row and the **Critical mismatch flag** are resolved; with 3 mines near the Throne, 5 workers no longer queue — parallel income is higher than every estimate above.
+- Unchanged values: `coin_yield_per_trip = 10` and dwell `trip_full_load_ticks = 60` (also now read from the .tres rather than hardcoded — same numbers, now designer-tunable).
+
+Net effect: every income figure in §6.1–§6.2 is now a **lower bound**; the §6.3 FEASIBLE verdict still holds (income only went up), but the depletion-risk finding and the slot-contention assumptions are stale. **Table re-run is queued for the next balance pass** — balance-engineer owns the §6 rewrite; this subsection is the implementation-side flag, not a table revision.
+
 ---
 
 ## §7 — Implementation Notes for Engine-Architect (Track 2)

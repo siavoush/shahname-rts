@@ -105,6 +105,33 @@ func _spawn_mine_at(pos: Vector3) -> Variant:
 	return m
 
 
+# SSOT expectation helpers (wave/b1-mine-ssot, review ARCH-5/GP-3):
+# expected yields are READ from the real balance.tres, never re-pinned as
+# literals (§9.M8 real-data round-trip — designer retunes of
+# coin_yield_per_trip / modifier_value_x100 keep this file green).
+#   base   = economy.resource_nodes.coin_yield_per_trip × 100 (fixed-point)
+#   buffed = base × buildings[&"madan"].modifier_value_x100 / 100
+# At the current .tres values: base 1000 (10 Coin), buffed 1500 (×1.5).
+func _base_yield_x100() -> int:
+	var bd: Resource = load(Constants.PATH_BALANCE_DATA)
+	assert_not_null(bd, "balance.tres must load for SSOT expectations")
+	var econ: Resource = bd.get(&"economy")
+	var cfg: Resource = econ.get(&"resource_nodes")
+	return int(cfg.get(&"coin_yield_per_trip")) * 100
+
+
+func _madan_multiplier_x100() -> int:
+	var bd: Resource = load(Constants.PATH_BALANCE_DATA)
+	assert_not_null(bd, "balance.tres must load for SSOT expectations")
+	var bldgs: Dictionary = bd.get(&"buildings")
+	var stats: Resource = bldgs[&"madan"]
+	return int(stats.get(&"modifier_value_x100"))
+
+
+func _buffed_yield_x100() -> int:
+	return _base_yield_x100() * _madan_multiplier_x100() / 100
+
+
 func _spawn_madan_at(pos: Vector3) -> Variant:
 	var b: Variant = MadanScene.instantiate()
 	add_child_autofree(b)
@@ -193,10 +220,11 @@ func test_madan_does_not_buff_mine_during_construction() -> void:
 	SimClock._is_ticking = true
 	var payload: Dictionary = _mine.complete_extract(99)
 	SimClock._is_ticking = false
-	assert_eq(payload[&"amount_x100"], 1000,
-		"Mid-construction Ma'dan: mine must yield base 1000 x100 (10 Coin), "
-		+ "NOT the 1500 buffed yield. Workers gathering from the adjacent "
-		+ "mine while the Ma'dan is half-built see the un-amplified yield.")
+	assert_eq(payload[&"amount_x100"], _base_yield_x100(),
+		"Mid-construction Ma'dan: mine must yield the BASE coin_yield_per_trip "
+		+ "x100 from balance.tres, NOT the buffed yield. Workers gathering "
+		+ "from the adjacent mine while the Ma'dan is half-built see the "
+		+ "un-amplified yield.")
 
 
 func test_madan_buff_applies_once_construction_completes() -> void:
@@ -220,8 +248,10 @@ func test_madan_buff_applies_once_construction_completes() -> void:
 	SimClock._is_ticking = true
 	var payload: Dictionary = _mine.complete_extract(99)
 	SimClock._is_ticking = false
-	assert_eq(payload[&"amount_x100"], 1500,
-		"Post-Stage-2: mine yields buffed 1500 x100 (15 Coin = base 1000 x 1.5x).")
+	assert_eq(payload[&"amount_x100"], _buffed_yield_x100(),
+		"Post-Stage-2: mine yields the buffed amount "
+		+ "(base coin_yield_per_trip x100 × madan modifier_value_x100 / 100, "
+		+ "both from balance.tres).")
 
 
 # ---------------------------------------------------------------------------
@@ -239,27 +269,29 @@ func test_buffed_mine_complete_extract_returns_multiplied_payload() -> void:
 	# MineNode-side API.
 	_mine = _spawn_mine_at(Vector3.ZERO)
 	_madan = _spawn_madan_at(Vector3(3.0, 0.0, 0.0))
-	# MineNode wave-1A constants: yield_per_trip_x100 = 1000 (10 Coin).
-	# Ma'dan multiplier: 150/100 = 1.5x.
-	# Expected effective: 1000 * 150 / 100 = 1500 (15 Coin).
+	# SSOT (wave/b1-mine-ssot): base yield = coin_yield_per_trip × 100 from
+	# balance.tres; Ma'dan multiplier = modifier_value_x100 from the madan
+	# BuildingStats. Expected effective = base * mult / 100.
 	var base_yield: int = _mine.yield_per_trip_x100
-	assert_eq(base_yield, 1000,
-		"Pre-condition: MineNode wave-1A default yield_per_trip_x100 = 1000")
+	assert_eq(base_yield, _base_yield_x100(),
+		"Pre-condition: MineNode yield_per_trip_x100 matches balance.tres "
+		+ "coin_yield_per_trip x100 (SSOT wiring)")
 	# Drive a synthetic gather cycle: request → complete.
 	# Note: request/complete must run on-tick per SimClock contract.
 	_mine.request_extract(99)
 	SimClock._is_ticking = true
 	var payload: Dictionary = _mine.complete_extract(99)
 	SimClock._is_ticking = false
-	# Buffed payload reflects 1.5x multiplier.
-	assert_eq(payload[&"amount_x100"], 1500,
-		"Buffed mine's complete_extract returns 1500 (base 1000 * 1.5)")
+	# Buffed payload reflects the modifier multiplier.
+	assert_eq(payload[&"amount_x100"], _buffed_yield_x100(),
+		"Buffed mine's complete_extract returns base × madan multiplier "
+		+ "(both read from balance.tres)")
 	assert_eq(payload[&"kind"], &"coin",
 		"Buffed mine's payload retains kind = &\"coin\"")
 
 
 func test_unbuffed_mine_complete_extract_returns_base_payload() -> void:
-	# Counterfactual: no Ma'dan, mine yields base payload (1000 x100).
+	# Counterfactual: no Ma'dan, mine yields the base balance.tres payload.
 	_mine = _spawn_mine_at(Vector3.ZERO)
 	# Sanity: no modifiers registered.
 	assert_eq(_mine.registered_modifier_count(), 0)
@@ -267,8 +299,9 @@ func test_unbuffed_mine_complete_extract_returns_base_payload() -> void:
 	SimClock._is_ticking = true
 	var payload: Dictionary = _mine.complete_extract(99)
 	SimClock._is_ticking = false
-	assert_eq(payload[&"amount_x100"], 1000,
-		"Unbuffed mine returns base 1000 (no multiplier applied)")
+	assert_eq(payload[&"amount_x100"], _base_yield_x100(),
+		"Unbuffed mine returns base coin_yield_per_trip x100 from "
+		+ "balance.tres (no multiplier applied)")
 
 
 # ---------------------------------------------------------------------------
@@ -286,10 +319,12 @@ func test_buffed_mine_reserves_decrement_by_effective_amount() -> void:
 	SimClock._is_ticking = true
 	var payload: Dictionary = _mine.complete_extract(99)
 	SimClock._is_ticking = false
-	# Effective payload = 1500. Reserves should decrement by 1500.
-	assert_eq(payload[&"amount_x100"], 1500)
-	assert_eq(_mine.reserves_x100, initial_reserves - 1500,
-		"Buffed mine reserves decrement by EFFECTIVE amount (1500), not base 1000")
+	# Reserves should decrement by the EFFECTIVE (buffed) amount.
+	var buffed: int = _buffed_yield_x100()
+	assert_eq(payload[&"amount_x100"], buffed)
+	assert_eq(_mine.reserves_x100, initial_reserves - buffed,
+		"Buffed mine reserves decrement by EFFECTIVE (buffed) amount, "
+		+ "not the base yield")
 
 
 # ===========================================================================
@@ -326,9 +361,12 @@ func test_two_madans_effective_yield_is_not_stacked() -> void:
 	# Check effective yield via effective_yield_per_trip_x100 directly
 	# (no need to run complete_extract; the modifier chain is the seam).
 	var effective: int = _mine.effective_yield_per_trip_x100()
-	assert_eq(effective, 1500,
-		"Effective yield with two adjacent Ma'dans must be 1500 (1.5x base), "
-		+ "NOT 2250 (would be 1.5^2 if stacking were on). "
+	var single_buff: int = _buffed_yield_x100()
+	var double_buff: int = single_buff * _madan_multiplier_x100() / 100
+	assert_eq(effective, single_buff,
+		"Effective yield with two adjacent Ma'dans must be the SINGLE-buff "
+		+ "value (base × multiplier, from balance.tres), NOT the squared "
+		+ ("multiplier (%d) which stacking would produce. " % double_buff)
 		+ "modifier_stacks=false per balance-engineer's d798e78.")
 
 
@@ -547,7 +585,7 @@ func test_madan_adjacent_to_mazraeh_and_mine_buffs_only_mine() -> void:
 	SimClock._is_ticking = true
 	var payload: Dictionary = _mine.complete_extract(99)
 	SimClock._is_ticking = false
-	assert_eq(payload[&"amount_x100"], 1500,
-		"Task #117 BEHAVIORAL: buffed mine yields 1500 (1000 base × 1.5). "
-		+ "If Ma'dan had bonded to the Mazra'eh by mistake, the mine "
-		+ "would yield the base 1000 instead.")
+	assert_eq(payload[&"amount_x100"], _buffed_yield_x100(),
+		"Task #117 BEHAVIORAL: buffed mine yields base × madan multiplier "
+		+ "(both from balance.tres). If Ma'dan had bonded to the Mazra'eh "
+		+ "by mistake, the mine would yield the base amount instead.")

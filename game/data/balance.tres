@@ -637,8 +637,22 @@ effectiveness = {
 ; ResourceNodeConfig sub-resource
 ; =========================================================================
 ; Values from RESOURCE_NODE_CONTRACT.md §7.
-; status: anchored — mine_initial_stock, yield_per_trip, max_workers all derived
-;   from RESOURCE_NODE_CONTRACT.md §7 SSOT. Should only change if RNC §7 changes.
+; status: anchored — mine_initial_stock, mine_max_workers, coin yields, and
+;   trip_full_load_ticks derived from RESOURCE_NODE_CONTRACT.md §7 SSOT;
+;   should only change if RNC §7 changes. EXCEPTION grain_yield_per_trip = 2:
+;   Room A Open Space resolution (2026-05-14, 02g §2.4 — "grain_yield_per_
+;   trip_x100 = 200 (2 Grain/trip)") postdates and supersedes the RNC §7
+;   draft value (8). Folded into the .tres at the 2026-06-08 SSOT fix
+;   (wave/b1-mine-ssot) so the now-live key matches shipped behavior —
+;   pre-fix, mazraeh.gd hardcoded 200 x100 and this key was dormant.
+;   RNC §7 prose reconciliation queued for the contract owner.
+;
+; LIVE as of wave/b1-mine-ssot (2026-06-08): MineNode reads mine_initial_
+; stock, mine_max_workers, coin_yield_per_trip, trip_full_load_ticks;
+; Mazra'eh reads grain_yield_per_trip, farm_max_workers. Mazra'eh dwell
+; (90 ticks, Room A cultural long-dwell) remains code-side — the shared
+; trip_full_load_ticks cannot express the ratified per-kind split; a
+; farm-specific dwell key is queued for the next schema pass.
 
 [sub_resource type="Resource" id="res_node_cfg"]
 script = ExtResource("7_resnodeconfig")
@@ -646,7 +660,7 @@ mine_initial_stock = 1500
 mine_max_workers = 2
 coin_yield_per_trip = 10
 coin_yield_per_tick = 1
-grain_yield_per_trip = 8
+grain_yield_per_trip = 2
 grain_yield_per_tick = 1
 farm_max_workers = 1
 trip_full_load_ticks = 60
@@ -744,7 +758,7 @@ sight_madan_cells = 0
 
 [resource]
 script = ExtResource("1_balancedata")
-constants_version = "2026-05-29-phase-3-session-9-balance-status-tags"
+constants_version = "2026-06-08-wave-b1-mine-ssot"
 units = {
 &"kargar": SubResource("unit_kargar"),
 &"piyade": SubResource("unit_piyade"),

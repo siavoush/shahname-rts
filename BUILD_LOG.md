@@ -12,12 +12,32 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-06-08 (Session 11 hotfix wave — 2 review BLOCKERs + 2 gate-integrity fixes from the Fable-5-era full review)
+last_updated: 2026-06-08 (Track B1 — mine_node + mazraeh BalanceData SSOT fix, review ARCH-5/GP-3)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-06-08 — Track B1: mine_node + mazraeh BalanceData SSOT fix (review ARCH-5 / GP-3, Track-1 Findings A+B)
+
+**Branch:** `wave/b1-mine-ssot` (base `ff6407c`).
+
+**The bug:** `mine_node.gd` hardcoded reserves (100 Coin) + max_slots (1) while `balance.tres` declared `mine_initial_stock = 1500` / `mine_max_workers = 2`; `mazraeh.gd` hardcoded yield (200 x100) + max_slots while `grain_yield_per_trip` / `farm_max_workers` keys sat dormant. Designer tuning of those keys silently did nothing.
+
+**What shipped:**
+
+1. `game/scripts/world/resource_nodes/mine_node.gd` — all four tunables (reserves, max_slots, yield/trip, dwell ticks) now resolve from `BalanceData.economy.resource_nodes` at `_ready` via the canonical defensive lookup chain (BUG-C1 pattern, mirrors `building.gd::_resolve_max_hp`). §9.L9 visible fallbacks = the old wave-1A values (fast-depleting = diagnosable) + loud `[mine] balance_config_missing` log. `[mine] config_resolved` log per §9.M6. **Gameplay change (mandated by the track):** mines now hold 1500 coin (was 100) and accept 2 workers (was 1).
+2. `game/scripts/world/buildings/mazraeh.gd` — `yield_per_trip_x100` + `max_slots` wired to `grain_yield_per_trip` / `farm_max_workers`; same fallback + log shape. **Dwell (90 ticks) deliberately NOT wired** — Room A (02g §2.4) ratified a per-kind dwell (farm 3s vs mine 2s); the only schema field (`trip_full_load_ticks`) is shared by both kinds and cannot express the split; inventing a schema field was out of track scope. Deferral documented at `_ROOM_A_EXTRACT_TICKS`.
+3. `game/data/balance.tres` — `grain_yield_per_trip` 8 → 2: folds the Room A ratified value (2 Grain/trip, 2026-05-14, postdates the RNC §7 draft of 8) into the now-live key so the wiring is behavior-preserving; comment block documents the supersession; `constants_version` bumped to `2026-06-08-wave-b1-mine-ssot`. RNC §7 prose reconciliation flagged for the contract owner.
+4. Tests — `test_mine_node.gd` + `test_mazraeh.gd` + `test_madan_buffs_mine_extraction.gd` updated: expected values now READ from the real `balance.tres` (§9.M8 real-data round-trip), never re-pinned. New SSOT-wiring regression `test_mine_config_matches_balance_tres_ssot` locks all four mine fields against the .tres; sibling mazraeh tests lock grain yield + farm slots.
+5. `docs/AI_VS_AI_RESULT_FORMAT.md` — §6.5 SSOT-fix note appended: §6 affordability table's income model (10 trips/mine, 1 slot) is now conservative/stale; table re-run queued for the next balance pass (balance-engineer owns the rewrite).
+
+**Suite:** 118 scripts / 1644 tests / 1641 passing / 3 pre-existing pending / 0 failing (42.8s). Lint L1–L6 clean.
+
+**Open questions added to `QUESTIONS_FOR_DESIGN.md`:** None. One value-conflict flagged in-repo for balance-engineer (RNC §7's `grain_yield_per_trip = 8` draft vs Room A's ratified 2 — .tres now carries 2).
 
 ---
 

@@ -52,6 +52,21 @@ func _spawn_mazraeh(team: int = Constants.TEAM_IRAN) -> Variant:
 	return m
 
 
+# Load the REAL balance.tres ResourceNodeConfig — the SSOT Mazra'eh's
+# gather tunables must mirror (wave/b1-mine-ssot, review GP-3). Expected
+# values are READ from the resource, never re-hardcoded (§9.M8 real-data
+# round-trip): grain_yield_per_trip / farm_max_workers retunes keep these
+# tests green without edits.
+func _resource_node_cfg() -> Resource:
+	var bd: Resource = load(Constants.PATH_BALANCE_DATA)
+	assert_not_null(bd, "balance.tres must load for SSOT expectations")
+	var econ: Resource = bd.get(&"economy")
+	assert_not_null(econ, "balance.tres must carry an economy sub-resource")
+	var cfg: Resource = econ.get(&"resource_nodes")
+	assert_not_null(cfg, "economy must carry a resource_nodes sub-resource")
+	return cfg
+
+
 # ---------------------------------------------------------------------------
 # Scene smoke + identity
 # ---------------------------------------------------------------------------
@@ -177,6 +192,12 @@ func test_mazraeh_extract_ticks_is_ninety() -> void:
 	# Room A resolution: 90 ticks (3s at SIM_HZ=30) for cultural long-dwell.
 	# Mine is 60 ticks (2s). The longer dwell is the "stewardship of the land"
 	# cultural texture per Room A §2.4.
+	#
+	# DELIBERATE hardcode pin (wave/b1-mine-ssot probe outcome): the only
+	# BalanceData schema field, trip_full_load_ticks, is SHARED with MineNode
+	# and cannot express the ratified per-kind split — Mazra'eh's dwell stays
+	# code-side until a farm-specific schema field ships. See the
+	# _ROOM_A_EXTRACT_TICKS deferral comment in mazraeh.gd.
 	_mazraeh = _spawn_mazraeh()
 	assert_eq(_mazraeh.extract_ticks, 90,
 		"Mazra'eh.extract_ticks must be 90 (3s cultural long-dwell, Room A resolution)")
@@ -216,8 +237,11 @@ func test_complete_extract_returns_grain_payload() -> void:
 		"Mazra'eh complete_extract must return positive amount_x100")
 
 
-func test_complete_extract_returns_two_grain_per_trip() -> void:
-	# Room A resolution: grain_yield_per_trip_x100 = 200 (2 Grain/trip).
+func test_complete_extract_returns_balance_tres_grain_per_trip() -> void:
+	# Room A resolution: 2 Grain/trip — the value now lives in balance.tres
+	# economy.resource_nodes.grain_yield_per_trip (wave/b1-mine-ssot fold;
+	# pre-fix the 200 x100 was hardcoded in mazraeh.gd and the .tres key was
+	# dormant). Expectation is READ from the .tres, not re-pinned.
 	_mazraeh = _spawn_mazraeh()
 	SimClock._is_ticking = true
 	_mazraeh.place_at(Vector3.ZERO, Constants.TEAM_IRAN, 1)
@@ -226,8 +250,11 @@ func test_complete_extract_returns_two_grain_per_trip() -> void:
 	SimClock._is_ticking = true
 	var payload: Dictionary = _mazraeh.complete_extract(1)
 	SimClock._is_ticking = false
-	assert_eq(payload.get(&"amount_x100", 0), 200,
-		"Mazra'eh complete_extract must return amount_x100=200 (2 Grain, Room A)")
+	var cfg: Resource = _resource_node_cfg()
+	assert_eq(payload.get(&"amount_x100", 0),
+		int(cfg.get(&"grain_yield_per_trip")) * 100,
+		"Mazra'eh complete_extract must return grain_yield_per_trip x100 "
+		+ "from balance.tres (SSOT wiring — Room A value folded into .tres)")
 
 
 func test_complete_extract_without_request_returns_empty_payload() -> void:
@@ -440,20 +467,31 @@ func test_mazraeh_reserves_x100_is_infinite_sentinel() -> void:
 		"Mazra'eh.reserves_x100 must be -1 (infinite sentinel — never depletes)")
 
 
-func test_mazraeh_max_slots_is_one() -> void:
+func test_mazraeh_max_slots_matches_balance_data_farm_max_workers() -> void:
+	# SSOT wiring (wave/b1-mine-ssot, review GP-3): max_slots reads
+	# farm_max_workers from balance.tres at _ready. RNC §7's "raising it to
+	# 2 is a BalanceData.tres edit, no code change" claim is now true.
 	_mazraeh = _spawn_mazraeh()
 	assert_true(&"max_slots" in _mazraeh,
 		"Mazra'eh must expose max_slots property (RNC §4.5 schema)")
-	assert_eq(_mazraeh.max_slots, 1,
-		"Mazra'eh.max_slots must be 1 for wave 1A")
+	var cfg: Resource = _resource_node_cfg()
+	assert_eq(_mazraeh.max_slots, int(cfg.get(&"farm_max_workers")),
+		"Mazra'eh.max_slots must equal balance.tres "
+		+ "economy.resource_nodes.farm_max_workers (SSOT wiring)")
 
 
-func test_mazraeh_yield_per_trip_x100_is_two_hundred() -> void:
+func test_mazraeh_yield_per_trip_x100_matches_balance_data() -> void:
+	# SSOT-wiring regression (wave/b1-mine-ssot): the schema field must
+	# round-trip from the REAL balance.tres (§9.M8) — pre-fix this test
+	# pinned the 200 hardcode while the .tres key was dormant.
 	_mazraeh = _spawn_mazraeh()
 	assert_true(&"yield_per_trip_x100" in _mazraeh,
 		"Mazra'eh must expose yield_per_trip_x100 property (RNC §4.5 schema)")
-	assert_eq(_mazraeh.yield_per_trip_x100, 200,
-		"Mazra'eh.yield_per_trip_x100 must be 200 (2 Grain/trip, Room A R1-α)")
+	var cfg: Resource = _resource_node_cfg()
+	assert_eq(_mazraeh.yield_per_trip_x100,
+		int(cfg.get(&"grain_yield_per_trip")) * 100,
+		"Mazra'eh.yield_per_trip_x100 must equal balance.tres "
+		+ "economy.resource_nodes.grain_yield_per_trip x100 (SSOT wiring)")
 
 
 # ---------------------------------------------------------------------------
