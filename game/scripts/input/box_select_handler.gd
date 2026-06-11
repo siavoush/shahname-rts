@@ -426,7 +426,15 @@ func _collect_unit_shaped(node: Node, out: Array) -> void:
 	if (&"unit_id" in node) and (&"team" in node) and (node is Node3D) \
 			and not node.is_in_group(&"buildings"):
 		var team_v: Variant = node.get(&"team")
-		if int(team_v) == Constants.TEAM_IRAN:
+		# A3 (pre-PR review, 2026-06-12): read the player team from
+		# GameState.player_team (the SSOT, game_state.gd:40) rather than
+		# hard-coding Constants.TEAM_IRAN. The P1 SelectionManager gate reads
+		# GameState.player_team; if box-select offered units the gate then
+		# rejects (possible only if player_team is ever overridden — e.g. the
+		# AI-vs-AI harness), the two input paths would disagree. Aligning to the
+		# one SSOT keeps every input path consistent. Identical behavior while
+		# player_team == TEAM_IRAN (all of MVP).
+		if int(team_v) == GameState.player_team:
 			out.append(node)
 	for child in node.get_children():
 		_collect_unit_shaped(child, out)

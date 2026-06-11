@@ -302,7 +302,13 @@ func _gather_candidate_units() -> Array:
 func _collect_unit_shaped(node: Node, out: Array) -> void:
 	if (&"unit_id" in node) and (&"team" in node) and (&"unit_type" in node) and (node is Node3D):
 		var team_v: Variant = node.get(&"team")
-		if int(team_v) == Constants.TEAM_IRAN:
+		# A3 (pre-PR review, 2026-06-12): read the player team from the SSOT
+		# (GameState.player_team, game_state.gd:40) rather than hard-coding
+		# Constants.TEAM_IRAN, so double-click-select-all-of-type agrees with the
+		# P1 SelectionManager gate (which reads GameState.player_team) and with
+		# box-select. Identical behavior while player_team == TEAM_IRAN (all of
+		# MVP); diverges only if player_team is ever overridden (AI-vs-AI harness).
+		if int(team_v) == GameState.player_team:
 			out.append(node)
 	for child in node.get_children():
 		_collect_unit_shaped(child, out)

@@ -48,6 +48,11 @@ var _units: Array = []
 
 func before_each() -> void:
 	SimClock.reset()
+	# A3 (2026-06-12): _collect_unit_shaped now reads GameState.player_team
+	# (the SSOT) instead of hard-coded TEAM_IRAN. Reset GameState so a prior
+	# test's player_team override (e.g. the SelectionManager TEAM_TURAN gate
+	# test) can't leak in and reject the TEAM_IRAN fixtures here.
+	GameState.reset()
 	SelectionManager.reset()
 	handler = BoxSelectHandlerScript.new()
 	add_child_autofree(handler)
@@ -61,6 +66,7 @@ func after_each() -> void:
 			u.queue_free()
 	_units.clear()
 	SelectionManager.reset()
+	GameState.reset()
 	SimClock.reset()
 
 
