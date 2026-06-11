@@ -21,6 +21,25 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 ---
 
+## 2026-06-11 — Live playtest (Siavoush, first human play-through of the full loop) — FUN-GATE INPUT
+
+**Build:** `feat/wave-cd-close` (PR #59 branch). Two sessions via `tools/run_game.sh`; logs reviewed live by lead.
+
+**Milestone: first live human-vs-AI throne kill.** Full loop played end-to-end — gather (coin via Madan), build (Madan + Mazra'eh), train, Shift+A push → **Turan throne destroyed** (`[throne] destroyed team=2`, ~tick 1404, session 2). D1's two-stage building acquisition worked live exactly as headless: piyades engaged at edge-dist 1.43/range 1.5, savars 3.7, asb-savar-kamandar 5.9/range 8.0; 278 attack events, 22 unit deaths in the push.
+
+**Fun-gate read (stakeholder, verbatim sentiment):** *"This is the basics of any RTS more or less — what makes it fun is economics, tactics, strategy etc. Too early to say."* Recorded as the first data point for the decision packet's early-fun-gate proposal (Tier 4). Lead's framing for the design chat: the verdict is on table-stakes mechanics played against a near-inert opponent (Turan: 1 unit per 120s probe, no production, no economy) with the differentiators (Farr economy, tech tiers, Kaveh, an opponent that pressures) all Phase-4+ content currently blocked on packet Tier-1 rulings. "Too early to say" is the expected honest answer at this layer — not a NO signal.
+
+**Player-facing bugs confirmed this playtest (session-1 log evidence, diagnosis in lead chat):**
+- **P1** — single-click + tolerance fallback have no team filter: enemy units silently selectable AND commandable (player ordered a Turan piyade to kill their own Kargar; the game obeyed). Box-select IS team-filtered — inconsistent seam.
+- **P2** — ClickHandler right-click attack sends id-only payloads → BUG-H8 namespace collision live in the player path (`target_unit_id=2` resolved to the Turan THRONE instead of Kargar 2). D1's `target_node` threading covers only AttackMove's rented command.
+- **P3** — no right-click-building→attack affordance: `_is_unit_shaped` requires `replace_command`, buildings fall through to group-move — army walks to the enemy throne and stands there. Shift+A attack-move is currently the ONLY building-attack path.
+- **UX-1** — victory is silent: no win/loss state or screen in live play (known gap; GameState never leaves LOBBY). The first human victory in project history registered as three log lines.
+- **UX-2** — attack-move discoverability: lead itself briefed the wrong key (plain A = camera pan; Shift+A is the binding, invisible-pending, no cursor change).
+
+**Disposition:** P1/P2/P3 = input-layer hotfix wave, offered, awaiting go. UX-1 (match end-state) + difficulty/opponent-liveliness = design-chat scope, routed with the packet.
+
+---
+
 ## 2026-06-11 — Wave C+D close: first decisive AI-vs-AI victory; profiler, L7 lint, MatchHarness v2, real determinism test, plan-v2 draft (wave aggregate — C1/C2/C3/C4 + D1 + §9.F6 mirror)
 
 **Branch:** `feat/wave-cd-close` (octopus of `wave/c1` `c79a964` + `wave/c2` `611d4d3` + `wave/c3` `ab2963a` + `wave/c4` `fee63f9` + `wave/d1-attack-move-buildings` `2240071` onto main `e678fa7`). **Merged suite: 1688 tests / 0 failures; lint L1–L7 0 violations.**
