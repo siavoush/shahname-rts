@@ -234,20 +234,24 @@ func _sim_tick(dt: float, ctx: Object) -> void:
 # Find the closest opposing-team enemy within Constants.ENGAGE_RADIUS of
 # the unit's position. Returns null if none in range.
 #
-# Returns the actual Unit (agent.get_parent()), not the SpatialAgentComponent,
-# so callers can read the unit_id directly. Filters out invalid / freed
-# agents and units defensively.
+# Acquisition is two-stage (wave-D1, 2026-06-11 win-probe finding):
+#   1. UNITS via SpatialIndex.query_radius_team (original path).
+#   2. BUILDINGS via the &"buildings" SceneTree group — buildings carry no
+#      SpatialAgentComponent and never register in SpatialIndex, so before
+#      this branch an attack-moving army went BLIND once enemy units were
+#      dead: the 30000-tick win-probe showed a 38-unit Iranian army
+#      standing idle beside Turan's Throne at 100% HP (stalemate, zero
+#      buildings destroyed). This is the state-level fix — it repairs the
+#      PLAYER's attack-move too, not just the dummy AI's sweeps.
+# Units take priority over buildings at equal opportunity (stage 1 returns
+# first) — fight the army before the architecture.
 func _find_engage_target(ctx: Object) -> Object:
 	if ctx == null:
 		return null
 	var self_pos: Vector3 = _get_self_position(ctx)
 	var opposing: int = _opposing_team(int(ctx.get(&"team")))
 	var radius: float = Constants.ENGAGE_RADIUS
-	# Defensive: SpatialIndex is an autoload; if absent (shouldn't happen) the
-	# query call would error. Fast-fail rather than crash.
 	var hits: Array = SpatialIndex.query_radius_team(self_pos, radius, opposing)
-	if hits.is_empty():
-		return null
 	# Closest-first by squared XZ distance. Determinism is fine — Array sort
 	# is stable across platforms in Godot 4.
 	var best: Object = null
@@ -270,6 +274,47 @@ func _find_engage_target(ctx: Object) -> Object:
 		if d_sq < best_dist_sq:
 			best_dist_sq = d_sq
 			best = unit
+	if best != null:
+		return best
+	return _find_engage_building(ctx, self_pos, opposing, radius)
+
+
+# Stage-2 acquisition: closest opposing-team BUILDING within engage radius,
+# by BUG-H8 edge-distance (center distance minus footprint half-extent — a
+# large building engages from its wall, not its center point).
+#
+# Team filter is OPPOSING-ONLY, deliberately stricter than TuranController's
+# `!= my_team` (BUG-H3): auto-acquisition must never friendly-fire our own
+# half-built buildings (team == NEUTRAL between scene-instantiation and
+# place_at). Deliberate raids on neutral half-builts remain a
+# controller-level COMMAND_ATTACK decision, exactly as Wave 3-BD shipped it.
+func _find_engage_building(ctx: Object, self_pos: Vector3, opposing: int,
+		radius: float) -> Object:
+	if not (ctx is Node):
+		return null
+	var tree: SceneTree = (ctx as Node).get_tree()
+	if tree == null:
+		return null
+	var best: Object = null
+	var best_edge: float = INF
+	for b in tree.get_nodes_in_group(&"buildings"):
+		if b == null or not is_instance_valid(b):
+			continue
+		if int(b.get(&"team")) != opposing:
+			continue
+		var pos: Vector3 = (b as Node3D).global_position
+		var dx: float = pos.x - self_pos.x
+		var dz: float = pos.z - self_pos.z
+		var center_dist: float = sqrt(dx * dx + dz * dz)
+		# Members of &"buildings" are Building base by construction
+		# (building.gd joins at _ready) — get_footprint_aabb is
+		# contract-promised; direct call per §9.M7.
+		var aabb: AABB = b.get_footprint_aabb()
+		var half_extent: float = maxf(aabb.size.x, aabb.size.z) * 0.5
+		var edge_dist: float = maxf(0.0, center_dist - half_extent)
+		if edge_dist <= radius and edge_dist < best_edge:
+			best_edge = edge_dist
+			best = b
 	return best
 
 
@@ -306,7 +351,15 @@ func _enqueue_resume_and_attack(ctx: Object, enemy: Object) -> bool:
 		return false
 	var attack_cmd: Command = CommandPool.rent()
 	attack_cmd.kind = Constants.COMMAND_ATTACK
-	attack_cmd.payload = {&"target_unit_id": int(enemy.get(&"unit_id"))}
+	# BUG-H8: thread target_node alongside target_unit_id — Units and
+	# Buildings collide in the same id space, so an id-only payload would
+	# resolve a Building target to a same-id Unit. Attacking prefers
+	# target_node when present (unit_state_attacking.gd:138); harmless for
+	# unit targets, load-bearing for the wave-D1 building-engagement path.
+	attack_cmd.payload = {
+		&"target_unit_id": int(enemy.get(&"unit_id")),
+		&"target_node": enemy,
+	}
 	ctx.command_queue.push_front(attack_cmd)
 	# Hand off to the dispatcher. transition_to_next reads the queue head,
 	# stashes payload, and lands us in Attacking with target_unit_id ready.

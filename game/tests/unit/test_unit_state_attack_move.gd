@@ -45,13 +45,24 @@ const IPathSchedulerScript: Script = preload("res://scripts/core/path_scheduler.
 class _StubCombat extends Node:
 	var attack_range: float = 1.5
 	var last_set_target: int = -1
+	# Wave-D1: Attacking calls set_target_node(node) when the payload
+	# carries a target_node ref (BUG-H8 path — load-bearing for Building
+	# targets). Captured so the building-engagement tests can assert it.
+	var last_set_target_node: Variant = null
 
 	func set_target(unit_id: int) -> void:
 		last_set_target = unit_id
 
+	func set_target_node(node: Variant) -> void:
+		last_set_target_node = node
+
+
+const MadanScene: PackedScene = preload(
+	"res://scenes/world/buildings/madan.tscn")
 
 var _attacker: Variant
 var _enemy: Variant
+var _building: Variant
 var _mock: Variant
 
 
@@ -69,8 +80,11 @@ func after_each() -> void:
 		_attacker.queue_free()
 	if _enemy != null and is_instance_valid(_enemy):
 		_enemy.queue_free()
+	if _building != null and is_instance_valid(_building):
+		_building.queue_free()
 	_attacker = null
 	_enemy = null
+	_building = null
 	PathSchedulerService.reset()
 	if _mock != null:
 		_mock.clear_log()
@@ -278,6 +292,106 @@ func test_sim_tick_attacking_uses_correct_enemy_target_id() -> void:
 	assert_eq(combat.last_set_target, int(_enemy.unit_id),
 		"AttackMove's discovered enemy must become the Attacking target's "
 		+ "unit_id (verified via stub combat.set_target call)")
+
+
+# ---------------------------------------------------------------------------
+# Wave-D1 (2026-06-11 win-probe regression): building engagement.
+# Buildings never register in SpatialIndex; before the stage-2 group-scan an
+# attack-moving army went blind once enemy UNITS were dead — observed as a
+# 38-unit army idling beside an enemy Throne at 100% HP for 30000 ticks.
+# ---------------------------------------------------------------------------
+
+func _spawn_enemy_building(team: int, pos: Vector3) -> Variant:
+	var b: Variant = MadanScene.instantiate()
+	b.set(&"team", team)
+	add_child_autofree(b)
+	(b as Node3D).global_position = pos
+	return b
+
+
+func test_enemy_building_in_engage_radius_transitions_to_attacking() -> void:
+	# NO enemy units anywhere (SpatialIndex empty of TURAN) — only an enemy
+	# building inside ENGAGE_RADIUS. Stage-2 acquisition must engage it.
+	_attacker = _spawn_unit_with_stub_combat(Constants.TEAM_IRAN)
+	_attacker.global_position = Vector3.ZERO
+	_building = _spawn_enemy_building(Constants.TEAM_TURAN, Vector3(2.0, 0.0, 0.0))
+
+	_attacker.replace_command(
+		&"attack_move", {&"target": Vector3(50.0, 0.0, 0.0)}
+	)
+	_tick_attacker()  # dispatch → enter()
+	assert_eq(_attacker.fsm.current.id, &"attack_move")
+	_rebuild_spatial_index()
+	_tick_attacker()  # engage scan: units empty → buildings branch fires
+	assert_eq(_attacker.fsm.current.id, &"attacking",
+		"wave-D1: attack-move must engage an enemy BUILDING in radius when "
+		+ "no enemy units exist — the win-probe stalemate regression")
+
+
+func test_building_engagement_threads_target_node_to_combat() -> void:
+	# The dispatched Attack payload must carry target_node (BUG-H8 — id-only
+	# payloads resolve Building targets to same-id Units). Attacking then
+	# hands the node to combat.set_target_node.
+	_attacker = _spawn_unit_with_stub_combat(Constants.TEAM_IRAN)
+	_attacker.global_position = Vector3.ZERO
+	_building = _spawn_enemy_building(Constants.TEAM_TURAN, Vector3(1.0, 0.0, 0.0))
+	var combat: _StubCombat = _attacker.get_node(^"CombatComponent")
+
+	_attacker.replace_command(
+		&"attack_move", {&"target": Vector3(50.0, 0.0, 0.0)}
+	)
+	_tick_attacker()
+	_rebuild_spatial_index()
+	_tick_attacker()  # discover building → Attacking
+	_tick_attacker()  # Attacking drives combat target
+	assert_eq(combat.last_set_target_node, _building,
+		"Attacking must receive the BUILDING node via set_target_node — "
+		+ "the BUG-H8 namespace-collision-safe path")
+
+
+func test_neutral_half_built_building_is_not_auto_engaged() -> void:
+	# A team-NEUTRAL building (the half-built window between instantiation
+	# and place_at) must NOT be auto-acquired — opposing-team-only filter,
+	# stricter than TuranController's BUG-H3 semantics, so attack-moving
+	# units never friendly-fire their own half-builts.
+	_attacker = _spawn_unit_with_stub_combat(Constants.TEAM_IRAN)
+	_attacker.global_position = Vector3.ZERO
+	_building = _spawn_enemy_building(Constants.TEAM_NEUTRAL, Vector3(2.0, 0.0, 0.0))
+
+	_attacker.replace_command(
+		&"attack_move", {&"target": Vector3(50.0, 0.0, 0.0)}
+	)
+	_tick_attacker()
+	_rebuild_spatial_index()
+	_tick_attacker()
+	assert_ne(_attacker.fsm.current.id, &"attacking",
+		"neutral (half-built) buildings must not trigger auto-engagement")
+
+
+func test_enemy_units_take_priority_over_buildings() -> void:
+	# Both an enemy unit AND an enemy building in radius: stage-1 (units)
+	# wins — fight the army before the architecture.
+	_attacker = _spawn_unit_with_stub_combat(Constants.TEAM_IRAN)
+	_attacker.global_position = Vector3.ZERO
+	# Unit within the stub's attack_range (1.5) so the combat handoff fires
+	# on the first Attacking tick — but FARTHER than the building, so a
+	# distance-ordered scan that mixed stages would pick the building.
+	_enemy = _spawn_unit_with_stub_combat(Constants.TEAM_TURAN)
+	_enemy.global_position = Vector3(1.2, 0.0, 0.0)
+	_building = _spawn_enemy_building(Constants.TEAM_TURAN, Vector3(0.5, 0.0, 0.0))
+	var combat: _StubCombat = _attacker.get_node(^"CombatComponent")
+
+	_attacker.replace_command(
+		&"attack_move", {&"target": Vector3(50.0, 0.0, 0.0)}
+	)
+	_tick_attacker()
+	_rebuild_spatial_index()
+	_tick_attacker()  # engage: unit found at stage 1 despite closer building
+	_tick_attacker()
+	assert_eq(combat.last_set_target_node, _enemy,
+		"enemy UNITS take engagement priority over buildings even when the "
+		+ "building is closer (stage-1 spatial query returns before the "
+		+ "stage-2 building scan runs)")
 
 
 # ---------------------------------------------------------------------------
