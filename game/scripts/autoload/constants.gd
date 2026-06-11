@@ -298,3 +298,37 @@ const SIM_FAST_PROBE_CADENCE_TICKS: int = 300
 # duration_ticks in the NDJSON records the THRONE-FALL tick (grace excluded)
 # per AI_VS_AI_RESULT_FORMAT.md §2.2 v1.1.0 — pacing signals stay pure.
 const SIM_THRONE_GRACE_TICKS: int = 30
+
+
+# === HEADLESS RUNNER — PER-PHASE TICK PROFILER (Wave C1, GAP-3) ==============
+# Interval (in sim ticks) between '[profile]' summary blocks when the
+# headless runner is launched with --profile-ticks. 3000 ticks = 100 sim-sec
+# @ SIM_HZ=30 ≈ 2 wall-min at the measured ~26 sim-ticks/wall-sec — frequent
+# enough to spot cost drift inside a long match, rare enough to not flood
+# the per-match log. Structural (measurement cadence, not game feel); a
+# designer never tunes it in a playtest cycle.
+const PROFILE_REPORT_INTERVAL_TICKS: int = 3000
+
+
+# === STARTING ROSTER PRESETS (Wave C1 roster-as-knob) ========================
+# `--roster <full|skirmish>` CLI presets parsed by main.gd. FULL is the
+# canonical 33-unit match-start roster (default — live games and every
+# existing test see EXACTLY the pre-knob behavior). SKIRMISH is a reduced
+# roster for fast headless iteration: the 14-combat-per-side spawn is the
+# per-tick sim-cost driver (engine-architect carry-forward, GAP-3), so a
+# small roster shortens the measure → tune → re-measure loop before the
+# Phase 4+ sim-optimization wave ships.
+#
+# Structural, not BalanceData: these are batch-tooling iteration knobs.
+# Balance conclusions drawn from skirmish runs do NOT transfer to the full
+# roster — the batch log records which preset produced a result.
+const ROSTER_FULL: StringName = &"full"
+const ROSTER_SKIRMISH: StringName = &"skirmish"
+
+# Skirmish spawn counts (per side where applicable). Workers keep the full
+# 5-Kargar economy (gather-loop cost is part of what we measure); combat
+# drops to 2 Piyade per side; the six RPS trios (Kamandar / Savar /
+# AsbSavarKamandar + Turan mirrors) do not spawn at all.
+const SKIRMISH_WORKER_COUNT: int = 5
+const SKIRMISH_COMBAT_PER_SIDE: int = 2
+const SKIRMISH_RPS_TRIO_COUNT: int = 0

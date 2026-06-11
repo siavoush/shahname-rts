@@ -589,8 +589,10 @@ func _on_health_zero(unit_id_in: int) -> void:
 	# Unregister from ResourceSystem's resource-node registry. Pitfall #16
 	# implicit guard: ResourceSystem.unregister_node tolerates an unknown
 	# node (idempotent — see resource_system.gd `unregister_node`).
-	if ResourceSystem.has_method(&"unregister_node"):
-		ResourceSystem.unregister_node(self)
-		print("[mazraeh] unregistered_resource_node unit_id=%d" % unit_id)
+	# (§9.M7 L7 cleanup: former `if ResourceSystem.has_method(...)` guard
+	# was a stale relic — unregister_node is ratified ResourceSystem API;
+	# the direct call fails loudly on contract regression.)
+	ResourceSystem.unregister_node(self)
+	print("[mazraeh] unregistered_resource_node unit_id=%d" % unit_id)
 	# Base handles latch + generic emit + queue_free.
 	super._on_health_zero(unit_id_in)

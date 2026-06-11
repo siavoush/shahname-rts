@@ -27,6 +27,23 @@ func now_ms() -> int:
 	return Time.get_ticks_msec()
 
 
+## Returns the current time in MICROseconds — documented passthrough to
+## Time.get_ticks_usec() (Wave C1 per-phase tick profiler). Per-sim-phase
+## costs at the 28-unit roster are sub-millisecond, so the profiler in
+## SimClock._run_tick needs usec resolution; now_ms() would round most
+## phases to 0. This wrapper exists so gameplay-side instrumentation keeps
+## flowing through TimeProvider instead of calling Time.* directly (lint
+## rule L5 — only this file and sim_clock.gd are allowlisted).
+##
+## Mock semantics: when a mock is active the value is _mock_ms * 1000 so the
+## ms and usec views of mocked "now" never disagree (a test pinning ms-time
+## must not observe a live usec clock running underneath it).
+func now_usec() -> int:
+	if _mock_active:
+		return _mock_ms * 1000
+	return Time.get_ticks_usec()
+
+
 ## Test-only: pin now_ms() to a fixed value until clear_mock() is called.
 ## Subsequent calls to set_mock override the current mock — they don't stack.
 func set_mock(ms: int) -> void:

@@ -61,6 +61,26 @@ const _HeadlessMatchRunnerScript: Script = preload(
 
 var _last_print_tick: int = 0
 
+# ---------------------------------------------------------------------------
+# Wave C1 — roster-as-knob (`--roster <full|skirmish>`, default full).
+#
+# The 14-combat-per-side starting roster is the per-tick sim-cost driver in
+# headless batches (engine-architect carry-forward, GAP-3). SKIRMISH spawns
+# a reduced roster (Constants.SKIRMISH_*: 5 workers, 2 Piyade per side, no
+# RPS trios) for fast measurement iteration. FULL is byte-identical to the
+# pre-knob spawn — live games and every existing spawn test are untouched.
+# Buildings (Thrones) + resource nodes spawn identically under both presets:
+# the win condition and the gather loop are part of what the batch measures.
+# ---------------------------------------------------------------------------
+
+# Test seam: when non-empty, _resolve_roster() validates THIS value instead
+# of scanning OS.get_cmdline_user_args() (tests cannot inject argv). Same
+# precedent as HeadlessMatchRunner._test_skip_emit. Live runs never set it.
+var roster_override: StringName = &""
+
+# Resolved preset for this boot. Set once in _ready before any spawn call.
+var _roster: StringName = Constants.ROSTER_FULL
+
 
 # Iran starting positions for the 5 Phase-1 starting workers.
 # Y=0.5 puts the unit's mesh-base just above the terrain plane (the
@@ -234,6 +254,13 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--headless-batch"):
 		_spawn_headless_match_runner()
 
+	# Wave C1 — resolve the roster preset BEFORE any spawn call. Logged
+	# unconditionally (state-change-gated: once per boot) so every match log
+	# records which preset produced its data — skirmish-roster results must
+	# never be silently read as full-roster balance signals.
+	_roster = _resolve_roster()
+	print("[main] roster=%s" % _roster)
+
 	# Wave-3-Throne — Thrones spawn BEFORE units so workers can deposit at
 	# them from tick 0 (no race where the first gather cycle completes
 	# before any Throne exists). Each Throne joins the &"thrones" SceneTree
@@ -305,6 +332,11 @@ func _spawn_starting_buildings() -> void:
 #   Turan Kamandar      25..27
 #   Turan Savar         28..30
 #   Turan AsbSavar      31..33
+#
+# Wave C1: under --roster skirmish each position array is sliced to its
+# Constants.SKIRMISH_* count (same order, same positions — just fewer), so
+# unit_id determinism holds per-preset: skirmish ids are Kargar 1..5,
+# Iran Piyade 6..7, Turan Piyade 8..9 (test_match_start_spawn_skirmish.gd).
 func _spawn_starting_units() -> void:
 	# Per Unit.reset_id_counter doc — match-start hook so unit ids
 	# always start at 1. MatchHarness already calls this on start_match;
@@ -313,42 +345,51 @@ func _spawn_starting_units() -> void:
 	# class_name-registry-race reason _UnitScript exists.
 	_UnitScript.call(&"reset_id_counter")
 
-	# Iran Kargars (workers) — unit_ids 1..5.
-	for pos: Vector3 in _KARGAR_SPAWN_POSITIONS:
+	# Iran Kargars (workers) — unit_ids 1..5 (both presets keep all 5).
+	for pos: Vector3 in _roster_slice(_KARGAR_SPAWN_POSITIONS,
+			Constants.SKIRMISH_WORKER_COUNT):
 		_spawn_unit(_KargarScene, pos, Constants.TEAM_IRAN)
 
-	# Iran Piyade (combat infantry) — unit_ids 6..10.
-	for pos: Vector3 in _PIYADE_SPAWN_POSITIONS:
+	# Iran Piyade (combat infantry) — unit_ids 6..10 (skirmish: first 2).
+	for pos: Vector3 in _roster_slice(_PIYADE_SPAWN_POSITIONS,
+			Constants.SKIRMISH_COMBAT_PER_SIDE):
 		_spawn_unit(_PiyadeScene, pos, Constants.TEAM_IRAN)
 
-	# Turan Piyade (enemy mirror) — unit_ids 11..15.
-	for pos: Vector3 in _TURAN_PIYADE_SPAWN_POSITIONS:
+	# Turan Piyade (enemy mirror) — unit_ids 11..15 (skirmish: first 2).
+	for pos: Vector3 in _roster_slice(_TURAN_PIYADE_SPAWN_POSITIONS,
+			Constants.SKIRMISH_COMBAT_PER_SIDE):
 		_spawn_unit(_TuranPiyadeScene, pos, Constants.TEAM_TURAN)
 
-	# Phase 2 session 2 wave 2B — RPS-triangle clusters.
+	# Phase 2 session 2 wave 2B — RPS-triangle clusters (skirmish: none).
 
 	# Iran Kamandar (foot archers) — unit_ids 16..18.
-	for pos: Vector3 in _KAMANDAR_SPAWN_POSITIONS:
+	for pos: Vector3 in _roster_slice(_KAMANDAR_SPAWN_POSITIONS,
+			Constants.SKIRMISH_RPS_TRIO_COUNT):
 		_spawn_unit(_KamandarScene, pos, Constants.TEAM_IRAN)
 
 	# Iran Savar (cavalry) — unit_ids 19..21.
-	for pos: Vector3 in _SAVAR_SPAWN_POSITIONS:
+	for pos: Vector3 in _roster_slice(_SAVAR_SPAWN_POSITIONS,
+			Constants.SKIRMISH_RPS_TRIO_COUNT):
 		_spawn_unit(_SavarScene, pos, Constants.TEAM_IRAN)
 
 	# Iran AsbSavarKamandar (horse archers) — unit_ids 22..24.
-	for pos: Vector3 in _ASB_SAVAR_KAMANDAR_SPAWN_POSITIONS:
+	for pos: Vector3 in _roster_slice(_ASB_SAVAR_KAMANDAR_SPAWN_POSITIONS,
+			Constants.SKIRMISH_RPS_TRIO_COUNT):
 		_spawn_unit(_AsbSavarKamandarScene, pos, Constants.TEAM_IRAN)
 
 	# Turan Kamandar mirror — unit_ids 25..27.
-	for pos: Vector3 in _TURAN_KAMANDAR_SPAWN_POSITIONS:
+	for pos: Vector3 in _roster_slice(_TURAN_KAMANDAR_SPAWN_POSITIONS,
+			Constants.SKIRMISH_RPS_TRIO_COUNT):
 		_spawn_unit(_TuranKamandarScene, pos, Constants.TEAM_TURAN)
 
 	# Turan Savar mirror — unit_ids 28..30.
-	for pos: Vector3 in _TURAN_SAVAR_SPAWN_POSITIONS:
+	for pos: Vector3 in _roster_slice(_TURAN_SAVAR_SPAWN_POSITIONS,
+			Constants.SKIRMISH_RPS_TRIO_COUNT):
 		_spawn_unit(_TuranSavarScene, pos, Constants.TEAM_TURAN)
 
 	# Turan AsbSavar mirror — unit_ids 31..33.
-	for pos: Vector3 in _TURAN_ASB_SAVAR_SPAWN_POSITIONS:
+	for pos: Vector3 in _roster_slice(_TURAN_ASB_SAVAR_SPAWN_POSITIONS,
+			Constants.SKIRMISH_RPS_TRIO_COUNT):
 		_spawn_unit(_TuranAsbSavarScene, pos, Constants.TEAM_TURAN)
 
 
@@ -368,6 +409,38 @@ func _spawn_starting_resources() -> void:
 		var mine: Node3D = _MineNodeScene.instantiate() as Node3D
 		mine.position = pos
 		_world.add_child(mine)
+
+
+# Wave C1 — resolve the `--roster` preset. Precedence: roster_override (test
+# seam) > `--roster <value>` in cmdline user args > ROSTER_FULL default.
+# Unknown values fall back to FULL — loudly (push_error, §9.L9): a typo'd
+# preset silently running the wrong roster would skew every measurement the
+# batch produces.
+func _resolve_roster() -> StringName:
+	var value: StringName = roster_override
+	if value == &"":
+		var args: PackedStringArray = OS.get_cmdline_user_args()
+		var idx: int = args.find("--roster")
+		if idx == -1:
+			return Constants.ROSTER_FULL
+		if idx + 1 >= args.size():
+			push_error("[main] --roster flag has no value — falling back to roster=full")
+			return Constants.ROSTER_FULL
+		value = StringName(args[idx + 1])
+	if value == Constants.ROSTER_FULL or value == Constants.ROSTER_SKIRMISH:
+		return value
+	push_error("[main] unknown --roster value '%s' (expected full|skirmish) — falling back to roster=full" % value)
+	return Constants.ROSTER_FULL
+
+
+# Wave C1 — preset-aware view of a spawn-position array. FULL returns the
+# array untouched (default path is byte-identical to pre-knob behavior);
+# SKIRMISH returns the first `skirmish_count` positions (same order, same
+# coordinates — determinism per preset).
+func _roster_slice(full: Array[Vector3], skirmish_count: int) -> Array[Vector3]:
+	if _roster == Constants.ROSTER_SKIRMISH:
+		return full.slice(0, skirmish_count)
+	return full
 
 
 # Internal spawn helper. Team is set BEFORE add_child so the Unit's _ready

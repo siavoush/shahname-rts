@@ -100,10 +100,18 @@ func _refresh_labels() -> void:
 # Production code path: read live values from ResourceSystem autoload.
 # Falls back to the GameState meta path if ResourceSystem is unavailable
 # (test contexts that pre-date Phase 3 wave 1B).
+#
+# §9.M7 L7 cleanup: the former `rs.has_method(&"coin_for")`-style guards
+# were stale relics — coin_for / grain_for / population_for /
+# population_cap_for are ratified ResourceSystem API. The `rs != null`
+# autoload-or-null check is the sanctioned seam (headless unit tests run
+# without the autoload); a renamed/missing method on a present autoload
+# now errors loudly instead of silently flipping the HUD onto the legacy
+# GameState path (the exact BUG-3 / Wave 3-Sim zero-coin failure shape).
 
 func _read_coin() -> int:
 	var rs: Node = _autoload_or_null(&"ResourceSystem")
-	if rs != null and rs.has_method(&"coin_for"):
+	if rs != null:
 		return int(rs.coin_for(Constants.TEAM_IRAN))
 	# Legacy path: GameState.player_resources dict (Phase 0 / test fixtures).
 	return _read_resource(Constants.KIND_COIN, _DEFAULT_COIN)
@@ -111,21 +119,21 @@ func _read_coin() -> int:
 
 func _read_grain() -> int:
 	var rs: Node = _autoload_or_null(&"ResourceSystem")
-	if rs != null and rs.has_method(&"grain_for"):
+	if rs != null:
 		return int(rs.grain_for(Constants.TEAM_IRAN))
 	return _read_resource(Constants.KIND_GRAIN, _DEFAULT_GRAIN)
 
 
 func _read_pop() -> int:
 	var rs: Node = _autoload_or_null(&"ResourceSystem")
-	if rs != null and rs.has_method(&"population_for"):
+	if rs != null:
 		return int(rs.population_for(Constants.TEAM_IRAN))
 	return _read_int_field(&"GameState", &"player_pop", _DEFAULT_POP)
 
 
 func _read_pop_cap() -> int:
 	var rs: Node = _autoload_or_null(&"ResourceSystem")
-	if rs != null and rs.has_method(&"population_cap_for"):
+	if rs != null:
 		return int(rs.population_cap_for(Constants.TEAM_IRAN))
 	return _read_int_field(&"GameState", &"player_pop_cap", _DEFAULT_POP_CAP)
 

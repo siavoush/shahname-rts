@@ -1,0 +1,74 @@
+# tools/L7_allowlist.txt — sanctioned exceptions to lint rule L7
+# (STUDIO_PROCESS §9.M7 defensive-fallback-masking).
+#
+# One entry per line, format:
+#
+#   <repo-relative-file>:<line-context-substring> — <one-line WHY>
+#
+# Matching is mechanical (tools/lint_simulation.sh L7): a production hit is
+# allowlisted when its file equals <repo-relative-file> (or the entry file is
+# `*` — a CATEGORY entry matching any file under game/scripts/) AND the hit's
+# source line contains <line-context-substring> verbatim. Keep the context
+# substring tight — usually the full probe expression `has_method(&"x")`.
+# The ` — ` (space-emdash-space) separator between context and WHY is
+# load-bearing for the parser; don't replace it with a hyphen.
+#
+# NOT needed in this file (exempt in the lint itself):
+#   - comment lines mentioning has_method/has_signal/has_property
+#   - hard-asserts: assert(x.has_method(&"y"), "...") — the §9.M7 RIGHT pattern
+#   - anything under game/tests/ (out of scope entirely)
+#
+# Lines starting with `#` and blank lines are ignored.
+# Owner: qa-engineer. Every entry needs a WHY. Prune entries whose call sites
+# are gone at the next L7 sweep; new guards need a new entry + reviewer signoff.
+
+# === CATEGORY entries — duck-typed protocol probes (the probe IS the protocol
+# === check; sanctioned per §9.M7 "duck-typed protocols" carve-out + RNC §5.2).
+*:has_method(&"replace_command") — Unit-shape protocol probe over heterogeneous node sets; `is Unit` is brittle under the class_name registry race (ARCHITECTURE §6 v0.4.0)
+*:has_method(&"request_extract") — gather-API protocol probe (RNC §4 consumer API; RNC §5.2 sanctions has_method as the ResourceNode-shape check)
+*:has_method(&"deposit") — IDropoffTarget protocol probe (RNC §5.2: has_method IS the protocol check)
+*:has_method(&"get_deposit_position") — IDropoffTarget protocol probe (RNC §5.2), position half of the deposit seam
+*:has_method(&"get_footprint_aabb") — Building-vs-Unit discrimination (FOG_DATA_CONTRACT §3.2); Units legitimately lack a footprint, so the false branch (fp_half=0 / single-cell) is the correct Unit case, not a fallback mask
+*:has_method(&"get_movement") — test-stub ctx tolerance in unit states; false branch is loud push_warning + bail-to-idle (§9.L9-loud, not silent masking)
+*:has_method(&"get_health") — duck-typed HealthComponent accessor probe over heterogeneous collections (&"units" group sweeps, selection panels, combat targets); registry-race rationale documented at each site
+*:has_method(&"get_combat") — duck-typed CombatComponent accessor probe (attack-range overlay selection sweep + Attacking-state wave-1B stub tolerance: combat may be absent and the state still drives movement)
+*:has_method(&"register_vision_source") — FogSystem autoload-or-null seam in the 8 Building subclasses' _on_placement_complete (fog_system.gd header §9.L6 sweep); test scenes instantiate buildings without the FogSystem autoload
+*:has_method(&"deregister_vision_source") — teardown half of the same §9.L6-swept FogSystem seam (_exit_tree / _on_health_zero paths)
+
+# === Per-file entries =======================================================
+
+# --- Forward-compat seams (member genuinely does not exist yet at HEAD) ---
+game/scripts/world/buildings/atashkadeh.gd:FarrSystem.has_method(&"register_emitter") — genuine forward-compat per §9.M7 allowlist seed: FarrSystem autoload exists but register_emitter ships Phase 4; else-branch logs the would-register telemetry loudly
+game/scripts/world/buildings/mazraeh.gd:has_method(&"is_fertile_tile") — genuine forward-compat: TerrainSystem autoload + is_fertile_tile not shipped at HEAD (wave 3A+); permissive fallback documented at is_valid_placement
+
+# --- Scene/duck-type resolution seams (no class_name dependency by design) ---
+game/scripts/input/control_groups.gd:has_method(&"center_on") — CameraController duck-type resolution (center_on + target_position is the unique controller surface; documented at _find_camera_controller); covers _center_camera_on_group + _find_camera_controller
+game/scripts/input/box_select_handler.gd:has_method(&"process_left_click_hit") — ClickHandler sibling duck-type resolution; kickoff forbade modifying click_handler.gd, public-seam coordination only; covers release-dispatch + _resolve_click_handler
+game/scripts/input/box_select_handler.gd:has_method(&"set_drag_rect") — DragOverlay child duck-type seam (drag_overlay.tscn exposes set_drag_rect for the math handoff)
+game/scripts/input/build_placement_handler.gd:has_method(&"set_validity") — ghost-preview duck-type seam (ghost_placement_preview.gd owns the color logic; ghost scene swappable)
+game/scripts/autoload/spatial_index.gd:has_method(&"world_position") — SpatialAgentComponent duck-type; autoload parses before class_name registry resolution completes (documented at _agent_world_position); Node3D-parent fallback is the sanctioned non-component shape
+game/scripts/autoload/selection_manager.gd:has_method(&"get_selectable") — best-effort duck-type seam documented at _call_selectable (registry-race rationale); production path probe
+game/scripts/autoload/selection_manager.gd:sc.has_method(method) — dynamic method-name probe inside the same documented _call_selectable seam
+game/scripts/autoload/selection_manager.gd:unit.has_method(method) — test-fixture fallback branch of the same _call_selectable seam (unit IS the selectable in fixtures)
+game/scripts/world/resource_nodes/resource_node.gd:has_method(&"yield_multiplier_x100") — extraction-modifier protocol probe (RNC §4.7: registration accepts a Node; yield_multiplier_x100 is the modifier protocol surface)
+
+# --- Test-stub tolerance in unit states (wave-1B stub ctx/components; each
+# --- documented at site; phase-coordinator refactor (LATER) removes most) ---
+game/scripts/units/states/unit_state_attacking.gd:_movement.has_method(&"_sim_tick") — wave-1B stub MovementComponents lack _sim_tick; drive call moves to MovementSystem phase coordinator when it ships (documented at site)
+game/scripts/units/states/unit_state_attacking.gd:_combat.has_method(&"_sim_tick") — wave-1B stub CombatComponents lack _sim_tick; same coordinator-refactor seam (documented at site)
+game/scripts/units/states/unit_state_attacking.gd:_combat.has_method(&"set_target") — stub-combat tolerance (state drives movement without damage when combat absent); covers in-range handoff + exit cleanup
+game/scripts/units/states/unit_state_attacking.gd:_combat.has_method(&"set_target_node") — BUG-H8 node-ref push; same stub-combat tolerance as set_target
+game/scripts/units/states/unit_state_attacking.gd:ctx.has_method(&"get_tree") — stub ctx without a scene tree in unit tests; _find_unit_by_id bails to null (caller handles loudly)
+game/scripts/units/states/unit_state_attack_move.gd:ctx.has_method(&"append_command") — stub-ctx tolerance; false branch returns false and the caller stays in AttackMove (no silent state corruption)
+game/scripts/units/states/unit_state_dying.gd:ctx.has_method(&"queue_free") — stub-ctx tolerance (plain-Object fixtures); Dying is terminal, the [dying] log above the guard fires either way
+game/scripts/units/states/unit_state_idle.gd:ctx.has_method(&"get_node_or_null") — stub-ctx tolerance for the cosmetic mesh-pulse lookup; pure-visual path, no sim state involved
+game/scripts/units/components/health_component.gd:pn.has_method(&"is_idle") — parent duck-probe for idle-worker Farr attribution (kargar); HC parent is a bare Node3D in component unit tests
+
+# --- UI fixture tolerance (panels/overlays accept duck-typed test buildings) ---
+game/scripts/ui/construction_progress_overlay.gd:has_signal(&"construction_progress_updated") — duck-typed test-fixture tolerance documented at _ensure_signal_connected (FakeBuilding fixtures re-declare the signal pair)
+game/scripts/ui/construction_progress_overlay.gd:has_signal(&"construction_finalized") — second half of the same paired-signal fixture-tolerance guard
+game/scripts/ui/production_panel.gd:has_signal(&"production_state_changed") — fixture tolerance; panel degrades to static rows without in-progress updates (documented at _connect_building_signals); covers connect + disconnect
+game/scripts/ui/production_panel.gd:has_method(&"request_train") — fixture tolerance with loud push_warning on the false branch (§9.L9-loud, not silent masking)
+
+# --- Conversion deferred ---
+game/scripts/units/components/combat_component.gd:health.has_method(&"take_damage_x100") — conversion deferred — removing the guard requires re-indenting the entire ~60-line live damage-fire block (exceeds this track's small-mechanical-diff budget); probe confirmed every get_health() provider at HEAD returns the real health_component.gd script, so the false branch is dead today; flagged for inline conversion next time combat_component.gd is open for edit

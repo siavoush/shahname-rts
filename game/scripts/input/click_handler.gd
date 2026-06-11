@@ -606,6 +606,10 @@ func _open_production_panel(building: Node3D) -> void:
 			print("[click] LEFT: no ProductionPanel in scene; producer click ignored")
 		return
 	var panel: Node = panels[0]
-	if not panel.has_method(&"open"):
-		return
+	# §9.M7 L7 cleanup: former `if not panel.has_method(&"open"): return`
+	# silently swallowed contract drift. open() is contract-promised on
+	# &"production_panel" group members (production_panel.gd curates the
+	# group in _ready); hard-assert so drift fails loudly at this line.
+	assert(panel.has_method(&"open"),
+		"&\"production_panel\" group member missing open() — see production_panel.gd")
 	panel.call(&"open", building)

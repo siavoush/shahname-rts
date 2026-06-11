@@ -17,11 +17,20 @@ extends Node
 ##       --headless-batch --match-id ${MATCH_ID} --seed ${MATCH_SEED} \
 ##       --timeout-ticks ${TIMEOUT_TICKS}
 ##
-## Args (per Wave 3-Sim brief §4.3):
+## Args (per Wave 3-Sim brief §4.3; --profile-ticks added Wave C1):
 ##   --headless-batch        Sentinel that tells main.gd to spawn the runner.
 ##   --match-id <string>     Zero-padded match identifier ("match_NNNN").
 ##   --seed <int>            Per-match deterministic seed.
 ##   --timeout-ticks <int>   Max ticks before forcing stalemate (default 60000).
+##   --profile-ticks         Enable SimClock's per-phase tick profiler (Wave
+##                           C1, GAP-3). '[profile]' summary blocks land in
+##                           the per-match stdout log every
+##                           Constants.PROFILE_REPORT_INTERVAL_TICKS ticks
+##                           AND at match end. Log-only — NOT part of the
+##                           NDJSON schema (balance-engineer-owned). Off by
+##                           default; the live game never pays the cost.
+##                           (--roster <full|skirmish> is parsed by main.gd,
+##                           which owns the spawn — not by this runner.)
 ##
 ## Output:
 ##   - Single-line NDJSON to stdout at match completion (extracted by batch
@@ -93,6 +102,11 @@ extends Node
 var _match_id: String = "match_unknown"
 var _match_seed: int = 0
 var _timeout_ticks: int = 60000
+# Wave C1 — per-phase tick profiler flag (--profile-ticks). When true, _ready
+# arms SimClock.profiling_enabled and the cleanup-phase handler emits a
+# '[profile]' summary every Constants.PROFILE_REPORT_INTERVAL_TICKS ticks;
+# _emit_result_and_quit emits the final summary before the NDJSON line.
+var _profile_enabled: bool = false
 
 # ---------------------------------------------------------------------------
 # Match state
@@ -202,6 +216,11 @@ func _ready() -> void:
 		_match_id, _match_seed, _timeout_ticks,
 	])
 
+	# Wave C1 — arm the SimClock per-phase profiler when requested. Runs
+	# BEFORE main.gd's _spawn_starting_* (the runner is instantiated first),
+	# so tick 0 onward is measured.
+	_apply_profile_flag()
+
 	# §9.D9 Q3 RNG discipline — seed defensively (see file header).
 	seed(_match_seed)
 
@@ -244,6 +263,18 @@ func _ready() -> void:
 func _on_sim_phase(phase: StringName, _tick: int) -> void:
 	if phase != Constants.PHASE_CLEANUP:
 		return
+
+	# Wave C1 — interval '[profile]' summary. Fires once per boundary tick
+	# (cleanup is emitted exactly once per tick). Note the cleanup phase's
+	# OWN duration for this tick is not yet recorded (we are inside its
+	# emit), so a boundary report covers cleanup for ticks 0..N-1 — a
+	# one-tick measurement skew that is immaterial at the 3000-tick grain.
+	if _profile_enabled and _tick > 0 \
+			and _tick % Constants.PROFILE_REPORT_INTERVAL_TICKS == 0:
+		SimClock.print_profile_summary("interval tick=%d match_id=%s" % [
+			_tick, _match_id,
+		])
+
 	if _match_ended:
 		return
 
@@ -276,7 +307,13 @@ func _parse_args() -> void:
 	# Args land in OS.get_cmdline_user_args() (everything after the `--`
 	# separator on the godot CLI). Per main.gd's flag-detect, --headless-batch
 	# is in the same set; consistency is the discipline here.
-	var args: PackedStringArray = OS.get_cmdline_user_args()
+	_parse_args_from(OS.get_cmdline_user_args())
+
+
+# Argv-array seam (Wave C1): split from _parse_args so the integration tests
+# can feed a synthetic PackedStringArray instead of the GUT process's own
+# user args. Same precedent as _test_skip_emit / _assemble_result_dict.
+func _parse_args_from(args: PackedStringArray) -> void:
 	var i: int = 0
 	while i < args.size():
 		var arg: String = args[i]
@@ -296,9 +333,26 @@ func _parse_args() -> void:
 					_timeout_ticks = int(args[i + 1])
 					i += 2
 					continue
+			"--profile-ticks":
+				# Bare flag — no value to consume (Wave C1).
+				_profile_enabled = true
 			_:
 				pass
 		i += 1
+
+
+# Wave C1 — arm SimClock's per-phase profiler when --profile-ticks was
+# parsed. reset_profile() first so the measurement window starts clean even
+# if a prior consumer touched the accumulators. No-op (and no log) when the
+# flag is absent — the live/default path stays silent and zero-overhead.
+func _apply_profile_flag() -> void:
+	if not _profile_enabled:
+		return
+	SimClock.reset_profile()
+	SimClock.profiling_enabled = true
+	print("[runner] profiling enabled interval_ticks=%d" % [
+		Constants.PROFILE_REPORT_INTERVAL_TICKS,
+	])
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +553,12 @@ func _emit_result_and_quit() -> void:
 	if _test_skip_emit:
 		return
 
+	# Wave C1 — final '[profile]' summary covers the whole match (including
+	# the grace window's ticks). Printed BEFORE the NDJSON line; '[profile]'
+	# lines never start with '{' so the batch script's extraction is safe.
+	if _profile_enabled:
+		SimClock.print_profile_summary("match_end match_id=%s" % _match_id)
+
 	# duration_ticks was latched at throne-fall (win paths) or at the timeout
 	# boundary (stalemate path) — NOT recomputed here, because by emit time
 	# SimClock.tick has advanced through the grace window and the NDJSON
@@ -584,10 +644,11 @@ func _assemble_result_dict(
 # map + §7.3 Turan-field notes (Turan has no economy at MVP — emit zeros
 # for symmetry).
 #
-# Group inventory: only Building.gd joins &"buildings" + Throne.gd joins
-# &"thrones" (verified at runner fix-up time). Unit.gd does NOT join any
-# group, so unit-count capture uses scene-tree recursion + duck-typing on
-# `unit_type` field.
+# Group inventory: Building.gd joins &"buildings", Throne.gd joins
+# &"thrones", and Unit.gd joins &"units" (since c05ba77). Unit-count capture
+# predates the &"units" group and still uses scene-tree recursion +
+# duck-typing on `unit_type`; behavior is equivalent, migrate when next
+# touched.
 func _capture_team_fields(team_id: int) -> Dictionary:
 	var workers: int = 0
 	var combat_units: int = 0

@@ -12,12 +12,56 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-06-08 (Track B1 — mine_node + mazraeh BalanceData SSOT fix, review ARCH-5/GP-3)
+last_updated: 2026-06-11 (Wave C+D close aggregate)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-06-11 — Live playtest (Siavoush, first human play-through of the full loop) — FUN-GATE INPUT
+
+**Build:** `feat/wave-cd-close` (PR #59 branch). Two sessions via `tools/run_game.sh`; logs reviewed live by lead.
+
+**Milestone: first live human-vs-AI throne kill.** Full loop played end-to-end — gather (coin via Madan), build (Madan + Mazra'eh), train, Shift+A push → **Turan throne destroyed** (`[throne] destroyed team=2`, ~tick 1404, session 2). D1's two-stage building acquisition worked live exactly as headless: piyades engaged at edge-dist 1.43/range 1.5, savars 3.7, asb-savar-kamandar 5.9/range 8.0; 278 attack events, 22 unit deaths in the push.
+
+**Fun-gate read (stakeholder, verbatim sentiment):** *"This is the basics of any RTS more or less — what makes it fun is economics, tactics, strategy etc. Too early to say."* Recorded as the first data point for the decision packet's early-fun-gate proposal (Tier 4). Lead's framing for the design chat: the verdict is on table-stakes mechanics played against a near-inert opponent (Turan: 1 unit per 120s probe, no production, no economy) with the differentiators (Farr economy, tech tiers, Kaveh, an opponent that pressures) all Phase-4+ content currently blocked on packet Tier-1 rulings. "Too early to say" is the expected honest answer at this layer — not a NO signal.
+
+**Player-facing bugs confirmed this playtest (session-1 log evidence, diagnosis in lead chat):**
+- **P1** — single-click + tolerance fallback have no team filter: enemy units silently selectable AND commandable (player ordered a Turan piyade to kill their own Kargar; the game obeyed). Box-select IS team-filtered — inconsistent seam.
+- **P2** — ClickHandler right-click attack sends id-only payloads → BUG-H8 namespace collision live in the player path (`target_unit_id=2` resolved to the Turan THRONE instead of Kargar 2). D1's `target_node` threading covers only AttackMove's rented command.
+- **P3** — no right-click-building→attack affordance: `_is_unit_shaped` requires `replace_command`, buildings fall through to group-move — army walks to the enemy throne and stands there. Shift+A attack-move is currently the ONLY building-attack path.
+- **UX-1** — victory is silent: no win/loss state or screen in live play (known gap; GameState never leaves LOBBY). The first human victory in project history registered as three log lines.
+- **UX-2** — attack-move discoverability: lead itself briefed the wrong key (plain A = camera pan; Shift+A is the binding, invisible-pending, no cursor change).
+
+**Disposition:** P1/P2/P3 = input-layer hotfix wave, offered, awaiting go. UX-1 (match end-state) + difficulty/opponent-liveliness = design-chat scope, routed with the packet.
+
+---
+
+## 2026-06-11 — Wave C+D close: first decisive AI-vs-AI victory; profiler, L7 lint, MatchHarness v2, real determinism test, plan-v2 draft (wave aggregate — C1/C2/C3/C4 + D1 + §9.F6 mirror)
+
+**Branch:** `feat/wave-cd-close` (octopus of `wave/c1` `c79a964` + `wave/c2` `611d4d3` + `wave/c3` `ab2963a` + `wave/c4` `fee63f9` + `wave/d1-attack-move-buildings` `2240071` onto main `e678fa7`). **Merged suite: 1688 tests / 0 failures; lint L1–L7 0 violations.**
+
+**What shipped (one line per track; details in each track's commit message + ARCH §6 v0.39.0):**
+
+1. **D1 — attack-move engages enemy buildings** (ai-engineer lane, lead-dispatched). Two-stage acquisition in `UnitState_AttackMove`: SpatialIndex units first, `&"buildings"` group fallback (opposing-only, edge-distance via `get_footprint_aabb()`). Root-fixes the 30000-tick stalemate (38-unit army idle beside an intact throne — buildings never register in SpatialIndex). **Same seed: IRAN_WIN at tick 2033 — the project's first decisive AI-vs-AI victory.** Attack payload threads `&"target_node"` (BUG-H8 class). +4 tests.
+2. **C1 — per-phase tick profiler + roster knob** (engine-architect lane). `SimClock` opt-in profiler (`--profile-ticks`), `--roster full|skirmish` (9-unit skirmish ≈ 2.7× faster). **First empirical cost data: `ai` phase = 86.8% of tick cost** — optimization triad now data-ranked (spatial culling for AI scans first). 1682 green at track close.
+3. **C2 — L7 lint** (qa-engineer lane). §9.M7 defensive-fallback-masking detection live in `tools/lint_simulation.sh` + `tools/L7_allowlist.txt` (WHY comments mandatory); 6 production guard→direct-call conversions. Deliberate-violation probe verified. Dictionary-probe half deferred out of v1 (§9.B5).
+4. **C3 — QA debt triple** (qa-engineer lane). Subprocess smoke test for `--headless-batch` boot (temp-script watchdog — OS.execute pre-expands inline `bash -c` args, documented); real-gameplay determinism snapshot-hash test (450 ticks — first red caught the never-reset Building static id counter, fixed); MatchHarness v2 (13-autoload reset, real spawn catalogs, balance.tres ResourceCache pin).
+5. **C4 — DRAFT_IMPLEMENTATION_PLAN_V2.md** (lead lane). 167-line plan-v2 draft, branch-structured on the T&T Tier-1 ruling; status `awaiting-design-ratification` — NOT a plan until the design chat ratifies (02_IMPLEMENTATION_PLAN.md untouched).
+
+**Calibration findings (for gen-2 balance-engineer — read AI_VS_AI_RESULT_FORMAT §8 v1.1.2 first):**
+- 10-match batch, 10 DIFFERENT seeds, post-D1: **byte-identical results.** Cross-process determinism empirically proven; seeds are inert (zero production randomness). Batches have **zero variance until GameRNG lands** — N>1 batches buy determinism verification only, not tuning signal.
+- The one decisive matchup observed is 100% Iran-win (Turan never trains units at MVP — known asymmetry). Matchup-degeneracy tuning is balance-engineer's lane (§9.L1); lead did not touch balance.tres.
+- Pre-D1 stalemate-rate priors are invalidated in BOTH directions (Turan sweep units also auto-acquire Iran buildings now).
+
+**§9.F6 integration mirror (architecture-reviewer, Fable-inherit):** FIX-FIRST-THEN-MERGE — zero code blockers; all fix-first items docs-truth, closed in this branch: ARCH §2 sweep (SimClock/CI-lint/MatchHarness/batch-runner/determinism/attack-move/spawn rows + stale LATER-L7 row + stale `physics_ticks_per_second` carry-forward), false `&"units"` comment in `headless_match_runner.gd` (Unit.gd HAS joined `&"units"` since c05ba77), DRAFT plan §6 same-day-stale tooling queue rewritten, AI_VS_AI_RESULT_FORMAT v1.1.2 zero-variance forward-watch row. Advisories logged: latent `&"buildings"` fixture rule (any fixture joining the group needs `get_footprint_aabb`+`team`+`unit_id` if AttackMove can tick); L7 category entries are wide — recurring prune sweep queued; translation binaries committed by D1 KEPT (they regenerate truthfully from current csv; C1/C2 had excluded identical deltas as import noise — disposition now recorded, one precedent).
+
+**Process notes:** C1/C2 workflow agents died at the StructuredOutput step but left ~90% complete work — a single sequential finisher verified/finished/committed both (pattern worth keeping). GUT suites must NEVER run concurrently (CPU contention → 254s vs ~60s solo + flaky pre-commit gate timeouts; D1's "COMMIT BLOCKED" flake was this). Carry-forwards: §9.B5-deferred `combat_component.take_damage_x100` conversion, Dictionary-probe L7 v2, C4.3 DummyIran subscription-over-polling, C7.2 stat-resolver config cache, recurring L7 allowlist prune.
+
+**Open questions:** none new. DECISION_PACKET_2026-06-08.md Tier 1 still pending design-chat rulings (blocks Phase 4 content); DRAFT_IMPLEMENTATION_PLAN_V2.md awaits ratification.
 
 ---
 
