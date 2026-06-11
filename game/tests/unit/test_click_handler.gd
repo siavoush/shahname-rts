@@ -64,6 +64,7 @@ var _units: Array = []
 
 func before_each() -> void:
 	SimClock.reset()
+	GameState.reset()  # player_team back to TEAM_IRAN (P1 gate SSOT)
 	SelectionManager.reset()
 	SpatialIndex.reset()
 	handler = ClickHandlerScript.new()
@@ -78,6 +79,7 @@ func after_each() -> void:
 			u.queue_free()
 	_units.clear()
 	SelectionManager.reset()
+	GameState.reset()
 	SpatialIndex.reset()
 	SimClock.reset()
 
@@ -722,3 +724,340 @@ func test_terrain_click_still_deselects_when_no_producer_in_chain() -> void:
 	handler.process_left_click_hit(_terrain_hit(Vector3(5, 0, 5)))
 	assert_false(SelectionManager.is_selected(u),
 		"plain terrain click still deselects (Wave 3A.6 regression guard)")
+
+
+# ===========================================================================
+# P1 — enemy units not selectable / commandable (live playtest 2026-06-11)
+# ===========================================================================
+
+func test_left_click_on_enemy_unit_does_not_select() -> void:
+	# Regression (a): a DIRECT left-click on an enemy unit must NOT select it
+	# (selecting it would make it commandable — the live bug). Pre-select an
+	# ally to prove the enemy click does not replace the ally with the enemy.
+	var ally: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	var enemy: FakeUnit = _make_unit(2, Constants.TEAM_TURAN)
+	SelectionManager.select(ally)
+	handler.process_left_click_hit(_hit(enemy, Vector3(3, 0, 0)))
+	assert_false(SelectionManager.is_selected(enemy),
+		"left-click on an enemy unit must NOT select it")
+	# Clicking an unselectable target deselects (matches terrain semantics).
+	assert_eq(SelectionManager.selection_size(), 0,
+		"left-click on enemy deselects the prior selection (terrain semantics)")
+
+
+func test_left_click_tolerance_ignores_enemy_when_nearest() -> void:
+	# Regression (b): the SELECTION tolerance fallback must NOT rescue an enemy
+	# even when the enemy is the NEAREST unit to the terrain hit. Here an enemy
+	# is closer than a friendly; the friendly must be selected (the enemy is
+	# filtered out at query time via query_radius_team(player_team)).
+	var ally_pos: Vector3 = Vector3(0.0, 0.5, 0.0)
+	var ally: FakeUnit = _make_unit_at(1, ally_pos, Constants.TEAM_IRAN)
+	# Enemy nearer to the click than the ally.
+	var click_pos: Vector3 = Vector3(0.6, 0.0, 0.0)
+	var _enemy: FakeUnit = _make_unit_at(
+		2, click_pos + Vector3(0.1, 0.5, 0.0), Constants.TEAM_TURAN)
+	handler.process_left_click_hit(_terrain_hit(click_pos))
+	assert_true(SelectionManager.is_selected(ally),
+		"tolerance selection must resolve the friendly, not the nearer enemy")
+	assert_eq(SelectionManager.selection_size(), 1)
+
+
+func test_right_click_on_enemy_via_direct_hit_does_not_command_enemy() -> void:
+	# The enemy can never be the COMMANDED actor — only the player's selection
+	# is. With only an ally selected, a right-click on an enemy issues an attack
+	# to the ALLY, never a command to the enemy (the enemy isn't in selection).
+	var ally: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	var enemy: FakeUnit = _make_unit(2, Constants.TEAM_TURAN)
+	SelectionManager.select(ally)
+	handler.process_right_click_hit(_hit(enemy, Vector3(3, 0, 0)))
+	assert_eq(enemy._replace_call_count, 0,
+		"enemy must never receive a command — it can't be selected")
+	assert_eq(ally._replace_call_count, 1,
+		"the selected ally is the actor; it attacks the enemy")
+
+
+# ===========================================================================
+# P2 — right-click attack payload carries target_node (id-namespace collision)
+# ===========================================================================
+
+func test_right_click_attack_payload_carries_target_node() -> void:
+	# Regression (c): the Attack payload must thread `target_node` alongside
+	# `target_unit_id`. UnitState_Attacking prefers target_node when present,
+	# avoiding the Unit/Building id-namespace collision (the live bug: id 2
+	# meant Kargar 2 but resolved to the Turan Throne, building id 2).
+	var selected: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	var enemy: FakeUnit = _make_unit(2, Constants.TEAM_TURAN)
+	SelectionManager.select(selected)
+	handler.process_right_click_hit(_hit(enemy, Vector3(3, 0, 0)))
+	assert_true(selected._last_replace_payload.has(&"target_node"),
+		"Attack payload must carry `target_node` (P2)")
+	assert_eq(selected._last_replace_payload[&"target_node"], enemy,
+		"payload.target_node is the clicked enemy unit ref")
+	# And it must still carry target_unit_id for the id-fallback path.
+	assert_eq(int(selected._last_replace_payload[&"target_unit_id"]), enemy.unit_id)
+
+
+# ===========================================================================
+# P3 — right-click enemy building → attack affordance (live playtest 2026-06-11)
+# ===========================================================================
+
+# A Building-shaped fake: joins &"buildings" group on _ready (the canonical
+# discovery seam), exposes team / unit_id / kind / get_footprint_aabb. NOT a
+# gather surface (that's the enemy-Mazra'eh fake below).
+class FakeBuilding extends Node3D:
+	var unit_id: int = -1
+	var team: int = Constants.TEAM_TURAN
+	var kind: StringName = &"throne"
+
+	func _ready() -> void:
+		add_to_group(&"buildings")
+
+	func get_footprint_aabb() -> AABB:
+		return AABB(Vector3(-1, 0, -1), Vector3(2, 2, 2))
+
+
+# An enemy Mazra'eh-shaped fake: a Building (in &"buildings") that ALSO
+# duck-types the gather surface (request_extract + is_gatherable) — the exact
+# collision the P3 precedence must resolve to ATTACK (not gather) when enemy.
+class FakeMazraeh extends Node3D:
+	var unit_id: int = -1
+	var team: int = Constants.TEAM_IRAN
+	var kind: StringName = &"mazraeh"
+	var is_gatherable: bool = true
+
+	func _ready() -> void:
+		add_to_group(&"buildings")
+
+	func get_footprint_aabb() -> AABB:
+		return AABB(Vector3(-1, 0, -1), Vector3(2, 2, 2))
+
+	func request_extract(_unit_id: int) -> bool:
+		return true
+
+
+func _make_building(uid: int, team: int, kind: StringName = &"throne") -> FakeBuilding:
+	var b: FakeBuilding = FakeBuilding.new()
+	b.unit_id = uid
+	b.team = team
+	b.kind = kind
+	add_child_autofree(b)
+	_units.append(b)
+	return b
+
+
+func _make_mazraeh(uid: int, team: int) -> FakeMazraeh:
+	var m: FakeMazraeh = FakeMazraeh.new()
+	m.unit_id = uid
+	m.team = team
+	add_child_autofree(m)
+	_units.append(m)
+	return m
+
+
+# Build a hit dict whose collider is a StaticBody3D child of the building —
+# mirrors production (raycast hits the building's StaticBody3D, not the root).
+func _building_collider_hit(building: Node3D, pos: Vector3) -> Dictionary:
+	var sb: StaticBody3D = StaticBody3D.new()
+	building.add_child(sb)
+	return _hit(sb, pos)
+
+
+func test_right_click_enemy_building_dispatches_attack() -> void:
+	# Regression (d): right-click an enemy building → Attack command per
+	# selected unit, payload { target_unit_id: building.unit_id, target_node }.
+	var selected: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	var enemy_building: FakeBuilding = _make_building(2, Constants.TEAM_TURAN)
+	SelectionManager.select(selected)
+	handler.process_right_click_hit(
+		_building_collider_hit(enemy_building, Vector3(5, 0, 5)))
+	assert_eq(selected._replace_call_count, 1,
+		"selected unit must get exactly one attack command for the enemy building")
+	assert_eq(selected._last_replace_kind, Constants.COMMAND_ATTACK)
+	assert_eq(int(selected._last_replace_payload[&"target_unit_id"]),
+		enemy_building.unit_id,
+		"attack payload.target_unit_id is the building's unit_id")
+	assert_eq(selected._last_replace_payload[&"target_node"], enemy_building,
+		"attack payload.target_node is the building ref (id-namespace safety)")
+
+
+func test_right_click_enemy_building_dispatches_to_every_selected_unit() -> void:
+	var a: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	var b: FakeUnit = _make_unit(2, Constants.TEAM_IRAN)
+	var enemy_building: FakeBuilding = _make_building(3, Constants.TEAM_TURAN)
+	SelectionManager.select(a)
+	SelectionManager.add_to_selection(b)
+	handler.process_right_click_hit(
+		_building_collider_hit(enemy_building, Vector3.ZERO))
+	for u in [a, b]:
+		assert_eq(u._replace_call_count, 1,
+			"every selected unit attacks the enemy building")
+		assert_eq(int(u._last_replace_payload[&"target_unit_id"]),
+			enemy_building.unit_id)
+
+
+func test_right_click_enemy_building_includes_kargar_like_enemy_unit_branch() -> void:
+	# Workers in a mixed selection attack the enemy building too — mirrors the
+	# enemy-UNIT branch (which has no worker exclusion). Do not invent new
+	# behavior: kargars get the attack command exactly as they would for an
+	# enemy unit right-click.
+	var kargar: FakeUnit = _make_kargar(1)
+	var enemy_building: FakeBuilding = _make_building(2, Constants.TEAM_TURAN)
+	SelectionManager.select(kargar)
+	handler.process_right_click_hit(
+		_building_collider_hit(enemy_building, Vector3.ZERO))
+	assert_eq(kargar._replace_call_count, 1,
+		"a worker attacks an enemy building (mirrors enemy-unit branch)")
+	assert_eq(kargar._last_replace_kind, Constants.COMMAND_ATTACK)
+
+
+func test_right_click_own_mazraeh_still_gathers() -> void:
+	# Regression (e): right-click OWN Mazra'eh with a worker selected still
+	# dispatches GATHER (NOT attack). Own building → step 2 falls through →
+	# step 3 gather picks it up via the duck-typed gather surface.
+	var kargar: FakeUnit = _make_kargar(1)
+	var own_mazraeh: FakeMazraeh = _make_mazraeh(2, Constants.TEAM_IRAN)
+	SelectionManager.select(kargar)
+	handler.process_right_click_hit(
+		_building_collider_hit(own_mazraeh, Vector3(4, 0, 0)))
+	assert_eq(kargar._replace_call_count, 1,
+		"worker gets exactly one command for own Mazra'eh")
+	assert_eq(kargar._last_replace_kind, Constants.COMMAND_GATHER,
+		"own Mazra'eh right-click is GATHER, not attack (no regression)")
+	assert_eq(kargar._last_replace_payload[&"target_node"], own_mazraeh,
+		"gather payload.target_node is the own Mazra'eh")
+
+
+func test_right_click_enemy_mazraeh_attacks_not_gathers() -> void:
+	# Regression (f): right-click ENEMY Mazra'eh → ATTACK (not gather). The
+	# enemy-building check (step 2) precedes the gather check (step 3), so the
+	# duck-typed gather surface does NOT route a worker into enemy territory.
+	var kargar: FakeUnit = _make_kargar(1)
+	var enemy_mazraeh: FakeMazraeh = _make_mazraeh(2, Constants.TEAM_TURAN)
+	SelectionManager.select(kargar)
+	handler.process_right_click_hit(
+		_building_collider_hit(enemy_mazraeh, Vector3(4, 0, 0)))
+	assert_eq(kargar._replace_call_count, 1,
+		"worker gets exactly one command for enemy Mazra'eh")
+	assert_eq(kargar._last_replace_kind, Constants.COMMAND_ATTACK,
+		"enemy Mazra'eh right-click is ATTACK, not gather (P3 precedence)")
+	assert_eq(kargar._last_replace_payload[&"target_node"], enemy_mazraeh,
+		"attack payload.target_node is the enemy Mazra'eh")
+
+
+func test_right_click_neutral_building_not_attacked() -> void:
+	# Regression (g): a NEUTRAL building must NOT be auto-attacked (stricter
+	# than `!= player_team` — matches D1's _find_engage_building exclusion).
+	# A non-gather neutral building falls through to ground move.
+	var selected: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	var neutral_building: FakeBuilding = _make_building(2, Constants.TEAM_NEUTRAL)
+	SelectionManager.select(selected)
+	handler.process_right_click_hit(
+		_building_collider_hit(neutral_building, Vector3(5, 0, 5)))
+	assert_eq(selected._replace_call_count, 1,
+		"selected unit still gets exactly one command (the fall-through move)")
+	assert_eq(selected._last_replace_kind, Constants.COMMAND_MOVE,
+		"neutral building is NOT attacked — falls through to ground move")
+
+
+func test_right_click_own_building_falls_through_to_move() -> void:
+	# Own non-gather building (e.g. own Sarbaz-khaneh) → fall through to move
+	# (right-click own production building ≈ rally walk; not a regression of
+	# the left-click ProductionPanel path which is unaffected).
+	var selected: FakeUnit = _make_unit(1, Constants.TEAM_IRAN)
+	var own_building: FakeBuilding = _make_building(2, Constants.TEAM_IRAN,
+		&"sarbaz_khaneh")
+	SelectionManager.select(selected)
+	handler.process_right_click_hit(
+		_building_collider_hit(own_building, Vector3(5, 0, 5)))
+	assert_eq(selected._last_replace_kind, Constants.COMMAND_MOVE,
+		"own non-gather building falls through to ground move")
+
+
+# ===========================================================================
+# A1 — direct building/mine hit precedes the unit-tolerance fallback
+# (pre-PR review finding, 2026-06-12)
+# ===========================================================================
+#
+# Bug recap: process_right_click_hit ran the TEAM_ANY unit-tolerance fallback
+# the instant _resolve_unit_from_hit returned null. A DIRECT click on a
+# mine/building resolves no unit from the collider chain, so the fallback fired
+# — and a friendly worker dwelling within CLICK_TOLERANCE_RADIUS of the hit
+# (workers permanently sit ~1m from a mine they gather) resolved as the
+# tolerance hit and the click no-op'd as "friendly unit", never reaching the
+# building-attack (step 2) or gather (step 3) branches. Regression vs main:
+# on main the resource-node check ran FIRST, so a mine with dwelling workers
+# always gathered. The single-event functional tests above passed because
+# their FakeUnit fixtures register no spatial agent, so the tolerance path
+# resolved nothing under test. These tests register a friendly
+# SpatialAgentComponent inside the tolerance ring to reproduce the live bug.
+
+# Build a Kargar AND register a SpatialAgentComponent child at `pos` so the
+# tolerance fallback would resolve it if the precedence were inverted.
+func _make_kargar_at(uid: int, pos: Vector3) -> FakeUnit:
+	var k: FakeUnit = _make_kargar(uid)
+	k.global_position = pos
+	var sa: SpatialAgentComponent = SpatialAgentComponentScript.new()
+	sa.team = Constants.TEAM_IRAN
+	k.add_child(sa)  # _ready auto-registers with SpatialIndex
+	return k
+
+
+func test_right_click_mine_gathers_despite_friendly_within_tolerance() -> void:
+	# A1 regression: a DIRECT click on a mine with a friendly worker dwelling
+	# within CLICK_TOLERANCE_RADIUS of the hit point must still GATHER, not
+	# no-op as "friendly unit" via the tolerance fallback.
+	var mine_pos: Vector3 = Vector3(5.0, 0.0, 0.0)
+	var k: FakeUnit = _make_kargar_at(1, mine_pos + Vector3(0.5, 0.0, 0.0))
+	# Friendly worker registered ~0.5m from the mine hit — well inside the
+	# 1.5m tolerance ring. Pre-A1-fix this shadowed the gather as a no-op.
+	SelectionManager.select(k)
+	var mine: FakeResourceNode = _make_mine()
+	handler.process_right_click_hit(_hit(mine, mine_pos))
+	assert_eq(k._replace_call_count, 1,
+		"direct mine click must still gather even with a friendly within tolerance")
+	assert_eq(k._last_replace_kind, Constants.COMMAND_GATHER,
+		"direct mine click dispatches GATHER (not friendly-no-op via tolerance)")
+	assert_eq(k._last_replace_payload[&"target_node"], mine,
+		"gather payload.target_node is the directly-clicked mine")
+
+
+func test_right_click_enemy_building_attacks_despite_friendly_within_tolerance() -> void:
+	# A1 regression: a DIRECT click on an enemy building with the player's own
+	# unit dwelling at its edge (within tolerance of the hit) must still ATTACK,
+	# not no-op as "friendly unit" via the tolerance fallback (the besieged-
+	# enemy-building scenario from P3).
+	var bldg_pos: Vector3 = Vector3(8.0, 0.0, 8.0)
+	var attacker: FakeUnit = _make_unit_at(
+		1, bldg_pos + Vector3(0.6, 0.0, 0.0), Constants.TEAM_IRAN)
+	SelectionManager.select(attacker)
+	var enemy_building: FakeBuilding = _make_building(2, Constants.TEAM_TURAN)
+	# Position the building root at the hit point so any walk-up is coherent;
+	# the collider is a StaticBody3D child per production composition.
+	enemy_building.global_position = bldg_pos
+	handler.process_right_click_hit(
+		_building_collider_hit(enemy_building, bldg_pos))
+	assert_eq(attacker._replace_call_count, 1,
+		"direct enemy-building click must still attack even with a friendly within tolerance")
+	assert_eq(attacker._last_replace_kind, Constants.COMMAND_ATTACK,
+		"direct enemy-building click dispatches ATTACK (not friendly-no-op via tolerance)")
+	assert_eq(attacker._last_replace_payload[&"target_node"], enemy_building,
+		"attack payload.target_node is the directly-clicked enemy building")
+
+
+func test_right_click_own_mazraeh_gathers_despite_friendly_within_tolerance() -> void:
+	# A1 regression (Mazra'eh duck-type collision): own Mazra'eh is BOTH a
+	# building (step 2 fall-through, own team) AND a gather surface (step 3).
+	# With a friendly worker dwelling within tolerance, the direct hit must
+	# still route to GATHER — the building resolution gates off the tolerance
+	# fallback, then step 2 falls through (own team), then step 3 gathers.
+	var maz_pos: Vector3 = Vector3(3.0, 0.0, 4.0)
+	var k: FakeUnit = _make_kargar_at(1, maz_pos + Vector3(0.4, 0.0, 0.3))
+	SelectionManager.select(k)
+	var own_mazraeh: FakeMazraeh = _make_mazraeh(2, Constants.TEAM_IRAN)
+	own_mazraeh.global_position = maz_pos
+	handler.process_right_click_hit(
+		_building_collider_hit(own_mazraeh, maz_pos))
+	assert_eq(k._replace_call_count, 1,
+		"own Mazra'eh click gathers even with a friendly worker within tolerance")
+	assert_eq(k._last_replace_kind, Constants.COMMAND_GATHER,
+		"own Mazra'eh direct click is GATHER (tolerance fallback gated off)")

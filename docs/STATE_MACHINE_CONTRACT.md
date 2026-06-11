@@ -108,7 +108,11 @@ States call `transition_to_next()` (§3.4) on completion to dispatch into the ne
 class_name Command extends RefCounted
 
 var kind: StringName    # &"move" | &"attack" | &"gather" | &"build" | &"ability"
-var payload: Dictionary # kind-specific: { target: Vector3 } | { target_unit: Node } | etc.
+var payload: Dictionary # kind-specific: { target: Vector3 } | { target_unit_id: int, target_node: Node } | etc.
+                        # Attack dialect carries BOTH the id and the node ref: ids alone are ambiguous
+                        # (Unit and Building counters share an int space — BUG-H8); readers prefer
+                        # target_node, fall back to target_unit_id. All three issuers (UnitState_AttackMove,
+                        # TuranController, ClickHandler) ship this shape as of 2026-06-12.
 
 func reset() -> void:   # called by pool on rent/return
     kind = &""
@@ -324,7 +328,7 @@ Units the controller commands tick at full 30Hz (their own state machines run ev
 The controller does *not* own a `CommandQueue`. It is the *issuer* of commands, not a receiver. Per AI tick, controller states call:
 
 ```gdscript
-unit.replace_command(&"attack", { target_unit: enemy_throne })   # urgent: drop everything
+unit.replace_command(&"attack", { target_unit_id: enemy_throne.unit_id, target_node: enemy_throne })   # urgent: drop everything
 unit.append_command(&"move", { target: rally_point })            # additive: queue behind current
 ```
 
@@ -423,7 +427,7 @@ tick 280  Gather full → deposits at Throne → Gathering completes.
             because Build is a compound and queue-peek would miss the build phase.
 
 tick 350  Player right-clicks an enemy (no Shift).
-            unit.replace_command(&"attack", { target_unit: enemy })
+            unit.replace_command(&"attack", { target_unit_id: enemy.unit_id, target_node: enemy })
             queue.clear() then push(Attack); fsm.transition_to_next().
             §3.5: Constructing has INTERRUPT_NEVER but that only blocks damage.
             Player commands win. Constructing.exit() refunds half-built materials.

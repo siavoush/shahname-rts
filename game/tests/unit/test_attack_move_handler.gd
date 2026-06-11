@@ -50,6 +50,7 @@ var _units: Array = []
 
 func before_each() -> void:
 	SimClock.reset()
+	GameState.reset()  # player_team back to TEAM_IRAN (P1 gate SSOT)
 	SelectionManager.reset()
 	handler = AttackMoveHandlerScript.new()
 	add_child_autofree(handler)
@@ -63,6 +64,7 @@ func after_each() -> void:
 			u.queue_free()
 	_units.clear()
 	SelectionManager.reset()
+	GameState.reset()
 	SimClock.reset()
 
 
@@ -168,3 +170,32 @@ func test_process_hit_with_no_selection_is_noop() -> void:
 	handler.process_attack_move_hit(_terrain_hit(Vector3.ZERO))
 	assert_false(handler.is_pending(),
 		"pending must clear even with no selection")
+
+
+# ---------------------------------------------------------------------------
+# P1 regression (live playtest 2026-06-11) — attack-move can never arm with or
+# dispatch to a non-player-team unit. AttackMoveHandler arms on
+# SelectionManager.selection_size>0 and dispatches to selected_units, and the
+# P1 gate blocks the enemy from ever entering the selection. This is the "free"
+# consequence the canonical-seam fix delivers — no separate guard in
+# attack_move_handler.gd.
+# ---------------------------------------------------------------------------
+
+func _make_enemy_unit(uid: int) -> FakeUnit:
+	var u: FakeUnit = _make_unit(uid)
+	u.team = Constants.TEAM_TURAN
+	return u
+
+
+func test_enemy_select_attempt_leaves_attack_move_unarmed_and_undispatched() -> void:
+	# Attempt to select an enemy (rejected by the gate). Selection stays empty,
+	# so attack-move can't arm/dispatch to it.
+	var enemy: FakeUnit = _make_enemy_unit(1)
+	SelectionManager.select(enemy)  # rejected
+	assert_eq(SelectionManager.selection_size(), 0,
+		"enemy is rejected by the P1 selection gate")
+	# Even if pending is forced, the dispatch has no units to command.
+	handler.set_pending(true)
+	handler.process_attack_move_hit(_terrain_hit(Vector3(5, 0, 5)))
+	assert_eq(enemy._replace_call_count, 0,
+		"attack-move must never dispatch to a non-player-team unit")

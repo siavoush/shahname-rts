@@ -58,12 +58,30 @@ class SignalRecorder extends RefCounted:
 		emissions.append(copy)
 
 
+# Team-aware fake unit — exposes `team` so the P1 selection gate
+# (_is_selectable_team) can reject non-player-team entities. Separate from
+# FakeUnit (which is intentionally team-less to assert the allow-on-absent
+# rule survives the gate).
+class TeamedFakeUnit extends Node3D:
+	var unit_id: int = -1
+	var team: int = Constants.TEAM_IRAN
+	var command_queue: Object = null
+	var _selectable: Variant = null
+
+	func get_selectable() -> Object:
+		return _selectable
+
+	func replace_command(_kind: StringName, _payload: Dictionary) -> void:
+		pass
+
+
 var _recorder: SignalRecorder
 var _units: Array = []
 
 
 func before_each() -> void:
 	SimClock.reset()
+	GameState.reset()  # player_team back to TEAM_IRAN (P1 gate SSOT)
 	SelectionManager.reset()
 	_recorder = SignalRecorder.new()
 	# Re-connect every test so a freshly-reset autoload still sees us.
@@ -83,7 +101,22 @@ func after_each() -> void:
 			u.queue_free()
 	_units.clear()
 	SelectionManager.reset()
+	GameState.reset()
 	SimClock.reset()
+
+
+# Construct a team-aware fake unit with a real SelectableComponent attached.
+func _make_teamed_unit(uid: int, team: int) -> TeamedFakeUnit:
+	var u: TeamedFakeUnit = TeamedFakeUnit.new()
+	u.unit_id = uid
+	u.team = team
+	add_child_autofree(u)
+	var sc: Variant = SelectableComponentScript.new()
+	sc.unit_id = uid
+	u.add_child(sc)
+	u._selectable = sc
+	_units.append(u)
+	return u
 
 
 # Construct a fake unit with a real SelectableComponent attached. Adds it to
@@ -294,3 +327,81 @@ func test_selected_units_returns_a_copy() -> void:
 	sel.clear()
 	assert_eq(SelectionManager.selection_size(), 1,
 		"selected_units returns a fresh copy; mutating it must not leak")
+
+
+# ===========================================================================
+# P1 team gate (live playtest 2026-06-11) — non-player-team units are NOT
+# selectable. Canonical seam: enemy can't be selected → enemy can't be
+# commanded (the live bug had a Turan unit selected then ordered to attack the
+# player's own worker).
+# ===========================================================================
+
+func test_select_rejects_enemy_team_unit() -> void:
+	# Regression (a): an enemy (TEAM_TURAN) unit must NOT enter selection via
+	# select(). GameState.player_team is TEAM_IRAN by default.
+	var enemy: TeamedFakeUnit = _make_teamed_unit(1, Constants.TEAM_TURAN)
+	SelectionManager.select(enemy)
+	assert_eq(SelectionManager.selection_size(), 0,
+		"enemy-team unit must be rejected by select()")
+	assert_false(SelectionManager.is_selected(enemy))
+	assert_eq(_recorder.emissions.size(), 0,
+		"rejected enemy select() must not emit selection_changed")
+
+
+func test_select_accepts_player_team_unit() -> void:
+	var ally: TeamedFakeUnit = _make_teamed_unit(1, Constants.TEAM_IRAN)
+	SelectionManager.select(ally)
+	assert_eq(SelectionManager.selection_size(), 1,
+		"player-team unit must be selectable")
+	assert_true(SelectionManager.is_selected(ally))
+
+
+func test_select_only_on_enemy_deselects_all() -> void:
+	# Single-click on an enemy must NOT select it; it deselects (matches the
+	# left-click-on-terrain semantics — clicking something unselectable clears
+	# the current selection).
+	var ally: TeamedFakeUnit = _make_teamed_unit(1, Constants.TEAM_IRAN)
+	var enemy: TeamedFakeUnit = _make_teamed_unit(2, Constants.TEAM_TURAN)
+	SelectionManager.select(ally)
+	_recorder.emissions.clear()
+	SelectionManager.select_only(enemy)
+	assert_eq(SelectionManager.selection_size(), 0,
+		"select_only(enemy) deselects all instead of selecting the enemy")
+	assert_false(SelectionManager.is_selected(enemy))
+	assert_false(SelectionManager.is_selected(ally))
+
+
+func test_add_to_selection_rejects_enemy() -> void:
+	# add_to_selection delegates to select(), so the gate applies — an enemy
+	# cannot be Shift+clicked into an existing selection.
+	var ally: TeamedFakeUnit = _make_teamed_unit(1, Constants.TEAM_IRAN)
+	var enemy: TeamedFakeUnit = _make_teamed_unit(2, Constants.TEAM_TURAN)
+	SelectionManager.select(ally)
+	SelectionManager.add_to_selection(enemy)
+	assert_eq(SelectionManager.selection_size(), 1,
+		"add_to_selection must reject an enemy (gate inherited from select())")
+	assert_true(SelectionManager.is_selected(ally))
+	assert_false(SelectionManager.is_selected(enemy))
+
+
+func test_team_gate_follows_game_state_player_team() -> void:
+	# The gate reads GameState.player_team (SSOT) — flipping the player team to
+	# Turan makes Turan units selectable and Iran units rejected.
+	GameState.player_team = Constants.TEAM_TURAN
+	var iran: TeamedFakeUnit = _make_teamed_unit(1, Constants.TEAM_IRAN)
+	var turan: TeamedFakeUnit = _make_teamed_unit(2, Constants.TEAM_TURAN)
+	SelectionManager.select(iran)
+	assert_eq(SelectionManager.selection_size(), 0,
+		"with player_team=Turan, an Iran unit is the enemy and is rejected")
+	SelectionManager.select(turan)
+	assert_true(SelectionManager.is_selected(turan),
+		"with player_team=Turan, a Turan unit is selectable")
+
+
+func test_team_less_fixture_still_selectable() -> void:
+	# The allow-on-absent rule: a unit WITHOUT a `team` field passes the gate
+	# (preserves the team-less FakeUnit fixtures + non-team selectables).
+	var u: FakeUnit = _make_unit(1)
+	SelectionManager.select(u)
+	assert_eq(SelectionManager.selection_size(), 1,
+		"team-less fixture must remain selectable (allow-on-absent)")

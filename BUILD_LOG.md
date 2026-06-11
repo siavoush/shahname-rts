@@ -12,12 +12,27 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-06-11 (Wave C+D close aggregate)
+last_updated: 2026-06-12 (input-layer hotfix wave)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-06-12 — Input-layer hotfix wave: P1/P2/P3 playtest bugs + review findings A1/A3 (branch `fix/input-layer-playtest-bugs`)
+
+**Trigger:** the 2026-06-11 live playtest (previous entry). All three bugs input-layer only; sim untouched. **Suite 1711 / 0 failing (3 pre-existing pending); lint L1–L7 clean.** Workflow: ui-developer implementer → pre-PR panel (godot-code-reviewer MERGE-AS-IS + architecture-reviewer FIX-FIRST) → finisher closed A1+A3; lead closed docs (A2: ARCH §2 Selection row + §6 v0.40.0 + this entry; A4: STATE_MACHINE_CONTRACT §2.4 payload examples → canonical `{target_unit_id, target_node}` dialect).
+
+1. **P1 (254b186)** — team gate at SelectionManager (`select`/`select_only` reject `team != GameState.player_team`, strict equality, NEUTRAL rejected, loud logs; `add_to_selection` inherits by delegation). Enemy units no longer selectable or commandable from ANY input path; ControlGroups/AttackMoveHandler safe transitively, regression-tested. View-only enemy inspection escalated to QUESTIONS_FOR_DESIGN (2026-06-12 entry).
+2. **P2 (361405d)** — ClickHandler attack payload threads `target_node` alongside `target_unit_id` (BUG-H8 namespace-collision fix in the player path; matches D1 dialect; UnitState_Attacking prefers the node ref).
+3. **P3 (361405d)** — right-click enemy building = ATTACK. Precedence: direct hits (enemy unit > enemy building via `&"buildings"` ancestor walk, NEUTRAL excluded > gather) before the friendly unit-tolerance rescue, then ground move. Own Mazra'eh still gathers; enemy Mazra'eh is attacked (ordering, not special-casing).
+4. **A1 (00ac22f, HIGH, arch-reviewer catch)** — the friendly-tolerance fallback ran BEFORE direct building/mine resolution and shadowed it (a right-click squarely on an enemy building with a friendly nearby would have rescued the friendly and MOVED instead of attacking). Direct-hit resolution now precedes tolerance. Regression test pins it.
+5. **A3 (6291010)** — box-select + double-click hard-coded `TEAM_IRAN`; aligned to `GameState.player_team` (one SSOT for "player team" across all input paths).
+6. **Fixture truth-fix (361405d)** — 7 integration `_spawn_kargar` helpers spawned NEUTRAL-team kargars (test-only artifact); now TEAM_IRAN, production-accurate. +20 tests overall.
+
+**Carry-forwards:** view-only enemy selection (design question, Phase-5 UI candidate); difficulty selection + match end-state remain design-chat scope (routed with the decision packet).
 
 ---
 

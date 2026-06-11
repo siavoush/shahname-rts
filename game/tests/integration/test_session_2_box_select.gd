@@ -46,6 +46,10 @@ func after_each() -> void:
 # Spawn a kargar at world_pos; register in _units for cleanup.
 func _spawn_kargar(pos: Vector3 = Vector3.ZERO) -> Variant:
 	var u: Variant = KargarScene.instantiate()
+	# P1 (live playtest 2026-06-11): player units are TEAM_IRAN in production
+	# (main.gd:351); the player-team-only selection gate rejects the prior
+	# default-NEUTRAL fixture, so assign the player's team explicitly.
+	u.set(&"team", Constants.TEAM_IRAN)
 	add_child_autofree(u)
 	u.global_position = pos
 	_units.append(u)

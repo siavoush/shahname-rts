@@ -71,6 +71,54 @@ var selected_units: Array:
 
 
 # ============================================================================
+# Team gate (P1 — live playtest 2026-06-11)
+# ============================================================================
+
+## P1 BLOCKER fix (live playtest 2026-06-11): enemy units were selectable and
+## therefore COMMANDABLE — a Turan piyade got selected via the click-tolerance
+## fallback, then the player's right-click issued an attack command TO the enemy
+## unit, which killed the player's own Kargar on the player's order.
+##
+## Root cause was an INCONSISTENCY: box-select (box_select_handler.gd) and
+## double-click-select (double_click_select.gd) were already Iran-only (they
+## filter candidates to `team == TEAM_IRAN` during the scene walk), but
+## single-click and the tolerance fallback routed straight to select_only()
+## with NO team check. SelectionManager is the ONE canonical seam every input
+## path funnels through (single-click, box, double-click, control-group bind via
+## the snapshot of selected_units, attack-move arming via selection_size) — so
+## gating HERE makes all paths consistent without scattering has_method/team
+## guards at every call site (forbidden by STUDIO_PROCESS §9.M7).
+##
+## Consequences that fall out automatically (no separate guard needed):
+##   - ControlGroups.bind snapshots selected_units → can never capture an enemy.
+##   - AttackMoveHandler arms on selection_size>0 and dispatches to
+##     selected_units → can never arm with / command an enemy.
+##
+## Gate semantics: a unit is rejected only when it HAS a `team` field whose
+## value differs from GameState.player_team. A unit with NO `team` field passes
+## through unchanged (test fixtures / non-team selectables) — this preserves the
+## defensive duck-typing convention used throughout the input layer and avoids
+## breaking the team-less FakeUnit fixtures in test_selection_manager.gd.
+func _is_selectable_team(unit: Object) -> bool:
+	if unit == null:
+		return false
+	# No team field → not a team entity; allow (preserves prior behavior for
+	# team-less fixtures). Enemy units always carry a `team` field.
+	if not (&"team" in unit):
+		return true
+	var unit_team: int = int(unit.get(&"team"))
+	if unit_team == GameState.player_team:
+		return true
+	# Rejection branch — loud observability log (no silent no-ops; N=8 incident
+	# history, observability rule). P1 live playtest 2026-06-11.
+	var uid_v: Variant = unit.get(&"unit_id")
+	print("[selection] REJECT non-player-team unit id=", uid_v,
+		" team=", unit_team, " (player_team=", GameState.player_team,
+		") — not selectable")
+	return false
+
+
+# ============================================================================
 # Public API
 # ============================================================================
 
@@ -86,6 +134,10 @@ func select(unit: Object) -> void:
 	if unit == null:
 		return
 	if not is_instance_valid(unit):
+		return
+	# P1 (live playtest 2026-06-11): reject non-player-team units at the
+	# canonical seam so no input path can select (and thus command) an enemy.
+	if not _is_selectable_team(unit):
 		return
 	# Idempotency: already selected → no-op (avoids signal storms on rapid clicks).
 	for existing in _selected_units:
@@ -104,6 +156,14 @@ func select_only(unit: Object) -> void:
 	if unit == null or not is_instance_valid(unit):
 		# Treat as a deselect-all — clicking on null/freed unit shouldn't leave
 		# stale state in the selection set.
+		deselect_all()
+		return
+	# P1 (live playtest 2026-06-11): single-click on a non-player-team unit must
+	# NOT enter selection. We deselect-all to match the documented left-click-
+	# on-terrain semantics (clicking something you can't select clears the
+	# current selection) — consistent feel, no commandable enemy. The rejection
+	# is logged inside _is_selectable_team.
+	if not _is_selectable_team(unit):
 		deselect_all()
 		return
 	# Deselect everyone EXCEPT the target (so the target keeps its ring on

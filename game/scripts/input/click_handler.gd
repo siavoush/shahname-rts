@@ -147,11 +147,30 @@ func process_left_click_hit(hit: Dictionary) -> void:
 		SelectionManager.deselect_all()
 		return
 	var unit: Object = _resolve_unit_from_hit(hit)
+	if unit != null and not _is_player_team(unit):
+		# P1 (live playtest 2026-06-11): a DIRECT left-click on an enemy unit
+		# must NOT enter selection. We null it out so the flow falls through to
+		# the producer-ancestor / deselect branch below — selecting an enemy
+		# would make it commandable (the live bug: the enemy then attacked the
+		# player's own worker on the player's right-click). SelectionManager
+		# also gates this, but resolving null here keeps the log + branch
+		# semantics clean and consistent with the tolerance path.
+		if DEBUG_LOG_CLICKS:
+			print("[click] LEFT: enemy unit id=", unit.get(&"unit_id"),
+				" team=", _read_team(unit), " — not selectable")
+		unit = null
 	if unit == null:
 		# Tolerance fallback — terrain hit may still be NEAR a selectable unit.
 		# Visible mesh > collision shape, so a click on a unit's silhouette can
-		# fall through to terrain. SpatialIndex.query_radius rescues those.
-		unit = _resolve_unit_from_tolerance(hit)
+		# fall through to terrain. SpatialIndex rescues those.
+		#
+		# P1 (live playtest 2026-06-11): the SELECTION tolerance must only
+		# rescue player-team units. Without the team filter the fallback would
+		# pick the nearest unit regardless of team — an enemy standing closer
+		# than a friendly would resolve, SelectionManager would then reject it,
+		# and the click would deselect instead of selecting the friendly the
+		# player was aiming for. Filter the query to the player team.
+		unit = _resolve_unit_from_tolerance(hit, GameState.player_team)
 	if unit != null:
 		if DEBUG_LOG_CLICKS:
 			var uid_v: Variant = unit.get(&"unit_id")
@@ -200,19 +219,27 @@ func _handle_right_click(screen_pos: Vector2) -> void:
 ## short-circuits, but this method is defensive so direct test calls behave
 ## the same way as the input-driven path).
 ##
-## Dispatch table (Phase 2 session 1 wave 2B + Phase 3 wave 1B):
-##   - hit empty / no selection → no-op.
-##   - hit is a ResourceNode AND at least one selected unit is a worker
-##     (responds to &"gather" command) → Gather Command per worker. Payload
-##     carries target_node (Node ref); UnitState_Gathering walks to it,
-##     dwells, extracts (Phase 3 wave 1B).
-##   - hit is a Unit AND hit_unit.team != selected_team → Attack Command per
-##     selected unit. Payload carries target_unit_id; UnitState_Attacking
-##     resolves the live ref via scene-tree walk.
-##   - hit is a Unit AND hit_unit.team == selected_team → no-op (friendly
-##     fire / follow / guard are later phases — documented choice).
-##   - hit is terrain (collider isn't unit-shaped) → group-move dispatch via
-##     GroupMoveController (existing wave 2C behavior).
+## Dispatch table — precedence order (Phase 2 wave 2B + Phase 3 wave 1B +
+## P1/P2/P3 hotfix, live playtest 2026-06-11):
+##   0. hit empty / no selection → no-op.
+##   1. ENEMY UNIT (opposing team) → Attack Command per selected unit. Payload
+##      carries BOTH target_unit_id AND target_node (P2 — id-only collides with
+##      the Building id-namespace; see below).
+##   2. ENEMY BUILDING (opposing team, strictly excludes NEUTRAL) → Attack
+##      Command per selected unit. Payload { target_unit_id, target_node }
+##      (P3). Resolved via &"buildings" group membership on a collider ancestor.
+##   3. GATHER — neutral mines / own-or-neutral gather-capable buildings
+##      (Mazra'eh) → Gather Command per worker. Enemy Mazra'eh never reaches
+##      here (caught at step 2 — it is an enemy building first, gather surface
+##      second). Combat units in the selection are skipped (SC2 convention).
+##   4. FRIENDLY UNIT (same team) → no-op (follow/guard/friendly-fire later).
+##   5. GROUND → group-move dispatch via GroupMoveController.
+##
+## Why enemy-building precedes gather: a Mazra'eh DUCK-TYPES the gather surface
+## (request_extract). Without the building-attack check first, an enemy Mazra'eh
+## would route to gather (workers walking INTO enemy territory to farm it).
+## Team-gating the building-attack check keeps OWN/NEUTRAL Mazra'eh as gather
+## (current behavior, not regressed) while ENEMY Mazra'eh becomes attack.
 func process_right_click_hit(hit: Dictionary) -> void:
 	var sel: Array = SelectionManager.selected_units
 	if sel.is_empty():
@@ -225,34 +252,46 @@ func process_right_click_hit(hit: Dictionary) -> void:
 		if DEBUG_LOG_CLICKS:
 			print("[click] RIGHT: no raycast hit → no-op")
 		return
-	# Phase 3 wave 1B — Gather routing. If the hit is a ResourceNode (duck-typed
-	# via has_method(&"request_extract")), dispatch a gather command to every
-	# selected unit that's a worker (duck-typed via unit_type == &"kargar").
-	# Combat units in the selection are skipped — a mixed-selection right-click
-	# on a mine moves the workers to gather while leaving combat units idle
-	# (no-op rather than walk; the player can right-click terrain after to
-	# move them, or split-select). This matches StarCraft 2's "workers gather,
-	# combat units don't auto-follow" UX.
-	var hit_node: Node = _resolve_resource_node_from_hit(hit)
-	if hit_node != null:
-		_dispatch_gather_to_workers(sel, hit_node)
-		return
-	# Branch on hit-unit team relative to the selection's team. The reference
-	# team is read off the first selected unit's `team` field (selection is
-	# always single-team in MVP — Iran selecting their own; cross-team multi-
-	# select would imply spectator mode which is out of scope for Phase 2).
+	# Reference team is the player's team (SSOT — GameState.player_team). The
+	# P1 selection gate guarantees the selection is player-team-only, so this
+	# equals sel[0].team; reading the SSOT directly avoids a stale-selection
+	# edge case and is the same source the simulation uses for "opposing".
+	var sel_team: int = GameState.player_team
+	# ---- Resolve ALL DIRECT hits up front (A1 fix, live playtest 2026-06-12) ----
+	# A1: the unit-tolerance fallback MUST run only after every DIRECT resolution
+	# (unit → building → resource) has failed. Previously the fallback ran the
+	# instant _resolve_unit_from_hit returned null — which is exactly what
+	# happens on a DIRECT click on a mine/building (their collider is not
+	# unit-shaped). A friendly worker dwelling within CLICK_TOLERANCE_RADIUS of
+	# the mine/building then resolved through the TEAM_ANY tolerance and the
+	# click no-op'd as "friendly unit" — never reaching the building-attack
+	# (step 2) or gather (step 3) branches. Regression vs main: on main the
+	# resource-node check ran first, so a mine with dwelling workers always
+	# gathered; the precedence inversion silently broke add-more-workers and
+	# besieged-enemy-building clicks. The dispatch-table comment documents
+	# friendly-no-op as step 4 (AFTER gather) — resolving direct building /
+	# resource hits before the tolerance fallback makes the code match the doc.
+	var hit_building: Node = _resolve_building_from_hit(hit)
+	var hit_resource: Node = _resolve_resource_node_from_hit(hit)
+	# ---- Step 1: ENEMY UNIT attack (highest precedence) ----
 	var hit_unit: Object = _resolve_unit_from_hit(hit)
-	if hit_unit == null:
+	if hit_unit == null and hit_building == null and hit_resource == null:
 		# Tolerance fallback: a right-click slightly off-center on an enemy's
 		# silhouette can hit terrain instead of the unit's collision pad. If a
 		# selectable unit lives within Constants.CLICK_TOLERANCE_RADIUS of the
-		# terrain hit, treat the click as if it had hit that unit.
+		# terrain hit, treat the click as if it had hit that unit. No team
+		# filter (TEAM_ANY) — both enemy (→attack) and friendly (→no-op) must
+		# resolve here; the team branch below decides the outcome.
+		#
+		# A1 gate: run the fallback ONLY when the direct hit was neither a
+		# building nor a resource node. A DIRECT building/mine click must flow
+		# to step 2 / step 3 even if friendlies dwell within tolerance of the
+		# hit point (workers permanently sit ~1m from a mine they gather).
 		hit_unit = _resolve_unit_from_tolerance(hit)
 	if hit_unit != null:
 		var hit_team: int = _read_team(hit_unit)
-		var sel_team: int = _read_team(sel[0])
 		if hit_team != sel_team:
-			# Enemy: dispatch Attack command per selected unit.
+			# Enemy unit: dispatch Attack command per selected unit.
 			var target_uid_v: Variant = hit_unit.get(&"unit_id")
 			if target_uid_v == null or typeof(target_uid_v) != TYPE_INT:
 				if DEBUG_LOG_CLICKS:
@@ -266,18 +305,82 @@ func process_right_click_hit(hit: Dictionary) -> void:
 			# + range checks. Group formation engagement priority (split fire,
 			# focus fire) is Phase 3+ — for now every selected friendly attacks
 			# the same target.
+			#
+			# P2 (live playtest 2026-06-11): thread `target_node` alongside
+			# `target_unit_id`. Units and Buildings share the global unit_id
+			# counter, so an id-only payload let UnitState_Attacking resolve a
+			# unit id to a same-id BUILDING (the live bug: {target_unit_id: 2}
+			# meant Kargar 2 but resolved to the Turan Throne, building id 2).
+			# Attacking prefers `target_node` when present
+			# (unit_state_attacking.gd:138). Same payload shape D1 ships in
+			# unit_state_attack_move.gd:359-362.
 			for u in sel:
 				if u != null and is_instance_valid(u):
 					u.replace_command(
 						Constants.COMMAND_ATTACK,
-						{&"target_unit_id": target_uid},
+						{&"target_unit_id": target_uid, &"target_node": hit_unit},
 					)
 			return
-		# Friendly: no-op. Follow / guard / friendly-fire are later phases.
+		# Friendly unit: no-op. Follow / guard / friendly-fire are later phases.
 		if DEBUG_LOG_CLICKS:
 			print("[click] RIGHT: hit friendly unit (same team=",
 				sel_team, ") → no-op")
 		return
+	# ---- Step 2: ENEMY BUILDING attack (P3) ----
+	# `hit_building` resolved up-front via &"buildings" group membership on a
+	# collider ancestor (the canonical building-discovery seam — building.gd
+	# joins the group at _ready; D1 stage-2 acquisition uses the same group).
+	# Buildings expose team / unit_id / get_footprint_aabb by construction.
+	if hit_building != null:
+		var b_team: int = _read_team(hit_building)
+		# Opposing-team-only, STRICTER than `!= sel_team`: TEAM_NEUTRAL is
+		# excluded (matches D1's _find_engage_building rationale — never
+		# auto-attack a neutral / unclaimed building; deliberate raids on
+		# neutral buildings remain an explicit later-phase decision). An
+		# under-construction ENEMY building IS attackable (its team is already
+		# opposing — only NEUTRAL is the exclusion, and a placed enemy building
+		# carries the enemy team from place_at).
+		if b_team != sel_team and b_team != Constants.TEAM_NEUTRAL:
+			var b_uid_v: Variant = hit_building.get(&"unit_id")
+			if b_uid_v == null or typeof(b_uid_v) != TYPE_INT:
+				if DEBUG_LOG_CLICKS:
+					print("[click] RIGHT: enemy building but unit_id missing/typed wrong → no-op")
+				return
+			var b_uid: int = int(b_uid_v)
+			var b_kind_v: Variant = hit_building.get(&"kind")
+			var dispatched: int = 0
+			# Mirror the enemy-UNIT branch exactly for mixed selections,
+			# INCLUDING workers (kargar): the enemy-unit branch dispatches the
+			# Attack command to EVERY selected unit with no worker exclusion, so
+			# this branch does the same (do not invent new behavior). Workers
+			# walking to attack a building is the existing enemy-unit behavior
+			# carried forward; balance/UX of worker-attack is a later concern.
+			for u in sel:
+				if u != null and is_instance_valid(u):
+					u.replace_command(
+						Constants.COMMAND_ATTACK,
+						{&"target_unit_id": b_uid, &"target_node": hit_building},
+					)
+					dispatched += 1
+			if DEBUG_LOG_CLICKS:
+				print("[click] RIGHT: attack building command target_unit_id=",
+					b_uid, " kind=", b_kind_v, " dispatched=", dispatched)
+			return
+		# Own / neutral building: fall through. If it is a gather-capable
+		# building (own Mazra'eh) the gather check below picks it up; otherwise
+		# it falls to ground-move (right-click own Sarbaz-khaneh ≈ rally walk).
+		if DEBUG_LOG_CLICKS:
+			print("[click] RIGHT: building team=", b_team,
+				" not opposing → fall through (gather/move)")
+	# ---- Step 3: GATHER (neutral mines / own-or-neutral gather buildings) ----
+	# `hit_resource` resolved up-front (duck-typed via has_method(&"request_extract")
+	# + is_gatherable). Dispatch a gather command to every selected worker. An
+	# ENEMY Mazra'eh never reaches here — it was caught by step 2 as an enemy
+	# building. Own/neutral Mazra'eh + mines reach here unchanged (no regression).
+	if hit_resource != null:
+		_dispatch_gather_to_workers(sel, hit_resource)
+		return
+	# ---- Step 4 (implicit): ground move ----
 	var target: Vector3 = hit.get(&"position", Vector3.ZERO)
 	if DEBUG_LOG_CLICKS:
 		print("[click] RIGHT: move command target=", target, " selected=", sel.size())
@@ -299,6 +402,18 @@ func _read_team(unit: Object) -> int:
 	if not (&"team" in unit):
 		return Constants.TEAM_NEUTRAL
 	return int(unit.get(&"team"))
+
+
+## True iff `unit` belongs to the player's team. Units without a `team` field
+## are treated as player-team (matches the team-less duck-typed fixture
+## convention and SelectionManager._is_selectable_team's allow-on-absent rule).
+## P1 (live playtest 2026-06-11).
+func _is_player_team(unit: Object) -> bool:
+	if unit == null:
+		return false
+	if not (&"team" in unit):
+		return true
+	return int(unit.get(&"team")) == GameState.player_team
 
 
 # ============================================================================
@@ -376,17 +491,24 @@ func _resolve_unit_from_hit(hit: Dictionary) -> Object:
 ## game as broken — clicks they intended for the unit walked the selection
 ## past it (bug surfaced in Phase 2 session 1 live-test).
 ##
-## SpatialIndex.query_radius returns SpatialAgentComponent nodes (their parent
+## SpatialIndex query returns SpatialAgentComponent nodes (their parent
 ## is the unit). We walk each parent through the same `_is_unit_shaped`
 ## duck-type as `_resolve_unit_from_hit` to keep the contract identical.
 ## XZ-projection is the contract per docs/SIMULATION_CONTRACT.md §3.1; Y is
 ## ignored when measuring distance from the hit point.
-func _resolve_unit_from_tolerance(hit: Dictionary) -> Object:
+##
+## `team_filter` (P1, live playtest 2026-06-11): when not Constants.TEAM_ANY,
+## the SpatialIndex query is team-scoped via query_radius_team so only agents on
+## that team are candidates. The LEFT-click selection path passes
+## GameState.player_team (rescue only the player's own units — never resolve an
+## enemy as a selection target). The RIGHT-click attack path passes TEAM_ANY so
+## the existing enemy-attack / friendly-no-op tolerance resolution is preserved.
+func _resolve_unit_from_tolerance(hit: Dictionary, team_filter: int = Constants.TEAM_ANY) -> Object:
 	if not hit.has(&"position"):
 		return null
 	var hit_pos: Vector3 = hit.get(&"position", Vector3.ZERO)
-	var nearby: Array = SpatialIndex.query_radius(
-		hit_pos, Constants.CLICK_TOLERANCE_RADIUS)
+	var nearby: Array = SpatialIndex.query_radius_team(
+		hit_pos, Constants.CLICK_TOLERANCE_RADIUS, team_filter)
 	if nearby.is_empty():
 		return null
 	var best: Node = null
@@ -452,6 +574,34 @@ func _resolve_resource_node_from_hit(hit: Dictionary) -> Node:
 	var node: Node = collider_v
 	while node != null:
 		if _is_resource_node_shaped(node):
+			return node
+		node = node.get_parent()
+	return null
+
+
+## Resolve a Building from a raycast hit (P3, live playtest 2026-06-11).
+##
+## Canonical building-discovery seam: walk up the collider ancestor chain
+## looking for the first node in the &"buildings" SceneTree group. Every
+## Building joins that group at _ready (building.gd:358) — it is the SSOT
+## "I am a building, not a unit" marker (ARCHITECTURE.md §6 v0.20.4) and the
+## same seam D1 stage-2 acquisition (_find_engage_building) uses. Members are
+## Building base by construction, so they expose team / unit_id /
+## get_footprint_aabb. The building's clickable surface is its StaticBody3D
+## child (per the BUG-07 lesson), so the raycast hits the StaticBody3D and we
+## walk up to the Building root.
+##
+## Returns null if no &"buildings"-group ancestor exists in the chain (terrain,
+## units, resource props, etc.).
+func _resolve_building_from_hit(hit: Dictionary) -> Node:
+	var collider_v: Variant = hit.get(&"collider", null)
+	if collider_v == null:
+		return null
+	if not (collider_v is Node):
+		return null
+	var node: Node = collider_v as Node
+	while node != null:
+		if node.is_in_group(&"buildings"):
 			return node
 		node = node.get_parent()
 	return null

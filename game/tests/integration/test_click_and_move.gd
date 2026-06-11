@@ -85,6 +85,11 @@ func after_each() -> void:
 # documented in docs/ARCHITECTURE.md §6 v0.4.0.
 func _spawn_kargar(pos: Vector3 = Vector3.ZERO) -> Variant:
 	var u: Variant = KargarScene.instantiate()
+	# P1 (live playtest 2026-06-11): assign the player's team so the selection
+	# gate accepts these kargars. Production spawns all player units as
+	# TEAM_IRAN (main.gd:351); the prior default-NEUTRAL was a test-only
+	# fixture artifact that the new player-team-only selection gate rejects.
+	u.set(&"team", Constants.TEAM_IRAN)
 	u.global_position = pos
 	add_child_autofree(u)
 	# Force-inject mock onto the component in case PathSchedulerService timing

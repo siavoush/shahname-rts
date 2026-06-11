@@ -64,6 +64,10 @@ func after_each() -> void:
 
 func _spawn_kargar(pos: Vector3 = Vector3.ZERO) -> Variant:
 	var u: Variant = KargarScene.instantiate()
+	# P1 (live playtest 2026-06-11): player units are TEAM_IRAN in production
+	# (main.gd:351); the player-team-only selection gate rejects the prior
+	# default-NEUTRAL fixture, so assign the player's team explicitly.
+	u.set(&"team", Constants.TEAM_IRAN)
 	add_child_autofree(u)
 	u.global_position = pos
 	# Force-inject mock onto the component (double-safety pattern from
