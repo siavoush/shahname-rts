@@ -14,6 +14,7 @@
 # Usage:
 #   tools/run_ai_vs_ai_batch.sh <N> [--master-seed <S>] [--output <dir>]
 #                               [--godot <path>] [--timeout-ticks <T>]
+#                               [--roster <full|skirmish>] [--profile-ticks]
 #                               [--dry-run]
 #
 # Required:
@@ -28,6 +29,17 @@
 #   --godot <path>       Path to Godot binary.
 #                        Default: /Applications/Godot.app/Contents/MacOS/Godot
 #   --timeout-ticks <T>  Hard match timeout in sim ticks (default: 60000).
+#   --roster <preset>    Starting-roster preset passed through to main.gd
+#                        (Wave C1 roster-as-knob): full (default, the
+#                        canonical 33-unit spawn) or skirmish (reduced —
+#                        5 workers + 2 Piyade per side, no RPS trios) for
+#                        fast measurement iteration. Skirmish results are
+#                        NOT full-roster balance signals; the roster echoes
+#                        in this banner and in each match log.
+#   --profile-ticks      Pass --profile-ticks to the headless runner: per-
+#                        sim-phase '[profile]' timing blocks land in each
+#                        match_<N>.log (every 3000 ticks + at match end).
+#                        Log-only; the NDJSON schema is unchanged.
 #   --dry-run            Write fixture NDJSON lines instead of launching Godot.
 #                        Used by test_batch_runner_dry_run.gd validation tests.
 #
@@ -51,6 +63,8 @@ TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 OUTPUT_DIR="/tmp/ai_vs_ai_${TIMESTAMP}"
 MASTER_SEED=""
 TIMEOUT_TICKS=60000
+ROSTER="full"
+PROFILE_TICKS=0
 DRY_RUN=0
 N_MATCHES=""
 
@@ -81,12 +95,25 @@ while [[ $# -gt 0 ]]; do
             GODOT_BIN="$2"; shift 2 ;;
         --timeout-ticks)
             TIMEOUT_TICKS="$2"; shift 2 ;;
+        --roster)
+            ROSTER="$2"; shift 2 ;;
+        --profile-ticks)
+            PROFILE_TICKS=1; shift ;;
         --dry-run)
             DRY_RUN=1; shift ;;
         *)
             echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
+
+# ---------------------------------------------------------------------------
+# Validate roster preset (fail fast at the shell layer — main.gd would also
+# fall back loudly, but a typo'd 50-match batch is expensive to discover late)
+# ---------------------------------------------------------------------------
+if [[ "${ROSTER}" != "full" && "${ROSTER}" != "skirmish" ]]; then
+    echo "Error: --roster must be 'full' or 'skirmish', got: '${ROSTER}'" >&2
+    exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Validate N
@@ -126,6 +153,10 @@ echo "  Matches:       ${N_MATCHES}"
 echo "  Master seed:   ${MASTER_SEED}"
 echo "  Output dir:    ${OUTPUT_DIR}"
 echo "  Timeout ticks: ${TIMEOUT_TICKS}"
+echo "  Roster:        ${ROSTER}"
+if [[ "${PROFILE_TICKS}" -eq 1 ]]; then
+    echo "  Profiling:     ON (--profile-ticks; [profile] blocks in match logs)"
+fi
 if [[ "${DRY_RUN}" -eq 1 ]]; then
     echo "  Mode:          DRY-RUN (fixture NDJSON, no Godot invocation)"
 else
@@ -233,6 +264,14 @@ for (( i=0; i<N_MATCHES; i++ )); do
     # HeadlessMatchRunner reads --match-id, --seed, --timeout-ticks from argv
     # and emits one NDJSON line to stdout on completion.
     # -----------------------------------------------------------------------
+    # Wave C1 pass-through args: --roster always (main.gd default matches
+    # the script default, so 'full' is explicit-but-identical); the
+    # --profile-ticks bare flag only when requested.
+    EXTRA_ARGS=( --roster "${ROSTER}" )
+    if [[ "${PROFILE_TICKS}" -eq 1 ]]; then
+        EXTRA_ARGS+=( --profile-ticks )
+    fi
+
     set +e
     "${GODOT_BIN}" \
         --headless \
@@ -242,6 +281,7 @@ for (( i=0; i<N_MATCHES; i++ )); do
         --match-id "${MATCH_ID}" \
         --seed "${MATCH_SEED}" \
         --timeout-ticks "${TIMEOUT_TICKS}" \
+        "${EXTRA_ARGS[@]}" \
         > "${MATCH_LOG}" 2>&1
     EXIT_CODE=$?
     set -e
