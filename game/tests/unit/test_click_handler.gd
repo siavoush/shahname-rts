@@ -971,3 +971,93 @@ func test_right_click_own_building_falls_through_to_move() -> void:
 		_building_collider_hit(own_building, Vector3(5, 0, 5)))
 	assert_eq(selected._last_replace_kind, Constants.COMMAND_MOVE,
 		"own non-gather building falls through to ground move")
+
+
+# ===========================================================================
+# A1 — direct building/mine hit precedes the unit-tolerance fallback
+# (pre-PR review finding, 2026-06-12)
+# ===========================================================================
+#
+# Bug recap: process_right_click_hit ran the TEAM_ANY unit-tolerance fallback
+# the instant _resolve_unit_from_hit returned null. A DIRECT click on a
+# mine/building resolves no unit from the collider chain, so the fallback fired
+# — and a friendly worker dwelling within CLICK_TOLERANCE_RADIUS of the hit
+# (workers permanently sit ~1m from a mine they gather) resolved as the
+# tolerance hit and the click no-op'd as "friendly unit", never reaching the
+# building-attack (step 2) or gather (step 3) branches. Regression vs main:
+# on main the resource-node check ran FIRST, so a mine with dwelling workers
+# always gathered. The single-event functional tests above passed because
+# their FakeUnit fixtures register no spatial agent, so the tolerance path
+# resolved nothing under test. These tests register a friendly
+# SpatialAgentComponent inside the tolerance ring to reproduce the live bug.
+
+# Build a Kargar AND register a SpatialAgentComponent child at `pos` so the
+# tolerance fallback would resolve it if the precedence were inverted.
+func _make_kargar_at(uid: int, pos: Vector3) -> FakeUnit:
+	var k: FakeUnit = _make_kargar(uid)
+	k.global_position = pos
+	var sa: SpatialAgentComponent = SpatialAgentComponentScript.new()
+	sa.team = Constants.TEAM_IRAN
+	k.add_child(sa)  # _ready auto-registers with SpatialIndex
+	return k
+
+
+func test_right_click_mine_gathers_despite_friendly_within_tolerance() -> void:
+	# A1 regression: a DIRECT click on a mine with a friendly worker dwelling
+	# within CLICK_TOLERANCE_RADIUS of the hit point must still GATHER, not
+	# no-op as "friendly unit" via the tolerance fallback.
+	var mine_pos: Vector3 = Vector3(5.0, 0.0, 0.0)
+	var k: FakeUnit = _make_kargar_at(1, mine_pos + Vector3(0.5, 0.0, 0.0))
+	# Friendly worker registered ~0.5m from the mine hit — well inside the
+	# 1.5m tolerance ring. Pre-A1-fix this shadowed the gather as a no-op.
+	SelectionManager.select(k)
+	var mine: FakeResourceNode = _make_mine()
+	handler.process_right_click_hit(_hit(mine, mine_pos))
+	assert_eq(k._replace_call_count, 1,
+		"direct mine click must still gather even with a friendly within tolerance")
+	assert_eq(k._last_replace_kind, Constants.COMMAND_GATHER,
+		"direct mine click dispatches GATHER (not friendly-no-op via tolerance)")
+	assert_eq(k._last_replace_payload[&"target_node"], mine,
+		"gather payload.target_node is the directly-clicked mine")
+
+
+func test_right_click_enemy_building_attacks_despite_friendly_within_tolerance() -> void:
+	# A1 regression: a DIRECT click on an enemy building with the player's own
+	# unit dwelling at its edge (within tolerance of the hit) must still ATTACK,
+	# not no-op as "friendly unit" via the tolerance fallback (the besieged-
+	# enemy-building scenario from P3).
+	var bldg_pos: Vector3 = Vector3(8.0, 0.0, 8.0)
+	var attacker: FakeUnit = _make_unit_at(
+		1, bldg_pos + Vector3(0.6, 0.0, 0.0), Constants.TEAM_IRAN)
+	SelectionManager.select(attacker)
+	var enemy_building: FakeBuilding = _make_building(2, Constants.TEAM_TURAN)
+	# Position the building root at the hit point so any walk-up is coherent;
+	# the collider is a StaticBody3D child per production composition.
+	enemy_building.global_position = bldg_pos
+	handler.process_right_click_hit(
+		_building_collider_hit(enemy_building, bldg_pos))
+	assert_eq(attacker._replace_call_count, 1,
+		"direct enemy-building click must still attack even with a friendly within tolerance")
+	assert_eq(attacker._last_replace_kind, Constants.COMMAND_ATTACK,
+		"direct enemy-building click dispatches ATTACK (not friendly-no-op via tolerance)")
+	assert_eq(attacker._last_replace_payload[&"target_node"], enemy_building,
+		"attack payload.target_node is the directly-clicked enemy building")
+
+
+func test_right_click_own_mazraeh_gathers_despite_friendly_within_tolerance() -> void:
+	# A1 regression (Mazra'eh duck-type collision): own Mazra'eh is BOTH a
+	# building (step 2 fall-through, own team) AND a gather surface (step 3).
+	# With a friendly worker dwelling within tolerance, the direct hit must
+	# still route to GATHER — the building resolution gates off the tolerance
+	# fallback, then step 2 falls through (own team), then step 3 gathers.
+	var maz_pos: Vector3 = Vector3(3.0, 0.0, 4.0)
+	var k: FakeUnit = _make_kargar_at(1, maz_pos + Vector3(0.4, 0.0, 0.3))
+	SelectionManager.select(k)
+	var own_mazraeh: FakeMazraeh = _make_mazraeh(2, Constants.TEAM_IRAN)
+	own_mazraeh.global_position = maz_pos
+	handler.process_right_click_hit(
+		_building_collider_hit(own_mazraeh, maz_pos))
+	assert_eq(k._replace_call_count, 1,
+		"own Mazra'eh click gathers even with a friendly worker within tolerance")
+	assert_eq(k._last_replace_kind, Constants.COMMAND_GATHER,
+		"own Mazra'eh direct click is GATHER (tolerance fallback gated off)")

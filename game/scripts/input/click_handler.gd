@@ -257,15 +257,36 @@ func process_right_click_hit(hit: Dictionary) -> void:
 	# equals sel[0].team; reading the SSOT directly avoids a stale-selection
 	# edge case and is the same source the simulation uses for "opposing".
 	var sel_team: int = GameState.player_team
+	# ---- Resolve ALL DIRECT hits up front (A1 fix, live playtest 2026-06-12) ----
+	# A1: the unit-tolerance fallback MUST run only after every DIRECT resolution
+	# (unit → building → resource) has failed. Previously the fallback ran the
+	# instant _resolve_unit_from_hit returned null — which is exactly what
+	# happens on a DIRECT click on a mine/building (their collider is not
+	# unit-shaped). A friendly worker dwelling within CLICK_TOLERANCE_RADIUS of
+	# the mine/building then resolved through the TEAM_ANY tolerance and the
+	# click no-op'd as "friendly unit" — never reaching the building-attack
+	# (step 2) or gather (step 3) branches. Regression vs main: on main the
+	# resource-node check ran first, so a mine with dwelling workers always
+	# gathered; the precedence inversion silently broke add-more-workers and
+	# besieged-enemy-building clicks. The dispatch-table comment documents
+	# friendly-no-op as step 4 (AFTER gather) — resolving direct building /
+	# resource hits before the tolerance fallback makes the code match the doc.
+	var hit_building: Node = _resolve_building_from_hit(hit)
+	var hit_resource: Node = _resolve_resource_node_from_hit(hit)
 	# ---- Step 1: ENEMY UNIT attack (highest precedence) ----
 	var hit_unit: Object = _resolve_unit_from_hit(hit)
-	if hit_unit == null:
+	if hit_unit == null and hit_building == null and hit_resource == null:
 		# Tolerance fallback: a right-click slightly off-center on an enemy's
 		# silhouette can hit terrain instead of the unit's collision pad. If a
 		# selectable unit lives within Constants.CLICK_TOLERANCE_RADIUS of the
 		# terrain hit, treat the click as if it had hit that unit. No team
 		# filter (TEAM_ANY) — both enemy (→attack) and friendly (→no-op) must
 		# resolve here; the team branch below decides the outcome.
+		#
+		# A1 gate: run the fallback ONLY when the direct hit was neither a
+		# building nor a resource node. A DIRECT building/mine click must flow
+		# to step 2 / step 3 even if friendlies dwell within tolerance of the
+		# hit point (workers permanently sit ~1m from a mine they gather).
 		hit_unit = _resolve_unit_from_tolerance(hit)
 	if hit_unit != null:
 		var hit_team: int = _read_team(hit_unit)
@@ -306,11 +327,10 @@ func process_right_click_hit(hit: Dictionary) -> void:
 				sel_team, ") → no-op")
 		return
 	# ---- Step 2: ENEMY BUILDING attack (P3) ----
-	# Resolve a Building under the click via &"buildings" group membership on a
+	# `hit_building` resolved up-front via &"buildings" group membership on a
 	# collider ancestor (the canonical building-discovery seam — building.gd
 	# joins the group at _ready; D1 stage-2 acquisition uses the same group).
 	# Buildings expose team / unit_id / get_footprint_aabb by construction.
-	var hit_building: Node = _resolve_building_from_hit(hit)
 	if hit_building != null:
 		var b_team: int = _read_team(hit_building)
 		# Opposing-team-only, STRICTER than `!= sel_team`: TEAM_NEUTRAL is
@@ -353,13 +373,12 @@ func process_right_click_hit(hit: Dictionary) -> void:
 			print("[click] RIGHT: building team=", b_team,
 				" not opposing → fall through (gather/move)")
 	# ---- Step 3: GATHER (neutral mines / own-or-neutral gather buildings) ----
-	# If the hit is a ResourceNode (duck-typed via has_method(&"request_extract")
-	# + is_gatherable), dispatch a gather command to every selected worker. An
+	# `hit_resource` resolved up-front (duck-typed via has_method(&"request_extract")
+	# + is_gatherable). Dispatch a gather command to every selected worker. An
 	# ENEMY Mazra'eh never reaches here — it was caught by step 2 as an enemy
 	# building. Own/neutral Mazra'eh + mines reach here unchanged (no regression).
-	var hit_node: Node = _resolve_resource_node_from_hit(hit)
-	if hit_node != null:
-		_dispatch_gather_to_workers(sel, hit_node)
+	if hit_resource != null:
+		_dispatch_gather_to_workers(sel, hit_resource)
 		return
 	# ---- Step 4 (implicit): ground move ----
 	var target: Vector3 = hit.get(&"position", Vector3.ZERO)
