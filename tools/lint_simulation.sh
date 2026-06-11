@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# lint_simulation.sh — Simulation Architecture lint rules (Sim Contract §1.4).
+# lint_simulation.sh — Simulation Architecture lint rules.
 #
-# Implements the 5 ripgrep patterns that enforce the tick-discipline invariants
-# agreed in docs/SIMULATION_CONTRACT.md §1.4. Run from anywhere in the repo.
+# Implements 7 ripgrep-based rules:
+#   L1-L6 — tick-discipline invariants agreed in docs/SIMULATION_CONTRACT.md §1.4.
+#   L7    — defensive-fallback-masking guards per docs/STUDIO_PROCESS.md §9.M7
+#           (allowlist: tools/L7_allowlist.txt).
+# Run from anywhere in the repo.
 #
 # Exit codes:
 #   0  — clean, no violations found
@@ -300,11 +303,116 @@ if [[ -n "${L6_HITS}" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# L7 — Defensive-fallback-masking guards (STUDIO_PROCESS §9.M7)
+#
+# Rationale: when a spec/contract promises member X exists on type T,
+# production code must access X directly (or hard-assert). Guarding with
+# `if x.has_method(&"X"):` converts a contract violation (X missing or
+# renamed) into a silent zero/null/skip fallback the consumer can't
+# distinguish from a real result — the N=5 failure shape behind BUG-C1,
+# BUG-D2 and the three Wave 3-Sim runner bugs (§9.M7 incident list).
+#
+# Flagged probes: has_method( / has_signal( / has_property(
+#
+# v1 scope cut (deliberate): the §9.M7 lint sketch also names Dictionary
+# probes — `d.has(&"K")` and `d.get(&"K", default)`-then-discriminate.
+# Both are too false-positive-prone for mechanical detection: bare `.has(`
+# / `.get(` match legitimate Dictionary/Node APIs everywhere, and
+# default-discrimination needs dataflow analysis, not a regex. Those stay
+# reviewer-enforced (godot-code-reviewer + mirror-reviewer per §9.M7
+# "Where reviewers enforce"). Revisit if a high-signal pattern emerges.
+#
+# Exemptions (mechanical, applied before the allowlist):
+#   - comment lines (code portion starts with #) — same filter as L3/L6.
+#   - hard-assert lines: `assert(x.has_method(&"y"), ...)` is the §9.M7
+#     RIGHT pattern — the assert IS the documented contract dependency.
+#   - game/tests/ is outside SCRIPTS_DIR; the extra '!**/tests/**' glob
+#     keeps any future test surface under game/scripts/ exempt too.
+#
+# Allowlist: tools/L7_allowlist.txt — one entry per line:
+#   <repo-relative-file>:<line-context-substring> — <one-line WHY>
+# A hit is allowed when its repo-relative path equals the entry's file
+# (or the entry file is `*`, a category entry) AND the hit's source line
+# contains the context substring verbatim. See the allowlist header for
+# the category list (duck-typed protocol probes per RNC §5.2 etc.).
+#
+# Scope: game/scripts/**/*.gd (production only) minus the allowlist
+# ---------------------------------------------------------------------------
+
+L7_PATTERN='\bhas_(method|signal|property)\s*\('
+L7_ALLOWLIST_FILE="${REPO_ROOT}/tools/L7_allowlist.txt"
+
+L7_RAW="$(rg --with-filename --line-number "${L7_PATTERN}" \
+  --glob '*.gd' \
+  --glob '!**/tests/**' \
+  "${SCRIPTS_DIR}" 2>/dev/null || true)"
+
+# Filter out comment lines (same rationale as L3) and hard-assert lines
+# (assert(x.has_method(...), "...") is the sanctioned §9.M7 pattern).
+if [[ -n "${L7_RAW}" ]]; then
+  L7_RAW="$(echo "${L7_RAW}" | rg -v ':[0-9]+:\s*#' || true)"
+fi
+if [[ -n "${L7_RAW}" ]]; then
+  L7_RAW="$(echo "${L7_RAW}" | rg -v ':[0-9]+:\s*assert\(' || true)"
+fi
+
+L7_HITS=""
+L7_ALLOWLIST_MISSING=0
+if [[ -n "${L7_RAW}" ]]; then
+  if [[ ! -f "${L7_ALLOWLIST_FILE}" ]]; then
+    # No allowlist file → every hit is a violation (loud, not silent).
+    L7_ALLOWLIST_MISSING=1
+    L7_HITS="${L7_RAW}"$'\n'
+  else
+    while IFS= read -r hit; do
+      [[ -z "${hit}" ]] && continue
+      hit_path="${hit%%:*}"
+      hit_rel="${hit_path#"${REPO_ROOT}"/}"
+      hit_content="${hit#*:*:}"
+      allowed=0
+      while IFS= read -r entry; do
+        case "${entry}" in
+          ''|'#'*) continue ;;
+        esac
+        entry_path="${entry%%:*}"
+        entry_rest="${entry#*:}"
+        # Context = everything before the first " — " (space-emdash-space).
+        entry_ctx="${entry_rest%% — *}"
+        if [[ "${entry_path}" == "*" || "${entry_path}" == "${hit_rel}" ]]; then
+          if [[ -n "${entry_ctx}" && "${hit_content}" == *"${entry_ctx}"* ]]; then
+            allowed=1
+            break
+          fi
+        fi
+      done < "${L7_ALLOWLIST_FILE}"
+      if [[ "${allowed}" -eq 0 ]]; then
+        L7_HITS="${L7_HITS}${hit}"$'\n'
+      fi
+    done <<< "${L7_RAW}"
+  fi
+fi
+
+if [[ -n "${L7_HITS}" ]]; then
+  _fail_header "L7" "Defensive-fallback-masking guard (has_method/has_signal/has_property) in production code (§9.M7)"
+  if [[ "${L7_ALLOWLIST_MISSING}" -eq 1 ]]; then
+    echo "│    NOTE: tools/L7_allowlist.txt not found — every probe is flagged."
+  fi
+  echo "│    Contract-promised members must be accessed directly, or hard-asserted:"
+  echo "│      assert(x.has_method(&\"y\"), \"...contract ref...\")  # assert lines are exempt"
+  echo "│    Genuine seams (duck-typed protocol probes, autoload-or-null forward-"
+  echo "│    compat, test-stub tolerance) belong in tools/L7_allowlist.txt with a"
+  echo "│    one-line WHY. Entry format (file '*' = category entry):"
+  echo "│      <repo-relative-file>:<line-context-substring> — <one-line WHY>"
+  echo "${L7_HITS}" | sed 's/^/│    /'
+  _fail_footer
+fi
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""
 if [[ "${VIOLATIONS}" -eq 0 ]]; then
-  echo "lint_simulation.sh — OK (0 violations across L1-L6)"
+  echo "lint_simulation.sh — OK (0 violations across L1-L7)"
   exit 0
 else
   echo "lint_simulation.sh — FAILED (${VIOLATIONS} rule(s) violated)"

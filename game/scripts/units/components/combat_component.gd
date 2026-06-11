@@ -253,8 +253,13 @@ func _sim_tick(_dt: float) -> void:
 		# silently misses Turan units and they deal wrong damage in the live
 		# game. Flagged in the wave-2A kickoff brief as the load-bearing
 		# Live-game-broken-surface for this integration.
+		# §9.M7 L7 cleanup: former `combat_matrix.has_method(&"get_multiplier")`
+		# half of this condition was a stale relic — combat_matrix is wired
+		# from BalanceData.combat (a CombatMatrix resource; get_multiplier is
+		# its ratified API). `!= null` stays: unwired test fixtures default to
+		# 1.0x neutral damage by design (test_rps_matrix_integration null case).
 		var scaled_damage_x100: int = attack_damage_x100
-		if combat_matrix != null and combat_matrix.has_method(&"get_multiplier"):
+		if combat_matrix != null:
 			var target_unit_type: StringName = &""
 			var raw_target_type: Variant = target.get(&"unit_type")
 			if typeof(raw_target_type) == TYPE_STRING_NAME:

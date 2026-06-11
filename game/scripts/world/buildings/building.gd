@@ -963,23 +963,20 @@ func _init_health_from_balance_data() -> void:
 	# Subscribe to LOCAL health_zero signal — BUG-G1 fix-pattern. The
 	# local signal cannot collide because we connect to OUR component's
 	# signal directly; no global namespace involved.
-	if hc.has_signal(&"health_zero"):
-		if not hc.health_zero.is_connected(_on_health_zero):
-			hc.health_zero.connect(_on_health_zero)
-	else:
-		# Defensive: HC exists but lacks the local signal (older HC
-		# version or test mock). Log + bail; do NOT fall back to the
-		# global channel — that's exactly the bug BUG-G1 fixes.
-		push_warning("%s: HealthComponent present but missing health_zero "
-			% str(kind)
-			+ "signal — destruction signal will not fire. "
-			+ "(Update HealthComponent to expose health_zero per BUG-G1.)")
-		return
+	# (§9.M7 L7 cleanup: the former `if hc.has_signal(&"health_zero")`
+	# guard + warn-and-bail else-branch was a stale relic — health_zero
+	# is contract-promised on HealthComponent (health_component.gd, BUG-G1
+	# pattern) and every scene + test fixture attaches the real script.
+	# Direct access fails loudly at this line on contract regression.)
+	if not hc.health_zero.is_connected(_on_health_zero):
+		hc.health_zero.connect(_on_health_zero)
 	# Initialize HC from BalanceData (canonical Dictionary lookup per
 	# BUG-C1 + §9.L11 — reads buildings[<kind>].max_hp, NOT bldg_<kind>).
+	# (§9.M7 L7 cleanup: former `if hc.has_method(&"init_max_hp")` guard
+	# silently skipped max-HP init on contract drift — init_max_hp is the
+	# HC contract; unguarded call() errors loudly if it ever goes missing.)
 	var max_hp: float = _resolve_max_hp()
-	if hc.has_method(&"init_max_hp"):
-		hc.call(&"init_max_hp", max_hp)
+	hc.call(&"init_max_hp", max_hp)
 	# (Review-panel M7 cleanup: the former `if hc.has_method(&"set")`
 	# guard was vacuous — every Object has set(); it could only mask a
 	# wrong-property silent no-op. Direct assignment per §9.M7.)
