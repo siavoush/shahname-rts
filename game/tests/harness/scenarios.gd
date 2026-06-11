@@ -5,22 +5,25 @@
 ## dictionary of pre-defined setups. Adding a new scenario = adding one entry."
 ##
 ## Each entry in CATALOG is a Dictionary of initial state overrides consumed by
-## MatchHarness._setup(). Unset keys use MatchHarness defaults (150 coin,
-## 50 grain, Farr 50.0 from balance.tres). Scenarios that need harness API
-## calls (farr override) embed the override value under a reserved key ("farr").
+## MatchHarness._setup(). Unset keys keep the balance.tres starting values
+## that ResourceSystem.reset() / FarrSystem.reset() load (150 coin, 50 grain,
+## Farr 50.0 as of this writing — balance.tres is the SSOT). Scenarios that
+## need harness API calls (farr override) embed the override value under a
+## reserved key ("farr").
 ##
 ## Adding a scenario: append one entry to CATALOG. No other file changes needed.
 
 # No class_name — avoid the global registry race (ARCHITECTURE.md §6 v0.4.0).
 # MatchHarness preloads this file directly via ScenariosScript.
 
-## Scenario catalog. All fields are optional; MatchHarness._setup fills defaults.
+## Scenario catalog. All fields are optional; unset keys keep balance.tres
+## starting values (loaded by the autoload reset() chain in MatchHarness._setup).
 ## Reserved keys:
 ##   farr         float  — override Farr starting value (default: balance.tres)
-##   coin_iran    int    — starting coin for Iran  (default: 150)
-##   grain_iran   int    — starting grain for Iran (default: 50)
-##   coin_turan   int    — starting coin for Turan (default: 150)
-##   grain_turan  int    — starting grain for Turan (default: 50)
+##   coin_iran    int    — starting coin for Iran  (default: balance.tres)
+##   grain_iran   int    — starting grain for Iran (default: balance.tres)
+##   coin_turan   int    — starting coin for Turan (default: balance.tres)
+##   grain_turan  int    — starting grain for Turan (default: balance.tres)
 const CATALOG: Dictionary = {
 
 	## Blank slate. Default resources, default Farr (50.0 from balance.tres).

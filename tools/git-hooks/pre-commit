@@ -51,7 +51,8 @@ if [ -n "${STAGED_FILES}" ] && [ "${NON_DOC_COUNT}" -eq 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Step 1: Simulation lint (Sim Contract §1.4 — 5 ripgrep rules)
+# Step 1: Simulation lint (7 ripgrep rules — Sim Contract §1.4 L1-L6 +
+# STUDIO_PROCESS §9.M7 L7 defensive-fallback-masking)
 # ---------------------------------------------------------------------------
 echo "[1/2] Running simulation lint..."
 if ! bash "${REPO_ROOT}/tools/lint_simulation.sh"; then

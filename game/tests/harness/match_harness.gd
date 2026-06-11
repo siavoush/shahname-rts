@@ -9,10 +9,24 @@
 ##   assert_almost_eq(h.get_farr(), 50.0, 1e-4)
 ##   h.teardown()
 ##
-## Phase 0 deliverable. Unit/building spawning stubs are present in the API
-## but return null — concrete implementations land Phase 1+ when Unit and
-## Building scenes exist. Resource tracking is harness-local (GameState has no
-## coin/grain fields yet; those land Phase 3 with ResourceSystem).
+## v2 (Wave C3, tests-ARCH-1 — closes the Phase-0 debt):
+##   - start_match/teardown now reset ALL 13 resettable autoloads (inventory
+##     from `grep 'func reset' game/scripts/autoload/` — see
+##     _reset_all_autoloads). Phase-0 covered only 5 of them; the other 8
+##     were the per-test boilerplate every integration test re-derived.
+##   - spawn_unit / spawn_building are REAL: they instantiate the canonical
+##     unit/building scenes (same pattern as test_phase_3_throne_deposit /
+##     test_phase_3_building_production: set team + position BEFORE
+##     add_child) under a harness-owned spawn root in the live SceneTree.
+##   - snapshot() reads the LIVE autoloads (ResourceSystem fixed-point
+##     stores, &"units" group census) instead of the Phase-0 harness-local
+##     dicts that stopped being wired to anything when ResourceSystem
+##     shipped in Phase 3.
+##   - Resource state (get_resources/set_resources/scenario overrides) is
+##     backed by ResourceSystem; the harness-local _coin/_grain dicts are
+##     deleted. Scenario keys NOT set by a scenario keep the BalanceData
+##     starting values ResourceSystem.reset() loads (SSOT — the old 150/50
+##     literals duplicated balance.tres).
 ##
 ## The harness never calls _physics_process. All ticks advance via
 ## SimClock._test_run_tick(), which shares the exact _run_tick() body the
@@ -29,20 +43,72 @@ extends RefCounted
 
 const MockPathSchedulerScript: Script = preload("res://scripts/navigation/mock_path_scheduler.gd")
 
+# Pin balance.tres in the ResourceCache for the whole test process. v2's
+# _reset_all_autoloads() calls FarrDrainDispatcher.reset() (which drops its
+# lazily-cached BalanceData ref) on every start_match AND teardown; without a
+# persistent holder, the ResourceCache evicts balance.tres and every
+# subsequent load() — one per Unit._ready via _apply_balance_data_defaults,
+# one per ResourceSystem.reset(), etc. — re-parses the ~700-line .tres from
+# text, which empirically dominates suite runtime. This const is held by the
+# script for the process lifetime, so every load(PATH_BALANCE_DATA) stays a
+# cache hit. (Path literal mirrors Constants.PATH_BALANCE_DATA — preload
+# requires a constant expression.)
+const _BalanceDataPin: Resource = preload("res://data/balance.tres")
+
+# Unit + Building base scripts — for the static reset_id_counter() calls at
+# match start. Every match's first unit must be unit_id 1 AND every match's
+# first building must be building_id 1, or two consecutive in-process runs
+# diverge on id-keyed lookups — determinism prerequisite, Sim Contract §6.2.
+# (Unit and Building each own a distinct id counter; both reset. The TEST-4
+# determinism test originally failed precisely because the Building counter
+# drifted across runs, shifting which BUG-H8 unit-vs-building id collisions
+# occurred.)
+const _UnitScript: Script = preload("res://scripts/units/unit.gd")
+const _BuildingScript: Script = preload("res://scripts/world/buildings/building.gd")
+
+# Spawn catalogs — StringName type/kind → scene path. Scene filenames match
+# the unit_type / kind StringNames 1:1 (e.g. &"turan_piyade" →
+# turan_piyade.tscn), but the explicit dictionary keeps the contract visible
+# and makes an unknown key fail LOUDLY (§9.L9) instead of producing a
+# load(null) crash deep in the engine.
+const _UNIT_SCENE_PATHS: Dictionary = {
+	&"kargar": "res://scenes/units/kargar.tscn",
+	&"piyade": "res://scenes/units/piyade.tscn",
+	&"kamandar": "res://scenes/units/kamandar.tscn",
+	&"savar": "res://scenes/units/savar.tscn",
+	&"asb_savar_kamandar": "res://scenes/units/asb_savar_kamandar.tscn",
+	&"turan_piyade": "res://scenes/units/turan_piyade.tscn",
+	&"turan_kamandar": "res://scenes/units/turan_kamandar.tscn",
+	&"turan_savar": "res://scenes/units/turan_savar.tscn",
+	&"turan_asb_savar": "res://scenes/units/turan_asb_savar.tscn",
+}
+
+const _BUILDING_SCENE_PATHS: Dictionary = {
+	&"throne": "res://scenes/world/buildings/throne.tscn",
+	&"khaneh": "res://scenes/world/buildings/khaneh.tscn",
+	&"mazraeh": "res://scenes/world/buildings/mazraeh.tscn",
+	&"madan": "res://scenes/world/buildings/madan.tscn",
+	&"sarbaz_khaneh": "res://scenes/world/buildings/sarbaz_khaneh.tscn",
+	&"sowari_khaneh": "res://scenes/world/buildings/sowari_khaneh.tscn",
+	&"tirandazi": "res://scenes/world/buildings/tirandazi.tscn",
+	&"atashkadeh": "res://scenes/world/buildings/atashkadeh.tscn",
+}
+
 # === State ==================================================================
 
 var _seed: int
 var _scenario: StringName
 
-# Harness-local resource counters (ResourceSystem doesn't exist yet — Phase 3).
-# Keys: Constants.TEAM_IRAN, Constants.TEAM_TURAN.
-var _coin: Dictionary = {}
-var _grain: Dictionary = {}
-
 # Tracked entities — populated by spawn_unit / spawn_building.
-# Phase 1+: real Node refs. Phase 0: empty.
+# Keys: the entity's unit_id (units and buildings each own an id space).
 var _units: Dictionary = {}     # unit_id -> Node
-var _buildings: Dictionary = {} # building_id -> Node
+var _buildings: Dictionary = {} # building unit_id -> Node
+
+# Harness-owned SceneTree parent for everything spawn_unit / spawn_building
+# create. Created lazily on first spawn, freed (synchronously — Pitfall #17)
+# in teardown so spawned entities' _exit_tree deregistrations (fog handles,
+# sim_phase disconnects) run BEFORE the next harness's start_match.
+var _spawn_root: Node3D = null
 
 # The injected MockPathScheduler — cleared on teardown.
 var _mock_scheduler: Variant = null
@@ -65,8 +131,11 @@ var _mock_scheduler: Variant = null
 ## preload itself (circular), and class_name is removed for the registry-race
 ## workaround. start_match() on a freshly .new()'d instance is equivalent.
 ##
-## seed: deterministic seed for GameRNG (Phase 0: seed() on global RNG;
-##   TODO phase-1: GameRNG.seed_match(seed) once that autoload ships).
+## seed: deterministic seed for the match. v2 seeds the global RNG (mirrors
+##   HeadlessMatchRunner._ready's §9.D9 Q3 discipline — zero production
+##   randf/randi call-sites exist per L3 lint, but if one ever lands, the
+##   seeded RNG keeps same-seed runs reproducible).
+##   TODO phase-future: GameRNG.seed_match(seed) once that autoload ships.
 ## scenario: StringName key into Scenarios.CATALOG (scenarios.gd).
 func start_match(seed: int = 0, scenario: StringName = &"empty") -> void:
 	_seed = seed
@@ -75,28 +144,27 @@ func start_match(seed: int = 0, scenario: StringName = &"empty") -> void:
 
 
 func _setup() -> void:
-	# Reset all autoloads to pristine state so each harness starts clean.
-	SimClock.reset()
-	GameState.reset()
-	FarrSystem.reset()
-	SpatialIndex.reset()
-	PathSchedulerService.reset()
+	# Reset all resettable autoloads to pristine state (v2: all 13, not 5).
+	_reset_all_autoloads()
+
+	# §9.D9 Q3 RNG discipline — see start_match docstring.
+	seed(_seed)
 
 	# Inject MockPathScheduler so no NavigationServer3D contact occurs.
+	# MovementComponent resolves its scheduler from PathSchedulerService at
+	# _ready, so the injection must precede any spawn_unit call.
 	_mock_scheduler = MockPathSchedulerScript.new()
 	PathSchedulerService.set_scheduler(_mock_scheduler)
 
-	# Initialize harness-local resource pools from scenario defaults.
+	# Apply scenario resource overrides to the LIVE ResourceSystem. Keys the
+	# scenario does not set keep the BalanceData starting values that
+	# ResourceSystem.reset() just loaded.
 	var scenario_data: Dictionary = _load_scenario(_scenario)
-	_coin[Constants.TEAM_IRAN] = scenario_data.get("coin_iran", 150)
-	_coin[Constants.TEAM_TURAN] = scenario_data.get("coin_turan", 150)
-	_grain[Constants.TEAM_IRAN] = scenario_data.get("grain_iran", 50)
-	_grain[Constants.TEAM_TURAN] = scenario_data.get("grain_turan", 50)
+	_apply_scenario_resources(scenario_data)
 
-	# Set Farr if the scenario overrides it (must happen inside a tick).
+	# Set Farr if the scenario overrides it.
 	var farr_override: Variant = scenario_data.get("farr", null)
 	if farr_override != null:
-		# Run one tick to satisfy the on-tick assertion, set farr inside it.
 		_run_one_tick_with_farr_set(float(farr_override))
 
 	# Start the match in GameState.
@@ -105,25 +173,28 @@ func _setup() -> void:
 
 ## Release all harness-held state. Call in GUT after_each.
 func teardown() -> void:
-	# Free any spawned nodes before resetting autoloads.
-	for node: Node in _units.values():
-		if is_instance_valid(node):
-			node.queue_free()
-	for node: Node in _buildings.values():
-		if is_instance_valid(node):
-			node.queue_free()
+	# Free harness-spawned nodes FIRST, so their _exit_tree deregistrations
+	# (FogSystem handles, sim_phase disconnects, SpatialIndex agents) run
+	# against still-live autoload state. Synchronous free(), NOT queue_free:
+	# Pitfall #17 — queue_free + await leaks _physics_process ticks into
+	# SimClock, and a queue_freed unit stays in the tree (and in &"units",
+	# still ticking on sim_phase) until a frame boundary, which a
+	# back-to-back start_match in the same test body never reaches.
+	# Units already pending deletion (death path queue_free.call_deferred)
+	# are freed here too; the deferred call validity-checks at flush.
+	if _spawn_root != null and is_instance_valid(_spawn_root):
+		_spawn_root.free()
+	_spawn_root = null
 	_units.clear()
 	_buildings.clear()
 
-	PathSchedulerService.reset()
 	if _mock_scheduler != null:
 		_mock_scheduler.clear_log()
 	_mock_scheduler = null
 
-	SimClock.reset()
-	GameState.reset()
-	FarrSystem.reset()
-	SpatialIndex.reset()
+	# Reset all autoloads (PathSchedulerService.reset() reverts to a fresh
+	# production NavigationAgentPathScheduler — drops the mock).
+	_reset_all_autoloads()
 
 
 # === Core simulation ========================================================
@@ -143,11 +214,14 @@ func get_farr() -> float:
 	return FarrSystem.value_farr
 
 
-## Current resources for a team. Returns {coin: int, grain: int}.
+## Current resources for a team. Returns {coin: int, grain: int} in whole
+## resource units (v2: read from ResourceSystem's fixed-point store; integer
+## division truncates sub-unit fractions — tests needing exact values read
+## ResourceSystem.coin_x100_for / grain_x100_for directly).
 func get_resources(team: int) -> Dictionary:
 	return {
-		"coin": _coin.get(team, 0),
-		"grain": _grain.get(team, 0),
+		"coin": ResourceSystem.coin_x100_for(team) / 100,
+		"grain": ResourceSystem.grain_x100_for(team) / 100,
 	}
 
 
@@ -166,10 +240,19 @@ func get_unit(unit_id: int) -> Node:
 ## GDScript == compares nested Dicts by reference — nested Dicts would silently
 ## break the determinism regression test. Every value here is int, float, or
 ## String. Per TESTING_CONTRACT.md §3.1.
+##
+## v2 (tests-ARCH-1 dead-field fix): resources read ResourceSystem's
+## fixed-point store (the Phase-0 harness-local dicts tracked nothing once
+## ResourceSystem shipped); unit counts census the canonical &"units"
+## SceneTree group (the Unit-discovery primitive per Wave 3-Sim c05ba77)
+## so units spawned by ANY path — harness, test-local add_child, building
+## production — are counted. Note: a unit in &"dying" that has queue_freed
+## but not yet left the tree still counts (it is still observable sim state).
 func snapshot() -> Dictionary:
 	var unit_count_iran: int = 0
 	var unit_count_turan: int = 0
-	for node: Node in _units.values():
+	var st: SceneTree = Engine.get_main_loop() as SceneTree
+	for node: Node in st.get_nodes_in_group(&"units"):
 		if not is_instance_valid(node):
 			continue
 		var team: Variant = node.get(&"team")
@@ -181,10 +264,10 @@ func snapshot() -> Dictionary:
 	return {
 		"tick": SimClock.tick,
 		"farr": FarrSystem.value_farr,
-		"coin_iran": _coin.get(Constants.TEAM_IRAN, 0),
-		"grain_iran": _grain.get(Constants.TEAM_IRAN, 0),
-		"coin_turan": _coin.get(Constants.TEAM_TURAN, 0),
-		"grain_turan": _grain.get(Constants.TEAM_TURAN, 0),
+		"coin_iran": ResourceSystem.coin_x100_for(Constants.TEAM_IRAN) / 100,
+		"grain_iran": ResourceSystem.grain_x100_for(Constants.TEAM_IRAN) / 100,
+		"coin_turan": ResourceSystem.coin_x100_for(Constants.TEAM_TURAN) / 100,
+		"grain_turan": ResourceSystem.grain_x100_for(Constants.TEAM_TURAN) / 100,
 		"unit_count_iran": unit_count_iran,
 		"unit_count_turan": unit_count_turan,
 	}
@@ -224,39 +307,117 @@ func _test_set_farr(value: float) -> void:
 	)
 
 
-## Set resource counts for a team directly (bypass ResourceSystem — Phase 3).
+## Set resource counts for a team directly. v2: writes ResourceSystem's
+## fixed-point store directly — the test-only off-tick escape (the
+## change_resource chokepoint asserts SimClock.is_ticking(), and fixture
+## setup runs off-tick; same pattern as _test_set_farr's direct _farr_x100
+## write). Deliberately does NOT emit resource_changed: unlike _test_set_farr,
+## the Testing Contract mandates no synthetic emit here, and tests that count
+## resource_changed events must not see fixture-setup noise.
 func set_resources(team: int, coin: int, grain: int) -> void:
-	_coin[team] = coin
-	_grain[team] = grain
+	ResourceSystem._coin_x100[team] = coin * 100
+	ResourceSystem._grain_x100[team] = grain * 100
 
 
-# === Entity spawning (Phase 1+ stubs) =======================================
-#
-# These return null until Unit and Building scenes exist. The API surface is
-# locked per TESTING_CONTRACT.md §3.1 so integration tests can be written
-# now against the signature and will pass once the scenes ship.
+# === Entity spawning (v2 — real scenes) =====================================
 
-## Spawn a unit of the given type for a team at position. Returns the Unit node.
-## Phase 0: push_warning and return null (no Unit scene yet).
+## Spawn a unit of the given type for a team at position. Returns the Unit
+## node (or null + push_error for an unknown type — §9.L9 loud fallback).
+##
+## Canonical instantiation pattern (mirrors test_phase_3_throne_deposit.gd):
+## team and position are set BEFORE add_child so Unit._ready's spatial-agent
+## team mirror, fog vision-source registration, and the unit_spawned payload
+## all carry the real team. The spawned unit's MovementComponent resolves the
+## harness's MockPathScheduler from PathSchedulerService at _ready — no
+## NavigationServer3D contact.
 func spawn_unit(type: StringName, team: int, position: Vector3) -> Node:
-	push_warning(
-		"MatchHarness.spawn_unit: Unit scenes not yet implemented (Phase 1). "
-		+ "type=%s team=%d pos=%s" % [type, team, position]
-	)
-	return null
+	if not _UNIT_SCENE_PATHS.has(type):
+		push_error(
+			"MatchHarness.spawn_unit: unknown unit type '%s' " % type
+			+ "(catalog: %s)" % str(_UNIT_SCENE_PATHS.keys())
+		)
+		return null
+	var scene: PackedScene = load(_UNIT_SCENE_PATHS[type])
+	var u: Node = scene.instantiate()
+	u.set(&"team", team)
+	u.set(&"position", position)
+	_ensure_spawn_root().add_child(u)  # triggers Unit._ready: id, groups, fog
+	var unit_id: int = int(u.get(&"unit_id"))
+	_units[unit_id] = u
+	print("[harness] spawn_unit type=%s team=%d unit_id=%d pos=%s" % [
+		type, team, unit_id, str(position),
+	])
+	return u
 
 
-## Spawn a building of the given type for a team at position. Returns the node.
-## Phase 0: push_warning and return null (no Building scene yet).
+## Spawn a building of the given kind for a team at position. Returns the node
+## (or null + push_error for an unknown kind — §9.L9 loud fallback).
+##
+## Deliberately does NOT run the placement pipeline (Building.place_at →
+## navmesh bake → construction stages): headless tests must not touch
+## NavigationServer3D, and most tests want a building in a known stage they
+## control. The scene lands as-instantiated (is_complete = false for
+## constructible kinds); tests needing an operational building flip
+## `b.is_complete = true` — the canonical pattern per
+## test_phase_3_building_production.gd._spawn_sarbaz_khaneh_complete.
 func spawn_building(type: StringName, team: int, position: Vector3) -> Node:
-	push_warning(
-		"MatchHarness.spawn_building: Building scenes not yet implemented (Phase 3). "
-		+ "type=%s team=%d pos=%s" % [type, team, position]
-	)
-	return null
+	if not _BUILDING_SCENE_PATHS.has(type):
+		push_error(
+			"MatchHarness.spawn_building: unknown building kind '%s' " % type
+			+ "(catalog: %s)" % str(_BUILDING_SCENE_PATHS.keys())
+		)
+		return null
+	var scene: PackedScene = load(_BUILDING_SCENE_PATHS[type])
+	var b: Node = scene.instantiate()
+	b.set(&"team", team)
+	b.set(&"position", position)
+	_ensure_spawn_root().add_child(b)  # triggers Building._ready: id, groups
+	var building_id: int = int(b.get(&"unit_id"))
+	_buildings[building_id] = b
+	print("[harness] spawn_building kind=%s team=%d unit_id=%d pos=%s" % [
+		type, team, building_id, str(position),
+	])
+	return b
 
 
 # === Internal ================================================================
+
+# Reset every autoload that exposes reset(). Inventory source:
+# `grep -rn 'func reset' game/scripts/autoload/` — 13 of the 16 registered
+# autoloads (TimeProvider, EventBus, Constants hold no per-match state).
+# Keep in sync with test_headless_runner_reset_discipline.gd's
+# _RUNNER_EXTRA_RESET_AUTOLOADS (the 8 that Phase-0 MatchHarness missed) —
+# that test is the regression guard for this list.
+func _reset_all_autoloads() -> void:
+	SimClock.reset()
+	GameState.reset()
+	FarrSystem.reset()
+	SpatialIndex.reset()
+	PathSchedulerService.reset()
+	ResourceSystem.reset()
+	FogSystem.reset()
+	CommandPool.reset()
+	FarrDrainDispatcher.reset()
+	SelectionManager.reset()
+	DebugOverlayManager.reset()
+	TuranController.reset()
+	DummyIranController.reset()
+	# Not autoloads, but match-scoped static state: the Unit and Building id
+	# counters (distinct id spaces, each with its own static counter). Both
+	# must reset or consecutive in-process runs diverge — Sim Contract §6.2.
+	_UnitScript.call(&"reset_id_counter")
+	_BuildingScript.call(&"reset_id_counter")
+
+
+# Lazily create the harness-owned spawn parent in the live SceneTree.
+func _ensure_spawn_root() -> Node3D:
+	if _spawn_root != null and is_instance_valid(_spawn_root):
+		return _spawn_root
+	_spawn_root = Node3D.new()
+	_spawn_root.name = "MatchHarnessSpawnRoot"
+	(Engine.get_main_loop() as SceneTree).root.add_child(_spawn_root)
+	return _spawn_root
+
 
 func _load_scenario(key: StringName) -> Dictionary:
 	var catalog: Dictionary = ScenariosScript.CATALOG
@@ -264,6 +425,24 @@ func _load_scenario(key: StringName) -> Dictionary:
 		push_warning("MatchHarness: unknown scenario '%s'; using 'empty'" % key)
 		return catalog.get(&"empty", {})
 	return catalog[key]
+
+
+# Apply scenario resource overrides to ResourceSystem (direct fixed-point
+# writes — same test-only off-tick escape as set_resources). Only keys the
+# scenario explicitly sets are written; everything else keeps the BalanceData
+# starting values ResourceSystem.reset() loaded.
+func _apply_scenario_resources(scenario_data: Dictionary) -> void:
+	var key_map: Array = [
+		["coin_iran", ResourceSystem._coin_x100, Constants.TEAM_IRAN],
+		["coin_turan", ResourceSystem._coin_x100, Constants.TEAM_TURAN],
+		["grain_iran", ResourceSystem._grain_x100, Constants.TEAM_IRAN],
+		["grain_turan", ResourceSystem._grain_x100, Constants.TEAM_TURAN],
+	]
+	for entry: Array in key_map:
+		var scenario_key: String = entry[0]
+		if scenario_data.has(scenario_key):
+			var store: Dictionary = entry[1]
+			store[entry[2]] = int(scenario_data[scenario_key]) * 100
 
 
 # Set Farr off-tick for scenario initialization. Uses the same off-tick write

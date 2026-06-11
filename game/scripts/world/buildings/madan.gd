@@ -575,9 +575,12 @@ func _on_health_zero(unit_id_in: int) -> void:
 		return
 	# Subclass-specific cleanup: release the cached mine's modifier slot.
 	if _registered_mine != null and is_instance_valid(_registered_mine):
-		if _registered_mine.has_method(&"unregister_extraction_modifier"):
-			_registered_mine.unregister_extraction_modifier(self)
-			print("[madan] unregistered_modifier mine=%s" % str(_registered_mine.name))
+		# (§9.M7 L7 cleanup: former has_method guard was a stale relic —
+		# this cached ref was registered via the DIRECT
+		# register_extraction_modifier call in _on_construction_complete
+		# (RNC v1.3.0 §4.7 ratified API); unregister is the same contract.)
+		_registered_mine.unregister_extraction_modifier(self)
+		print("[madan] unregistered_modifier mine=%s" % str(_registered_mine.name))
 	_registered_mine = null
 	# Base handles latch + generic emit + queue_free.
 	super._on_health_zero(unit_id_in)
