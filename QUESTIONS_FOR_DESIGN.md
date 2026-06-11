@@ -39,6 +39,19 @@ Keep entries terse. Long questions fragment the design chat's attention.
 
 > **2026-06-08 — DECISION PACKET AVAILABLE.** All open entries below (plus the 5 codex-lane questions, the plan-§10 index, and 4 housekeeping requests) are consolidated into **`DECISION_PACKET_2026-06-08.md`** at repo root — each with options, implementation-side recommendation, and cost-of-delay, ordered so one design-chat sitting (~1h) clears the whole backlog. Read the packet instead of the raw entries; the entries below remain the canonical full-context record.
 
+## 2026-06-12 — View-only enemy selection? (input-layer P1 hotfix follow-on)
+
+**Context:** The P1 input-layer hotfix (live playtest 2026-06-11; branch `fix/input-layer-playtest-bugs`) enforced player-team-only selection at the SelectionManager seam. The live bug was that an enemy unit could be *selected and then commanded* — the player right-clicked near their own worker and the game issued an attack order TO the enemy, which killed the player's worker. The fix makes enemy units non-selectable.
+
+**Question:** Single-clicking an enemy unit now does **nothing** (it deselects, matching click-on-terrain). The genre convention (StarCraft 2, Age of Empires 2) is **view-only** enemy selection: clicking an enemy shows its stats in the unit panel (HP, type, abilities) without making it commandable. Do we want view-only enemy selection as a Phase-5 UI item?
+
+**Options considered:**
+- **(a) Keep current (no-op/deselect):** Simplest. No enemy info surfaced; player relies on health bars + visual read. Matches the hotfix as shipped.
+- **(b) View-only enemy selection (SC2/AoE2 convention):** Left-click an enemy → unit panel shows its stats, ring drawn in a distinct "enemy" color, but right-click commands still apply to the player's *prior* selection (the enemy is never the commanded actor). Requires a "view target" concept in SelectionManager/SelectedUnitPanel distinct from the "command set."
+- **(c) Hybrid:** view-only on a modifier (e.g. Alt+click) to keep plain click as deselect.
+
+**Blocking:** No. The hotfix ships option (a). View-only is a pure UX enhancement; it does NOT reintroduce the P1 bug as long as the "view target" is kept separate from the commandable selection set.
+
 ## 2026-05-28 — Late-game economic pressure gap (balance-engineer flag, session 9 close retro)
 
 **Context:** Wave 3-BuildingDestructibility (PR #42) closed the last structural blocker for an end-to-end match loop. Combined with the §9 retro convergence across gp-sys + balance-engineer that *"AI-vs-AI unattended runs is the most important balance tool we don't have yet,"* the next-question surfaces: when AI-vs-AI runs land, what will the match-pacing data actually show?

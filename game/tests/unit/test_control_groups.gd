@@ -67,6 +67,7 @@ var _units: Array = []
 
 func before_each() -> void:
 	SimClock.reset()
+	GameState.reset()  # player_team back to TEAM_IRAN (P1 gate SSOT)
 	SelectionManager.reset()
 	groups = ControlGroupsScript.new()
 	add_child_autofree(groups)
@@ -82,9 +83,18 @@ func after_each() -> void:
 			u.queue_free()
 	_units.clear()
 	SelectionManager.reset()
+	GameState.reset()
 	SimClock.reset()
 	groups = null
 	stub_camera = null
+
+
+# Enemy fake — a Turan unit. Used by the P1 control-group regression test
+# below (an enemy can never reach the selection, so bind snapshots nothing).
+func _make_enemy_unit(uid: int) -> FakeUnit:
+	var u: FakeUnit = _make_unit(uid)
+	u.team = Constants.TEAM_TURAN
+	return u
 
 
 func _make_unit(uid: int, pos: Vector3 = Vector3.ZERO) -> FakeUnit:
@@ -432,3 +442,38 @@ func test_reset_clears_double_tap_state() -> void:
 	groups.recall_with_double_tap(1)
 	assert_eq(stub_camera.center_calls.size(), 0,
 		"reset() wipes the double-tap state machine")
+
+
+# ============================================================================
+# P1 regression (h) — control-group bind can never capture a non-player-team
+# unit (live playtest 2026-06-11). The SelectionManager gate blocks the enemy
+# from ever entering the selection, and bind() snapshots selected_units, so the
+# enemy can't end up in a control group. This is the "free" consequence the P1
+# canonical-seam fix delivers — no separate guard in control_groups.gd.
+# ============================================================================
+
+func test_bind_after_enemy_click_attempt_contains_nothing() -> void:
+	# Attempt to select an enemy (rejected by the gate), then bind — the group
+	# must be empty.
+	var enemy: FakeUnit = _make_enemy_unit(1)
+	SelectionManager.select(enemy)  # rejected by the P1 team gate
+	assert_eq(SelectionManager.selection_size(), 0,
+		"sanity: the enemy was rejected and is not selected")
+	groups.bind(1)
+	assert_eq(groups.members_of(1).size(), 0,
+		"bind after an enemy-select attempt captures nothing (P1 consequence)")
+
+
+func test_bind_with_mixed_select_attempt_captures_only_ally() -> void:
+	# Select an ally (accepted) and attempt to add an enemy (rejected). bind
+	# must snapshot only the ally.
+	var ally: FakeUnit = _make_unit(1)
+	var enemy: FakeUnit = _make_enemy_unit(2)
+	SelectionManager.select(ally)
+	SelectionManager.add_to_selection(enemy)  # rejected by the gate
+	groups.bind(1)
+	var members: Array = groups.members_of(1)
+	assert_eq(members.size(), 1,
+		"bind captures only the ally — the enemy never entered selection")
+	assert_true(ally in members)
+	assert_false(enemy in members)
