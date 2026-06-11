@@ -2,7 +2,7 @@
 title: AI-vs-AI Match Result Format
 type: contract
 status: v1.1.1
-version: 1.1.1
+version: 1.1.2
 owner: balance-engineer
 authored: 2026-06-03
 authored_by: balance-engineer-wave-3sim
@@ -389,6 +389,7 @@ All `_x100` fields follow the Sim Contract §1.6 fixed-point convention: the int
 | Gap | Impact | Resolution path |
 |---|---|---|
 | ~~`mine_node.gd` hardcoded reserves/slots~~ **RESOLVED 2026-06-08 (wave B1)** | Mine tunables (reserves, max_slots, yield, extract_ticks) now read from balance.tres with §9.L9 visible fallbacks — see §6.5 | §6 affordability table re-run queued for the next balance pass (the income model is now stale-conservative) |
+| **Zero batch variance until GameRNG lands (forward-watch, v1.1.2)** | Matches are fully deterministic across DIFFERENT seeds (10-seed batch 2026-06-10 → byte-identical NDJSON; L3-confirmed zero production randomness — seeds are inert). N-match batches are N identical matches: percentile aggregations degenerate to point values; the §4.1 "distribution" language is vacuous today. Until resolved, N>1 batches buy cross-process determinism verification ONLY — do not read them as tuning signal | Re-validate when GameRNG (or any seeded production roll, e.g. Kaveh) lands; first post-GameRNG batch should confirm seeds actually fan out before any distribution-shaped tuning |
 | Turan Farr not separately tracked | `turan.farr_x100_at_end` emits the `-1` sentinel (v1.1.0; the v1.0.0 Iran-value proxy is revoked) | Revisit at Phase 5+ campaign design |
 | `kaveh_event_triggered` always `false` | FarrSystem has no Kaveh state to read | Wire when the Kaveh Event ships (Phase 5) |
 | `units_produced_total` tick>0 rule vs §2.2 definition (forward-watch, v1.1.1) | The discriminator counts ANY post-start spawn as "produced". Equivalent to the §2.2 "spawned from production buildings" definition today (only buildings spawn after tick 0). **Phase-6 watch:** if TuranController gains direct wave-spawning, `turan.units_produced_total` silently diverges from its definition | When Phase-6 Turan production lands, either route wave-spawns through production buildings or add a `source` field to the `unit_spawned` payload — trip over this row deliberately |
@@ -401,10 +402,11 @@ All `_x100` fields follow the Sim Contract §1.6 fixed-point convention: the int
 
 | Version | Date | Author | Changes |
 |---|---|---|---|
+| 1.1.2 | 2026-06-11 | lead (Wave C+D close, mirror X.3) | §8 zero-variance forward-watch row: 10-seed batch byte-identical → batches verify determinism only until GameRNG; balance-engineer must read before any distribution-shaped tuning. |
 | 1.0.0 | 2026-06-03 | balance-engineer | Initial contract: NDJSON schema, signal classification, aggregation conventions, affordability table. |
 | 1.1.0 | 2026-06-08 | engine-architect (Track B2) | Event counters wired live (review finding GP-6): `units_killed_total` (unit_died), per-team `buildings_destroyed` + total (building_destroyed, Throne excluded), `farr_drain_events_total` (farr_changed negative delta), `turan_units_deployed_total` (unit_spawned team==TURAN), `turan_probes_fired` (TuranController accessor; semantics changed probing→idle ⇒ idle→probing launch edge). `turan.farr_x100_at_end` ⇒ `-1` sentinel (balance-engineer farr-proxy self-flag; v1.0.0 Iran-value proxy revoked; aggregator excludes `-1`). New §2.3: throne-fall grace window (`Constants.SIM_THRONE_GRACE_TICKS` = 30 ticks; `duration_ticks` records throne-fall tick, grace excluded) + tick-driven timeout (DET-3). §5 examples updated to match. |
 | 1.1.1 | 2026-06-08 | lead (wave-B integration fix-up) | Last two GP-6 zero-fields wired live: `units_produced_total` ← `unit_spawned` with **SimClock.tick > 0** as the production-source discriminator (tick-0 roster spawns are structural, per the §2.2 definition that always required this); `buildings_constructed_total` ← new typed `EventBus.building_constructed(team, kind, unit_id)` Stage-2 completion channel (mirrors `building_destroyed` shape; emitted by UnitState_Constructing after the local `construction_finalized`). Same tick>0 rule now guards the `iran_first_piyade_tick` latch — observation smoke showed it latching pre-spawned roster piyades at tick 0, making the build-order-validation signal dead-at-0 every match. Also noted: post-ARCH-1 the `first_engagement_tick` proxy is Unit-namespace only (building-only engagements don't move the latch — closer to the §2.2 "combat unit dealt damage" semantic). |
 
 ---
 
-*End of AI_VS_AI_RESULT_FORMAT.md v1.1.1*
+*End of AI_VS_AI_RESULT_FORMAT.md v1.1.2*

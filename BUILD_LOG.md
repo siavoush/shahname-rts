@@ -12,12 +12,37 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-06-08 (Track B1 — mine_node + mazraeh BalanceData SSOT fix, review ARCH-5/GP-3)
+last_updated: 2026-06-11 (Wave C+D close aggregate)
 ---
 
 # Build Log
 
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
+
+---
+
+## 2026-06-11 — Wave C+D close: first decisive AI-vs-AI victory; profiler, L7 lint, MatchHarness v2, real determinism test, plan-v2 draft (wave aggregate — C1/C2/C3/C4 + D1 + §9.F6 mirror)
+
+**Branch:** `feat/wave-cd-close` (octopus of `wave/c1` `c79a964` + `wave/c2` `611d4d3` + `wave/c3` `ab2963a` + `wave/c4` `fee63f9` + `wave/d1-attack-move-buildings` `2240071` onto main `e678fa7`). **Merged suite: 1688 tests / 0 failures; lint L1–L7 0 violations.**
+
+**What shipped (one line per track; details in each track's commit message + ARCH §6 v0.39.0):**
+
+1. **D1 — attack-move engages enemy buildings** (ai-engineer lane, lead-dispatched). Two-stage acquisition in `UnitState_AttackMove`: SpatialIndex units first, `&"buildings"` group fallback (opposing-only, edge-distance via `get_footprint_aabb()`). Root-fixes the 30000-tick stalemate (38-unit army idle beside an intact throne — buildings never register in SpatialIndex). **Same seed: IRAN_WIN at tick 2033 — the project's first decisive AI-vs-AI victory.** Attack payload threads `&"target_node"` (BUG-H8 class). +4 tests.
+2. **C1 — per-phase tick profiler + roster knob** (engine-architect lane). `SimClock` opt-in profiler (`--profile-ticks`), `--roster full|skirmish` (9-unit skirmish ≈ 2.7× faster). **First empirical cost data: `ai` phase = 86.8% of tick cost** — optimization triad now data-ranked (spatial culling for AI scans first). 1682 green at track close.
+3. **C2 — L7 lint** (qa-engineer lane). §9.M7 defensive-fallback-masking detection live in `tools/lint_simulation.sh` + `tools/L7_allowlist.txt` (WHY comments mandatory); 6 production guard→direct-call conversions. Deliberate-violation probe verified. Dictionary-probe half deferred out of v1 (§9.B5).
+4. **C3 — QA debt triple** (qa-engineer lane). Subprocess smoke test for `--headless-batch` boot (temp-script watchdog — OS.execute pre-expands inline `bash -c` args, documented); real-gameplay determinism snapshot-hash test (450 ticks — first red caught the never-reset Building static id counter, fixed); MatchHarness v2 (13-autoload reset, real spawn catalogs, balance.tres ResourceCache pin).
+5. **C4 — DRAFT_IMPLEMENTATION_PLAN_V2.md** (lead lane). 167-line plan-v2 draft, branch-structured on the T&T Tier-1 ruling; status `awaiting-design-ratification` — NOT a plan until the design chat ratifies (02_IMPLEMENTATION_PLAN.md untouched).
+
+**Calibration findings (for gen-2 balance-engineer — read AI_VS_AI_RESULT_FORMAT §8 v1.1.2 first):**
+- 10-match batch, 10 DIFFERENT seeds, post-D1: **byte-identical results.** Cross-process determinism empirically proven; seeds are inert (zero production randomness). Batches have **zero variance until GameRNG lands** — N>1 batches buy determinism verification only, not tuning signal.
+- The one decisive matchup observed is 100% Iran-win (Turan never trains units at MVP — known asymmetry). Matchup-degeneracy tuning is balance-engineer's lane (§9.L1); lead did not touch balance.tres.
+- Pre-D1 stalemate-rate priors are invalidated in BOTH directions (Turan sweep units also auto-acquire Iran buildings now).
+
+**§9.F6 integration mirror (architecture-reviewer, Fable-inherit):** FIX-FIRST-THEN-MERGE — zero code blockers; all fix-first items docs-truth, closed in this branch: ARCH §2 sweep (SimClock/CI-lint/MatchHarness/batch-runner/determinism/attack-move/spawn rows + stale LATER-L7 row + stale `physics_ticks_per_second` carry-forward), false `&"units"` comment in `headless_match_runner.gd` (Unit.gd HAS joined `&"units"` since c05ba77), DRAFT plan §6 same-day-stale tooling queue rewritten, AI_VS_AI_RESULT_FORMAT v1.1.2 zero-variance forward-watch row. Advisories logged: latent `&"buildings"` fixture rule (any fixture joining the group needs `get_footprint_aabb`+`team`+`unit_id` if AttackMove can tick); L7 category entries are wide — recurring prune sweep queued; translation binaries committed by D1 KEPT (they regenerate truthfully from current csv; C1/C2 had excluded identical deltas as import noise — disposition now recorded, one precedent).
+
+**Process notes:** C1/C2 workflow agents died at the StructuredOutput step but left ~90% complete work — a single sequential finisher verified/finished/committed both (pattern worth keeping). GUT suites must NEVER run concurrently (CPU contention → 254s vs ~60s solo + flaky pre-commit gate timeouts; D1's "COMMIT BLOCKED" flake was this). Carry-forwards: §9.B5-deferred `combat_component.take_damage_x100` conversion, Dictionary-probe L7 v2, C4.3 DummyIran subscription-over-polling, C7.2 stat-resolver config cache, recurring L7 allowlist prune.
+
+**Open questions:** none new. DECISION_PACKET_2026-06-08.md Tier 1 still pending design-chat rulings (blocks Phase 4 content); DRAFT_IMPLEMENTATION_PLAN_V2.md awaits ratification.
 
 ---
 

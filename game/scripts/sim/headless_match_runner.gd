@@ -644,10 +644,11 @@ func _assemble_result_dict(
 # map + §7.3 Turan-field notes (Turan has no economy at MVP — emit zeros
 # for symmetry).
 #
-# Group inventory: only Building.gd joins &"buildings" + Throne.gd joins
-# &"thrones" (verified at runner fix-up time). Unit.gd does NOT join any
-# group, so unit-count capture uses scene-tree recursion + duck-typing on
-# `unit_type` field.
+# Group inventory: Building.gd joins &"buildings", Throne.gd joins
+# &"thrones", and Unit.gd joins &"units" (since c05ba77). Unit-count capture
+# predates the &"units" group and still uses scene-tree recursion +
+# duck-typing on `unit_type`; behavior is equivalent, migrate when next
+# touched.
 func _capture_team_fields(team_id: int) -> Dictionary:
 	var workers: int = 0
 	var combat_units: int = 0
