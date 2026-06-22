@@ -541,20 +541,28 @@ drain_hero_attack_ally = -5.0
 drain_hero_killed_fleeing = -10.0
 drain_hero_killed_battle = -5.0
 drain_atashkadeh_lost = -5.0
-drain_snowball_per_kill = -0.5
-drain_snowball_worker = -1.0
 snowball_ratio = 3.0
 gain_hero_rescue = 3.0
 gain_hero_spares_enemy = 5.0
 ; Phase 3 wave 1B drain-rate table (Open Space 2026-05-13 resolution).
 ; Positive magnitudes; the dispatcher applies the negative sign at the call site.
 ; Phase 3 wired keys: worker_killed_idle, worker_killed_during_gather.
+; Phase 4 wave 1 wired keys (§4.3 snowball-injustice, ratified 2026-06-22):
+;   snowball_kill_outnumbered = 0.5 — repeated per-kill drain at 3:1 pop ratio
+;     (§1.1a). Matches worker_killed_during_gather (small/frequent tier); a
+;     14-unit rout = -7 Farr ≈ losing an Atashkadeh (anti-tyranny, §4.3).
+;   snowball_economy_when_broken = 1.0 — worker/mine killed while military-broken
+;     (§1.1b). Matches worker_killed_idle exactly (defenseless-victim injustice).
+;   (drain_snowball_per_kill / drain_snowball_worker @export fields RETIRED this
+;    wave — superseded by these dict keys; were never read at runtime.)
 ; Forward-compat keys (Phase 4+ emit sites): capital_damaged, capital_lost,
 ; building_destroyed_civilian, building_destroyed_military,
-; building_destroyed_atashkadeh, hero_died.
+; building_destroyed_atashkadeh (WIRED this wave via building_destroyed), hero_died.
 drain_rates = {
 &"worker_killed_idle": 1.0,
 &"worker_killed_during_gather": 0.5,
+&"snowball_kill_outnumbered": 0.5,
+&"snowball_economy_when_broken": 1.0,
 &"capital_damaged": 2.0,
 &"capital_lost": 12.0,
 &"building_destroyed_civilian": 1.5,
@@ -672,10 +680,22 @@ trip_full_load_ticks = 60
 ;   01_CORE_MECHANICS.md §3 starting-resource table. Should only change if
 ;   spec changes.
 
+; Royal-largesse upkeep (Phase 4 wave 1 — D3, ratified 2026-06-22 §1.2):
+;   royal_largesse_upkeep_coin_per_military_unit = 8 — midpoint of the 5-10
+;     calibration band. 14-unit starting army = 112 coin/min (~19% of a working
+;     5-worker economy's ~600 coin/min); 30-40 unit stalled army = 240-320/min
+;     (40-55% — treasury bleeds, can't replace losses → the AI-vs-AI
+;     batch-duration variance source). Bites at the 8/12/16 easy/normal/hard AI
+;     attack thresholds. STARTING value; recalibrate against duration histograms.
+;   royal_largesse_upkeep_interval_ticks = 1800 = 1 game-min @ 30Hz. First drain
+;     at t=60s (tick 1800), past workers-reach-mines, so no turn-1 starvation off
+;     150 starting coin. Drains TREASURY not Farr (Farr stays pure for justice).
 [sub_resource type="Resource" id="economy_cfg"]
 script = ExtResource("6_economyconfig")
 starting_coin = 150
 starting_grain = 50
+royal_largesse_upkeep_coin_per_military_unit = 8
+royal_largesse_upkeep_interval_ticks = 1800
 resource_nodes = SubResource("res_node_cfg")
 
 ; =========================================================================
