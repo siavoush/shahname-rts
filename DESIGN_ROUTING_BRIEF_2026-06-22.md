@@ -1,7 +1,7 @@
 ---
 title: Design Routing Brief — Tier-1 is now the critical path
 type: decision-request
-status: awaiting-design-chat
+status: tier-1-RULED-2026-06-22 (Siavoush, implementation session) — entries below await ratification into DECISIONS.md
 version: 1.0.0
 owner: team-lead (implementation side)
 audience: design chat (Siavoush + design context)
@@ -54,3 +54,19 @@ The 100%-Iran-win matchup is **expected and fine** — the MVP baseline is delib
 Tier 2 (naming: Persian-primary, Coin-vs-Sekkeh, Turan housing, codex id batch), Tier 3 (ratify-the-shipped-defaults table), Tier 4 (two stale-entry archivals, the `02_IMPLEMENTATION_PLAN.md` v2.0.0 re-baseline offer, the fun-gate milestone, the `DECISIONS.md` backfill) are all in the packet with recommendations. One new non-blocking question has accrued since: **view-only enemy selection** (`QUESTIONS_FOR_DESIGN.md` 2026-06-12, a Phase-5 UI candidate from the input hotfix) — safe to defer.
 
 **Every ruling should land as a `DECISIONS.md` entry.** The lead executes all follow-through (plan re-baseline draft, archivals, backfill drafts) in the implementation lane once the rulings exist.
+
+
+---
+
+# RULINGS — Tier 1 cleared 2026-06-22 (Siavoush, implementation session)
+
+All three Tier-1 decisions ruled in one sitting; every implementation-side recommendation accepted. **The entries below are formatted ready to paste into `DECISIONS.md`** (design-chat-owned — lead drafts, design chat ratifies; precedent: the 2026-05-01 Godot pin was authorized inline by Siavoush and recorded the same way). Phase-4 content is now unblocked.
+
+## 2026-06-22
+
+- **Economy direction — Trade & Transport / royal-largesse, staged (Packet §1.2, Option 2).** Ratified as the project's committed economy direction: wealth-flow IS the contest (local stores, raidable caravans, escort automation, upkeep reframed as royal largesse), with emergent Iran/Turan asymmetry from one ruleset. **Staging:** Phase-4 *core* (full FarrSystem + tech tiers + production queues) ships first on the simpler economy WITH a minimal royal-largesse upkeep trickle as the standing late-game pressure (sized by balance-engineer); the full T&T build (caravans / local stores / escort) is gated on the post-Phase-4-core fun-gate playtest. Forward-compat seams (Mazra'eh/Ma'dan `_local_stock_x100`) become committed paths. → `QUESTIONS_FOR_DESIGN.md` 2026-05-24, `docs/SHAHNAMEH_ECONOMY_RESEARCH.md`, `DECISION_PACKET_2026-06-08.md` §1.2. Authorized 2026-06-22 by Siavoush in the implementation session.
+- **Snowball-protection: "3:1 army advantage" = population cost (Packet §1.1a, Option 2).** The Farr snowball drain triggers when `attacker_team_pop >= 3 * defender_team_pop`, summing each living unit's `population_cost` (balance.tres) over the team — enumerated on demand from the `&"units"` group (NOT the dead `change_population` counter). Chosen over unit-count (gameable by cheap-unit spam) and combat-power-index (new tuning surface). → `01_CORE_MECHANICS.md` §4.3, `DECISION_PACKET_2026-06-08.md` §1.1. Authorized 2026-06-22 by Siavoush.
+- **Snowball-protection: "military is broken" = no military units alive AND no operational military-production buildings (Packet §1.1b, Option 2).** The "destroy-their-economy-when-they're-down" Farr drain triggers only when a team has zero living military units (unit_type != `kargar`) AND zero complete/operational military-production buildings (`produces` non-empty + `is_complete`) — "can't fight back AND can't rebuild." Chosen over zero-units-alive (misfires during ordinary army trades) and below-%-of-peak (needs history machinery). → `01_CORE_MECHANICS.md` §4.3, `DECISION_PACKET_2026-06-08.md` §1.1. Authorized 2026-06-22 by Siavoush.
+- **Turan economy frame — non-mirror, ratified (Packet §1.3).** Turan's economy is tribute (*baj*) + raid + caravan (*karavan*) + tent-household (*otaq*/*khargah*), NOT mirror-clones of Iran buildings. Makes canonical the frame already operative in shipped code (mazraeh.gd / madan.gd cultural-note headers); specific mechanical shapes stay deferred to their Phase-4+ waves. Pairs with the §1.2 T&T direction — Turan's raid economy is half the asymmetry. → `00_SHAHNAMEH_RESEARCH.md`, `DECISION_PACKET_2026-06-08.md` §1.3. Authorized 2026-06-22 by Siavoush.
+
+**Still open (NOT ruled this sitting — Tier 2-4 in the packet):** naming batch (2.1-2.4), ratify-the-defaults (3.x), housekeeping (4.x incl. the plan v2.0.0 re-baseline offer, the early-fun-gate milestone, and the DECISIONS.md backfill). None block Phase-4 core.
