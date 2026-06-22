@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-06-12 (input-layer hotfix wave)
+last_updated: 2026-06-22 (Tier-1 rulings cleared)
 ---
 
 # Build Log
@@ -20,6 +20,19 @@ last_updated: 2026-06-12 (input-layer hotfix wave)
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
 
 ---
+
+## 2026-06-22 — Tier-1 design backlog CLEARED (Siavoush ruling, implementation session) — Phase 4 unblocked
+
+After the routing brief (PR #61) surfaced the Decision Packet's 3 Tier-1 questions as the project's binding constraint (DECISIONS.md frozen 7+ weeks), Siavoush ruled all three in one sitting via the implementation chat. Every implementation-side recommendation accepted:
+
+1. **§1.2 Economy direction -> Option 2 (stage it).** Trade & Transport / royal-largesse ratified as THE economy direction; Phase-4 core (full Farr + tech tiers + production) ships first WITH a minimal royal-largesse upkeep trickle (balance-engineer-sized) as standing pressure; full caravan/local-store/escort build gated on the post-core fun-gate.
+2. **§1.1a Snowball "3:1 ratio" -> population cost** (`attacker_pop >= 3*defender_pop`, summed on demand from `&"units"` + balance.tres; dead `change_population` counter confirmed irrelevant).
+3. **§1.1b Snowball "military broken" -> no military units alive AND no operational military-production buildings.**
+4. **§1.3 Turan economy -> ratify non-mirror** (baj/raid/caravan/tent-household; already operative in shipped code).
+
+Ratify-ready DECISIONS.md entries drafted in DESIGN_ROUTING_BRIEF_2026-06-22.md "RULINGS" section (design chat ratifies into the file; precedent = 2026-05-01 Godot-pin inline authorization). **The FarrSystem snowball drains and the full Phase-4 economy are now codeable.** Tier 2-4 (naming, defaults, housekeeping incl. plan v2.0.0 re-baseline + early-fun-gate milestone + DECISIONS backfill) remain open but block nothing.
+
+**Next implementation step:** Phase-4 Wave-1 kickoff brief for the FarrSystem (the central mechanical innovation — `apply_farr_change` plumbing already exists; add the §1.1 snowball drains + upkeep-lite + Farr gains), then brief-time mirror review before any code.
 
 ## 2026-06-12 — Input-layer hotfix wave: P1/P2/P3 playtest bugs + review findings A1/A3 (branch `fix/input-layer-playtest-bugs`)
 
