@@ -18,6 +18,25 @@ last_updated: 2026-05-28 (Session 9 close retro — late-game economic pressure 
 
 # Questions for Design
 
+## 2026-06-22 — D1b "kicking-them-while-down" drain: double-drain with the base worker-killed drain, and the killer-attribution gate
+
+**Context:** Phase 4 wave 1 wired the §4.3 snowball-injustice drains (DECISIONS.md 2026-06-22 §1.1). D1b (`snowball_economy_when_broken`, −1.0) fires when "a worker dies AND the victim's team is military-broken." The base worker-killed drain (`worker_killed_idle` −1.0 / `worker_killed_during_gather` −0.5) ALSO fires on the same worker death (it hooks `unit_health_zero`). A worker killed on a military-broken team would therefore drain Farr TWICE for one death (e.g. idle worker on a broken team = −1.0 base + −1.0 D1b = −2.0).
+
+**Implementation choice made (simplest spec-faithful, documented in `farr_drain_dispatcher.gd`):** D1b now requires a **resolvable enemy killer** (mirrors D1a's Fix-F1 killer-attribution gate) — it bails when `killer_unit_id == -1` (attrition / Farr-drain / scripted death) or on friendly-fire. So the double-drain only happens when an **identified enemy** kills a worker on a broken team — which is exactly the "kicking them while down" injustice §4.3 describes. Deaths with no attacker drain only the base worker amount. This also keeps every existing worker-drain integration test green (they kill with a `null` attacker → D1b bails).
+
+**Questions for design:**
+1. **Is the double-drain intended?** When an enemy kills a worker on a military-broken team, is −2.0 Farr (base worker-loss + economy-when-broken) the desired total, or should D1b REPLACE the base drain (so it's −1.0 either way, just attributed differently)?
+2. **Should D1b require that the team HAD military that was destroyed**, versus merely being in a zero-military state now? A brand-new economy that never built military is technically "military-broken" by the state predicate (§1.1b), but isn't "down" in the narrative sense (no one broke it). The current implementation uses the state predicate as written + the killer-attribution gate.
+
+**Options considered for (1):**
+- **(a) Additive (current):** −2.0. The two drains encode distinct injustices (you killed a worker AND you did it while they were defenseless). Highest anti-snowball pressure.
+- **(b) Replace:** D1b suppresses the base worker drain → −1.0 total, logged as `snowball_economy_when_broken`. Avoids double-jeopardy; same magnitude, clearer attribution.
+- **(c) D1b is strictly heavier:** the base worker drain is suppressed and D1b is tuned to a larger value (e.g. −1.5) to represent the compounded injustice in one number.
+
+**Blocking:** No. MVP ships (a) additive with the killer-attribution + friendly-fire gates (matches the brief's literal D1b wording + the F1 attribution principle). Trivial to switch to (b)/(c) once design confirms — it's a guard in `_maybe_drain_economy_when_broken`.
+
+---
+
 This file is the upward channel from Claude Code (implementation) to the design chat (Siavoush + design Cowork session).
 
 When a Claude Code session hits a question it cannot resolve from the specs — and the question affects gameplay, feel, balance, or narrative — it appends an entry here and continues with other unblocked work. Siavoush brings the file to the design chat, decisions get made, the relevant spec doc gets updated, and the question is removed from this file (or struck through and archived at the bottom).

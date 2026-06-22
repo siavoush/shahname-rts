@@ -284,6 +284,15 @@ const FARR_REASON_ATASHKADEH_EMISSION: StringName = &"atashkadeh_emission"
 ## the magnitude (the existing -5 key); this is the apply_farr_change reason.
 const FARR_REASON_ATASHKADEH_LOST: StringName = &"atashkadeh_lost"
 
+## Building-kind StringName for Atashkadeh — the `kind` field on the Atashkadeh
+## Building (matches the BalanceData.buildings key + the building_destroyed
+## signal's `kind` arg). Used by FarrSystem._on_building_destroyed to identify
+## an Atashkadeh loss WITHOUT a class_name reference (autoloads parse before the
+## class_name registry populates — the registry-race rationale, ARCHITECTURE §6
+## v0.4.0; comparing the StringName sidesteps it). Mirrors Atashkadeh.
+## KIND_ATASHKADEH (= &"atashkadeh"); kept in sync by value (both are &"atashkadeh").
+const BUILDING_KIND_ATASHKADEH: StringName = &"atashkadeh"
+
 ## drain_rates key for the Atashkadeh-loss magnitude (the existing -5 key,
 ## §4.3). Distinct from FARR_REASON_ATASHKADEH_LOST (the apply_farr_change
 ## reason logged to F2): the dict key names the spec event; the reason token
