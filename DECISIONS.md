@@ -12,7 +12,7 @@ ssot_for:
 references: [00_SHAHNAMEH_RESEARCH.md, 01_CORE_MECHANICS.md]
 tags: [decisions, history, design-chat]
 created: 2026-04-22
-last_updated: 2026-04-23
+last_updated: 2026-06-22
 ---
 
 # Project Decisions Log
@@ -46,6 +46,13 @@ This file is maintained by the **design chat** (the Cowork chat with Siavoush). 
 ## 2026-05-01
 
 - **Godot version pinned**: Godot 4 stable line. Specific patch version recorded in `project.godot` and `docs/ARCHITECTURE.md` build-state table at the moment of project initialization (Phase 0). Any future major-version bump (e.g., 4 → 5, or breaking 4.x → 4.y change) is itself a design decision that lands here. Day-to-day patch updates (4.x.0 → 4.x.1) do not require new entries. → `02_IMPLEMENTATION_PLAN.md` Phase 0, `02a_PHASE_0_KICKOFF.md`. Authorized inline 2026-05-01 by Siavoush during the Phase 0 kickoff session.
+
+## 2026-06-22
+
+- **Economy direction — Trade & Transport / royal-largesse, staged (Decision Packet §1.2, Option 2).** Wealth-flow IS the contest (local stores, raidable caravans, escort, upkeep reframed as royal largesse), with emergent Iran/Turan asymmetry — ratified as the committed economy direction. **Staging:** Phase-4 *core* (full FarrSystem + tech tiers + production queues) ships first WITH a minimal royal-largesse upkeep trickle (balance-engineer-sized) as standing late-game pressure; the full caravan/local-store/escort build is gated on the post-core fun-gate playtest. Forward-compat seams (Mazra'eh/Ma'dan `_local_stock_x100`) become committed paths. → `docs/SHAHNAMEH_ECONOMY_RESEARCH.md`, `DECISION_PACKET_2026-06-08.md` §1.2. Authorized 2026-06-22 by Siavoush in the implementation session.
+- **Snowball-protection — "3:1 army advantage" = population cost (Packet §1.1a, Option 2).** The Farr snowball drain triggers when `attacker_team_pop >= 3 × defender_team_pop`, summing each living unit's `population_cost` (balance.tres) over the team. Chosen over unit-count (gameable) and combat-power-index (new tuning surface). → `01_CORE_MECHANICS.md` §4.3, `DECISION_PACKET_2026-06-08.md` §1.1. Authorized 2026-06-22 by Siavoush.
+- **Snowball-protection — "military is broken" = no military units alive AND no operational military-production buildings (Packet §1.1b, Option 2).** The "destroy-their-economy-when-they're-down" drain fires only when a team has zero living military units AND zero complete/operational military-production buildings ("can't fight back AND can't rebuild"). Chosen over zero-units-alive (misfires mid-trade) and below-%-of-peak (needs history tracking). → `01_CORE_MECHANICS.md` §4.3, `DECISION_PACKET_2026-06-08.md` §1.1. Authorized 2026-06-22 by Siavoush.
+- **Turan economy frame — non-mirror, ratified (Packet §1.3).** Turan's economy is tribute (*baj*) + raid + caravan (*karavan*) + tent-household (*otaq*/*khargah*), NOT mirror-clones of Iran buildings. Makes canonical the frame already operative in shipped code (mazraeh.gd / madan.gd cultural-note headers); mechanical shapes stay deferred to their Phase-4+ waves. → `00_SHAHNAMEH_RESEARCH.md`, `DECISION_PACKET_2026-06-08.md` §1.3. Authorized 2026-06-22 by Siavoush.
 
 ---
 
