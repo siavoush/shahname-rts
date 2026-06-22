@@ -34,6 +34,8 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 
 **Carry-forwards:** view-only enemy selection (design question, Phase-5 UI candidate); difficulty selection + match end-state remain design-chat scope (routed with the decision packet).
 
+**Live re-playtest 2026-06-22 (Siavoush):** both P3 (right-click enemy building → attack) and P1 (enemy units uncommandable) CONFIRMED working in play. Playtest-bug loop closed end-to-end (find → fix → review → merge → human-confirmed).
+
 ---
 
 ## 2026-06-11 — Live playtest (Siavoush, first human play-through of the full loop) — FUN-GATE INPUT
