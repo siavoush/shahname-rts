@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-06-22 (free-units train-cost hotfix)
+last_updated: 2026-06-22 (Phase 4 wave 1 — FarrSystem economy + free-units train-cost hotfix)
 ---
 
 # Build Log
@@ -32,6 +32,24 @@ Chronological record of what each Claude Code session shipped. Append-only. The 
 **Review:** godot-code-reviewer + architecture-reviewer both **MERGE-AS-IS** (arch endorsed: on-tick discipline respected, determinism + AI-vs-AI batch safe, player/AI asymmetry correct-by-construction, regression test guards the real failure mode). Cosmetic stale-comment finding fixed in `51c779c`. No other off-tick→on-tick resource path carries the bug (build placement already defers via the FSM; verified).
 
 **Two distinct "free units" mechanisms now on record (don't conflate):** (1) **BUG-C1** (Wave 3A.6) — config lookup returned 0 so the cost itself was 0 (STUDIO_PROCESS.md:2063). (2) **THIS hotfix** — the cost was correct but the off-tick assert aborted `change_resource` before the store. Different root causes, same symptom; both now regression-guarded.
+
+## 2026-06-22 — Phase 4 Wave 1: FarrSystem economy (D1 snowball drains + D2 emitters + D3 coin upkeep + F2 overlay)
+
+**Branch `feat/phase4-wave1-farr` (4 commits, off main `c00820b`). Suite 1749/0; lint L1-L7 clean (lead-verified solo).** First Phase-4 content after the Tier-1 rulings landed earlier the same day. The Farr meter becomes the moral economy.
+
+Workflow: balance-engineer sized magnitudes (advisory, no balance.tres write) → gameplay-systems implemented D1-D3 against the kickoff brief (`docs/PHASE_4_WAVE_1_FARR_KICKOFF.md`, itself mirror-reviewed) → pre-PR panel. **Process note:** the build workflow's process exited mid-run after the build agent had committed all 3 feature commits; lead recovered by verifying the committed state + committing the agent's in-progress F4-hardening test (ca51ef7), then ran the Review+Close phases as a fresh workflow rather than blind-resuming (which would have re-run the build agent on top of its own commits).
+
+- **D1** snowball-injustice drains on `EventBus.unit_died`: outnumbered-kill (3:1 population-cost, killer-attributed per Fix F1) + economy-when-broken (worker/mine killed vs a military-broken team). Same-tick multi-death order-invariant (Fix F4: exclude is_dying() + just-emitted victim from pop sums). Coexists with the legacy `unit_health_zero` worker drain.
+- **D2** `register_emitter`/`unregister_emitter` API (integer fixed-point accumulator, no drift) → Atashkadeh +1/min now emits; Atashkadeh-loss −5 drain on destruction.
+- **D3** royal-largesse upkeep: 8 coin / living military unit / 1800 ticks via ResourceSystem on the `&"farr"` phase — the standing pressure that gives AI-vs-AI batches variance. Drains Coin, not Farr (meter stays pure).
+- **F2** floating Farr-change-log debug overlay (reserved key was a no-op).
+- Balance starting values: snowball 0.5/1.0, upkeep 8 coin @ 1800t — calibrate once batches have variance.
+
+**Review:** godot-code-reviewer MERGE-AS-IS; architecture-reviewer FIX-FIRST (3 blockers = ARCH §2 rows + §6 v0.41.0 + this entry — all docs-truth, lead-owned, closed in the docs commit; zero code blockers). Both flagged strong positives (chokepoint discipline absolute, mirror's fixes verified present, scope clean — no Kaveh/Tier-2/hero leakage).
+
+**Open question routed to design chat (QUESTIONS_FOR_DESIGN 2026-06-22):** D1b + the legacy worker-killed drain both fire on a worker death when military-broken (−2.0 total) — additive shipped for MVP; confirm additive-vs-replace.
+
+**Next:** PR for merge; then the natural fun-gate playtest — does watching Farr drain when you overextend change how you play? (Tier-2 Farr-gate enforcement + Kaveh are later sub-waves per the ratified staging.)
 
 ## 2026-06-22 — Tier-1 design backlog CLEARED (Siavoush ruling, implementation session) — Phase 4 unblocked
 

@@ -32,13 +32,17 @@
 *:has_method(&"get_movement") — test-stub ctx tolerance in unit states; false branch is loud push_warning + bail-to-idle (§9.L9-loud, not silent masking)
 *:has_method(&"get_health") — duck-typed HealthComponent accessor probe over heterogeneous collections (&"units" group sweeps, selection panels, combat targets); registry-race rationale documented at each site
 *:has_method(&"get_combat") — duck-typed CombatComponent accessor probe (attack-range overlay selection sweep + Attacking-state wave-1B stub tolerance: combat may be absent and the state still drives movement)
+*:has_method(&"is_dying") — duck-typed Unit alive-predicate probe over the &"units" group sweep (Farr §4.3 snowball pop-sums + royal-largesse upkeep, Phase 4 wave 1); is_dying() is the canonical Dying-state check (unit.gd:586, Fix F2), but the registry race (ARCHITECTURE §6 v0.4.0) makes `is Unit` brittle — a stub lacking the method is correctly treated as not-dying
 *:has_method(&"register_vision_source") — FogSystem autoload-or-null seam in the 8 Building subclasses' _on_placement_complete (fog_system.gd header §9.L6 sweep); test scenes instantiate buildings without the FogSystem autoload
 *:has_method(&"deregister_vision_source") — teardown half of the same §9.L6-swept FogSystem seam (_exit_tree / _on_health_zero paths)
 
 # === Per-file entries =======================================================
 
 # --- Forward-compat seams (member genuinely does not exist yet at HEAD) ---
-game/scripts/world/buildings/atashkadeh.gd:FarrSystem.has_method(&"register_emitter") — genuine forward-compat per §9.M7 allowlist seed: FarrSystem autoload exists but register_emitter ships Phase 4; else-branch logs the would-register telemetry loudly
+# (atashkadeh.gd:FarrSystem.has_method(&"register_emitter") entry RETIRED
+#  Phase 4 wave 1 — register_emitter now ships on FarrSystem; the guard was
+#  removed and Atashkadeh calls the method directly. Per the allowlist header
+#  "Prune entries whose call sites are gone at the next L7 sweep.")
 game/scripts/world/buildings/mazraeh.gd:has_method(&"is_fertile_tile") — genuine forward-compat: TerrainSystem autoload + is_fertile_tile not shipped at HEAD (wave 3A+); permissive fallback documented at is_valid_placement
 
 # --- Scene/duck-type resolution seams (no class_name dependency by design) ---

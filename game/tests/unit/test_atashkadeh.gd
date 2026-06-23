@@ -16,9 +16,9 @@
 #        is_emitting_farr; Stage 2 (_on_construction_complete) does.
 #   10-11. super() chain — _on_placement_complete + _on_construction_complete
 #         BOTH call super per §9.L4a + §9.L4b discipline.
-#   12.  Forward-compat FarrSystem.register_emitter seam — when the method
-#        does NOT exist yet (Phase 4 deferred), placement completes without
-#        crash + the log-line fires (telemetry seam).
+#   12.  FarrSystem.register_emitter seam (Phase 4 wave 1 — NOW LIVE):
+#        construction-complete registers the Atashkadeh as a real FarrSystem
+#        emitter (the Wave-2A.5 forward-compat has_method guard is retired).
 #   13.  Placement side-effect: EventBus.building_placed emit with
 #        kind = &"atashkadeh".
 #   14.  Static cost helpers — cost_coin() + cost_grain() defensive fallbacks.
@@ -243,40 +243,36 @@ func test_atashkadeh_on_construction_complete_calls_super() -> void:
 
 
 # ---------------------------------------------------------------------------
-# Forward-compat FarrSystem.register_emitter seam
+# FarrSystem.register_emitter seam (Phase 4 wave 1 — NOW LIVE)
 # ---------------------------------------------------------------------------
 
-func test_atashkadeh_placement_no_crash_when_farrsystem_register_emitter_absent() -> void:
-	# FarrSystem is an autoload (present in project.godot) but its
-	# register_emitter() API ships in Phase 4 (not yet implemented).
-	# Atashkadeh's Stage 2 should detect the absence via has_method,
-	# skip the registration call, and complete construction without
-	# crash. The forward-compat seam logs a telemetry line that future
-	# audits can grep when Phase 4 ships.
+func test_atashkadeh_registers_as_farr_emitter_on_construction_complete() -> void:
+	# Phase 4 wave 1: FarrSystem.register_emitter now exists. The Wave-2A.5
+	# forward-compat has_method guard was REMOVED — Atashkadeh calls
+	# register_emitter directly at Stage-2 construction-complete. This test
+	# replaces the old "register_emitter is Phase-4 deferred" sanity test.
 	#
-	# BEHAVIORAL: drive Stage 1 + Stage 2 manually. Confirm no crash
-	# and confirm the operational flip still happened (the log is
-	# information-only; the flag is the load-bearing state).
+	# BEHAVIORAL: drive Stage 1 + Stage 2 manually, then confirm BOTH the
+	# operational flip (is_emitting_farr) AND the real registration (the
+	# building is now a registered FarrSystem emitter).
+	FarrSystem.reset()  # clear any emitter registry leakage from prior tests
+	# Pre-condition: register_emitter is now a real method (Phase 4 shipped).
+	assert_true(FarrSystem.has_method(&"register_emitter"),
+		"Phase 4 wave 1: FarrSystem.register_emitter must exist (the "
+		+ "Wave-2A.5 forward-compat guard is retired).")
 	_atashkadeh = _spawn_atashkadeh()
 	SimClock._is_ticking = true
 	_atashkadeh.place_at(Vector3.ZERO, Constants.TEAM_IRAN, 1)
-	SimClock._is_ticking = false
-	# Pre-condition: FarrSystem autoload IS present but register_emitter
-	# method is NOT (Phase 4 deferred). If this pre-condition changes
-	# (i.e., when Phase 4 ships register_emitter), this test still
-	# passes — the has_method check selects the real-call branch instead.
-	assert_false(FarrSystem.has_method(&"register_emitter"),
-		"sanity: FarrSystem.register_emitter is Phase-4 deferred; "
-		+ "the has_method guard selects the log-only branch today. "
-		+ "When Phase 4 ships, this assertion flips to assert_true + "
-		+ "the test grows to verify the registration call fires.")
-	# Drive Stage 2 — must complete without crash.
+	# Drive Stage 2 — registers the emitter.
 	_atashkadeh._on_construction_complete(1)
+	SimClock._is_ticking = false
 	assert_true(_atashkadeh.is_emitting_farr,
-		"BEHAVIORAL: Atashkadeh.is_emitting_farr flips true even when "
-		+ "FarrSystem.register_emitter is absent — the forward-compat "
-		+ "seam selects the log-branch but still preserves the "
-		+ "operational marker contract.")
+		"BEHAVIORAL: Atashkadeh.is_emitting_farr flips true at Stage 2.")
+	assert_true(FarrSystem.is_emitter_registered(_atashkadeh),
+		"BEHAVIORAL: Atashkadeh registers as a FarrSystem emitter at "
+		+ "construction-complete (Phase 4 wave 1 — register_emitter LIVE).")
+	# Cleanup: unregister so the registry doesn't leak into sibling tests.
+	FarrSystem.unregister_emitter(_atashkadeh)
 
 
 # ---------------------------------------------------------------------------

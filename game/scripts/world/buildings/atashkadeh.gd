@@ -356,47 +356,53 @@ func _on_placement_complete(placer_unit_id: int) -> void:
 # is_ready_to_produce's Stage-2 flip — same operational-gating discipline
 # applied to the sacral-emit capability.
 #
-# Forward-compat FarrSystem.register_emitter seam: the canonical Phase-4
-# FarrSystem will gain a register_emitter(building, farr_per_min) API
-# that drives the per-tick aggregate. Until then, this code path logs a
-# forward-compat info-line + sets the flag. The dispatch lead's brief
-# explicitly calls out that the per-tick emit is DEFERRED to Phase 4 (the
-# brief notes: "FarrSystem.register_emitter does not exist yet (will ship
-# at Phase 4 FarrSystem full impl). For Wave 2A.5, the building flips
-# is_emitting_farr=true but the actual per-tick emit is DEFERRED").
+# FarrSystem.register_emitter seam (Phase 4 wave 1 — NOW LIVE): FarrSystem
+# gained the register_emitter(building, farr_per_min) API this wave. The
+# Wave-2A.5 forward-compat has_method guard (+ its L7 allowlist entry) is
+# REMOVED — the method now exists, so guarding it would be a §9.M7
+# defensive-fallback-masking guard (it would silently no-op if a future
+# refactor renamed the method, instead of crashing loud). We call it directly.
 #
-# Why log instead of silent no-op: when Phase 4 ships and we audit which
-# buildings registered as emitters, the log line gives us a paper trail
-# (search logs for "atashkadeh would emit"). Same telemetry-friendly
-# pattern as FogSystem's forward-compat guard.
+# Rate source: BalanceData.bldg_atashkadeh.farr_per_min_x100 (= 100 = +1/min,
+# Sim Contract §1.6 integer path), converted to whole-Farr/min at the
+# register_emitter boundary. Falls back to the spec +1/min if BalanceData is
+# absent (test scenes) — loud-default, NOT silent-zero (§9.L9).
 #
-# Farr-chokepoint discipline note (per agent-def "All Farr changes flow
-# through apply_farr_change()"): this code does NOT mutate Farr directly.
-# When FarrSystem.register_emitter ships, the registration is the seam;
-# the per-tick emit inside FarrSystem will route through apply_farr_change
-# with reason=&"atashkadeh_passive_emit" and source_unit=self. The
-# chokepoint discipline is preserved.
+# Farr-chokepoint discipline (CLAUDE.md "All Farr changes flow through
+# apply_farr_change()"): this code does NOT mutate Farr directly. The
+# registration is the seam; the per-tick emit inside FarrSystem._flush_emitter_
+# accrual routes through apply_farr_change with reason=&"atashkadeh_emission"
+# + source_unit=the emitter. The chokepoint is preserved.
 func _on_construction_complete(placer_unit_id: int) -> void:
 	super._on_construction_complete(placer_unit_id)
 	is_emitting_farr = true
-	# Forward-compat: FarrSystem.register_emitter ships in Phase 4. Until
-	# then, we log so future audit can trace which buildings would have
-	# registered. The has_method guard is real forward-compat (FarrSystem
-	# autoload exists today but lacks the register_emitter method); this
-	# is NOT the same as the obsolete ResourceSystem.has_method guard
-	# removed at Task #117 — that one was dead code because the method
-	# existed. This guard is live until Phase 4 ships register_emitter.
-	if FarrSystem.has_method(&"register_emitter"):
-		FarrSystem.call(&"register_emitter", self, 1.0)
-	else:
-		# Telemetry seam for the audit-when-Phase-4-ships read. Format
-		# mirrors EventBus.building_placed emit-style: kind + team + position.
-		print(
-			"[atashkadeh] would emit +1/min Farr at construction-complete "
-			+ "but FarrSystem.register_emitter is not yet implemented "
-			+ "(Phase 4 deferred). placer=%d team=%d pos=%s"
-			% [placer_unit_id, team, str(global_position)]
-		)
+	var farr_per_min: float = _resolve_farr_per_min()
+	FarrSystem.register_emitter(self, farr_per_min)
+	print("[atashkadeh] construction-complete — registered as Farr emitter "
+		+ "+%.2f/min placer=%d team=%d unit_id=%d" % [
+			farr_per_min, placer_unit_id, team, unit_id])
+
+
+# Resolve the per-minute Farr emission rate (whole Farr units) from
+# BalanceData.bldg_atashkadeh.farr_per_min_x100 (x100 → whole-Farr/min at this
+# boundary). Spec default +1.0/min (§4.3) if BalanceData / the field is absent.
+func _resolve_farr_per_min() -> float:
+	var path: String = Constants.PATH_BALANCE_DATA
+	if not FileAccess.file_exists(path):
+		return 1.0
+	var bd: Resource = load(path)
+	if bd == null:
+		return 1.0
+	var bldgs: Variant = bd.get(&"buildings")
+	if typeof(bldgs) != TYPE_DICTIONARY:
+		return 1.0
+	var stats: Variant = (bldgs as Dictionary).get(KIND_ATASHKADEH, null)
+	if stats == null:
+		return 1.0
+	var v: Variant = stats.get(&"farr_per_min_x100")
+	if typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT:
+		return float(v) / 100.0
+	return 1.0
 
 
 # === Static cost helpers =====================================================
@@ -471,6 +477,14 @@ func _exit_tree() -> void:
 	# Wave 3-BuildingDestructibility (session 9, architecture-reviewer
 	# C1.2 BLOCKER fix-up): super-call required.
 	super._exit_tree()
+	# Phase 4 wave 1: unregister as a Farr emitter on the non-destruction free
+	# path (harness teardown free(), scene reload). The destruction path
+	# (_on_health_zero → building_destroyed) already unregisters via FarrSystem's
+	# handler BEFORE queue_free, so this is an idempotent no-op there; here it
+	# covers frees that never fired building_destroyed. unregister_emitter is
+	# idempotent (logs the no-op when not registered).
+	if is_emitting_farr:
+		FarrSystem.unregister_emitter(self)
 	if _fog_handle >= 0:
 		var fog: Node = _autoload_or_null(&"FogSystem")
 		if fog != null and fog.has_method(&"deregister_vision_source"):

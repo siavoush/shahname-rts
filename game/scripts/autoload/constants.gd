@@ -135,6 +135,45 @@ const STATE_CASTING: StringName = &"casting"
 const STATE_DYING: StringName = &"dying"
 
 
+# === UNIT-TYPE CLASSIFICATION ================================================
+# Structural unit-type tokens used by Farr's §4.3 snowball drains (Phase 4
+# wave 1) + royal-largesse upkeep (D3) to classify "worker" vs "military"
+# without re-stating the StringName literals at every call site. These are
+# the unit_type values a Unit reports via `unit.unit_type` (the BalanceData
+# `units` dict keys; see balance.tres `units = {...}`).
+#
+# Why here (structural, not BalanceData): the SET of unit types and their
+# worker/military taxonomy is a code-shape fact (which death events drain
+# Farr, which units cost upkeep), not a number a designer tunes in a
+# playtest cycle. The drain MAGNITUDES live in BalanceData.farr.drain_rates;
+# the upkeep coin-per-unit lives in BalanceData.economy. This is the
+# CLAUDE.md two-distinct-homes split.
+
+## The worker unit-type. The only non-combatant mobile unit in the MVP
+## roster (gathers Coin/Grain, constructs buildings). Both Iran and Turan
+## share the &"kargar" token (Turan units are "turan_"-prefixed for the
+## COMBAT roster only — there is no &"turan_kargar"; both factions use the
+## same worker type key). Worker deaths drain Farr per §4.3; workers do NOT
+## count toward royal-largesse upkeep (D3 — upkeep is a standing-army cost).
+const UNIT_TYPE_KARGAR: StringName = &"kargar"
+
+## Military unit-type tokens — every combatant in the MVP roster (Iran +
+## Turan). A unit whose `unit_type` is in this set:
+##   - counts toward the §1.1a snowball population-ratio sums (D1a);
+##   - costs royal-largesse Coin upkeep per game-minute (D3).
+## Heroes (Rostam, post-MVP) have population_cost = 0 and ship in the hero
+## wave with their own classification; not in this set today.
+##
+## Source: balance.tres `units` dict (the 8 combat keys; &"kargar" excluded).
+## §9.H3 dormant-schema note: this set is the first runtime consumer that
+## must enumerate "which unit types are military" — kept here so a future
+## roster addition is a single-line edit visible to every consumer.
+const MILITARY_UNIT_TYPES: Array[StringName] = [
+	&"piyade", &"savar", &"kamandar", &"asb_savar_kamandar",
+	&"turan_piyade", &"turan_savar", &"turan_kamandar", &"turan_asb_savar",
+]
+
+
 # === COMMAND KINDS ===========================================================
 # Command.kind enum values per docs/STATE_MACHINE_CONTRACT.md §2.4.
 
@@ -213,6 +252,60 @@ const GROUP_MOVE_OFFSET_RADIUS: float = 2.0
 # Lives here, not in FarrConfig, because no balance pass should ever change it.
 
 const FARR_MAX: float = 100.0
+
+
+# === FARR / RESOURCE REASON TOKENS (Phase 4 wave 1) ==========================
+# StringName reason tokens passed to apply_farr_change / change_resource so the
+# F2 overlay, telemetry, and balance analysis can trace every movement back to
+# its trigger. Structural (the SET of reasons honored), not tunable — the
+# magnitudes live in BalanceData. These tokens are ALSO the keys looked up in
+# BalanceData.farr.drain_rates for the snowball drains, so the constant name and
+# the dict key must stay identical (the dispatcher reads the dict by these
+# tokens). Per CLAUDE.md "no magic numbers / no magic strings in gameplay code."
+
+## §4.3 snowball-injustice: an outnumbered-kill drain. Fires when the killer's
+## team population is ≥ 3× the victim's team population (§1.1a — DECISIONS.md
+## 2026-06-22). Cultural referent: the just king does not crush a fallen foe
+## (Jamshid's fall — pride/excess costs Farr). drain_rates key + reason token.
+const FARR_REASON_SNOWBALL_KILL_OUTNUMBERED: StringName = &"snowball_kill_outnumbered"
+
+## §4.3 snowball-injustice: kicking-them-while-down. Fires when a worker dies
+## (or a Ma'dan/mine is destroyed) while the victim's team is "military-broken"
+## (§1.1b — zero living military units AND zero operational military-production
+## buildings). Cultural referent: cruelty to a defenseless economy costs Farr.
+const FARR_REASON_SNOWBALL_ECONOMY_WHEN_BROKEN: StringName = &"snowball_economy_when_broken"
+
+## §4.3 generator: Atashkadeh's continuous +1/min passive Farr emission while
+## standing (the sacred flame is kept). reason token for apply_farr_change.
+const FARR_REASON_ATASHKADEH_EMISSION: StringName = &"atashkadeh_emission"
+
+## §4.3 drain: loss of an Atashkadeh (the sacred flame is extinguished, -5).
+## Looks up BalanceData.farr.drain_rates[&"building_destroyed_atashkadeh"] for
+## the magnitude (the existing -5 key); this is the apply_farr_change reason.
+const FARR_REASON_ATASHKADEH_LOST: StringName = &"atashkadeh_lost"
+
+## Building-kind StringName for Atashkadeh — the `kind` field on the Atashkadeh
+## Building (matches the BalanceData.buildings key + the building_destroyed
+## signal's `kind` arg). Used by FarrSystem._on_building_destroyed to identify
+## an Atashkadeh loss WITHOUT a class_name reference (autoloads parse before the
+## class_name registry populates — the registry-race rationale, ARCHITECTURE §6
+## v0.4.0; comparing the StringName sidesteps it). Mirrors Atashkadeh.
+## KIND_ATASHKADEH (= &"atashkadeh"); kept in sync by value (both are &"atashkadeh").
+const BUILDING_KIND_ATASHKADEH: StringName = &"atashkadeh"
+
+## drain_rates key for the Atashkadeh-loss magnitude (the existing -5 key,
+## §4.3). Distinct from FARR_REASON_ATASHKADEH_LOST (the apply_farr_change
+## reason logged to F2): the dict key names the spec event; the reason token
+## names the gameplay moment. Kept distinct so the F2 log reads "atashkadeh_lost"
+## while the magnitude resolves from the canonical drain_rates entry.
+const FARR_DRAIN_KEY_ATASHKADEH_LOST: StringName = &"building_destroyed_atashkadeh"
+
+## D3 royal-largesse: per-game-minute Coin upkeep per living military unit.
+## reason token for ResourceSystem.change_resource (TREASURY down-flow, NOT
+## Farr — keeps the Farr meter pure for justice/legitimacy per economy
+## research §6.2 + DECISIONS.md 2026-06-22 §1.2). Cultural referent: the just
+## king's obligation to sustain his army from the royal treasury.
+const RESOURCE_REASON_ROYAL_LARGESSE_UPKEEP: StringName = &"royal_largesse_upkeep"
 
 
 # === COMBAT ==================================================================

@@ -6,7 +6,10 @@
 ##
 ## Farr range: 0.0–100.0. Starting value 50 (neutral).
 ## Stored as float; FarrSystem stores internally as fixed-point int per
-## docs/SIMULATION_CONTRACT.md §1.6 (× 1000, so Farr 50.0 = 50000 internally).
+## docs/SIMULATION_CONTRACT.md §1.6 (× 100, so Farr 50.0 = 5000 internally).
+## (SSOT: farr_system.gd `_farr_x100`. An earlier draft of this doc-comment
+## said × 1000 — STALE; corrected Phase 4 wave 1. The x100 scale is the
+## canonical one used by apply_farr_change's roundi(amount * 100.0).)
 ##
 ## All changes flow through apply_farr_change(amount, reason, source_unit)
 ## per CLAUDE.md and docs/TESTING_CONTRACT.md §1.1. This class holds the
@@ -83,15 +86,21 @@ class_name FarrConfig extends Resource
 ## DEPRECATED. See `drain_rates[&"building_destroyed_atashkadeh"]` (= 5.0).
 @export var drain_atashkadeh_lost: float = -5.0
 
-## DEPRECATED. Snowball protection lands in Phase 4 with its own
-## `snowball_*` keys in `drain_rates`.
-@export var drain_snowball_per_kill: float = -0.5
-
-## DEPRECATED. Snowball protection — see note above.
-@export var drain_snowball_worker: float = -1.0
+# RETIRED (Phase 4 wave 1, 2026-06-22): the `drain_snowball_per_kill` and
+# `drain_snowball_worker` @export fields are removed. Snowball protection
+# now lives as the `snowball_kill_outnumbered` (0.5) + `snowball_economy_
+# when_broken` (1.0) keys in the `drain_rates` dict below — positive
+# magnitudes, dispatcher applies the negative sign. The deprecated fields
+# were never read at runtime (the dispatcher reads `drain_rates` only); they
+# are removed per the kickoff brief's "retire the deprecated @export fields
+# once the dict keys land" instruction. Saved balance.tres files drop the
+# fields cleanly — Resource @export removal is non-breaking for load().
 
 ## Army size ratio that triggers snowball protection (attacker:defender).
-## 3:1 or more triggers per §4.3.
+## 3:1 or more triggers per §4.3 / DECISIONS.md 2026-06-22 §1.1a. This is the
+## RATIO threshold (a tunable balance knob — a designer might widen it to 4:1
+## if 3:1 fires too readily), distinct from the drain magnitudes in
+## drain_rates. The snowball drain reads this field for the 3:1 boundary test.
 @export var snowball_ratio: float = 3.0
 
 # --- Drain-rate table (Phase 3 wave 1B + forward-compat keys) ---
@@ -110,12 +119,20 @@ class_name FarrConfig extends Resource
 #   worker_killed_idle              — Kargar killed while in &"idle" state
 #   worker_killed_during_gather     — Kargar killed while gathering / returning
 #
+# Phase 4 wave 1 wired keys (§4.3 snowball-injustice; the unit_died handler
+# in FarrDrainDispatcher reads the killer + the 3:1 population ratio /
+# military-broken predicate to pick one of these):
+#   snowball_kill_outnumbered       — killer team ≥ 3× victim team pop (§1.1a)
+#   snowball_economy_when_broken    — worker/mine killed while military-broken
+#                                     (§1.1b)
+#
 # Forward-compat keys (Phase 4+; the dispatcher fires zero drain if absent):
 #   capital_damaged                 — Throne HP loss event (per-hit trigger)
 #   capital_lost                    — Throne destroyed (game-ending drain)
 #   building_destroyed_civilian     — Khaneh / Mazra'eh lost
 #   building_destroyed_military     — Sarbaz-khaneh lost
-#   building_destroyed_atashkadeh   — sacred-flame loss (heavy drain per §4.3)
+#   building_destroyed_atashkadeh   — sacred-flame loss (heavy drain per §4.3;
+#                                     WIRED Phase 4 wave 1 via building_destroyed)
 #   hero_died                       — Rostam dies (per §7.3)
 #
 # Why a dict instead of @export fields per key:
@@ -123,9 +140,21 @@ class_name FarrConfig extends Resource
 #   "what reasons trigger drains?" surface explicit (the keys present == the
 #   reasons honored). New drain triggers add a key here + an emit site;
 #   no schema migration needed.
+#
+# Snowball magnitudes (balance-engineer ratified 2026-06-22):
+#   snowball_kill_outnumbered = 0.5 — REPEATED per-kill drain; matches
+#     worker_killed_during_gather (small/frequent tier). A 14-unit rout =
+#     -7 Farr ≈ losing an Atashkadeh ("you cannot bully your way to high
+#     Farr", §4.3 anti-tyranny clause). 1.0/kill would push a single decisive
+#     battle below the Tier-2=40 threshold — too punishing.
+#   snowball_economy_when_broken = 1.0 — matches worker_killed_idle exactly:
+#     killing a defenseless worker after breaking their military is the same
+#     injustice as killing an idle worker. A 5-worker mop-up = -5 Farr.
 @export var drain_rates: Dictionary = {
 	&"worker_killed_idle": 1.0,
 	&"worker_killed_during_gather": 0.5,
+	&"snowball_kill_outnumbered": 0.5,
+	&"snowball_economy_when_broken": 1.0,
 	&"capital_damaged": 2.0,
 	&"capital_lost": 12.0,
 	&"building_destroyed_civilian": 1.5,
