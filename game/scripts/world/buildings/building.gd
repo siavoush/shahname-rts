@@ -295,6 +295,15 @@ var _production_progress_ticks: int = 0
 ## (mirrors UnitState_Constructing._total_construction_ticks).
 var _production_total_ticks: int = 0
 
+# UI-queued train request (off-tick buffer). The train button fires during
+# input handling (off-tick), but request_train's resource deduction must run
+# on-tick (ResourceSystem.change_resource asserts on-tick). So the button sets
+# this and _on_sim_phase commits it on the next &"movement" phase. Empty when
+# nothing is queued. NOT part of the determinism snapshot — it is a player-input
+# buffer, written only off-tick by the UI; the deterministic commit is on-tick.
+# Fixes the "free units" bug (training never charged) — playtest 2026-06-22.
+var _pending_train_request: StringName = &""
+
 ## Team-side rally-point offset along the Z axis, in metres. Iran spawns
 ## south of its buildings (+Z); Turan spawns north (-Z) — opposing flow.
 ## The fixed magnitude is FOOTPRINT_HALF_Z + 2.0m by default; subclasses
@@ -720,6 +729,29 @@ func request_train(unit_kind: StringName) -> bool:
 	return true
 
 
+# Off-tick-safe train request — the player path. The train button fires during
+# input handling, NOT on a sim tick, so we cannot deduct here (request_train ->
+# ResourceSystem.change_resource asserts on-tick, resource_system.gd:207; an
+# off-tick call silently skips the deduction = free units, playtest 2026-06-22).
+# Instead buffer the kind and let _on_sim_phase commit it via request_train() on
+# the next &"movement" phase (on-tick) — the player-path analogue of how build
+# commands defer to the sim. AI callers stay on request_train() directly (they
+# already run on-tick from the &"ai" phase). Returns false on the cheap off-tick
+# reads (incomplete / already training / already queued); affordability is the
+# authoritative on-tick re-check at commit time.
+func queue_train(unit_kind: StringName) -> bool:
+	if not is_complete:
+		return false
+	if _production_state != &"idle":
+		return false
+	if _pending_train_request != &"":
+		return false
+	_pending_train_request = unit_kind
+	print("[building] train queued kind=%s unit_id=%d (commits next movement phase)"
+		% [unit_kind, unit_id])
+	return true
+
+
 # Sim-phase handler. Drives the production state machine's dwell counter
 # during the &"movement" phase only (same phase Unit uses for its FSM —
 # unit.gd:391-396). Non-producer buildings (empty produces) early-bail.
@@ -734,6 +766,17 @@ func request_train(unit_kind: StringName) -> bool:
 # combat-phase consumer notices them.
 func _on_sim_phase(phase: StringName, _tick: int) -> void:
 	if phase != &"movement":
+		return
+	# Commit a UI-queued train request on-tick. The train button buffered it
+	# off-tick (queue_train); request_train's deduction can only run on-tick.
+	# Return after the attempt so a freshly-started dwell isn't decremented on
+	# the same tick it began. Fixes the "free units" bug (playtest 2026-06-22).
+	if _pending_train_request != &"":
+		var requested: StringName = _pending_train_request
+		_pending_train_request = &""
+		var ok: bool = request_train(requested)
+		print("[building] deferred train commit kind=%s ok=%s unit_id=%d"
+			% [requested, ok, unit_id])
 		return
 	if _production_state != &"training":
 		return

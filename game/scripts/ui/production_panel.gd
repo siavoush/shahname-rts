@@ -506,19 +506,21 @@ func _on_production_state_changed(
 	# viable surface to let player understand the building is working.
 
 
-# Train button press → invoke building.request_train. Building's API does
-# the both-or-neither deduct (sim-side); UI doesn't deduct directly per
-# Pitfall #4 + UI-shaped-signal discipline.
+# Train button press → building.queue_train (off-tick-safe). The button fires
+# off-tick; queue_train buffers the request and the building commits it +
+# deducts on-tick (next &"movement" phase). Calling request_train directly here
+# skipped the deduction off-tick = free units (playtest 2026-06-22). UI never
+# deducts directly per Pitfall #4 + UI-shaped-signal discipline.
 func _on_train_button_pressed(unit_kind: StringName) -> void:
 	if _building == null or not is_instance_valid(_building):
 		return
-	if not _building.has_method(&"request_train"):
+	if not _building.has_method(&"queue_train"):
 		# Track 1 contract surface not present — defensive log.
 		push_warning(
-				"ProductionPanel: building %s missing request_train(); Track 1 not shipped?"
+				"ProductionPanel: building %s missing queue_train(); Track 1 not shipped?"
 				% [_building])
 		return
-	var ok_v: Variant = _building.call(&"request_train", unit_kind)
+	var ok_v: Variant = _building.call(&"queue_train", unit_kind)
 	if not (ok_v is bool and bool(ok_v)):
 		# request_train returned false — affordability check on the
 		# sim-side rejected (race with another consumer). Re-sweep so
