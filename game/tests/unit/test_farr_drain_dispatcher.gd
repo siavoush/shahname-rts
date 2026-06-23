@@ -381,6 +381,68 @@ func test_d1a_same_tick_multi_death_is_order_invariant() -> void:
 		"Same-tick multi-death is order-invariant (Fix F4 exclusion contract)")
 
 
+func test_d1a_same_tick_multi_death_is_order_invariant_via_is_dying_path() -> void:
+	# Fix F4 HARDENING (review finding F1): the existing order-invariant test
+	# above drives co-victims with _dying == false, so ONLY the exclude_unit_id
+	# branch (farr_drain_dispatcher.gd ~line 315) ever engages — the is_dying()
+	# exclusion branch (~line 319) is never exercised. But in the LIVE game the
+	# emit order is:
+	#     unit_health_zero(victim)
+	#       -> StateMachine death-preempt sets victim to &"dying" SYNCHRONOUSLY
+	#          (state_machine.gd:292-306)
+	#       -> unit_died(victim)   <-- D1's _on_unit_died fires HERE
+	# so by the time _on_unit_died runs, the just-emitted victim is ALREADY
+	# is_dying(), AND any co-victim that died earlier the SAME tick is also
+	# is_dying(). This test mirrors that sequence: flip each victim's _dying
+	# = true immediately BEFORE emitting its unit_died, so the is_dying()
+	# exclusion is the operative predicate (not the id-exclusion half).
+	#
+	# Roster: attacker pop 6, two living defenders 271/272, two same-tick
+	# victims 273/274. Because each victim is flipped to dying BEFORE its emit,
+	# the FIRST processed death sees the other victim still living (defender_pop
+	# = {271,272,otherVictim} = 3; threshold roundi(3*3)=9; 6 < 9 → no fire),
+	# while the SECOND processed death sees the first victim already is_dying()
+	# (defender_pop = {271,272} = 2; threshold roundi(3*2)=6; 6 >= 6 → fires
+	# -0.5). So EACH order fires exactly once (the second death) → -0.5 total,
+	# identical regardless of which victim is emitted first. The point is
+	# order-invariance of the SNAPSHOT under the is_dying() path; running both
+	# orders and asserting identical Farr locks the contract against a future
+	# emit-order refactor.
+	_make_unit_in_group(275, &"piyade", Constants.TEAM_IRAN)
+	_make_unit_in_group(276, &"piyade", Constants.TEAM_IRAN)
+	_make_unit_in_group(277, &"piyade", Constants.TEAM_IRAN)
+	_make_unit_in_group(278, &"piyade", Constants.TEAM_IRAN)
+	_make_unit_in_group(279, &"piyade", Constants.TEAM_IRAN)
+	var killer: FakeUnit = _make_unit_in_group(280, &"piyade", Constants.TEAM_IRAN)
+	_make_unit_in_group(271, &"turan_piyade", Constants.TEAM_TURAN)
+	_make_unit_in_group(272, &"turan_piyade", Constants.TEAM_TURAN)
+	var v1: FakeUnit = _make_unit_in_group(273, &"turan_piyade", Constants.TEAM_TURAN)
+	var v2: FakeUnit = _make_unit_in_group(274, &"turan_piyade", Constants.TEAM_TURAN)
+	# Order A: v1 then v2. Flip each victim to dying right before its emit
+	# (mirrors unit_health_zero -> dying-transition -> unit_died in the live game).
+	_run_inside_tick(func() -> void:
+		v1._dying = true
+		EventBus.unit_died.emit(v1.unit_id, killer.unit_id, &"melee_attack", Vector3.ZERO)
+		v2._dying = true
+		EventBus.unit_died.emit(v2.unit_id, killer.unit_id, &"melee_attack", Vector3.ZERO)
+	)
+	var farr_order_a: float = FarrSystem.value_farr
+	# Reset Farr + both victims' dying flags, re-run Order B: v2 then v1.
+	FarrSystem._farr_x100 = 5000
+	v1._dying = false
+	v2._dying = false
+	_run_inside_tick(func() -> void:
+		v2._dying = true
+		EventBus.unit_died.emit(v2.unit_id, killer.unit_id, &"melee_attack", Vector3.ZERO)
+		v1._dying = true
+		EventBus.unit_died.emit(v1.unit_id, killer.unit_id, &"melee_attack", Vector3.ZERO)
+	)
+	var farr_order_b: float = FarrSystem.value_farr
+	assert_almost_eq(farr_order_a, farr_order_b, 1e-6,
+		"Same-tick multi-death via the is_dying() exclusion path is order-invariant "
+		+ "(F1 hardening — mirrors live unit_health_zero->dying->unit_died sequence)")
+
+
 func test_d1a_same_tick_multi_death_fires_identically_when_threshold_met() -> void:
 	# Positive companion: a 3:1 roster where BOTH same-tick deaths cross the
 	# threshold. Attacker pop 6; Turan has 0 OTHER living defenders, just the 2
