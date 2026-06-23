@@ -46,6 +46,14 @@ extends Control
 # entries fall off the bottom. Structural (panel sizing), not a balance knob.
 const MAX_ENTRIES: int = 20
 
+# Cosmetic panel styling (structural UI, not a balance knob). Without a backing
+# panel the overlay is just default-colored text floating over the 3D terrain —
+# a single faint title line when the log is empty, easy to mistake for "F2 does
+# nothing" (playtest 2026-06-22). A semi-transparent dark panel + padding makes
+# the overlay unmistakably present the moment it is toggled, even with no entries.
+const PANEL_BG_COLOR: Color = Color(0.05, 0.05, 0.08, 0.78)
+const PANEL_PAD_PX: float = 8.0
+
 # Per-frame queue of farr_changed events (queue-then-drain, Sim Contract §1.5).
 # Each entry: { amount: float, reason: String, source_unit_id: int,
 #               farr_after: float, tick: int }.
@@ -107,6 +115,15 @@ func _build_label() -> void:
 	_label.scroll_active = false
 	_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_label.custom_minimum_size = Vector2(360.0, 0.0)
+	# Backing panel so the overlay reads as present-and-empty (not "F2 broken")
+	# the instant it is toggled — see PANEL_BG_COLOR rationale above.
+	var bg: StyleBoxFlat = StyleBoxFlat.new()
+	bg.bg_color = PANEL_BG_COLOR
+	bg.content_margin_left = PANEL_PAD_PX
+	bg.content_margin_right = PANEL_PAD_PX
+	bg.content_margin_top = PANEL_PAD_PX
+	bg.content_margin_bottom = PANEL_PAD_PX
+	_label.add_theme_stylebox_override(&"normal", bg)
 	add_child(_label)
 
 

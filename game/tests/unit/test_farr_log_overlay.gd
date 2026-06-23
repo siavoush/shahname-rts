@@ -90,3 +90,20 @@ func test_log_bounded_to_max_entries() -> void:
 func test_overlay_subscribes_to_farr_changed() -> void:
 	assert_true(EventBus.farr_changed.is_connected(_overlay._on_farr_changed),
 		"FarrLogOverlay subscribes to EventBus.farr_changed")
+
+
+func test_empty_overlay_reads_as_present_panel_plus_title() -> void:
+	# Regression (playtest 2026-06-22): F2 "did nothing" because the empty
+	# overlay was just a faint default-colored title line over the 3D terrain.
+	# An empty overlay MUST still be unmistakably present when toggled — a
+	# backing panel AND the rendered title line (no log entries required).
+	var label: RichTextLabel = null
+	for child: Node in _overlay.get_children():
+		if child is RichTextLabel:
+			label = child
+			break
+	assert_not_null(label, "overlay builds its RichTextLabel child")
+	assert_true(label.has_theme_stylebox_override(&"normal"),
+		"empty overlay has a backing panel so it is visibly present when toggled")
+	assert_true(label.text.length() > 0,
+		"title line renders with zero log entries (overlay is not blank)")
