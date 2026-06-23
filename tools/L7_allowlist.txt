@@ -72,7 +72,7 @@ game/scripts/units/components/health_component.gd:pn.has_method(&"is_idle") — 
 game/scripts/ui/construction_progress_overlay.gd:has_signal(&"construction_progress_updated") — duck-typed test-fixture tolerance documented at _ensure_signal_connected (FakeBuilding fixtures re-declare the signal pair)
 game/scripts/ui/construction_progress_overlay.gd:has_signal(&"construction_finalized") — second half of the same paired-signal fixture-tolerance guard
 game/scripts/ui/production_panel.gd:has_signal(&"production_state_changed") — fixture tolerance; panel degrades to static rows without in-progress updates (documented at _connect_building_signals); covers connect + disconnect
-game/scripts/ui/production_panel.gd:has_method(&"request_train") — fixture tolerance with loud push_warning on the false branch (§9.L9-loud, not silent masking)
+game/scripts/ui/production_panel.gd:has_method(&"queue_train") — fixture tolerance with loud push_warning on the false branch (§9.L9-loud, not silent masking); guards the producer-API contract surface (renamed request_train→queue_train 2026-06-22, off-tick-train fix)
 
 # --- Conversion deferred ---
 game/scripts/units/components/combat_component.gd:health.has_method(&"take_damage_x100") — conversion deferred — removing the guard requires re-indenting the entire ~60-line live damage-fire block (exceeds this track's small-mechanical-diff budget); probe confirmed every get_health() provider at HEAD returns the real health_component.gd script, so the false branch is dead today; flagged for inline conversion next time combat_component.gd is open for edit

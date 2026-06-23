@@ -6,7 +6,7 @@ extends GutTest
 ## - Panel opens on building click (via click_handler routing).
 ## - Shows correct unit options per producer kind.
 ## - Affordability state correct (§9.L7 mandate).
-## - Train button click invokes building.request_train(unit_kind).
+## - Train button click invokes building.queue_train(unit_kind).
 ##
 ## We bypass the click_handler routing in these unit tests — that's
 ## exercised by test_click_handler.gd extensions. Here we drive
@@ -34,7 +34,7 @@ const ProductionPanelScene: PackedScene = preload(
 #   - is_complete: bool (defensive — panel open() doesn't check this,
 #     but the click_handler ancestor lookup does)
 #   - signal production_state_changed (StringName, int, etc.)
-#   - request_train(unit_kind) → bool (UI invokes this)
+#   - queue_train(unit_kind) → bool (UI invokes this)
 
 class FakeProducerBuilding extends Node3D:
 	signal production_state_changed(
@@ -48,12 +48,12 @@ class FakeProducerBuilding extends Node3D:
 	var _production_state: StringName = &"idle"
 	var is_complete: bool = true
 	var unit_id: int = 1
-	var request_train_calls: Array = []  # capture for assertions
-	var request_train_return: bool = true
+	var queue_train_calls: Array = []  # capture for assertions
+	var queue_train_return: bool = true
 
-	func request_train(unit_kind: StringName) -> bool:
-		request_train_calls.append(unit_kind)
-		return request_train_return
+	func queue_train(unit_kind: StringName) -> bool:
+		queue_train_calls.append(unit_kind)
+		return queue_train_return
 
 
 # === Fixtures ==============================================================
@@ -204,9 +204,9 @@ func test_close_clears_rows() -> void:
 		"close() must clear _unit_rows_by_kind (synchronous cache reset)")
 
 
-# === Train button → request_train invocation ===============================
+# === Train button → queue_train invocation ===============================
 
-func test_train_button_press_invokes_request_train() -> void:
+func test_train_button_press_invokes_queue_train() -> void:
 	_panel = _spawn_panel()
 	_building = _spawn_building()
 	_building.kind = &"sarbaz_khaneh"
@@ -217,10 +217,10 @@ func test_train_button_press_invokes_request_train() -> void:
 	var train_btn: Button = row.get_meta(&"_train_button", null)
 	assert_ne(train_btn, null, "row must have a _train_button meta")
 	train_btn.pressed.emit()
-	assert_eq(_building.request_train_calls.size(), 1,
-		"Train button press must invoke building.request_train exactly once")
-	assert_eq(_building.request_train_calls[0], &"piyade",
-		"Train button press must pass the row's unit_kind to request_train")
+	assert_eq(_building.queue_train_calls.size(), 1,
+		"Train button press must invoke building.queue_train exactly once")
+	assert_eq(_building.queue_train_calls[0], &"piyade",
+		"Train button press must pass the row's unit_kind to queue_train")
 
 
 # === §9.L7 affordability sweep =============================================
