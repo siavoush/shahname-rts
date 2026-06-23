@@ -12,7 +12,7 @@ ssot_for:
 references: [02_IMPLEMENTATION_PLAN.md, docs/ARCHITECTURE.md, QUESTIONS_FOR_DESIGN.md]
 tags: [log, sessions, build-history]
 created: 2026-04-23
-last_updated: 2026-06-22 (Tier-1 rulings cleared)
+last_updated: 2026-06-22 (free-units train-cost hotfix)
 ---
 
 # Build Log
@@ -20,6 +20,18 @@ last_updated: 2026-06-22 (Tier-1 rulings cleared)
 Chronological record of what each Claude Code session shipped. Append-only. The design chat reads this to understand what state the project is in without having to re-read code.
 
 ---
+
+## 2026-06-22 — Hotfix: player-trained units were FREE (off-tick deduction skipped)
+
+**Branch `fix/train-offtick-deduction` (off main `c00820b`). Suite 1712/0; lint L1-L7 clean.** Surfaced by Siavoush's FarrSystem playtest ("could build units without coin/grain going down"). Pre-existing bug, independent of the Farr wave.
+
+**Root cause:** the player's train button (`production_panel._on_train_button_pressed`) fired OFF-tick and called `Building.request_train` directly. `request_train` deducts via `ResourceSystem.change_resource`, which asserts on-tick (`resource_system.gd:207`); off-tick the assert aborts the deduction before the store write, the call returns, and `request_train` still set `training` + spawned the unit → free units. The AI was unaffected — `DummyIranController`/`TuranController` call `request_train` from the on-tick `&"ai"` phase.
+
+**Fix:** `production_panel` now calls a new `building.queue_train` (off-tick-safe: buffers `_pending_train_request`, cheap off-tick reads only, NO resource mutation). `building._on_sim_phase` commits the buffered request via the UNCHANGED `request_train` on the next on-tick `&"movement"` phase (then early-returns so the fresh dwell isn't decremented same-tick). `request_train` stays the single on-tick commit point — AI direct, player deferred one tick. Player-path analogue of `Unit.replace_command` deferring UI to the sim. +1 integration regression test that guards the ACTUAL off-tick failure mode (queue off-tick → assert no deduction → one movement emit → assert coin AND grain deducted + training started). Panel-test fake + L7 allowlist entry renamed `request_train`→`queue_train`.
+
+**Review:** godot-code-reviewer + architecture-reviewer both **MERGE-AS-IS** (arch endorsed: on-tick discipline respected, determinism + AI-vs-AI batch safe, player/AI asymmetry correct-by-construction, regression test guards the real failure mode). Cosmetic stale-comment finding fixed in `51c779c`. No other off-tick→on-tick resource path carries the bug (build placement already defers via the FSM; verified).
+
+**Two distinct "free units" mechanisms now on record (don't conflate):** (1) **BUG-C1** (Wave 3A.6) — config lookup returned 0 so the cost itself was 0 (STUDIO_PROCESS.md:2063). (2) **THIS hotfix** — the cost was correct but the off-tick assert aborted `change_resource` before the store. Different root causes, same symptom; both now regression-guarded.
 
 ## 2026-06-22 — Tier-1 design backlog CLEARED (Siavoush ruling, implementation session) — Phase 4 unblocked
 

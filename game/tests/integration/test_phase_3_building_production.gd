@@ -145,6 +145,51 @@ func test_sarbaz_khaneh_produces_piyade_end_to_end() -> void:
 		"Iran-spawned Piyade must be south (+Z) of its building at the rally point")
 
 
+func test_queue_train_offtick_defers_deduction_to_on_tick() -> void:
+	# Regression (playtest 2026-06-22 — "free units"): the train button fires
+	# OFF-tick. The old panel path called request_train directly off-tick, so
+	# ResourceSystem.change_resource hit its on-tick assert and SKIPPED the
+	# deduction while the unit still trained = free units. queue_train must
+	# BUFFER off-tick and let _on_sim_phase commit the deduction on the next
+	# on-tick &"movement" phase.
+	_sarbaz_khaneh = _spawn_sarbaz_khaneh_complete(Constants.TEAM_IRAN)
+	# Fund + pop cap (on-tick).
+	SimClock._is_ticking = true
+	ResourceSystem.change_population_cap(
+		Constants.TEAM_IRAN, 10, &"test_setup", null)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_COIN, 100000, &"t", null)
+	ResourceSystem.change_resource(
+		Constants.TEAM_IRAN, Constants.KIND_GRAIN, 100000, &"t", null)
+	var coin_before: int = ResourceSystem.coin_x100_for(Constants.TEAM_IRAN)
+	var grain_before: int = ResourceSystem.grain_x100_for(Constants.TEAM_IRAN)
+
+	# --- OFF-tick: the UI button path. Must buffer, must NOT deduct. ---
+	SimClock._is_ticking = false
+	var queued: bool = _sarbaz_khaneh.queue_train(&"piyade")
+	assert_true(queued, "queue_train buffers the request off-tick")
+	assert_eq(_sarbaz_khaneh._pending_train_request, &"piyade",
+		"request is buffered (not committed) off-tick")
+	assert_eq(ResourceSystem.coin_x100_for(Constants.TEAM_IRAN), coin_before,
+		"NO coin deducted off-tick — deferred to the on-tick commit")
+	assert_eq(_sarbaz_khaneh._production_state, &"idle",
+		"production has not started off-tick")
+
+	# --- ON-tick: one movement phase commits the request + deduction. ---
+	SimClock._is_ticking = true
+	EventBus.sim_phase.emit(&"movement", 1)
+	SimClock._is_ticking = false
+
+	assert_eq(_sarbaz_khaneh._pending_train_request, &"",
+		"pending request cleared after the on-tick commit")
+	assert_eq(_sarbaz_khaneh._production_state, &"training",
+		"production started on the on-tick commit")
+	assert_lt(ResourceSystem.coin_x100_for(Constants.TEAM_IRAN), coin_before,
+		"coin IS deducted on the on-tick commit (not free — the bug)")
+	assert_lt(ResourceSystem.grain_x100_for(Constants.TEAM_IRAN), grain_before,
+		"grain IS deducted on the on-tick commit")
+
+
 func test_request_train_denied_when_pop_cap_full_does_not_spawn() -> void:
 	# Negative path: with pop_cap full, request_train returns false and
 	# no unit ever spawns even if we drive sim_phase emits.
