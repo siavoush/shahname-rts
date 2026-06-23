@@ -522,7 +522,9 @@ func _on_train_button_pressed(unit_kind: StringName) -> void:
 		return
 	var ok_v: Variant = _building.call(&"queue_train", unit_kind)
 	if not (ok_v is bool and bool(ok_v)):
-		# request_train returned false — affordability check on the
-		# sim-side rejected (race with another consumer). Re-sweep so
-		# the UI reflects the now-current state.
+		# queue_train returned false on a cheap off-tick read — building
+		# incomplete, already training, or a request is already queued
+		# (building.gd:743-748). Authoritative affordability is re-checked
+		# on-tick when _on_sim_phase commits via request_train, not here.
+		# Re-sweep so the UI reflects the now-current state.
 		_refresh_affordability()
